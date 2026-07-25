@@ -40,6 +40,7 @@ export class OmpService {
   #replaying = new Set()
   #promptAcknowledgements = new Map()
   #titles = new Map()
+  #queues = new Map()
   #active = new Set()
   #listeners = new Set()
 
@@ -57,7 +58,7 @@ export class OmpService {
     const sessions = await this.#refreshSessions()
     return sessions
       .filter((session) => !directory || sameDirectory(session.cwd, directory))
-      .map((session) => sessionView(session, this.#active.has(session.sessionId) ? "busy" : "idle", this.#titleFor(session.sessionId)))
+      .map((session) => sessionView(session, this.#isBusy(session.sessionId) ? "busy" : "idle", this.#titleFor(session.sessionId)))
   }
 
   async createSession({ directory, title, model }) {
@@ -108,11 +109,27 @@ export class OmpService {
     option.currentValue = model
   }
 
+  /**
+   * ACP accepts one turn per session at a time, so a prompt sent while the agent is
+   * still working is queued rather than rejected. It is recorded straight away, which
+   * is what makes it visible in the conversation while it waits.
+   */
   async prompt(sessionID, text, model) {
     await this.#load(sessionID)
+    if (this.#active.has(sessionID)) {
+      const messageID = this.#recordPrompt(sessionID, text)
+      const queue = this.#queues.get(sessionID) ?? []
+      queue.push({ text, model, messageID })
+      this.#queues.set(sessionID, queue)
+      this.#emit("session.updated", sessionID)
+      return
+    }
     if (model) await this.setModel(sessionID, model)
-    if (this.#active.has(sessionID)) throw new Error("The OMP session is already running")
-    this.#recordPrompt(sessionID, text)
+    this.#startTurn(sessionID, text)
+  }
+
+  #startTurn(sessionID, text, recorded = false) {
+    if (!recorded) this.#recordPrompt(sessionID, text)
     this.#active.add(sessionID)
     this.#emit("session.updated", sessionID)
     void this.#acp.request("session/prompt", {
@@ -123,16 +140,50 @@ export class OmpService {
     }).finally(() => {
       this.#active.delete(sessionID)
       this.#emit("session.updated", sessionID)
+      void this.#runNextQueued(sessionID)
     })
   }
 
+  async #runNextQueued(sessionID) {
+    const queue = this.#queues.get(sessionID)
+    if (!queue?.length) return
+    const next = queue.shift()
+    if (!queue.length) this.#queues.delete(sessionID)
+    // The model is applied on dequeue: doing it on enqueue would switch the model
+    // underneath the turn that was still running.
+    if (next.model) {
+      try {
+        await this.setModel(sessionID, next.model)
+      } catch (error) {
+        this.#emit("session.error", sessionID, { message: error.message })
+      }
+    }
+    this.#startTurn(sessionID, next.text, true)
+  }
+
+  /** Cancelling drops anything still queued, including the messages recorded for it. */
   abort(sessionID) {
+    const queue = this.#queues.get(sessionID)
+    if (queue?.length) {
+      const discarded = new Set(queue.map((entry) => entry.messageID))
+      this.#queues.delete(sessionID)
+      const messages = this.#messages.get(sessionID)
+      if (messages) {
+        this.#messages.set(sessionID, messages.filter((message) => !discarded.has(message.info.id)))
+      }
+      this.#emit("message.updated", sessionID)
+    }
     this.#acp.notify("session/cancel", { sessionId: sessionID })
     this.#emit("session.updated", sessionID)
   }
 
   status(sessionID) {
-    return { type: this.#active.has(sessionID) ? "busy" : "idle" }
+    return { type: this.#isBusy(sessionID) ? "busy" : "idle" }
+  }
+
+  /** A queued prompt is still outstanding work, so the session must not read as idle between turns. */
+  #isBusy(sessionID) {
+    return this.#active.has(sessionID) || Boolean(this.#queues.get(sessionID)?.length)
   }
 
   async #load(sessionID, force = false) {
@@ -193,6 +244,7 @@ export class OmpService {
     })
     this.#promptAcknowledgements.set(sessionID, { text, received: "" })
     this.#emit("message.updated", sessionID)
+    return messageID
   }
 
   /** OMP session listings carry no title, so keep the creation title or derive one from the first prompt. */

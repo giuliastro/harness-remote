@@ -129,4 +129,9 @@ assert.ok(
   'the app should only exit from the session list'
 )
 
+// A follow-up prompt can be queued while the agent is still working.
+assert.ok(app.includes('const showStopAction = isWorking && !composer.trim()'), 'stop should be offered only when there is nothing to send')
+assert.equal(app.includes('disabled={!selectedSession || isWorking}'), false, 'the composer must stay usable while the agent works')
+assert.ok(app.includes('onClick={showStopAction ? abortSession : send}'), 'the action button should send a queued follow-up instead of only stopping')
+
 console.log('ui regression tests passed')

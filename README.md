@@ -136,6 +136,9 @@ Expected response:
 
 OMP sessions expose their configured model when ACP provides it, and model changes apply to subsequent prompts. Agent selection, persistent session rename/delete, server slash commands, and VCS/diff are intentionally unavailable.
 
+A prompt sent while the agent is still working is queued rather than refused: it appears in the conversation
+straight away and runs when the current turn ends. Stopping the session discards anything still queued.
+
 Session titles come from the title you give a session in the app, otherwise from its first prompt; sessions created outside the app are listed as `OMP session <id>`, because OMP session listings carry no title.
 
 #### What `--root` does and does not restrict

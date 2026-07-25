@@ -200,6 +200,64 @@ class RealisticOmpAcp extends EventEmitter {
   notify() {}
 }
 
+/** Holds each turn open so a second prompt arrives while the first is still running. */
+class HeldTurnOmpAcp extends EventEmitter {
+  agentInfo = { version: "17.1.3" }
+  prompts = []
+  models = []
+  #releases = []
+  #started = []
+
+  async start() {}
+
+  async listSessions() {
+    return [{ sessionId: "session-1", cwd: process.cwd(), updatedAt: "2026-07-25T00:00:00.000Z" }]
+  }
+
+  async request(method, params) {
+    if (method === "session/prompt") {
+      this.prompts.push(params.prompt[0].text)
+      this.#started.shift()?.()
+      await new Promise((resolve) => this.#releases.push(resolve))
+      this.emit("notification", {
+        method: "session/update",
+        params: {
+          sessionId: params.sessionId,
+          update: {
+            sessionUpdate: "agent_message_chunk",
+            messageId: `a${this.prompts.length}`,
+            content: { type: "text", text: `reply to ${params.prompt[0].text}` }
+          }
+        }
+      })
+      return { stopReason: "end_turn" }
+    }
+    if (method === "session/set_config_option") {
+      this.models.push(params.value)
+      return {}
+    }
+    if (method === "session/load") {
+      return {
+        configOptions: [{
+          id: "model",
+          currentValue: "omp/first",
+          options: [{ value: "omp/first", name: "First" }, { value: "omp/second", name: "Second" }]
+        }]
+      }
+    }
+    return {}
+  }
+
+  /** Resolves once the next turn has actually reached the agent. */
+  turnStarted() {
+    return new Promise((resolve) => this.#started.push(resolve))
+  }
+
+  releaseTurn() {
+    this.#releases.shift()?.()
+  }
+}
+
 async function startServer({ acp = new FakeAcp(), ...options } = {}) {
   const server = createBridgeServer({
     acp,
@@ -246,6 +304,83 @@ async function waitForIdle(baseURL, sessionID) {
   }
   throw new Error("the session never returned to idle")
 }
+
+test("queues a prompt sent while the agent is still working", async () => {
+  const acp = new HeldTurnOmpAcp()
+  const bridge = await startServer({ acp })
+  const sendPrompt = (text, model) => fetch(`${bridge.baseURL}/session/session-1/prompt_async`, {
+    method: "POST",
+    headers: jsonHeaders(),
+    body: JSON.stringify({ parts: [{ type: "text", text }], model })
+  })
+  try {
+    const firstStarted = acp.turnStarted()
+    assert.equal((await sendPrompt("first")).status, 200)
+    await firstStarted
+
+    // Previously this returned 400 "The OMP session is already running".
+    assert.equal((await sendPrompt("second", { providerID: "omp", modelID: "second" })).status, 200)
+    assert.deepEqual(acp.prompts, ["first"], "the queued prompt must not reach the agent yet")
+    assert.deepEqual(acp.models, [], "a queued model change must not affect the running turn")
+
+    assert.deepEqual(conversation(await readJSON(bridge.baseURL, "/session/session-1/message")), [
+      "user: first",
+      "user: second"
+    ], "a queued prompt is visible while it waits")
+    const statuses = await readJSON(bridge.baseURL, "/session/status")
+    assert.equal(statuses["session-1"].type, "busy")
+
+    const secondStarted = acp.turnStarted()
+    acp.releaseTurn()
+    await secondStarted
+    assert.deepEqual(acp.prompts, ["first", "second"], "the queued prompt runs once the turn ends")
+    assert.deepEqual(acp.models, ["omp/second"], "its model is applied on dequeue")
+
+    acp.releaseTurn()
+    await waitForIdle(bridge.baseURL, "session-1")
+    // Showing a queued prompt the moment it is sent means both user messages precede the
+    // first reply, the way any chat looks when two messages are fired off in a row.
+    // Reopening the session replays OMP's own history, which is strictly interleaved.
+    assert.deepEqual(conversation(await readJSON(bridge.baseURL, "/session/session-1/message")), [
+      "user: first",
+      "user: second",
+      "assistant: reply to first",
+      "assistant: reply to second"
+    ])
+  } finally {
+    acp.releaseTurn()
+    acp.releaseTurn()
+    await bridge.close()
+  }
+})
+
+test("discards queued prompts when the session is aborted", async () => {
+  const acp = new HeldTurnOmpAcp()
+  const bridge = await startServer({ acp })
+  const sendPrompt = (text) => fetch(`${bridge.baseURL}/session/session-1/prompt_async`, {
+    method: "POST",
+    headers: jsonHeaders(),
+    body: JSON.stringify({ parts: [{ type: "text", text }] })
+  })
+  try {
+    const started = acp.turnStarted()
+    await sendPrompt("running")
+    await started
+    await sendPrompt("queued")
+
+    await fetch(`${bridge.baseURL}/session/session-1/abort`, { method: "POST", headers: authHeaders() })
+    assert.deepEqual(conversation(await readJSON(bridge.baseURL, "/session/session-1/message")), [
+      "user: running"
+    ], "a cancelled queue must not leave a message that was never sent")
+
+    acp.releaseTurn()
+    await waitForIdle(bridge.baseURL, "session-1")
+    assert.deepEqual(acp.prompts, ["running"], "a cancelled prompt must never reach the agent")
+  } finally {
+    acp.releaseTurn()
+    await bridge.close()
+  }
+})
 
 test("keeps the submitted prompt in history when the session is reopened", async () => {
   const bridge = await startServer({ acp: new RealisticOmpAcp() })

@@ -426,6 +426,7 @@ function App() {
   const isSessionRunning = Boolean(selectedSession && ["busy", "retry"].includes(selectedSession.status))
   const isWaitingForOpenCodeReply = awaitingAssistantReply || busySending || isSessionRunning
   const isWorking = isWaitingForOpenCodeReply
+  const showStopAction = isWorking && !composer.trim()
   const showTypingBubble = Boolean(selectedSession) && isWaitingForOpenCodeReply
   const activeSessions = sessions.filter((session) => ["busy", "retry"].includes(session.status)).length
   const changedSessions = sessions.filter(
@@ -1815,19 +1816,19 @@ function App() {
               onKeyDown={(event) => {
                 if (event.key === "Enter" && !event.shiftKey) {
                   event.preventDefault()
-                  if (!isWorking) {
-                    send().catch(() => undefined)
-                  }
+                  send().catch(() => undefined)
                 }
               }}
-              disabled={!selectedSession || isWorking}
-            />
-            <button 
-              onClick={isWorking ? abortSession : send}
               disabled={!selectedSession}
-              className={isWorking ? "btn-danger" : "btn-primary"}
+            />
+            {/* While the agent works the same button stops it, but starts sending again as
+                soon as there is something to send, so a follow-up can be queued. */}
+            <button
+              onClick={showStopAction ? abortSession : send}
+              disabled={!selectedSession}
+              className={showStopAction ? "btn-danger" : "btn-primary"}
             >
-              {isWorking ? (
+              {showStopAction ? (
                 <>
                   <StopCircleIcon size={18} />
                   {t('detail.waiting')}
