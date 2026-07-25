@@ -1,4 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react"
+import { App as CapacitorApp } from "@capacitor/app"
+import type { PluginListenerHandle } from "@capacitor/core"
 import ReactMarkdown from "react-markdown"
 import remarkGfm from "remark-gfm"
 import { api, isValidServerConfig } from "./api"
@@ -983,6 +985,45 @@ function App() {
   useEffect(() => {
     localStorage.setItem(LANGUAGE_STORAGE_KEY, language)
   }, [language])
+
+  // Android back: dismiss whatever is on top, then fall back to the session list,
+  // and only leave the app from there. Reads state through a ref because the
+  // handler is registered once and must not capture a stale view.
+  const backStateRef = useRef({ view, activeDetailSheet, sessionToDelete, renamingSessionID })
+  backStateRef.current = { view, activeDetailSheet, sessionToDelete, renamingSessionID }
+
+  useEffect(() => {
+    let handle: PluginListenerHandle | undefined
+    let removed = false
+    void CapacitorApp.addListener("backButton", () => {
+      const state = backStateRef.current
+      if (state.sessionToDelete) {
+        setSessionToDelete(null)
+        return
+      }
+      if (state.renamingSessionID) {
+        setRenamingSessionID(null)
+        return
+      }
+      if (state.activeDetailSheet) {
+        setActiveDetailSheet(null)
+        return
+      }
+      if (state.view !== "sessions") {
+        setView("sessions")
+        return
+      }
+      CapacitorApp.exitApp()
+    }).then((registered) => {
+      // The effect can be torn down before registration resolves.
+      if (removed) void registered.remove()
+      else handle = registered
+    })
+    return () => {
+      removed = true
+      void handle?.remove()
+    }
+  }, [])
 
   useEffect(() => {
     const mediaQuery = window.matchMedia("(prefers-color-scheme: dark)")
