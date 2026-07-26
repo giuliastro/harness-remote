@@ -1,6 +1,9 @@
 #!/usr/bin/env node
-import { AcpClient } from "./acp-client.js"
+import path from "node:path"
+import { AcpHarnessDriver } from "./acp-harness-driver.js"
+import { AcpTransport } from "./acp-transport.js"
 import { parseConfig, usage } from "./config.js"
+import { harnessProfile } from "./harness-profiles.js"
 import { createBridgeServer } from "./server.js"
 
 let config
@@ -17,28 +20,44 @@ if (config?.help) {
 }
 
 if (config) {
-  const acp = new AcpClient({ ompBin: config.ompBin })
-  const server = createBridgeServer({ config, acp })
+  const profile = harnessProfile(config.harness)
+  const acp = new AcpTransport({
+    process: profile.process(config),
+    auth: profile.auth,
+    permissionMode: profile.permissionMode
+  })
+  const driver = new AcpHarnessDriver(acp, {
+    versionProcess: profile.versionProcess(config),
+    snapshotDirectory: path.join(config.stateDirectory, profile.id),
+    historyLoader: profile.historyLoader
+  })
+  const server = createBridgeServer({ config, driver, capabilities: profile.capabilities })
   let shuttingDown = false
 
-  acp.on("stderr", (line) => process.stderr.write(`[omp] ${line}`))
+  acp.on("stderr", (line) => process.stderr.write(`[${profile.id}] ${line}`))
   acp.on("agent-request", (message) => {
-    process.stderr.write(`[omp] declined unsupported agent request: ${message.method}\n`)
+    if (message.method !== "session/request_permission") {
+      process.stderr.write(`[${profile.id}] declined unsupported agent request: ${message.method}\n`)
+    }
   })
   acp.on("exit", (error) => {
-    if (!shuttingDown) process.stderr.write(`[omp] ${error.message}\n`)
+    if (!shuttingDown) process.stderr.write(`[${profile.id}] ${error.message}\n`)
   })
 
   server.listen(config.port, config.host, () => {
-    process.stdout.write(`OMP bridge listening on http://${config.host}:${config.port}\n`)
+    process.stdout.write(`${profile.label} bridge listening on http://${config.host}:${config.port}\n`)
   })
 
-  const shutdown = () => {
+  const shutdown = async () => {
     if (shuttingDown) return
     shuttingDown = true
+    server.close()
     acp.close()
-    server.close(() => process.exit(0))
-    setTimeout(() => process.exit(1), 5_000).unref()
+    const forcedExit = setTimeout(() => process.exit(1), 5_000)
+    forcedExit.unref()
+    await driver.flushSnapshots()
+    clearTimeout(forcedExit)
+    process.exit(0)
   }
   process.on("SIGINT", shutdown)
   process.on("SIGTERM", shutdown)

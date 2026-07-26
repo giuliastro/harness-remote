@@ -2,19 +2,6 @@ import http from "node:http"
 import { timingSafeEqual } from "node:crypto"
 import { readdir, realpath } from "node:fs/promises"
 import path from "node:path"
-import { OmpService } from "./omp-service.js"
-
-const CAPABILITIES = {
-  sessions: true,
-  prompt: true,
-  abort: true,
-  streaming: true,
-  models: false,
-  agents: false,
-  todos: true,
-  diff: false,
-  filesystemBrowser: false
-}
 
 function writeJSON(response, status, body) {
   response.writeHead(status, { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store" })
@@ -95,8 +82,7 @@ function providersResponse(models) {
   return { providers: [...providers.values()], default: defaults }
 }
 
-export function createBridgeServer({ config, acp }) {
-  const omp = new OmpService(acp)
+export function createBridgeServer({ config, driver, capabilities }) {
   return http.createServer(async (request, response) => {
     applyCorsHeaders(request, response, config)
     // Browsers omit credentials on the preflight, so it must be answered before auth.
@@ -106,7 +92,7 @@ export function createBridgeServer({ config, acp }) {
       return
     }
     if (!matchesCredentials(request, config)) {
-      response.writeHead(401, { "WWW-Authenticate": 'Basic realm="OMP Bridge"' })
+      response.writeHead(401, { "WWW-Authenticate": 'Basic realm="Harness Remote"' })
       response.end()
       return
     }
@@ -118,12 +104,16 @@ export function createBridgeServer({ config, acp }) {
     }
     try {
       if (request.method === "GET" && (url.pathname === "/v1/health" || url.pathname === "/global/health")) {
-        await acp.start()
-        writeJSON(response, 200, { healthy: true, backend: "omp", version: acp.agentInfo?.version ?? "unknown" })
+        const health = await driver.health()
+        writeJSON(response, 200, {
+          healthy: true,
+          backend: config.harness,
+          version: health.version
+        })
         return
       }
       if (request.method === "GET" && url.pathname === "/v1/capabilities") {
-        writeJSON(response, 200, CAPABILITIES)
+        writeJSON(response, 200, capabilities)
         return
       }
       if (request.method === "GET" && (url.pathname === "/v1/events" || url.pathname === "/global/event")) {
@@ -133,7 +123,7 @@ export function createBridgeServer({ config, acp }) {
           Connection: "keep-alive"
         })
         response.write(": connected\n\n")
-        const unsubscribe = omp.subscribe((event) => writeSSE(response, event.type, event))
+        const unsubscribe = driver.subscribe((event) => writeSSE(response, event.type, event))
         // Clients treat a long silence as a dead connection, because a TCP stream can die
         // without ever delivering an error. OpenCode beats every 10s; without matching it an
         // idle OMP session looks broken and the client reconnects on a loop.
@@ -146,11 +136,11 @@ export function createBridgeServer({ config, acp }) {
         return
       }
       if (request.method === "GET" && (url.pathname === "/v1/sessions" || url.pathname === "/session" || url.pathname === "/experimental/session")) {
-        writeJSON(response, 200, await omp.listSessions(directory))
+        writeJSON(response, 200, await driver.listSessions(directory))
         return
       }
       if (request.method === "GET" && url.pathname === "/session/status") {
-        const statuses = Object.fromEntries((await omp.listSessions(directory)).map((session) => [session.id, omp.status(session.id)]))
+        const statuses = Object.fromEntries((await driver.listSessions(directory)).map((session) => [session.id, driver.status(session.id)]))
         writeJSON(response, 200, statuses)
         return
       }
@@ -174,7 +164,7 @@ export function createBridgeServer({ config, acp }) {
       if (request.method === "POST" && url.pathname === "/session") {
         const body = await readBody(request)
         const selected = await allowedDirectory(directory ?? config.roots[0] ?? process.cwd(), config)
-        const created = await omp.createSession({ directory: selected, title: body.title, model: ompModelWireName(body.model) })
+        const created = await driver.createSession({ directory: selected, title: body.title, model: ompModelWireName(body.model) })
         writeJSON(response, 200, created)
         return
       }
@@ -183,11 +173,11 @@ export function createBridgeServer({ config, acp }) {
       if (sessionMatch) {
         const [, sessionID, operation] = sessionMatch
         if (request.method === "GET" && operation === "message") {
-          writeJSON(response, 200, await omp.messages(sessionID, url.searchParams.get("refresh") === "1"))
+          writeJSON(response, 200, await driver.messages(sessionID, url.searchParams.get("refresh") === "1"))
           return
         }
         if (request.method === "GET" && operation === "todo") {
-          writeJSON(response, 200, await omp.todos(sessionID))
+          writeJSON(response, 200, await driver.todos(sessionID))
           return
         }
         if (request.method === "GET" && operation === "diff") {
@@ -198,12 +188,12 @@ export function createBridgeServer({ config, acp }) {
           const body = await readBody(request)
           const text = body.parts?.find((part) => part.type === "text")?.text
           if (!text) throw new Error("A text prompt is required")
-          await omp.prompt(sessionID, text, ompModelWireName(body.model))
+          await driver.prompt(sessionID, text, ompModelWireName(body.model))
           writeJSON(response, 200, true)
           return
         }
         if (request.method === "POST" && operation === "abort") {
-          omp.abort(sessionID)
+          driver.abort(sessionID)
           writeJSON(response, 200, true)
           return
         }
@@ -222,7 +212,7 @@ export function createBridgeServer({ config, acp }) {
           writeJSON(response, 200, { providers: [], default: {} })
           return
         }
-        writeJSON(response, 200, providersResponse(await omp.models(sessionID)))
+        writeJSON(response, 200, providersResponse(await driver.models(sessionID)))
         return
       }
       writeJSON(response, 404, { error: "Not found" })

@@ -4,8 +4,10 @@ import { EventEmitter } from "node:events"
 const START_TIMEOUT_MS = 10_000
 const REQUEST_TIMEOUT_MS = 30_000
 
-export class AcpClient extends EventEmitter {
-  #ompBin
+export class AcpTransport extends EventEmitter {
+  #process
+  #auth
+  #permissionMode
   #spawn
   #child
   #buffer = ""
@@ -14,9 +16,12 @@ export class AcpClient extends EventEmitter {
   #starting
   #agentInfo
 
-  constructor({ ompBin = "omp", spawnProcess = spawn } = {}) {
+  constructor({ process, auth = { mode: "skip" }, permissionMode = "deny", spawnProcess = spawn } = {}) {
     super()
-    this.#ompBin = ompBin
+    if (!process?.command) throw new Error("ACP process command is required")
+    this.#process = process
+    this.#auth = auth
+    this.#permissionMode = permissionMode
     this.#spawn = spawnProcess
   }
 
@@ -37,9 +42,10 @@ export class AcpClient extends EventEmitter {
   }
 
   async #start() {
-    const child = this.#spawn(this.#ompBin, ["acp"], {
+    const child = this.#spawn(this.#process.command, this.#process.args ?? [], {
       stdio: ["pipe", "pipe", "pipe"],
-      windowsHide: true
+      windowsHide: true,
+      env: this.#process.env ? { ...process.env, ...this.#process.env } : process.env
     })
     this.#child = child
     child.stdout.setEncoding("utf8")
@@ -48,19 +54,21 @@ export class AcpClient extends EventEmitter {
     child.stderr.on("data", (chunk) => this.emit("stderr", chunk))
     child.on("error", (error) => this.#handleExit(error))
     child.on("exit", (code, signal) => {
-      this.#handleExit(new Error(`OMP ACP exited (${code ?? "unknown"}${signal ? `, ${signal}` : ""})`))
+      this.#handleExit(new Error(`ACP process exited (${code ?? "unknown"}${signal ? `, ${signal}` : ""})`))
     })
 
     try {
       const initialized = await this.request("initialize", {
         protocolVersion: 1,
         clientCapabilities: {},
-        clientInfo: { name: "harness-remote-omp", version: "0.1.7" }
+        clientInfo: { name: "harness-remote", version: "0.1.7" }
       }, START_TIMEOUT_MS)
       this.#agentInfo = initialized.agentInfo
-      const authMethod = initialized.authMethods?.find((method) => method.id === "agent")
-      if (!authMethod) throw new Error("OMP ACP does not offer local agent authentication")
-      await this.request("authenticate", { methodId: authMethod.id }, START_TIMEOUT_MS)
+      if (this.#auth.mode === "required") {
+        const authMethod = initialized.authMethods?.find((method) => method.id === this.#auth.methodID)
+        if (!authMethod) throw new Error(`ACP agent does not offer required authentication: ${this.#auth.methodID}`)
+        await this.request("authenticate", { methodId: authMethod.id }, START_TIMEOUT_MS)
+      }
     } catch (error) {
       this.close()
       throw error
@@ -69,14 +77,14 @@ export class AcpClient extends EventEmitter {
 
   request(method, params, timeoutMs = REQUEST_TIMEOUT_MS) {
     if (!this.#child || this.#child.killed || !this.#child.stdin.writable) {
-      return Promise.reject(new Error("OMP ACP is not running"))
+      return Promise.reject(new Error("ACP process is not running"))
     }
     const id = this.#nextID++
     const message = JSON.stringify({ jsonrpc: "2.0", id, method, params })
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => {
         this.#pending.delete(id)
-        reject(new Error(`OMP ACP request timed out: ${method}`))
+        reject(new Error(`ACP request timed out: ${method}`))
       }, timeoutMs)
       this.#pending.set(id, { resolve, reject, timer })
       this.#child.stdin.write(`${message}\n`, (error) => {
@@ -91,7 +99,7 @@ export class AcpClient extends EventEmitter {
   }
   notify(method, params) {
     if (!this.#child || this.#child.killed || !this.#child.stdin.writable) {
-      throw new Error("OMP ACP is not running")
+      throw new Error("ACP process is not running")
     }
     this.#child.stdin.write(`${JSON.stringify({ jsonrpc: "2.0", method, params })}\n`)
   }
@@ -108,7 +116,7 @@ export class AcpClient extends EventEmitter {
     const child = this.#child
     this.#child = undefined
     if (child && !child.killed) child.kill()
-    this.#rejectPending(new Error("OMP ACP closed"))
+    this.#rejectPending(new Error("ACP process closed"))
   }
 
   #consume(chunk) {
@@ -127,15 +135,17 @@ export class AcpClient extends EventEmitter {
     try {
       message = JSON.parse(line)
     } catch {
-      this.emit("protocol-error", new Error("OMP ACP emitted invalid JSON"))
+      this.emit("protocol-error", new Error("ACP process emitted invalid JSON"))
       return
     }
-    // A JSON-RPC message carrying both an id and a method is an agent-initiated
-    // request. OMP does not send any today, but an unanswered one would stall the
-    // agent until the prompt timeout, so always reply.
+    // Agent-initiated requests must always receive a response or the agent stalls.
     if (message.id !== undefined && message.method) {
       this.emit("agent-request", message)
-      this.#respondUnsupported(message.id, message.method)
+      if (message.method === "session/request_permission") {
+        this.#respondPermission(message.id, message.params)
+      } else {
+        this.#respondUnsupported(message.id, message.method)
+      }
       return
     }
     if (message.id !== undefined) {
@@ -143,11 +153,25 @@ export class AcpClient extends EventEmitter {
       if (!pending) return
       clearTimeout(pending.timer)
       this.#pending.delete(message.id)
-      if (message.error) pending.reject(new Error(message.error.message ?? "OMP ACP request failed"))
+      if (message.error) pending.reject(new Error(message.error.message ?? "ACP request failed"))
       else pending.resolve(message.result)
       return
     }
     if (message.method) this.emit("notification", message)
+  }
+
+  #respondPermission(id, params) {
+    if (!this.#child?.stdin.writable) return
+    const options = Array.isArray(params?.options) ? params.options : []
+    const allowed = this.#permissionMode === "allow"
+      ? options.find((option) => option.kind === "allow_once")
+        ?? options.find((option) => option.kind === "allow_always")
+        ?? options.find((option) => typeof option.kind === "string" && option.kind.startsWith("allow"))
+      : undefined
+    const outcome = allowed?.optionId
+      ? { outcome: "selected", optionId: allowed.optionId }
+      : { outcome: "cancelled" }
+    this.#child.stdin.write(`${JSON.stringify({ jsonrpc: "2.0", id, result: { outcome } })}\n`)
   }
 
   #respondUnsupported(id, method) {
