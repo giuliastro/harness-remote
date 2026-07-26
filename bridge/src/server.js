@@ -30,7 +30,10 @@ function applyCorsHeaders(request, response, config) {
   response.setHeader("Access-Control-Allow-Origin", origin)
   response.setHeader("Access-Control-Allow-Credentials", "true")
   response.setHeader("Access-Control-Allow-Headers", "authorization, content-type")
-  response.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+  // Rename is a PATCH and deleting a session is a DELETE. Leaving them out of the preflight
+  // answer made both fail in a browser with a bare network error, while the preflight itself
+  // still returned 204.
+  response.setHeader("Access-Control-Allow-Methods", "GET, POST, PATCH, DELETE, OPTIONS")
 }
 
 function matchesCredentials(request, config) {

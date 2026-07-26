@@ -142,13 +142,9 @@ for (const capability of ['agents', 'models', 'todos', 'diff', 'questions', 'ses
 assert.ok(app.includes('const showStopAction = isWorking && !composer.trim()'), 'stop should be offered only when there is nothing to send')
 assert.equal(app.includes('disabled={!selectedSession || isWorking}'), false, 'the composer must stay usable while the agent works')
 assert.ok(app.includes("authoritativeExternalHistory || assistantPayloadLength(current) <= assistantPayloadLength(msg)"), "external OMP history must replace stale cached ordering even when the corrected payload is shorter")
-// The marker moved from below the messages, where the sticky composer cut it in half, into the
-// header. What matters is that an external session is still marked and still explained, not where.
-assert.ok(app.includes("selectedSession.external && ("), "a session from another client must be marked as such")
-assert.ok(
-  app.includes("t('detail.externalSession')") && !app.includes("externalShort"),
-  "the marker must read as a sentence, not a one-word tag that needs a tooltip touch cannot show"
-)
+// Whether a session was started here or by another client changes nothing the user can act on,
+// so it is no longer surfaced. The `external` flag still drives how history is loaded.
+assert.equal(app.includes("detail.externalSession"), false, 'an unactionable distinction should not be shown')
 assert.equal(app.includes("disabled={!selectedSession || selectedSession.external}"), false, "external sessions must remain writable")
 assert.ok(app.includes('onClick={showStopAction ? abortSession : send}'), 'the action button should send a queued follow-up instead of only stopping')
 
@@ -230,5 +226,30 @@ assert.ok(
 assert.ok(app.includes("t('sessions.retry')"), 'an offline state should offer a way out')
 assert.ok(app.includes('disabled={creatingSession || isOffline}'), 'an action that cannot succeed offline must not be offered')
 assert.ok(styles.includes('.empty-state-actions'), 'the offline actions should be styled')
+
+// The session screen opened with the status pill on one line, a decorative icon on the next and
+// the title on a third: 227px of chrome above 251px of conversation. Back, title and status
+// belong on one row.
+assert.equal(app.includes('detail-topbar'), false, 'back and status must not occupy a row of their own')
+assert.equal(styles.includes('.detail-topbar'), false, 'the stacked topbar rules should go with it')
+assert.equal(app.includes('<ChatIcon size={24} className="icon-inline-heading" />'), false, 'the session heading should not spend a line on decoration')
+const headlineBlock = app.slice(app.indexOf('className="detail-headline"'), app.indexOf('session-context-strip'))
+assert.ok(headlineBlock.includes('pill ${selectedSession.status}'), 'the status pill belongs on the headline row')
+assert.ok(headlineBlock.includes('session-title-button') && headlineBlock.includes('detail-back'), 'back and title belong on the headline row too')
+
+// Renaming nested inside the title left the field 214px wide and stranded Cancel alone on a
+// second line, so the form replaces the row rather than living inside it.
+assert.ok(headlineBlock.includes('isRenamingSelected ? ('), 'renaming should be a branch of the headline row')
+const headingBlock = headlineBlock.slice(headlineBlock.indexOf('<h2>'), headlineBlock.indexOf('</h2>'))
+assert.ok(headingBlock, 'the headline should still carry the session title')
+assert.equal(headingBlock.includes('rename-input'), false, 'the rename field must not be nested inside the title')
+assert.match(styles, /\.rename-inline \.rename-input \{[\s\S]*?flex: 1 1 100%/, 'the rename field should own its line so the buttons stay together')
+
+// A flex item will not shrink below its content unless told to, so a long title used to widen the
+// row past its parent and slide out to the right instead of ellipsising.
+assert.match(styles, /\.detail-title-row \{[\s\S]*?min-width: 0/, 'a long title must be allowed to truncate')
+
+// One chip stretched to full width reads as an empty banner; several must still share the row.
+assert.match(styles, /\.context-chip:only-child \{[\s\S]*?flex: 0 1 auto/, 'a lone context chip should take only the width it needs')
 
 console.log('ui regression tests passed')

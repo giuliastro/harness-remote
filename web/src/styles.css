@@ -581,23 +581,6 @@ p {
   flex-direction: column;
 }
 
-.detail-topbar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-3);
-  margin-bottom: var(--space-3);
-}
-
-.detail-header {
-  margin-bottom: var(--space-3);
-}
-
-.detail-header h2 {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-}
 
 .icon-inline-heading {
   flex: 0 0 auto;
@@ -617,8 +600,7 @@ p {
   display: flex;
   gap: var(--space-2);
   overflow-x: auto;
-  padding: 0 0 var(--space-3);
-  margin-bottom: var(--space-2);
+  padding: 0 0 var(--space-2);
   scrollbar-width: none;
 }
 
@@ -629,7 +611,9 @@ p {
 .context-chip {
   flex: 1 1 0;
   min-width: 118px;
-  min-height: 58px;
+  /* 46px keeps the chip a comfortable tap target without spending a sixth of the
+     conversation's vertical space on two words. */
+  min-height: 46px;
   display: flex;
   flex-direction: column;
   align-items: flex-start;
@@ -639,7 +623,7 @@ p {
   border-radius: var(--radius-lg);
   background: var(--surface-subtle);
   color: var(--text);
-  padding: var(--space-2) var(--space-3);
+  padding: var(--space-1) var(--space-3);
   text-align: left;
 }
 
@@ -661,6 +645,14 @@ p {
 
 .context-chip.ghost {
   background: var(--surface);
+}
+
+/* Chips share the row when there are several, so their values truncate instead of
+   scrolling the strip. A lone chip has nothing to share with and reads as an empty
+   banner when stretched, so it takes only the width it needs. */
+.session-context-strip .context-chip:only-child {
+  flex: 0 1 auto;
+  max-width: 100%;
 }
 
 .project-dashboard {
@@ -1680,14 +1672,6 @@ button.compact {
     min-height: calc(100dvh - 158px);
   }
 
-  .detail-topbar {
-    align-items: stretch;
-    flex-direction: column;
-  }
-
-  .detail-topbar .pill {
-    align-self: flex-start;
-  }
 
   .messages {
     min-height: 240px;
@@ -1794,10 +1778,14 @@ button.compact {
   box-shadow: 0 0 0 2px var(--primary-soft);
 }
 
+/* A flex item defaults to min-width: auto, which refuses to shrink below its content — so a long
+   title pushed this row past its parent and out to the right instead of ellipsising. */
 .detail-title-row {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
+  min-width: 0;
+  max-width: 100%;
 }
 
 .detail-title-row .rename-input {
@@ -1987,19 +1975,6 @@ button.compact {
   font-size: 0.82rem;
 }
 
-/* A word needing a tooltip is not a label. The note stands on its own, and gives way to the
-   path when there is no room for both. */
-.detail-subline-note {
-  flex: 0 1 auto;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  border-left: 1px solid var(--border);
-  padding-left: var(--space-2);
-  color: var(--muted);
-  font-size: 0.78rem;
-}
-
 /* Rename was a 14px pencil in a 37x44 button placed with an inline style, and an editor with two
    unlabelled glyphs. The title carries the action now, so the target is the width of the title. */
 .session-title-button {
@@ -2044,12 +2019,16 @@ button.compact {
 
 .rename-inline {
   flex-wrap: wrap;
+  justify-content: flex-end;
   gap: var(--space-2);
   width: 100%;
 }
 
+/* A labelled Save plus Cancel plus a usable input do not fit 375px on one line. Rather than
+   let the wrap fall where it may — which stranded Cancel alone on a second line — the field
+   takes the first line and both buttons sit together on the second. */
 .rename-inline .rename-input {
-  flex: 1 1 10rem;
+  flex: 1 1 100%;
 }
 
 .rename-save {
@@ -2059,4 +2038,31 @@ button.compact {
 /* An icon-only button still needs a thumb-sized box, not just a thumb-sized height. */
 button.btn-icon.compact {
   min-width: 44px;
+}
+
+/* Back, title and status were three stacked blocks: 155px of chrome above a 251px conversation.
+   One row now carries all three, with the path on a second line under the title. */
+.detail-headline {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+  margin-bottom: var(--space-3);
+}
+
+.detail-headline-main {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.detail-headline-main h2 {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  font-size: 1.05rem;
+}
+
+.detail-headline .pill,
+.detail-back {
+  flex: 0 0 auto;
 }

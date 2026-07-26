@@ -31,6 +31,7 @@ import {
   LoadingIcon,
   RefreshIcon,
   OfflineIcon,
+  ChevronLeftIcon,
   PencilIcon,
   CloseIcon
 } from "./Icons"
@@ -1502,6 +1503,7 @@ function App() {
     () => sessions.find((session) => session.id === selectedID) ?? null,
     [sessions, selectedID]
   )
+  const isRenamingSelected = Boolean(selectedSession && renamingSessionID === selectedSession.id)
   const projectPath = projectDashboard?.project
     ? pickString(projectDashboard.project.path) || pickString(projectDashboard.project.directory) || pickString(projectDashboard.project.root)
     : null
@@ -2987,67 +2989,73 @@ function App() {
 
       {view === "detail" && (
         <main className="panel detail fade-in">
-          <div className="detail-topbar">
-            <button className="btn-secondary" onClick={() => {
-              setView("sessions");
-              requestAnimationFrame(() => document.querySelector<HTMLElement>(".session-card.active")?.scrollIntoView({ block: "center" }));
-            }}>{t('detail.backToSessions')}</button>
-            {selectedSession && (
-              <span className={`pill ${selectedSession.status}`}>{selectedSession.status}</span>
-            )}
-          </div>
-          <div className="header-row detail-header">
-              <div>
-              <h2>
-                {selectedSession ? (
-                  <div className="detail-title-row">
-                    <ChatIcon size={24} className="icon-inline-heading" />
-                    {renamingSessionID === selectedSession.id ? (
-                      <div className="rename-inline">
-                        <input
-                          ref={renameInputRef}
-                          value={renameValue}
-                          onChange={(event) => setRenameValue(event.target.value)}
-                          onKeyDown={(event) => {
-                            if (event.key === "Enter") {
-                              event.preventDefault()
-                              renameSession(selectedSession.id, renameValue, selectedSession.directory).catch(() => undefined)
-                            } else if (event.key === "Escape") {
-                              cancelRename()
-                            }
-                          }}
-                          onBlur={() => {
-                            if (renameValue === selectedSession.title || !renameValue.trim()) {
-                              cancelRename()
-                            }
-                          }}
-                          placeholder={t('session.renamePlaceholder')}
-                          className="rename-input"
-                          autoComplete="off"
-                        />
-                        {/* Two unlabelled 14px glyphs asked the user to guess which one commits.
-                            One labelled primary action, and cancel as the quieter icon. */}
-                        <button
-                          className="btn-primary compact rename-save"
-                          onClick={() => renameSession(selectedSession.id, renameValue, selectedSession.directory).catch(() => undefined)}
-                          onMouseDown={(event) => event.preventDefault()}
-                          disabled={!renameValue.trim() || renameValue === selectedSession.title}
-                        >
-                          <SaveIcon size={16} />
-                          {t('session.renameConfirm')}
-                        </button>
-                        <button
-                          className="btn-icon btn-secondary compact"
-                          onClick={() => cancelRename()}
-                          onMouseDown={(event) => event.preventDefault()}
-                          title={t('session.cancel')}
-                          aria-label={t('session.cancel')}
-                        >
-                          <CloseIcon size={18} />
-                        </button>
-                      </div>
-                    ) : (
-                      <>
+          {/* Back, title and status used to be three stacked blocks costing 155px of chrome above
+              a 251px conversation. One row carries all three; the path keeps the second line. */}
+          <div className="detail-headline">
+            {selectedSession && isRenamingSelected ? (
+              /* Renaming takes over the row. Sharing it with the back button and the status pill
+                 left the field 214px wide and pushed its own buttons onto a second line. */
+              <div className="rename-inline">
+                <input
+                  ref={renameInputRef}
+                  value={renameValue}
+                  onChange={(event) => setRenameValue(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") {
+                      event.preventDefault()
+                      renameSession(selectedSession.id, renameValue, selectedSession.directory).catch(() => undefined)
+                    } else if (event.key === "Escape") {
+                      cancelRename()
+                    }
+                  }}
+                  onBlur={() => {
+                    if (renameValue === selectedSession.title || !renameValue.trim()) {
+                      cancelRename()
+                    }
+                  }}
+                  placeholder={t('session.renamePlaceholder')}
+                  className="rename-input"
+                  autoComplete="off"
+                />
+                {/* Two unlabelled 14px glyphs asked the user to guess which one commits.
+                    One labelled primary action, and cancel as the quieter icon. */}
+                <button
+                  className="btn-primary compact rename-save"
+                  onClick={() => renameSession(selectedSession.id, renameValue, selectedSession.directory).catch(() => undefined)}
+                  onMouseDown={(event) => event.preventDefault()}
+                  disabled={!renameValue.trim() || renameValue === selectedSession.title}
+                >
+                  <SaveIcon size={16} />
+                  {t('session.renameConfirm')}
+                </button>
+                <button
+                  className="btn-icon btn-secondary compact"
+                  onClick={() => cancelRename()}
+                  onMouseDown={(event) => event.preventDefault()}
+                  title={t('session.cancel')}
+                  aria-label={t('session.cancel')}
+                >
+                  <CloseIcon size={18} />
+                </button>
+              </div>
+            ) : (
+              <>
+                <button
+                  type="button"
+                  className="btn-icon btn-secondary compact detail-back"
+                  title={t('detail.backToSessions')}
+                  aria-label={t('detail.backToSessions')}
+                  onClick={() => {
+                    setView("sessions");
+                    requestAnimationFrame(() => document.querySelector<HTMLElement>(".session-card.active")?.scrollIntoView({ block: "center" }));
+                  }}
+                >
+                  <ChevronLeftIcon size={20} />
+                </button>
+                <div className="detail-headline-main">
+                  <h2>
+                    {selectedSession ? (
+                      <div className="detail-title-row">
                         {/* A 14px glyph is a poor target and a poor hint. The title itself is the
                             button; the pencil only says that it can be edited. */}
                         {capabilities.sessionRename ? (
@@ -3064,26 +3072,23 @@ function App() {
                         ) : (
                           <span className="session-title-text">{selectedSession.title}</span>
                         )}
-                      </>
+                      </div>
+                    ) : (
+                      t('detail.selectSession')
                     )}
-                  </div>
-                ) : (
-                  t('detail.selectSession')
-                )}
-              </h2>
-              {selectedSession && (
-                <p className="subtle detail-subline" title={selectedSession.directory}>
-                  <span className="detail-subline-path">{shortDirectory(selectedSession.directory)}</span>
-                  {/* Moved up from between the messages and the composer, where the sticky
-                      composer covered half of it. Written out rather than tagged: a one-word
-                      label needed a tooltip to be understood, and touch has no tooltip. */}
-                  {selectedSession.external && (
-                    <span className="detail-subline-note">{t('detail.externalSession')}</span>
+                  </h2>
+                  {selectedSession && (
+                    <p className="subtle detail-subline" title={selectedSession.directory}>
+                      <span className="detail-subline-path">{shortDirectory(selectedSession.directory)}</span>
+                    </p>
                   )}
-                </p>
+                </div>
+                {selectedSession && (
+                  <span className={`pill ${selectedSession.status}`}>{selectedSession.status}</span>
                 )}
-              </div>
-            </div>
+              </>
+            )}
+          </div>
 
           {selectedSession && (
             <section className="session-context-strip" aria-label={t('detail.contextStripLabel')}>
