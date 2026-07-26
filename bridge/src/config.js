@@ -1,3 +1,5 @@
+import { homedir } from "node:os"
+import path from "node:path"
 import { harnessProfile } from "./harness-profiles.js"
 
 const LOOPBACK_HOSTS = new Set(["127.0.0.1", "::1", "localhost"])
@@ -56,7 +58,8 @@ export function parseConfig(args, environment = process.env) {
     acpArgs: parseArgumentList(acpArgs, profile.args),
     roots: root ? [root] : [],
     corsOrigins: cors ? [cors] : [],
-    logRequests: environmentValue(environment, "LOG_REQUESTS") === "1"
+    logRequests: environmentValue(environment, "LOG_REQUESTS") === "1",
+    stateDirectory: environmentValue(environment, "STATE_DIR") ?? path.join(homedir(), ".harness-remote")
   }
   let acpCommandOverridden = acpCommand !== undefined
   let acpArgsOverridden = acpArgs !== undefined
@@ -110,6 +113,10 @@ export function parseConfig(args, environment = process.env) {
       case "--log-requests":
         config.logRequests = true
         break
+      case "--state-dir":
+        config.stateDirectory = requireValue(args, index, option)
+        index += 1
+        break
       case "--help":
         config.help = true
         break
@@ -128,5 +135,5 @@ export function parseConfig(args, environment = process.env) {
 }
 
 export function usage() {
-  return `Usage: harness-remote-bridge [options]\n\nOptions:\n  --backend <name>       ACP backend: omp or pi (default: omp)\n  --host <host>          Bind host (default: 127.0.0.1)\n  --port <port>          Bind port (default: 4097)\n  --username <username>  Enable HTTP Basic Auth\n  --password <password>  Enable HTTP Basic Auth\n  --acp-command <path>   ACP adapter command (default depends on backend)\n  --acp-arg <arg>        ACP adapter argument; repeatable\n  --root <path>          Allowed worktree root; repeatable\n  --cors <origin>        Allow browser requests from this exact origin; repeatable\n  --log-requests         Log request method, path, and query\n  --help                 Show this help`
+  return `Usage: harness-remote-bridge [options]\n\nOptions:\n  --backend <name>       ACP backend: omp or pi (default: omp)\n  --host <host>          Bind host (default: 127.0.0.1)\n  --port <port>          Bind port (default: 4097)\n  --username <username>  Enable HTTP Basic Auth\n  --password <password>  Enable HTTP Basic Auth\n  --acp-command <path>   ACP adapter command (default depends on backend)\n  --acp-arg <arg>        ACP adapter argument; repeatable\n  --root <path>          Allowed worktree root; repeatable\n  --cors <origin>        Allow browser requests from this exact origin; repeatable\n  --state-dir <path>     Persist bridge session snapshots\n  --log-requests         Log request method, path, and query\n  --help                 Show this help`
 }

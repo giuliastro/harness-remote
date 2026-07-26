@@ -141,6 +141,9 @@ for (const capability of ['agents', 'models', 'todos', 'diff', 'questions', 'ses
 // A follow-up prompt can be queued while the agent is still working.
 assert.ok(app.includes('const showStopAction = isWorking && !composer.trim()'), 'stop should be offered only when there is nothing to send')
 assert.equal(app.includes('disabled={!selectedSession || isWorking}'), false, 'the composer must stay usable while the agent works')
+assert.ok(app.includes("authoritativeExternalHistory || assistantPayloadLength(current) <= assistantPayloadLength(msg)"), "external OMP history must replace stale cached ordering even when the corrected payload is shorter")
+assert.ok(app.includes("selectedSession?.external"), "sessions from another client should explain that sending continues them here")
+assert.equal(app.includes("disabled={!selectedSession || selectedSession.external}"), false, "external sessions must remain writable")
 assert.ok(app.includes('onClick={showStopAction ? abortSession : send}'), 'the action button should send a queued follow-up instead of only stopping')
 
 // A run bubble merges action groups that a message boundary split apart. Consecutive replies with

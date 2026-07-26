@@ -85,10 +85,10 @@ function providersResponse(models) {
   return { providers: [...providers.values()], default: defaults }
 }
 
-export function createBridgeServer({ config, acp }) {
+export function createBridgeServer({ config, acp, serviceOptions }) {
   const backend = config.backend ?? "omp"
   const profile = harnessProfile(backend)
-  const service = new AcpService(acp)
+  const service = new AcpService(acp, serviceOptions)
   return http.createServer(async (request, response) => {
     applyCorsHeaders(request, response, config)
     // Browsers omit credentials on the preflight, so it must be answered before auth.

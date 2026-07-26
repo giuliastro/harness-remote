@@ -78,6 +78,7 @@ export type Session = {
     name?: string
     worktree: string
   } | null
+  external?: boolean
 }
 
 export type SessionStatus = {
@@ -212,6 +213,7 @@ export type SessionView = {
   additions: number
   deletions: number
   model?: ModelSelection
+  external?: boolean
 }
 
 export type CommandInfo = {

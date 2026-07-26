@@ -1029,7 +1029,8 @@ function toSessionView(session: Session, status?: SessionStatus, activityTime = 
     files: session.summary?.files ?? 0,
     additions: session.summary?.additions ?? 0,
     deletions: session.summary?.deletions ?? 0,
-    model: session.model ? { providerID: session.model.providerID, modelID: session.model.id, variant: session.model.variant } : undefined
+    model: session.model ? { providerID: session.model.providerID, modelID: session.model.id, variant: session.model.variant } : undefined,
+    external: session.external
   }
 }
 
@@ -1844,9 +1845,10 @@ function App() {
     ])
     if (requestID !== loadSelectedRequestRef.current) return
     const current = loadedMessagesRef.current
+    const authoritativeExternalHistory = selectedSessionRef.current?.id === sessionID && selectedSessionRef.current.external
     if (
       !messagesHaveSameContent(current, msg) &&
-      assistantPayloadLength(current) <= assistantPayloadLength(msg)
+      (authoritativeExternalHistory || assistantPayloadLength(current) <= assistantPayloadLength(msg))
     ) {
       shouldAutoScrollRef.current = messagesExtendContent(current, msg) && isNearMessagesBottom()
       loadedMessagesRef.current = msg
@@ -3056,6 +3058,10 @@ function App() {
             onQuestionResolved={handleQuestionResolved}
           />
 
+
+          {selectedSession?.external && (
+            <p className="field-hint">{t('detail.externalSession')}</p>
+          )}
 
           <div className="composer" ref={composerRef}>
             <textarea

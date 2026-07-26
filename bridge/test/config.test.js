@@ -1,4 +1,6 @@
 import assert from "node:assert/strict"
+import { homedir } from "node:os"
+import path from "node:path"
 import test from "node:test"
 import { parseConfig } from "../src/config.js"
 
@@ -13,7 +15,8 @@ test("defaults to a loopback-only unauthenticated listener", () => {
     acpArgs: ["acp"],
     roots: [],
     corsOrigins: [],
-    logRequests: false
+    logRequests: false,
+    stateDirectory: path.join(homedir(), ".harness-remote")
   })
 })
 
@@ -65,6 +68,11 @@ test("prefers generic environment names while retaining OMP aliases", () => {
   assert.equal(legacy.backend, "pi")
   assert.equal(legacy.host, "localhost")
   assert.equal(legacy.port, 4902)
+})
+
+test("allows session snapshot storage to be relocated", () => {
+  assert.equal(parseConfig(["--state-dir", "/tmp/harness-state"], {}).stateDirectory, "/tmp/harness-state")
+  assert.equal(parseConfig([], { HARNESS_REMOTE_STATE_DIR: "/tmp/env-state" }).stateDirectory, "/tmp/env-state")
 })
 
 test("shares the bridge with browser origins only when asked", () => {

@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import path from "node:path"
 import { AcpClient } from "./acp-client.js"
 import { parseConfig, usage } from "./config.js"
 import { harnessProfile } from "./harness-profiles.js"
@@ -20,7 +21,14 @@ if (config?.help) {
 if (config) {
   const profile = harnessProfile(config.backend)
   const acp = new AcpClient({ command: config.acpCommand, args: config.acpArgs, permissionMode: profile.permissionMode })
-  const server = createBridgeServer({ config, acp })
+  const server = createBridgeServer({
+    config,
+    acp,
+    serviceOptions: {
+      snapshotDirectory: path.join(config.stateDirectory, profile.id),
+      historyLoader: profile.historyLoader
+    }
+  })
   let shuttingDown = false
 
   acp.on("stderr", (line) => process.stderr.write(`[${config.backend}] ${line}`))

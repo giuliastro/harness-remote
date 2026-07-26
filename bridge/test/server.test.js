@@ -1,5 +1,7 @@
 import assert from "node:assert/strict"
 import { EventEmitter } from "node:events"
+import { mkdtemp, rm, writeFile } from "node:fs/promises"
+import { tmpdir } from "node:os"
 import path from "node:path"
 import test from "node:test"
 import { createBridgeServer } from "../src/server.js"
@@ -725,4 +727,265 @@ test("keeps the persisted snapshot stable until an explicit history refresh", as
   } finally {
     await bridge.close()
   }
+})
+
+test("keeps the last snapshot when an ACP refresh replays no messages", async () => {
+  class EmptyRefreshAcp extends EventEmitter {
+    loads = 0
+
+    async start() {}
+
+    async listSessions() {
+      return [{ sessionId: "session-1", cwd: process.cwd(), updatedAt: "2026-07-26T00:00:00.000Z" }]
+    }
+
+    async request(method) {
+      if (method !== "session/load") return {}
+      this.loads += 1
+      if (this.loads === 1) {
+        this.emit("notification", {
+          method: "session/update",
+          params: {
+            sessionId: "session-1",
+            update: {
+              sessionUpdate: "agent_message_chunk",
+              messageId: "persisted-assistant",
+              content: { type: "text", text: "Persisted response" }
+            }
+          }
+        })
+      }
+      return {}
+    }
+
+    notify() {}
+  }
+
+  const driver = new AcpService(new EmptyRefreshAcp())
+  assert.deepEqual((await driver.messages("session-1")).map((message) => message.parts[0].text), ["Persisted response"])
+  assert.deepEqual((await driver.messages("session-1", true)).map((message) => message.parts[0].text), ["Persisted response"])
+})
+
+test("restores messages from disk when ACP replay is empty or partial after restart", async () => {
+  class SnapshotReplayAcp extends EventEmitter {
+    constructor(replayMessages, todoContent, todoStatus = "in_progress") {
+      super()
+      this.replayMessages = replayMessages
+      this.todoContent = todoContent
+      this.todoStatus = todoStatus
+    }
+
+    async start() {}
+
+    async listSessions() {
+      return [{ sessionId: "session-1", cwd: process.cwd(), updatedAt: "2026-07-26T00:00:00.000Z" }]
+    }
+
+    async request(method) {
+      if (method !== "session/load") return {}
+      for (const text of this.replayMessages) {
+        this.emit("notification", {
+          method: "session/update",
+          params: {
+            sessionId: "session-1",
+            update: {
+              sessionUpdate: "agent_message_chunk",
+              messageId: `persisted-${text}`,
+              content: { type: "text", text }
+            }
+          }
+        })
+      }
+      this.emit("notification", {
+        method: "session/update",
+        params: {
+          sessionId: "session-1",
+          update: {
+            sessionUpdate: "plan",
+            entries: [{ content: this.todoContent, status: this.todoStatus, priority: "medium" }]
+          }
+        }
+      })
+      return {}
+    }
+
+    notify() {}
+  }
+
+  const snapshotDirectory = await mkdtemp(path.join(tmpdir(), "harness-remote-snapshots-"))
+  try {
+    const expectedMessages = ["First", "Second", "Third"]
+    const first = new AcpService(new SnapshotReplayAcp(expectedMessages, "Old todo"), { snapshotDirectory })
+    assert.deepEqual((await first.messages("session-1")).map((message) => message.parts[0].text), expectedMessages)
+    await first.flushSnapshots()
+
+    const emptyReplay = new AcpService(new SnapshotReplayAcp([], "Current todo"), { snapshotDirectory })
+    assert.deepEqual((await emptyReplay.messages("session-1")).map((message) => message.parts[0].text), expectedMessages)
+    assert.deepEqual((await emptyReplay.todos("session-1")).map((todo) => todo.content), ["Current todo"])
+    await emptyReplay.flushSnapshots()
+
+    const partialReplay = new AcpService(new SnapshotReplayAcp(["Second", "Third"], "Newest todo", "completed"), { snapshotDirectory })
+    assert.deepEqual((await partialReplay.messages("session-1")).map((message) => message.parts[0].text), expectedMessages)
+    assert.deepEqual((await partialReplay.todos("session-1")).map((todo) => todo.content), ["Newest todo"])
+    await partialReplay.flushSnapshots()
+
+    const stalePlanReplay = new AcpService(new SnapshotReplayAcp([], "Newest todo", "pending"), { snapshotDirectory })
+    assert.deepEqual((await stalePlanReplay.todos("session-1")).map((todo) => todo.status), ["completed"])
+    await stalePlanReplay.flushSnapshots()
+  } finally {
+    await rm(snapshotDirectory, { recursive: true, force: true })
+  }
+})
+
+test("reads external history without loading and interrupting the ACP session", async () => {
+  const message = (id, text) => ({
+    info: { id, role: "assistant", sessionID: "session-1", time: { created: Date.now() } },
+    parts: [{ id: `${id}:text`, type: "text", text }]
+  })
+  class MissingMiddleAcp extends EventEmitter {
+    loads = 0
+    async start() {}
+
+    async listSessions() {
+      return [{ sessionId: "session-1", cwd: process.cwd(), updatedAt: "2026-07-26T00:00:00.000Z" }]
+    }
+
+    async request(method) {
+      if (method === "session/load") this.loads += 1
+      return {}
+    }
+
+    notify() {}
+  }
+
+  let persistedHistory = [
+    message("native-first", "First"),
+    message("native-second", "Second"),
+    message("native-third", "Third")
+  ]
+  const historyLoader = async () => persistedHistory
+  const acp = new MissingMiddleAcp()
+  const driver = new AcpService(acp, { historyLoader })
+  assert.deepEqual((await driver.messages("session-1")).map((item) => item.parts[0].text), ["First", "Second", "Third"])
+  persistedHistory = [...persistedHistory, message("native-fourth", "Fourth")]
+  assert.deepEqual(
+    (await driver.messages("session-1")).map((item) => item.parts[0].text),
+    ["First", "Second", "Third", "Fourth"],
+    "external history must refresh and preserve native order without an explicit refresh flag"
+  )
+  assert.equal(acp.loads, 0)
+})
+
+test("merges bridge-only legacy prompts into native external history by timestamp", async () => {
+  class ExternalAcp extends EventEmitter {
+    async start() {}
+    async listSessions() {
+      return [{ sessionId: "external-1", cwd: process.cwd(), updatedAt: "2026-07-26T10:00:00.000Z" }]
+    }
+    async request() {
+      return {}
+    }
+    notify() {}
+  }
+  const envelope = (id, role, text, created) => ({
+    info: { id, role, sessionID: "external-1", time: { created } },
+    parts: [{ id: `${id}:text`, type: "text", text }]
+  })
+  const nativeHistory = [
+    envelope("native-first", "user", "First", 1_000),
+    envelope("native-last", "assistant", "Last", 3_000)
+  ]
+  const snapshotDirectory = await mkdtemp(path.join(tmpdir(), "harness-remote-external-"))
+  const snapshotPath = path.join(snapshotDirectory, `${Buffer.from("external-1").toString("base64url")}.json`)
+  await writeFile(snapshotPath, JSON.stringify({
+    version: 1,
+    messages: [
+      envelope("native-first", "user", "First", 1_000),
+      envelope("bridge-only", "user", "Bridge only", 2_000)
+    ],
+    todos: [{ id: "stale", content: "Stale external todo", status: "pending", priority: "medium" }],
+  }))
+  try {
+    const driver = new AcpService(new ExternalAcp(), {
+      snapshotDirectory,
+      historyLoader: async () => nativeHistory,
+    })
+    assert.deepEqual(
+      (await driver.messages("external-1")).map((item) => item.parts[0].text),
+      ["First", "Bridge only", "Last"]
+    )
+    assert.deepEqual(await driver.todos("external-1"), [])
+    await driver.flushSnapshots()
+  } finally {
+    await rm(snapshotDirectory, { recursive: true, force: true })
+  }
+})
+
+test("continues sessions created by another OMP client and reacquires them after restart", async () => {
+  class OwnershipAcp extends EventEmitter {
+    sessions = [{ sessionId: "desktop-session", cwd: process.cwd(), updatedAt: "2026-07-26T00:00:00.000Z" }]
+    prompts = []
+    loads = []
+    async start() {}
+
+    async listSessions() {
+      return this.sessions
+    }
+
+    async request(method, params) {
+      if (method === "session/new") {
+        const session = { sessionId: "mobile-session", cwd: params.cwd, updatedAt: "2026-07-26T00:00:00.000Z" }
+        this.sessions.push(session)
+        return { sessionId: session.sessionId, configOptions: [] }
+      }
+      if (method === "session/load") {
+        this.loads.push(params.sessionId)
+        return {}
+      }
+      if (method === "session/prompt") {
+        this.prompts.push(params.sessionId)
+        return {}
+      }
+      return {}
+    }
+
+    notify() {}
+  }
+
+  const persistedMessage = (sessionID, text = "Existing history", created = 1_000) => ({
+    info: { id: `${sessionID}-history-${created}`, role: "assistant", sessionID, time: { created } },
+    parts: [{ id: `${sessionID}-history-${created}:text`, type: "text", text }]
+  })
+  const snapshotDirectory = await mkdtemp(path.join(tmpdir(), "harness-remote-ownership-"))
+  const acp = new OwnershipAcp()
+  const nativeHistory = new Map()
+  const historyLoader = async (sessionID) => nativeHistory.get(sessionID) ?? [persistedMessage(sessionID)]
+  const driver = new AcpService(acp, { historyLoader, snapshotDirectory })
+
+  assert.equal((await driver.listSessions()).find((session) => session.id === "desktop-session")?.external, true)
+  await driver.prompt("desktop-session", "Continue from the app")
+  await new Promise((resolve) => setImmediate(resolve))
+  assert.deepEqual(acp.loads, ["desktop-session"])
+  assert.deepEqual(acp.prompts, ["desktop-session"])
+  assert.equal((await driver.listSessions()).find((session) => session.id === "desktop-session")?.external, undefined)
+
+  nativeHistory.set("desktop-session", [
+    persistedMessage("desktop-session"),
+    persistedMessage("desktop-session", "Concurrent desktop reply", 9_000_000_000_000)
+  ])
+  assert.deepEqual(
+    (await driver.messages("desktop-session", true)).map((message) => message.parts[0].text),
+    ["Existing history", "Continue from the app", "Concurrent desktop reply"]
+  )
+
+  await driver.createSession({ directory: process.cwd(), title: "Mobile", model: undefined })
+  await driver.flushSnapshots()
+  const restarted = new AcpService(acp, { historyLoader, snapshotDirectory })
+  assert.equal((await restarted.listSessions()).find((session) => session.id === "mobile-session")?.external, true)
+  await restarted.prompt("mobile-session", "Continue after restart")
+  await new Promise((resolve) => setImmediate(resolve))
+  assert.deepEqual(acp.loads, ["desktop-session", "desktop-session", "mobile-session"])
+  assert.deepEqual(acp.prompts, ["desktop-session", "mobile-session"])
+  await restarted.flushSnapshots()
+  await rm(snapshotDirectory, { recursive: true, force: true })
 })

@@ -94,7 +94,7 @@ If remote/mobile cannot connect, open TCP 4096 in your OS firewall and network f
 
 ### Oh My Pi Bridge Setup
 
-Harness Remote connects to OMP through the bridge included in this repository. The bridge starts `omp acp` on the same computer, translates its ACP stdio protocol to the app's HTTP/SSE API, and never reads or modifies OMP's internal databases.
+Harness Remote connects to OMP through the bridge included in this repository. The bridge starts `omp acp` on the same computer and translates its ACP stdio protocol to the app's HTTP/SSE API. To show sessions created by another OMP process without loading and interrupting them, it reads the append-only user/assistant transcript under OMP's session directory; it does not modify OMP state.
 
 #### Prerequisites
 
@@ -122,9 +122,10 @@ npx --yes ./bridge \
   --acp-arg @victor-software-house/pi-acp
 ```
 
-The equivalent environment variables are `OMP_BRIDGE_ACP_COMMAND` and
-`OMP_BRIDGE_ACP_ARGS`, where the latter is a JSON array of strings. The
-PI setup below selects the adapter and the matching app backend automatically.
+The preferred environment variables are `HARNESS_REMOTE_ACP_COMMAND` and
+`HARNESS_REMOTE_ACP_ARGS`, where the latter is a JSON array of strings.
+Existing `OMP_BRIDGE_*` names remain aliases for one compatibility release.
+The PI setup below selects the adapter and the matching app backend automatically.
 
 The default bind address is `127.0.0.1`. Use `0.0.0.0` only for a trusted LAN or VPN. The bridge refuses a non-loopback bind without both username and password.
 
@@ -169,9 +170,11 @@ npx --yes ./bridge --port 4097 --username omp --password "…" --root "$HOME/Sof
 
 #### Live synchronization scope
 
-The bridge streams `busy`, assistant chunks, todos, and completion for work started through that same bridge. OMP ACP does not expose a global cross-client event feed or running-status API: a session driven by a separate desktop OMP or harness process can be listed and reopened, but the app cannot reliably show its live `busy` state, thinking bubble, or incremental output. A prompt sent from the app is recorded and handled by the bridge's ACP process; it does not inject a message into another already-running agent transport.
+The bridge streams `busy`, assistant chunks, todos, and completion for work started through that same bridge. Sessions created by desktop OMP or another client are listed with their persisted history and remain writable: the first prompt from the app loads that session into the bridge's ACP process and continues it there. This supports sequential hand-off between desktop and mobile, including sessions created days earlier.
 
-Use the bridge-created session for mobile-driven work. Reliable live observation and hand-off between independent OMP clients require a global session event/status API from OMP (or a relay integrated with the host harness); the bridge does not read OMP databases to simulate one.
+OMP ACP does not expose a global cross-client event feed, shared running-status API, or session lock. Concurrent desktop and app turns are accepted, and the bridge merges newly persisted OMP transcript branches into the app during polling so neither client's messages disappear. The two agent processes still run independently: response order and the context seen by each turn can branch. Sequential hand-off is deterministic; simultaneous use is supported for visibility but cannot provide server-level turn serialization.
+
+The bridge keeps its last successful message/todo snapshot under `~/.harness-remote/<backend>/`. This prevents an empty or partial ACP replay from erasing the app's conversation after navigation or a bridge restart. Use `--state-dir <path>` or `HARNESS_REMOTE_STATE_DIR` to relocate this state.
 
 Do not expose the bridge directly to the Internet. Use Tailscale, another VPN, or a TLS-terminating reverse proxy, and open port `4097` only to the network that needs it.
 

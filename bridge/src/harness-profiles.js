@@ -1,3 +1,5 @@
+import { createOmpHistoryLoader } from "./omp-session-history.js"
+
 const COMMON_CAPABILITIES = {
   sessions: true,
   prompt: true,
@@ -18,6 +20,7 @@ export const HARNESS_PROFILES = {
     command: "omp",
     args: ["acp"],
     permissionMode: "allow",
+    historyLoader: createOmpHistoryLoader(),
     capabilities: {
       ...COMMON_CAPABILITIES,
       models: true,
