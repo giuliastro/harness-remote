@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { AcpClient } from "./acp-client.js"
 import { parseConfig, usage } from "./config.js"
+import { harnessProfile } from "./harness-profiles.js"
 import { createBridgeServer } from "./server.js"
 
 let config
@@ -17,13 +18,14 @@ if (config?.help) {
 }
 
 if (config) {
-  const acp = new AcpClient({ command: config.acpCommand, args: config.acpArgs })
+  const profile = harnessProfile(config.backend)
+  const acp = new AcpClient({ command: config.acpCommand, args: config.acpArgs, permissionMode: profile.permissionMode })
   const server = createBridgeServer({ config, acp })
   let shuttingDown = false
 
   acp.on("stderr", (line) => process.stderr.write(`[${config.backend}] ${line}`))
   acp.on("agent-request", (message) => {
-    process.stderr.write(`[${config.backend}] declined unsupported agent request: ${message.method}\n`)
+    process.stderr.write(`[${config.backend}] handled agent request: ${message.method}\n`)
   })
   acp.on("exit", (error) => {
     if (!shuttingDown) process.stderr.write(`[${config.backend}] ${error.message}\n`)

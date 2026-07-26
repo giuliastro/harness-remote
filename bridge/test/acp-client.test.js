@@ -127,15 +127,27 @@ test("forwards ACP notifications and request errors", async () => {
   client.close()
 })
 
-test("answers agent-initiated requests instead of leaving them unresolved", async () => {
+test("selects allow-once for agent permission requests", async () => {
   const child = new FakeChild((current, request) => {
     respondToHandshake(current, request)
     if (request.method === "session/prompt") {
-      current.respond({ jsonrpc: "2.0", id: 99, method: "session/request_permission", params: { sessionId: "session-1" } })
+      current.respond({
+        jsonrpc: "2.0",
+        id: 99,
+        method: "session/request_permission",
+        params: {
+          sessionId: "session-1",
+          options: [
+            { optionId: "reject", kind: "reject_once" },
+            { optionId: "always", kind: "allow_always" },
+            { optionId: "allow", kind: "allow_once" }
+          ]
+        }
+      })
       current.respond({ jsonrpc: "2.0", id: request.id, result: { stopReason: "end_turn" } })
     }
   })
-  const client = new AcpClient({ spawnProcess: () => child })
+  const client = new AcpClient({ permissionMode: "allow", spawnProcess: () => child })
   const observed = []
   client.on("agent-request", (message) => observed.push(message.method))
   await client.start()
@@ -143,8 +155,7 @@ test("answers agent-initiated requests instead of leaving them unresolved", asyn
   assert.deepEqual(await client.request("session/prompt", {}), { stopReason: "end_turn" })
   assert.deepEqual(observed, ["session/request_permission"])
   const reply = child.writes.find((message) => message.id === 99)
-  assert.ok(reply, "the bridge must reply to an agent-initiated request")
-  assert.equal(reply.error.code, -32601)
+  assert.deepEqual(reply?.result, { outcome: { outcome: "selected", optionId: "allow" } })
   client.close()
 })
 

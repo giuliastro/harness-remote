@@ -8,6 +8,7 @@ export class AcpClient extends EventEmitter {
   #command
   #args
   #spawn
+  #permissionMode
   #child
   #buffer = ""
   #nextID = 1
@@ -15,10 +16,11 @@ export class AcpClient extends EventEmitter {
   #starting
   #agentInfo
 
-  constructor({ command = "omp", args = ["acp"], spawnProcess = spawn } = {}) {
+  constructor({ command = "omp", args = ["acp"], permissionMode = "deny", spawnProcess = spawn } = {}) {
     super()
     this.#command = command
     this.#args = args
+    this.#permissionMode = permissionMode
     this.#spawn = spawnProcess
   }
 
@@ -143,7 +145,8 @@ export class AcpClient extends EventEmitter {
     // timeout, so always reply.
     if (message.id !== undefined && message.method) {
       this.emit("agent-request", message)
-      this.#respondUnsupported(message.id, message.method)
+      if (message.method === "session/request_permission") this.#respondPermission(message.id, message.params)
+      else this.#respondUnsupported(message.id, message.method)
       return
     }
     if (message.id !== undefined) {
@@ -156,6 +159,20 @@ export class AcpClient extends EventEmitter {
       return
     }
     if (message.method) this.emit("notification", message)
+  }
+
+  #respondPermission(id, params) {
+    if (!this.#child?.stdin.writable) return
+    const options = Array.isArray(params?.options) ? params.options : []
+    const allowed = this.#permissionMode === "allow"
+      ? options.find((option) => option.kind === "allow_once")
+        ?? options.find((option) => option.kind === "allow_always")
+        ?? options.find((option) => typeof option.kind === "string" && option.kind.startsWith("allow"))
+      : undefined
+    const outcome = allowed?.optionId
+      ? { outcome: "selected", optionId: allowed.optionId }
+      : { outcome: "cancelled" }
+    this.#child.stdin.write(`${JSON.stringify({ jsonrpc: "2.0", id, result: { outcome } })}\n`)
   }
 
   #respondUnsupported(id, method) {

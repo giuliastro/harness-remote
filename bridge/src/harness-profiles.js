@@ -17,6 +17,7 @@ export const HARNESS_PROFILES = {
     label: "Oh My Pi",
     command: "omp",
     args: ["acp"],
+    permissionMode: "allow",
     capabilities: {
       ...COMMON_CAPABILITIES,
       models: true,
@@ -29,6 +30,7 @@ export const HARNESS_PROFILES = {
     label: "PI",
     command: process.platform === "win32" ? "npx.cmd" : "npx",
     args: ["-y", "@victor-software-house/pi-acp"],
+    permissionMode: "allow",
     capabilities: {
       ...COMMON_CAPABILITIES,
       models: true,
