@@ -2,8 +2,8 @@
 
 ## Identità prodotto
 
-**Nome prodotto:** Harness Remote. L'app è agnostica rispetto all'harness: OpenCode e OMP sono backend
-selezionabili, PI è pianificato. I nomi dei singoli harness restano nei riferimenti a protocolli, comandi e
+**Nome prodotto:** Harness Remote. L'app è agnostica rispetto all'harness: OpenCode, OMP e PI sono
+backend selezionabili. I nomi dei singoli harness restano nei riferimenti a protocolli, comandi e
 contratti specifici. Aggiungere un harness significa aggiungere una voce di backend e la sua sezione nel README.
 
 ## Decisione
@@ -18,6 +18,22 @@ flowchart LR
 ```
 
 L'app seleziona il backend. OpenCode conserva il comportamento attuale; OMP usa il bridge.
+
+## Evoluzione multi-harness
+
+L'integrazione OMP ha dimostrato che il bridge ACP e l'API HTTP/SSE sono riutilizzabili. Il bridge
+ora espone un `AcpTransport` responsabile solo di JSON-RPC su stdio e un `AcpHarnessDriver` per
+sessioni, replay, modelli, coda prompt e SSE. OMP e PI sono profili ACP dichiarativi: comando,
+argomenti, environment, autenticazione, probe versione e capability.
+
+L'app usa `HarnessCapabilities` per agenti, modelli, todo, diff, domande, comandi, filesystem,
+rinomina ed eliminazione sessioni. OMP e PI condividono il dialect HTTP del bridge, mentre OpenCode
+mantiene il proprio. Il reducer ACP accetta notifiche OMP con `messageId` e chunk ACP standard senza
+ID, aggregandoli nel turno live aperto.
+
+OMP resta la baseline di regressione del bridge. PI usa `pi-acp` sopra la RPC ufficiale PI; la
+compatibilità verificata è PI `0.82.1`, `pi-acp` `0.0.32` e ACP protocol `1`. Le capability OMP non
+offerte dall'upstream restano intenzionalmente non implementate.
 
 ## Architettura
 

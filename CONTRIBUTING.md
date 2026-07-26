@@ -1,9 +1,9 @@
 # Contributing to Harness Remote
 
 Thanks for wanting to work on this. Harness Remote is a companion app for driving coding-agent
-harnesses from a phone. It is deliberately harness-agnostic: OpenCode and Oh My Pi (OMP) are
-supported today, PI is planned. Adding a harness should mean adding a backend entry and its setup
-section, never a special case threaded through the app.
+harnesses from a phone. OpenCode, Oh My Pi (OMP), and PI are supported. Adding a harness means
+adding a backend entry, its setup section, and its capability profile; never thread a harness-specific
+condition through the app.
 
 This document is long on purpose. Read the section that matches what you are touching, or all of it
 if you are having an agent do the work.
@@ -15,7 +15,7 @@ if you are having an agent do the work.
 | `web/` | The app: React + TypeScript + Vite, packaged for Android with Capacitor |
 | `web/src/` | Application source. `App.tsx` holds most of the UI, `api.ts` the HTTP client, `i18n.ts` the translations |
 | `web/native-android/` | Java sources copied into the generated Android project — see [Android packaging](#android-packaging) |
-| `bridge/` | A local HTTP/SSE server that translates the app's API to OMP's ACP stdio protocol |
+| `bridge/` | A local HTTP/SSE server backed by a harness driver; OMP and PI use its ACP transport |
 | `.github/workflows/` | Cloud APK and AAB builds |
 | `OMP-INTEGRATION-PLAN.md` | Design notes and findings from the OMP integration, in Italian |
 
@@ -23,8 +23,8 @@ if you are having an agent do the work.
 
 - **Node.js 20 or newer.** `web/` needs `npm install`; `bridge/` has no dependencies at all and
   runs on the standard library, so do not look for a lockfile there.
-- **A harness to talk to.** Either an OpenCode server or a working `omp` command. You can develop
-  UI-only changes without one, but see [Test against a real agent](#test-against-a-real-agent)
+- **A harness to talk to.** Use an OpenCode server, a working `omp` command, or PI plus `pi-acp`.
+  You can develop UI-only changes without one, but see [Test against a real agent](#test-against-a-real-agent)
   before assuming that is enough.
 - **No Android SDK required.** CI builds the APK. You only need one for local native debugging.
 
@@ -44,9 +44,10 @@ connection, so switching between them does not lose anything.
 Start the server with Basic Auth and, for browser development, CORS origins. The README's
 [OpenCode Server Setup](README.md#opencode-server-setup) has the exact commands.
 
-### Against OMP
+### Against OMP or PI
 
-OMP speaks ACP over stdio rather than HTTP, so the app talks to it through the bridge:
+OMP and PI speak ACP over stdio rather than the app's HTTP API, so the app talks to them through the
+bridge. OMP is the default profile; add `--harness pi --pi-bin "$(command -v pi)"` for PI:
 
 ```bash
 cd bridge

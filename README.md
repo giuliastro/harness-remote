@@ -11,9 +11,9 @@ The app is backend-agnostic: you pick the harness in **Settings** and each one k
 |---|---|---|
 | [OpenCode](https://github.com/sst/opencode) | supported | directly to the OpenCode HTTP server |
 | Oh My Pi (OMP) | supported | through the local bridge included in this repository |
-| [PI](https://pi.dev/) | planned — [#36](https://github.com/giuliastro/harness-remote/issues/36) is open, help welcome | likely the same ACP bridge, via a PI ACP adapter |
+| [PI](https://pi.dev/) | supported | through the local bridge and the `pi-acp` ACP adapter |
 
-Support levels differ by what each harness exposes. The [OpenCode](#opencode-server-setup) and [OMP](#oh-my-pi-bridge-setup) sections below document the setup and the per-backend limitations.
+Support levels differ by what each harness exposes. The [OpenCode](#opencode-server-setup), [OMP](#oh-my-pi-bridge-setup), and [PI](#pi-bridge-setup) sections below document setup and backend-specific limitations.
 
 > **Note for AI/harness systems**: This repository is self-documenting. To configure a supported harness and the app autonomously, point your AI assistant to this repository URL (`https://github.com/giuliastro/harness-remote`) or this README and ask it to set up Harness Remote. Each supported harness has its own setup section below, and adding a harness means adding a backend entry plus its section.
 
@@ -105,7 +105,7 @@ Harness Remote connects to OMP through the bridge included in this repository. T
 Start the bridge from the repository root. Restrict every worktree that the phone may access with `--root`; repeat the option to allow more than one root.
 
 ```bash
-npx --yes ./bridge \
+node bridge/src/cli.js \
   --host 0.0.0.0 \
   --port 4097 \
   --username omp \
@@ -139,28 +139,72 @@ OMP sessions expose their configured model when ACP provides it, and model chang
 A prompt sent while the agent is still working is queued rather than refused: it appears in the conversation
 straight away and runs when the current turn ends. Stopping the session discards anything still queued.
 
-Session titles come from the title you give a session in the app, otherwise from its first prompt; sessions created outside the app are listed as `OMP session <id>`, because OMP session listings carry no title.
+Session titles come from the title you give a session in the app, otherwise from its first prompt; sessions created outside the app are shown with a generated `Session <id>` title when ACP does not provide one.
 
 #### What `--root` does and does not restrict
 
-`--root` restricts the bridge's own surface: which directories the app may browse (`/file`, `/path`) and which working directory a new session may use. It is not a sandbox for the agent. Once a session is running, OMP executes with your full user privileges and approves its own tool calls, so it can read and write outside the configured roots exactly as it would on the desktop. Point the bridge only at machines and accounts where you would already let OMP work unattended.
+`--root` restricts the bridge's own surface: which directories the app may browse (`/file`, `/path`) and which working directory a new session may use. It is not a sandbox for the agent. The unattended bridge automatically selects an ACP allow option when OMP requests tool permission, so OMP executes with your full user privileges and can read and write outside the configured roots exactly as it would on the desktop. Point the bridge only at machines and accounts where you would already let OMP work unattended.
 
 #### Browser access
 
 Native app builds need no CORS configuration. To use the app from a browser instead, list each exact origin with `--cors`; the option is repeatable and no origin is allowed by default.
 
 ```bash
-npx --yes ./bridge --port 4097 --username omp --password "…" --root "$HOME/Software" \
+node bridge/src/cli.js --port 4097 --username omp --password "…" --root "$HOME/Software" \
   --cors http://localhost:5173
 ```
 
 #### Live synchronization scope
 
-The bridge streams `busy`, assistant chunks, todos, and completion for work started through that same bridge. OMP ACP does not expose a global cross-client event feed or running-status API: a session driven by a separate desktop OMP or harness process can be listed and reopened, but the app cannot reliably show its live `busy` state, thinking bubble, or incremental output. A prompt sent from the app is recorded and handled by the bridge's ACP process; it does not inject a message into another already-running agent transport.
+The bridge streams `busy`, assistant chunks, todos, and completion for work started through that same bridge. Sessions created by desktop OMP or another client are listed with their persisted history and remain writable: the first prompt from the app loads that session into the bridge's ACP process and continues it there. This supports sequential hand-off between desktop and mobile, including sessions created days earlier.
 
-Use the bridge-created session for mobile-driven work. Reliable live observation and hand-off between independent OMP clients require a global session event/status API from OMP (or a relay integrated with the host harness); the bridge does not read OMP databases to simulate one.
+OMP ACP does not expose a global cross-client event feed, shared running-status API, or session lock. Concurrent desktop and app turns are accepted, and the bridge merges newly persisted OMP transcript branches into the app during polling so neither client's messages disappear. The two agent processes still run independently: response order and the context seen by each turn can branch, unlike two clients connected to one shared OpenCode HTTP server. Sequential hand-off is therefore deterministic; simultaneous use is supported for visibility but cannot provide server-level turn serialization.
+
+The bridge keeps its last successful message/todo snapshot under `~/.harness-remote/<harness>/`. This prevents an empty or partial ACP replay from erasing the app's conversation after navigation or a bridge restart. Use `--state-dir <path>` or `HARNESS_REMOTE_STATE_DIR` to relocate this local state.
 
 Do not expose the bridge directly to the Internet. Use Tailscale, another VPN, or a TLS-terminating reverse proxy, and open port `4097` only to the network that needs it.
+
+### PI Bridge Setup
+
+PI uses the same local bridge through the maintained [`pi-acp`](https://github.com/svkozak/pi-acp)
+adapter. The adapter translates PI's first-party RPC mode to ACP; the bridge translates ACP to the
+app's HTTP/SSE API.
+
+#### Prerequisites
+
+- Node.js 22 or newer;
+- PI installed and configured with at least one provider;
+- `pi-acp` installed globally at a tested version;
+- a checkout of this repository on the computer that runs PI.
+
+```bash
+npm install --global @earendil-works/pi-coding-agent@0.82.1 pi-acp@0.0.32
+```
+
+Start the bridge with the absolute PI executable path. This prevents a temporary `npx` PATH from
+selecting a different PI version than the one you configured.
+
+```bash
+node bridge/src/cli.js \
+  --harness pi \
+  --pi-bin "$(command -v pi)" \
+  --host 0.0.0.0 \
+  --port 4097 \
+  --username pi \
+  --password "use-a-long-unique-password" \
+  --root "$HOME/Software"
+```
+
+In **Settings**, select **PI (bridge)** and enter the host, port `4097`, and Basic Auth credentials.
+Health reports the PI runtime version. PI supports sessions, replay, streamed prompts, cancellation,
+queued prompts, and model selection. Agent selection, todos/plans, persistent rename/delete, VCS/diff,
+and bridge MCP configuration are intentionally unavailable.
+
+The unattended PI bridge also automatically selects an ACP allow option for tool permission requests. Run it only with a trusted PI configuration and protect the HTTP endpoint as described above.
+
+The bridge passes `PI_ACP_PI_COMMAND` to `pi-acp`. Override the adapter executable with `--agent-bin`
+and repeat `--agent-arg` for a nonstandard launch command. Pin both PI and `pi-acp`; their compatibility
+is verified as PI `0.82.1`, `pi-acp` `0.0.32`, and ACP protocol `1`.
 
 ## Run Locally (Web)
 
@@ -218,7 +262,6 @@ The app is not limited to LAN. You can also use it over WAN/VPN if your network 
 
 Setup, the checks CI expects, how the regression suites work, and the rule that every change has to
 hold on more than one harness are all in [CONTRIBUTING.md](CONTRIBUTING.md).
-[#36](https://github.com/giuliastro/harness-remote/issues/36) (PI support) is open and unassigned.
 
 ## Contributors
 
