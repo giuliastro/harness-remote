@@ -8,6 +8,22 @@ export type ServerConfig = {
   password: string
 }
 
+export type HarnessCapabilities = {
+  sessions: boolean
+  prompt: boolean
+  abort: boolean
+  streaming: boolean
+  models: boolean
+  agents: boolean
+  todos: boolean
+  diff: boolean
+  filesystemBrowser: boolean
+  questions: boolean
+  commands: boolean
+  sessionRename: boolean
+  sessionDelete: boolean
+}
+
 export type HealthResponse = {
   healthy: boolean
   version: string

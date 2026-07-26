@@ -1,3 +1,5 @@
+import { harnessProfile } from "./harness-profiles.js"
+
 const LOOPBACK_HOSTS = new Set(["127.0.0.1", "::1", "localhost"])
 
 function requireValue(args, index, option) {
@@ -20,52 +22,52 @@ function parseArgumentList(value, fallback) {
   try {
     parsed = JSON.parse(value)
   } catch {
-    throw new Error("OMP_BRIDGE_ACP_ARGS must be a JSON array")
+    throw new Error("ACP arguments must be a JSON array")
   }
   if (!Array.isArray(parsed) || parsed.some((argument) => typeof argument !== "string")) {
-    throw new Error("OMP_BRIDGE_ACP_ARGS must be a JSON array of strings")
+    throw new Error("ACP arguments must be a JSON array of strings")
   }
   return parsed
 }
 
 function parseBackend(value) {
-  if (value !== "omp" && value !== "pi") throw new Error("--backend must be omp or pi")
-  return value
+  return harnessProfile(value).id
 }
 
-function defaultAcpCommand(backend) {
-  return backend === "pi" ? (process.platform === "win32" ? "npx.cmd" : "npx") : "omp"
-}
-
-function defaultAcpArgs(backend) {
-  return backend === "pi" ? ["-y", "@victor-software-house/pi-acp"] : ["acp"]
+function environmentValue(environment, name) {
+  return environment[`HARNESS_REMOTE_${name}`] ?? environment[`OMP_BRIDGE_${name}`]
 }
 
 
 export function parseConfig(args, environment = process.env) {
-  const backend = parseBackend(environment.OMP_BRIDGE_BACKEND ?? "omp")
+  const backend = parseBackend(environmentValue(environment, "BACKEND") ?? "omp")
+  const profile = harnessProfile(backend)
+  const acpCommand = environmentValue(environment, "ACP_COMMAND")
+  const acpArgs = environmentValue(environment, "ACP_ARGS")
+  const root = environmentValue(environment, "ROOT")
+  const cors = environmentValue(environment, "CORS")
   const config = {
     backend,
-    host: environment.OMP_BRIDGE_HOST ?? "127.0.0.1",
-    port: parsePort(environment.OMP_BRIDGE_PORT ?? "4097"),
-    username: environment.OMP_BRIDGE_USERNAME ?? "",
-    password: environment.OMP_BRIDGE_PASSWORD ?? "",
-    acpCommand: environment.OMP_BRIDGE_ACP_COMMAND ?? defaultAcpCommand(backend),
-    acpArgs: parseArgumentList(environment.OMP_BRIDGE_ACP_ARGS, defaultAcpArgs(backend)),
-    roots: environment.OMP_BRIDGE_ROOT ? [environment.OMP_BRIDGE_ROOT] : [],
-    corsOrigins: environment.OMP_BRIDGE_CORS ? [environment.OMP_BRIDGE_CORS] : [],
-    logRequests: environment.OMP_BRIDGE_LOG_REQUESTS === "1"
+    host: environmentValue(environment, "HOST") ?? "127.0.0.1",
+    port: parsePort(environmentValue(environment, "PORT") ?? "4097"),
+    username: environmentValue(environment, "USERNAME") ?? "",
+    password: environmentValue(environment, "PASSWORD") ?? "",
+    acpCommand: acpCommand ?? profile.command,
+    acpArgs: parseArgumentList(acpArgs, profile.args),
+    roots: root ? [root] : [],
+    corsOrigins: cors ? [cors] : [],
+    logRequests: environmentValue(environment, "LOG_REQUESTS") === "1"
   }
-  let acpCommandOverridden = environment.OMP_BRIDGE_ACP_COMMAND !== undefined
-  let acpArgsOverridden = environment.OMP_BRIDGE_ACP_ARGS !== undefined
+  let acpCommandOverridden = acpCommand !== undefined
+  let acpArgsOverridden = acpArgs !== undefined
 
   for (let index = 0; index < args.length; index += 1) {
     const option = args[index]
     switch (option) {
       case "--backend":
         config.backend = parseBackend(requireValue(args, index, option))
-        if (!acpCommandOverridden) config.acpCommand = defaultAcpCommand(config.backend)
-        if (!acpArgsOverridden) config.acpArgs = defaultAcpArgs(config.backend)
+        if (!acpCommandOverridden) config.acpCommand = harnessProfile(config.backend).command
+        if (!acpArgsOverridden) config.acpArgs = [...harnessProfile(config.backend).args]
         index += 1
         break
       case "--host":

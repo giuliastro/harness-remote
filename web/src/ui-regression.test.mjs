@@ -133,6 +133,11 @@ assert.ok(
   'the app should only exit from the session list'
 )
 
+assert.ok(app.includes('api.capabilities(config).then(setCapabilities)'), 'bridge capabilities must be loaded from the selected harness')
+for (const capability of ['agents', 'models', 'todos', 'diff', 'questions', 'sessionRename', 'sessionDelete']) {
+  assert.ok(app.includes(`capabilities.${capability}`), `${capability} UI must be capability-driven`)
+}
+
 // A follow-up prompt can be queued while the agent is still working.
 assert.ok(app.includes('const showStopAction = isWorking && !composer.trim()'), 'stop should be offered only when there is nothing to send')
 assert.equal(app.includes('disabled={!selectedSession || isWorking}'), false, 'the composer must stay usable while the agent works')

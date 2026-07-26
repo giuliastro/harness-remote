@@ -3,23 +3,8 @@ import { timingSafeEqual } from "node:crypto"
 import { readdir, realpath } from "node:fs/promises"
 import path from "node:path"
 import { AcpService } from "./acp-service.js"
+import { harnessProfile } from "./harness-profiles.js"
 
-const CAPABILITIES = {
-  sessions: true,
-  prompt: true,
-  abort: true,
-  streaming: true,
-  models: false,
-  agents: false,
-  todos: true,
-  diff: false,
-  filesystemBrowser: false
-}
-
-const BACKEND_SERVICES = {
-  omp: (acp) => new AcpService(acp),
-  pi: (acp) => new AcpService(acp)
-}
 
 function writeJSON(response, status, body) {
   response.writeHead(status, { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store" })
@@ -102,9 +87,8 @@ function providersResponse(models) {
 
 export function createBridgeServer({ config, acp }) {
   const backend = config.backend ?? "omp"
-  const createService = BACKEND_SERVICES[backend]
-  if (!createService) throw new Error(`Unsupported backend: ${backend}`)
-  const service = createService(acp)
+  const profile = harnessProfile(backend)
+  const service = new AcpService(acp)
   return http.createServer(async (request, response) => {
     applyCorsHeaders(request, response, config)
     // Browsers omit credentials on the preflight, so it must be answered before auth.
@@ -131,7 +115,7 @@ export function createBridgeServer({ config, acp }) {
         return
       }
       if (request.method === "GET" && url.pathname === "/v1/capabilities") {
-        writeJSON(response, 200, CAPABILITIES)
+        writeJSON(response, 200, profile.capabilities)
         return
       }
       if (request.method === "GET" && (url.pathname === "/v1/events" || url.pathname === "/global/event")) {

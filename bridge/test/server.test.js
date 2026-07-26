@@ -546,6 +546,23 @@ test("reports the configured ACP backend", async () => {
   }
 })
 
+test("reports capabilities from the selected harness profile", async () => {
+  const omp = await startServer({ backend: "omp" })
+  const pi = await startServer({ backend: "pi" })
+  try {
+    const ompCapabilities = await readJSON(omp.baseURL, "/v1/capabilities")
+    const piCapabilities = await readJSON(pi.baseURL, "/v1/capabilities")
+    assert.equal(ompCapabilities.models, true)
+    assert.equal(ompCapabilities.todos, true)
+    assert.equal(ompCapabilities.commands, false)
+    assert.equal(piCapabilities.models, true)
+    assert.equal(piCapabilities.todos, false)
+    assert.equal(piCapabilities.commands, true)
+  } finally {
+    await Promise.all([omp.close(), pi.close()])
+  }
+})
+
 test("confines file browsing to configured roots", async () => {
   const bridge = await startServer()
   try {
