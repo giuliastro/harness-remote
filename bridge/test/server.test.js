@@ -1,9 +1,11 @@
 import assert from "node:assert/strict"
 import { EventEmitter } from "node:events"
+import { mkdtemp, rm, writeFile } from "node:fs/promises"
+import { tmpdir } from "node:os"
 import path from "node:path"
 import test from "node:test"
+import { AcpHarnessDriver } from "../src/acp-harness-driver.js"
 import { createBridgeServer } from "../src/server.js"
-import { OmpService } from "../src/omp-service.js"
 
 class FakeAcp extends EventEmitter {
   agentInfo = { version: "17.0.7" }
@@ -259,13 +261,30 @@ class HeldTurnOmpAcp extends EventEmitter {
 }
 
 async function startServer({ acp = new FakeAcp(), ...options } = {}) {
+  const driver = new AcpHarnessDriver(acp)
   const server = createBridgeServer({
-    acp,
+    driver,
+    capabilities: {
+      sessions: true,
+      prompt: true,
+      abort: true,
+      streaming: true,
+      models: true,
+      agents: false,
+      todos: true,
+      diff: false,
+      filesystemBrowser: true,
+      questions: false,
+      commands: false,
+      sessionRename: false,
+      sessionDelete: false
+    },
     config: {
       host: "127.0.0.1",
       port: 0,
       username: "omp",
       password: "secret",
+      harness: "omp",
       roots: [process.cwd()],
       ...options
     }
@@ -373,9 +392,17 @@ test("discards queued prompts when the session is aborted", async () => {
       "user: running"
     ], "a cancelled queue must not leave a message that was never sent")
 
+    assert.equal((await readJSON(bridge.baseURL, "/session/status"))["session-1"].type, "idle", "abort must clear busy state immediately")
+
+    const replacementStarted = acp.turnStarted()
+    await sendPrompt("replacement")
+    await replacementStarted
+    acp.releaseTurn()
+    await new Promise((resolve) => setImmediate(resolve))
+    assert.equal((await readJSON(bridge.baseURL, "/session/status"))["session-1"].type, "busy", "a cancelled turn finishing late must not clear a replacement turn")
     acp.releaseTurn()
     await waitForIdle(bridge.baseURL, "session-1")
-    assert.deepEqual(acp.prompts, ["running"], "a cancelled prompt must never reach the agent")
+    assert.deepEqual(acp.prompts, ["running", "replacement"], "a cancelled queued prompt must never reach the agent")
   } finally {
     acp.releaseTurn()
     await bridge.close()
@@ -515,7 +542,7 @@ test("requires Basic Auth before exposing bridge endpoints", async () => {
   try {
     const response = await fetch(`${bridge.baseURL}/global/health`)
     assert.equal(response.status, 401)
-    assert.equal(response.headers.get("www-authenticate"), 'Basic realm="OMP Bridge"')
+    assert.equal(response.headers.get("www-authenticate"), 'Basic realm="Harness Remote"')
   } finally {
     await bridge.close()
   }
@@ -650,12 +677,12 @@ test("replays persistent user and assistant history when reopening an OMP sessio
 
 test("does not publish replay notifications as live session activity", async () => {
   const acp = new ReplayAcp()
-  const omp = new OmpService(acp)
+  const driver = new AcpHarnessDriver(acp)
   const events = []
-  omp.subscribe((event) => events.push(event))
+  driver.subscribe((event) => events.push(event))
   const originalUpdatedAt = acp.session.updatedAt
 
-  await omp.messages("session-1", true)
+  await driver.messages("session-1", true)
 
   assert.equal(acp.session.updatedAt, originalUpdatedAt)
   assert.deepEqual(events, [])
@@ -698,4 +725,377 @@ test("keeps the persisted snapshot stable until an explicit history refresh", as
   } finally {
     await bridge.close()
   }
+})
+
+test("aggregates ID-less ACP chunks into one assistant message during a live turn", async () => {
+  class IdlessAcp extends EventEmitter {
+    agentInfo = { version: "0.0.32" }
+
+    async start() {}
+
+    async listSessions() {
+      return [{ sessionId: "session-1", cwd: process.cwd(), updatedAt: "2026-07-26T00:00:00.000Z" }]
+    }
+
+    async request(method, params) {
+      if (method === "session/load") return { configOptions: [] }
+      if (method === "session/prompt") {
+        this.emit("notification", {
+          method: "session/update",
+          params: { sessionId: params.sessionId, update: { sessionUpdate: "agent_message_chunk", content: { type: "text", text: "PI " } } }
+        })
+        this.emit("notification", {
+          method: "session/update",
+          params: { sessionId: params.sessionId, update: { sessionUpdate: "agent_message_chunk", content: { type: "text", text: "reply" } } }
+        })
+      }
+      return {}
+    }
+
+    notify() {}
+  }
+
+  const driver = new AcpHarnessDriver(new IdlessAcp())
+  await driver.messages("session-1")
+  await driver.prompt("session-1", "Hello")
+  await new Promise((resolve) => setImmediate(resolve))
+
+  assert.deepEqual((await driver.messages("session-1")).map((message) => ({
+    role: message.info.role,
+    text: message.parts[0].text
+  })), [
+    { role: "user", text: "Hello" },
+    { role: "assistant", text: "PI reply" }
+  ])
+})
+
+test("keeps separate PI replay messages when ACP chunks have no message IDs", async () => {
+  class PiReplayAcp extends EventEmitter {
+    agentInfo = { version: "0.0.32" }
+
+    async start() {}
+
+    async listSessions() {
+      return [{ sessionId: "pi-session", cwd: process.cwd(), updatedAt: "2026-07-26T12:30:10.000Z" }]
+    }
+
+    async request(method) {
+      if (method === "session/load") {
+        for (const [sessionUpdate, text] of [
+          ["user_message_chunk", "First question"],
+          ["user_message_chunk", "Second question"],
+          ["agent_message_chunk", "First answer"],
+          ["agent_message_chunk", "Second answer"]
+        ]) {
+          this.emit("notification", {
+            method: "session/update",
+            params: { sessionId: "pi-session", update: { sessionUpdate, content: { type: "text", text } } }
+          })
+        }
+      }
+      return { configOptions: [] }
+    }
+
+    notify() {}
+  }
+
+  const driver = new AcpHarnessDriver(new PiReplayAcp())
+  assert.deepEqual(conversation(await driver.messages("pi-session", true)), [
+    "user: First question",
+    "user: Second question",
+    "assistant: First answer",
+    "assistant: Second answer"
+  ])
+})
+
+test("keeps a PI assistant chunk emitted just after the prompt response", async () => {
+  class DelayedPiAcp extends EventEmitter {
+    async start() {}
+    async listSessions() {
+      return [{ sessionId: "pi-session", cwd: process.cwd(), updatedAt: "2026-07-26T12:30:10.000Z" }]
+    }
+    async request(method, params) {
+      if (method === "session/load") return { configOptions: [] }
+      if (method === "session/prompt") {
+        setImmediate(() => this.emit("notification", {
+          method: "session/update",
+          params: {
+            sessionId: params.sessionId,
+            update: { sessionUpdate: "agent_message_chunk", content: { type: "text", text: "Delayed answer" } }
+          }
+        }))
+      }
+      return {}
+    }
+    notify() {}
+  }
+
+  const driver = new AcpHarnessDriver(new DelayedPiAcp())
+  await driver.messages("pi-session")
+  await driver.prompt("pi-session", "Question")
+  await new Promise((resolve) => setImmediate(resolve))
+  assert.deepEqual(conversation(await driver.messages("pi-session")), [
+    "user: Question",
+    "assistant: Delayed answer"
+  ])
+})
+
+test("keeps the last snapshot when an ACP refresh replays no messages", async () => {
+  class EmptyRefreshAcp extends EventEmitter {
+    loads = 0
+
+    async start() {}
+
+    async listSessions() {
+      return [{ sessionId: "session-1", cwd: process.cwd(), updatedAt: "2026-07-26T00:00:00.000Z" }]
+    }
+
+    async request(method) {
+      if (method !== "session/load") return {}
+      this.loads += 1
+      if (this.loads === 1) {
+        this.emit("notification", {
+          method: "session/update",
+          params: {
+            sessionId: "session-1",
+            update: {
+              sessionUpdate: "agent_message_chunk",
+              messageId: "persisted-assistant",
+              content: { type: "text", text: "Persisted response" }
+            }
+          }
+        })
+      }
+      return {}
+    }
+
+    notify() {}
+  }
+
+  const driver = new AcpHarnessDriver(new EmptyRefreshAcp())
+  assert.deepEqual((await driver.messages("session-1")).map((message) => message.parts[0].text), ["Persisted response"])
+  assert.deepEqual((await driver.messages("session-1", true)).map((message) => message.parts[0].text), ["Persisted response"])
+})
+
+test("restores messages from disk when ACP replay is empty or partial after restart", async () => {
+  class SnapshotReplayAcp extends EventEmitter {
+    constructor(replayMessages, todoContent, todoStatus = "in_progress") {
+      super()
+      this.replayMessages = replayMessages
+      this.todoContent = todoContent
+      this.todoStatus = todoStatus
+    }
+
+    async start() {}
+
+    async listSessions() {
+      return [{ sessionId: "session-1", cwd: process.cwd(), updatedAt: "2026-07-26T00:00:00.000Z" }]
+    }
+
+    async request(method) {
+      if (method !== "session/load") return {}
+      for (const text of this.replayMessages) {
+        this.emit("notification", {
+          method: "session/update",
+          params: {
+            sessionId: "session-1",
+            update: {
+              sessionUpdate: "agent_message_chunk",
+              messageId: `persisted-${text}`,
+              content: { type: "text", text }
+            }
+          }
+        })
+      }
+      this.emit("notification", {
+        method: "session/update",
+        params: {
+          sessionId: "session-1",
+          update: {
+            sessionUpdate: "plan",
+            entries: [{ content: this.todoContent, status: this.todoStatus, priority: "medium" }]
+          }
+        }
+      })
+      return {}
+    }
+
+    notify() {}
+  }
+
+  const snapshotDirectory = await mkdtemp(path.join(tmpdir(), "harness-remote-snapshots-"))
+  try {
+    const expectedMessages = ["First", "Second", "Third"]
+    const first = new AcpHarnessDriver(new SnapshotReplayAcp(expectedMessages, "Old todo"), { snapshotDirectory })
+    assert.deepEqual((await first.messages("session-1")).map((message) => message.parts[0].text), expectedMessages)
+    await first.flushSnapshots()
+
+    const emptyReplay = new AcpHarnessDriver(new SnapshotReplayAcp([], "Current todo"), { snapshotDirectory })
+    assert.deepEqual((await emptyReplay.messages("session-1")).map((message) => message.parts[0].text), expectedMessages)
+    assert.deepEqual((await emptyReplay.todos("session-1")).map((todo) => todo.content), ["Current todo"])
+    await emptyReplay.flushSnapshots()
+
+    const partialReplay = new AcpHarnessDriver(new SnapshotReplayAcp(["Second", "Third"], "Newest todo", "completed"), { snapshotDirectory })
+    assert.deepEqual((await partialReplay.messages("session-1")).map((message) => message.parts[0].text), expectedMessages)
+    assert.deepEqual((await partialReplay.todos("session-1")).map((todo) => todo.content), ["Newest todo"])
+    await partialReplay.flushSnapshots()
+
+    const stalePlanReplay = new AcpHarnessDriver(new SnapshotReplayAcp([], "Newest todo", "pending"), { snapshotDirectory })
+    assert.deepEqual((await stalePlanReplay.todos("session-1")).map((todo) => todo.status), ["completed"])
+    await stalePlanReplay.flushSnapshots()
+  } finally {
+    await rm(snapshotDirectory, { recursive: true, force: true })
+  }
+})
+
+test("reads external history without loading and interrupting the ACP session", async () => {
+  const message = (id, text) => ({
+    info: { id, role: "assistant", sessionID: "session-1", time: { created: Date.now() } },
+    parts: [{ id: `${id}:text`, type: "text", text }]
+  })
+  class MissingMiddleAcp extends EventEmitter {
+    loads = 0
+    async start() {}
+
+    async listSessions() {
+      return [{ sessionId: "session-1", cwd: process.cwd(), updatedAt: "2026-07-26T00:00:00.000Z" }]
+    }
+
+    async request(method) {
+      if (method === "session/load") this.loads += 1
+      return {}
+    }
+
+    notify() {}
+  }
+
+  let persistedHistory = [
+    message("native-first", "First"),
+    message("native-second", "Second"),
+    message("native-third", "Third")
+  ]
+  const historyLoader = async () => persistedHistory
+  const acp = new MissingMiddleAcp()
+  const driver = new AcpHarnessDriver(acp, { historyLoader })
+  assert.deepEqual((await driver.messages("session-1")).map((item) => item.parts[0].text), ["First", "Second", "Third"])
+  persistedHistory = [...persistedHistory, message("native-fourth", "Fourth")]
+  assert.deepEqual(
+    (await driver.messages("session-1")).map((item) => item.parts[0].text),
+    ["First", "Second", "Third", "Fourth"],
+    "external history must refresh and preserve native order without an explicit refresh flag"
+  )
+  assert.equal(acp.loads, 0)
+})
+
+test("merges bridge-only legacy prompts into native external history by timestamp", async () => {
+  class ExternalAcp extends EventEmitter {
+    async start() {}
+    async listSessions() {
+      return [{ sessionId: "external-1", cwd: process.cwd(), updatedAt: "2026-07-26T10:00:00.000Z" }]
+    }
+    async request() {
+      return {}
+    }
+    notify() {}
+  }
+  const envelope = (id, role, text, created) => ({
+    info: { id, role, sessionID: "external-1", time: { created } },
+    parts: [{ id: `${id}:text`, type: "text", text }]
+  })
+  const nativeHistory = [
+    envelope("native-first", "user", "First", 1_000),
+    envelope("native-last", "assistant", "Last", 3_000)
+  ]
+  const snapshotDirectory = await mkdtemp(path.join(tmpdir(), "harness-remote-external-"))
+  const snapshotPath = path.join(snapshotDirectory, `${Buffer.from("external-1").toString("base64url")}.json`)
+  await writeFile(snapshotPath, JSON.stringify({
+    version: 1,
+    messages: [
+      envelope("native-first", "user", "First", 1_000),
+      envelope("bridge-only", "user", "Bridge only", 2_000)
+    ],
+    todos: [{ id: "stale", content: "Stale external todo", status: "pending", priority: "medium" }],
+  }))
+  try {
+    const driver = new AcpHarnessDriver(new ExternalAcp(), {
+      snapshotDirectory,
+      historyLoader: async () => nativeHistory,
+    })
+    assert.deepEqual(
+      (await driver.messages("external-1")).map((item) => item.parts[0].text),
+      ["First", "Bridge only", "Last"]
+    )
+    assert.deepEqual(await driver.todos("external-1"), [])
+    await driver.flushSnapshots()
+  } finally {
+    await rm(snapshotDirectory, { recursive: true, force: true })
+  }
+})
+
+test("continues sessions created by another OMP client and reacquires them after restart", async () => {
+  class OwnershipAcp extends EventEmitter {
+    sessions = [{ sessionId: "desktop-session", cwd: process.cwd(), updatedAt: "2026-07-26T00:00:00.000Z" }]
+    prompts = []
+    loads = []
+    async start() {}
+
+    async listSessions() {
+      return this.sessions
+    }
+
+    async request(method, params) {
+      if (method === "session/new") {
+        const session = { sessionId: "mobile-session", cwd: params.cwd, updatedAt: "2026-07-26T00:00:00.000Z" }
+        this.sessions.push(session)
+        return { sessionId: session.sessionId, configOptions: [] }
+      }
+      if (method === "session/load") {
+        this.loads.push(params.sessionId)
+        return {}
+      }
+      if (method === "session/prompt") {
+        this.prompts.push(params.sessionId)
+        return {}
+      }
+      return {}
+    }
+
+    notify() {}
+  }
+
+  const persistedMessage = (sessionID, text = "Existing history", created = 1_000) => ({
+    info: { id: `${sessionID}-history-${created}`, role: "assistant", sessionID, time: { created } },
+    parts: [{ id: `${sessionID}-history-${created}:text`, type: "text", text }]
+  })
+  const snapshotDirectory = await mkdtemp(path.join(tmpdir(), "harness-remote-ownership-"))
+  const acp = new OwnershipAcp()
+  const nativeHistory = new Map()
+  const historyLoader = async (sessionID) => nativeHistory.get(sessionID) ?? [persistedMessage(sessionID)]
+  const driver = new AcpHarnessDriver(acp, { historyLoader, snapshotDirectory })
+
+  assert.equal((await driver.listSessions()).find((session) => session.id === "desktop-session")?.external, true)
+  await driver.prompt("desktop-session", "Continue from the app")
+  await new Promise((resolve) => setImmediate(resolve))
+  assert.deepEqual(acp.loads, ["desktop-session"])
+  assert.deepEqual(acp.prompts, ["desktop-session"])
+  assert.equal((await driver.listSessions()).find((session) => session.id === "desktop-session")?.external, undefined)
+
+  nativeHistory.set("desktop-session", [
+    persistedMessage("desktop-session"),
+    persistedMessage("desktop-session", "Concurrent desktop reply", 9_000_000_000_000)
+  ])
+  assert.deepEqual(
+    (await driver.messages("desktop-session", true)).map((message) => message.parts[0].text),
+    ["Existing history", "Continue from the app", "Concurrent desktop reply"]
+  )
+
+  await driver.createSession({ directory: process.cwd(), title: "Mobile", model: undefined })
+  await driver.flushSnapshots()
+  const restarted = new AcpHarnessDriver(acp, { historyLoader, snapshotDirectory })
+  assert.equal((await restarted.listSessions()).find((session) => session.id === "mobile-session")?.external, true)
+  await restarted.prompt("mobile-session", "Continue after restart")
+  await new Promise((resolve) => setImmediate(resolve))
+  assert.deepEqual(acp.loads, ["desktop-session", "desktop-session", "mobile-session"])
+  assert.deepEqual(acp.prompts, ["desktop-session", "mobile-session"])
+  await rm(snapshotDirectory, { recursive: true, force: true })
 })

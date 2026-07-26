@@ -20,6 +20,7 @@ assert.ok(i18n.includes("'settings.testedNotSaved'"), 'Test success should remai
 assert.ok(app.includes('function canTestConfig'), 'Settings should have a central testability check for required connection fields')
 assert.ok(app.includes('disabled={testingConnection || !canTestDraft || testAlreadyPassedForDraft}'), 'Test button should be disabled when fields are missing, testing is active, or the unchanged configuration already passed')
 assert.ok(app.includes('connection-help'), 'Settings should explain whether the current configuration can be tested')
+assert.equal(app.includes('settings.hostHint'), false, 'Settings should not render redundant explanatory copy below the host field')
 assert.ok(app.includes('Full, versioned backend guides live in the Harness Remote repository'), 'Help should link out instead of duplicating every backend guide')
 assert.ok(app.includes('"oh-my-pi-bridge-setup"') && app.includes('"opencode-server-setup"'), 'Help should select the repository guide for the active backend')
 assert.ok(app.includes('https://github.com/giuliastro/harness-remote#'), 'Help should link to the canonical repository')

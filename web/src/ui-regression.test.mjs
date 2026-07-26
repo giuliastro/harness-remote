@@ -60,6 +60,8 @@ assert.ok(app.includes('backgroundFailureCountRef.current += 1'), 'background re
 assert.ok(app.includes('backgroundFailureCountRef.current >= 3'), 'transient 1-2 refresh failures should not immediately show the red runtime error')
 assert.ok(app.includes('connection-pending'), 'initial slow connection should show an explicit loading state instead of an empty sessions list')
 assert.ok(app.includes("t('connection.reconnecting')"), 'slow reconnecting state should be translated and shown quietly')
+assert.ok(/initialSessionLoadRef\.current = true[\s\S]*?refreshSessions\(true\)/.test(app), 'a configured backend must fetch sessions immediately instead of waiting for the polling interval')
+assert.ok(/if \(openSession\) \{[\s\S]*?SESSION_STREAM_QUIET_MS/.test(app), 'a live event stream without an open session must not suppress session-list polling')
 assert.ok(styles.includes('.connection-status'), 'connection status should have a dedicated non-error visual treatment')
 assert.ok(app.includes('createFetchOpenCodeEventSubscription'), 'app should use an authenticated fetch-based event stream')
 assert.ok(app.includes('api.eventStream(config)'), 'app should derive the event stream URL and auth headers from server config')
@@ -70,6 +72,8 @@ assert.ok(app.includes('createNativeOpenCodeEventSubscription'), 'Android should
 assert.match(styles, /\.connection-status\s*\{\s*display:\s*flex;/, 'connection and live-status rows should be stacked, not joined inline')
 assert.ok(app.includes('eventType(event.data)'), 'app should unwrap the official global event envelope before filtering')
 assert.ok(app.includes('type.startsWith("session.") || type.startsWith("message.") || type.startsWith("todo.")'), 'only session/message/todo events should schedule refreshes')
+assert.ok(app.includes('type === "session.error"'), 'agent errors from the bridge must be handled explicitly')
+assert.ok(/type === "session\.error"[\s\S]*?setAwaitingAssistantReply\(false\)/.test(app), 'an agent error must stop the infinite waiting indicator')
 assert.ok(app.includes('setLiveEventCount((count) => count + 1)'), 'the UI should expose received application events as a counter')
 assert.ok(app.includes('scheduleRefresh()'), 'relevant live events should schedule session/message refreshes')
 assert.ok(api.includes('eventStream(config: ServerConfig)'), 'API should expose an authenticated global event-stream descriptor')
@@ -136,6 +140,9 @@ assert.ok(
 // A follow-up prompt can be queued while the agent is still working.
 assert.ok(app.includes('const showStopAction = isWorking && !composer.trim()'), 'stop should be offered only when there is nothing to send')
 assert.equal(app.includes('disabled={!selectedSession || isWorking}'), false, 'the composer must stay usable while the agent works')
+assert.ok(app.includes("authoritativeExternalHistory || assistantPayloadLength(current) <= assistantPayloadLength(msg)"), "external OMP history must replace stale cached ordering even when the corrected payload is shorter")
+assert.ok(app.includes("selectedSession?.external"), "sessions from another client should explain that sending continues them here")
+assert.equal(app.includes("disabled={!selectedSession || selectedSession.external}"), false, "external sessions must remain writable")
 assert.ok(app.includes('onClick={showStopAction ? abortSession : send}'), 'the action button should send a queued follow-up instead of only stopping')
 
 // A run bubble merges action groups that a message boundary split apart. Consecutive replies with

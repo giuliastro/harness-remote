@@ -35,11 +35,8 @@ assert.equal(it('settings.themeDark'), 'Scuro')
 assert.equal(zh('settings.themeSystem'), '跟隨系統')
 assert.equal(en('todo.title'), 'Todo Items')
 
-// A bare Windows computer name does not resolve from a phone, so the host field must say so.
 for (const translate of [en, it, zh]) {
-  const hint = translate('settings.hostHint')
-  assert.notEqual(hint, 'settings.hostHint', 'every language must translate the host hint')
-  assert.ok(hint.includes('http://'), 'the hint must state that the scheme is optional')
+  assert.ok(translate('detail.composerPlaceholder').length <= 24, 'the mobile composer placeholder must stay short')
 }
 
 console.log('i18n tests passed')
