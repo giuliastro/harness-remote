@@ -1,4 +1,4 @@
-export type BackendKind = "opencode" | "omp"
+export type BackendKind = "opencode" | "omp" | "pi"
 
 export type ServerConfig = {
   backend: BackendKind
@@ -6,6 +6,22 @@ export type ServerConfig = {
   port: number
   username: string
   password: string
+}
+
+export type HarnessCapabilities = {
+  sessions: boolean
+  prompt: boolean
+  abort: boolean
+  streaming: boolean
+  models: boolean
+  agents: boolean
+  todos: boolean
+  diff: boolean
+  filesystemBrowser: boolean
+  questions: boolean
+  commands: boolean
+  sessionRename: boolean
+  sessionDelete: boolean
 }
 
 export type HealthResponse = {
@@ -61,6 +77,7 @@ export type Session = {
     name?: string
     worktree: string
   } | null
+  external?: boolean
 }
 
 export type SessionStatus = {
@@ -195,6 +212,7 @@ export type SessionView = {
   additions: number
   deletions: number
   model?: ModelSelection
+  external?: boolean
 }
 
 export type CommandInfo = {

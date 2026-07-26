@@ -8,6 +8,7 @@ import type {
   FileStatusEntry,
   FileEntry,
   HealthResponse,
+  HarnessCapabilities,
   MessageEnvelope,
   ModelOption,
   ModelSelection,
@@ -211,6 +212,10 @@ export const api = {
     return request<HealthResponse>(config, "/global/health")
   },
 
+  capabilities(config: ServerConfig) {
+    return request<HarnessCapabilities>(config, "/v1/capabilities")
+  },
+
   listSessions(config: ServerConfig, directory?: string) {
     return request<Session[]>(config, withDirectory("/session", directory))
   },
@@ -289,7 +294,7 @@ export const api = {
   },
 
   loadMessages(config: ServerConfig, sessionID: string, directory?: string, refreshHistory = false) {
-    const refresh = config.backend === "omp" && refreshHistory ? "&refresh=1" : ""
+    const refresh = refreshHistory ? "&refresh=1" : ""
     return request<MessageEnvelope[]>(config, withDirectory(`/session/${sessionID}/message?limit=100${refresh}`, directory))
   },
 

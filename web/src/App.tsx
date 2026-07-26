@@ -14,7 +14,9 @@ import {
   type EventStreamStatus
 } from "./opencode-events"
 import { createTranslator, languageOptions, normalizeLanguage, type LanguageCode } from "./i18n"
-import type { AgentOption, CommandInfo, DiffFile, FileEntry, FileStatusEntry, MessageEnvelope, MessagePart, ModelOption, ModelSelection, PathInfo, ProjectDashboard, QuestionInfo, QuestionRequest, ServerConfig, Session, SessionStatus, SessionView, TodoItem } from "./types"
+import { DEFAULT_HARNESS_CAPABILITIES } from "./backendCapabilities"
+import { BACKEND_CLIENTS } from "./backendClient"
+import type { AgentOption, CommandInfo, DiffFile, FileEntry, FileStatusEntry, HarnessCapabilities, MessageEnvelope, MessagePart, ModelOption, ModelSelection, PathInfo, ProjectDashboard, QuestionInfo, QuestionRequest, ServerConfig, Session, SessionStatus, SessionView, TodoItem } from "./types"
 import {
   SettingsIcon,
   FolderIcon,
@@ -46,8 +48,8 @@ function defaultConfig(backend: ServerConfig["backend"]): ServerConfig {
   return {
     backend,
     host: "",
-    port: backend === "omp" ? 4097 : 4096,
-    username: backend === "omp" ? "omp" : "opencode",
+    port: backend === "opencode" ? 4096 : 4097,
+    username: backend === "opencode" ? "opencode" : backend,
     password: ""
   }
 }
@@ -56,7 +58,7 @@ function parseStoredConfig(value: string | null, backend: ServerConfig["backend"
   if (!value) return null
   try {
     const parsed = JSON.parse(value) as Partial<ServerConfig>
-    const storedBackend = parsed.backend === "omp" || parsed.backend === "opencode" ? parsed.backend : backend
+    const storedBackend = parsed.backend === "omp" || parsed.backend === "opencode" || parsed.backend === "pi" ? parsed.backend : backend
     return { ...defaultConfig(storedBackend), ...parsed, backend: storedBackend }
   } catch {
     return null
@@ -73,7 +75,7 @@ function readConfig(backend: ServerConfig["backend"]): ServerConfig {
 function initialConfig(): ServerConfig {
   const legacy = parseStoredConfig(localStorage.getItem(LEGACY_STORAGE_KEY), "opencode")
   const storedBackend = localStorage.getItem(ACTIVE_BACKEND_STORAGE_KEY)
-  const backend = storedBackend === "omp" || storedBackend === "opencode" ? storedBackend : legacy?.backend ?? "opencode"
+  const backend = storedBackend === "omp" || storedBackend === "opencode" || storedBackend === "pi" ? storedBackend : legacy?.backend ?? "opencode"
   const config = readConfig(backend)
   localStorage.setItem(BACKEND_STORAGE_KEYS[backend], JSON.stringify(config))
   localStorage.setItem(ACTIVE_BACKEND_STORAGE_KEY, backend)
@@ -956,6 +958,32 @@ function modelFromKey(value: string | null): ModelSelection | null {
   return { providerID, modelID, variant: variant || undefined }
 }
 
+function modelStorageScope(backend: ServerConfig["backend"], sessionID?: string): string {
+  return `${backend}:${sessionID ?? "new"}`
+}
+
+function readStoredModel(backend: ServerConfig["backend"], sessionID?: string): string | null {
+  try {
+    const stored = JSON.parse(localStorage.getItem(MODEL_STORAGE_KEY) ?? "{}") as Record<string, unknown>
+    const value = stored[modelStorageScope(backend, sessionID)]
+    return typeof value === "string" ? value : null
+  } catch {
+    return null
+  }
+}
+
+function writeStoredModel(backend: ServerConfig["backend"], sessionID: string | undefined, value: string): void {
+  let stored: Record<string, unknown> = {}
+  try {
+    const parsed = JSON.parse(localStorage.getItem(MODEL_STORAGE_KEY) ?? "{}")
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) stored = parsed as Record<string, unknown>
+  } catch {
+    // Replace the legacy global string with scoped selections.
+  }
+  stored[modelStorageScope(backend, sessionID)] = value
+  localStorage.setItem(MODEL_STORAGE_KEY, JSON.stringify(stored))
+}
+
 function sameModel(a: ModelSelection | null | undefined, b: ModelSelection | null | undefined): boolean {
   return Boolean(a && b && a.providerID === b.providerID && a.modelID === b.modelID && (a.variant ?? "") === (b.variant ?? ""))
 }
@@ -991,7 +1019,8 @@ function toSessionView(session: Session, status?: SessionStatus, activityTime = 
     files: session.summary?.files ?? 0,
     additions: session.summary?.additions ?? 0,
     deletions: session.summary?.deletions ?? 0,
-    model: session.model ? { providerID: session.model.providerID, modelID: session.model.id, variant: session.model.variant } : undefined
+    model: session.model ? { providerID: session.model.providerID, modelID: session.model.id, variant: session.model.variant } : undefined,
+    external: session.external
   }
 }
 
@@ -1367,6 +1396,7 @@ function App() {
   const t = useMemo(() => createTranslator(language), [language])
 
   const [draftConfig, setDraftConfig] = useState<ServerConfig>(config)
+  const [capabilities, setCapabilities] = useState<HarnessCapabilities>(() => DEFAULT_HARNESS_CAPABILITIES[config.backend])
   const [connectedVersion, setConnectedVersion] = useState<string>("")
   const [commands, setCommands] = useState<CommandInfo[]>([])
   const [commandFilter, setCommandFilter] = useState<"all" | "skill">("all")
@@ -1375,7 +1405,7 @@ function App() {
   const [selectedAgentID, setSelectedAgentID] = useState<string>(() => localStorage.getItem(AGENT_STORAGE_KEY) || "build")
   const [modelOptions, setModelOptions] = useState<ModelOption[]>([])
   const [modelLoadError, setModelLoadError] = useState<string | null>(null)
-  const [selectedModelKey, setSelectedModelKey] = useState<string | null>(() => localStorage.getItem(MODEL_STORAGE_KEY))
+  const [selectedModelKey, setSelectedModelKey] = useState<string | null>(() => readStoredModel(config.backend))
   const [modelQuery, setModelQuery] = useState("")
   const [helpPage, setHelpPage] = useState<"overview" | "server" | "network" | "troubleshooting" | "commands">(
     "overview"
@@ -1435,6 +1465,7 @@ function App() {
   const wasRunningRef = useRef(false)
   const awaitingAssistantBaselineRef = useRef("")
   const loadSelectedRequestRef = useRef(0)
+  const loadModelsRequestRef = useRef(0)
   const backgroundFailureCountRef = useRef(0)
   const initialSessionLoadRef = useRef(true)
   const latestMessageTimesRef = useRef(new Map<string, { sessionUpdated: number; activityTime: number }>())
@@ -1470,7 +1501,9 @@ function App() {
     }
     return modelOptions.find((option) => option.isDefault) ?? modelOptions[0] ?? null
   }, [modelOptions, selectedModel, selectedSession?.model])
-  const activeModel = activeModelOption ? { providerID: activeModelOption.providerID, modelID: activeModelOption.modelID, variant: activeModelOption.variant } : selectedModel ?? undefined
+  const activeModel = activeModelOption
+    ? { providerID: activeModelOption.providerID, modelID: activeModelOption.modelID, variant: activeModelOption.variant }
+    : undefined
   const primaryAgentOptions = useMemo(() => agentOptions.filter((agent) => agent.mode === "primary" || agent.mode === "all"), [agentOptions])
   const activeAgent = useMemo(() => {
     return primaryAgentOptions.find((agent) => agent.id === selectedAgentID)
@@ -1516,6 +1549,7 @@ function App() {
       .map((message) => `${message.info.id}:${message.text.length}`)
       .join("|")
   }, [renderedMessages])
+  const backendClient = BACKEND_CLIENTS[config.backend]
 
   const hasConfiguredServer = isValidServerConfig(config)
   const draftConfigKey = configKey(draftConfig)
@@ -1554,6 +1588,9 @@ function App() {
 
   async function openSession(sessionID: string, directory: string) {
     setSelectedID(sessionID)
+    setSelectedModelKey(readStoredModel(config.backend, sessionID))
+    loadModelsRequestRef.current += 1
+    setModelOptions([])
     setMessages([])
     loadedMessagesRef.current = []
     setOptimisticUserMessages([])
@@ -1579,6 +1616,7 @@ function App() {
     const serverChanged = configKey(nextConfig) !== configKey(config)
     if (serverChanged) {
       loadSelectedRequestRef.current += 1
+      loadModelsRequestRef.current += 1
       setSessions([])
       setSelectedID(null)
       setMessages([])
@@ -1593,6 +1631,7 @@ function App() {
       setCommands([])
       setAgentOptions([])
       setModelOptions([])
+      setSelectedModelKey(readStoredModel(nextConfig.backend))
     }
     setConfig(nextConfig)
     localStorage.setItem(BACKEND_STORAGE_KEYS[nextConfig.backend], JSON.stringify(nextConfig))
@@ -1703,7 +1742,10 @@ function App() {
   }
 
   async function loadAgents() {
-    if (!isValidServerConfig(config)) return
+    if (!isValidServerConfig(config) || !capabilities.agents) {
+      setAgentOptions([])
+      return
+    }
     try {
       const list = await api.listAgents(config, selectedSession?.directory ?? selectedNewSessionDirectory)
       setAgentOptions(list)
@@ -1721,34 +1763,41 @@ function App() {
   }
 
   async function loadModels(sessionID = selectedSession?.id, directory = selectedSession?.directory ?? selectedNewSessionDirectory) {
-    if (!isValidServerConfig(config)) return
+    if (!isValidServerConfig(config) || !capabilities.models) return
+    const requestID = ++loadModelsRequestRef.current
     try {
-      const list = await api.listModels(config, directory, config.backend === "omp" ? sessionID : undefined)
+      const list = await api.listModels(config, directory, backendClient.modelSelectionRequiresSession ? sessionID : undefined)
+      if (requestID !== loadModelsRequestRef.current) return
       setModelOptions(list)
       setModelLoadError(null)
-      const sessionModel = selectedSession && selectedSession.id === sessionID ? selectedSession.model : undefined
+      const sessionModel = sessions.find((session) => session.id === sessionID)?.model
       const sessionOption = sessionModel ? list.find((option) => sameModel(option, sessionModel)) : null
       if (sessionOption) {
         const nextKey = modelKey(sessionOption)
         setSelectedModelKey(nextKey)
-        localStorage.setItem(MODEL_STORAGE_KEY, nextKey)
+        writeStoredModel(config.backend, sessionID, nextKey)
         return
       }
-      const saved = modelFromKey(selectedModelKey)
-      if (saved && list.some((option) => sameModel(option, saved))) return
+      const savedKey = readStoredModel(config.backend, sessionID)
+      const saved = modelFromKey(savedKey)
+      const savedOption = saved ? list.find((option) => sameModel(option, saved)) : null
+      if (savedOption) {
+        setSelectedModelKey(savedKey)
+        return
+      }
       const fallback = list.find((option) => option.isDefault) ?? list[0]
       if (fallback) {
         const nextKey = modelKey(fallback)
         setSelectedModelKey(nextKey)
-        localStorage.setItem(MODEL_STORAGE_KEY, nextKey)
+        writeStoredModel(config.backend, sessionID, nextKey)
       }
     } catch (err) {
-      setModelLoadError((err as Error).message)
+      if (requestID === loadModelsRequestRef.current) setModelLoadError((err as Error).message)
     }
   }
 
   async function loadSessionActivityTimes(items: Session[]): Promise<Map<string, number>> {
-    if (config.backend === "omp") {
+    if (config.backend !== "opencode") {
       return new Map(items.map((session) => [session.id, session.time.updated]))
     }
     const results = await Promise.all(items.map(async (session) => {
@@ -1766,7 +1815,7 @@ function App() {
 
   function changeModel(nextKey: string) {
     setSelectedModelKey(nextKey)
-    localStorage.setItem(MODEL_STORAGE_KEY, nextKey)
+    writeStoredModel(config.backend, selectedSession?.id, nextKey)
   }
 
   function changeAgent(nextAgentID: string) {
@@ -1777,16 +1826,17 @@ function App() {
   async function loadSelected(sessionID: string, directory: string, refreshHistory = false) {
     const requestID = ++loadSelectedRequestRef.current
     const [msg, todo, diff, questions] = await Promise.all([
-      api.loadMessages(config, sessionID, directory, refreshHistory),
-      api.loadTodo(config, sessionID, directory),
-      api.loadDiff(config, sessionID, directory).catch(() => []),
-      config.backend === "omp" ? Promise.resolve([]) : api.loadQuestions(config, directory).catch(() => [])
+      api.loadMessages(config, sessionID, directory, backendClient.messageRefreshSupported && refreshHistory),
+      capabilities.todos ? api.loadTodo(config, sessionID, directory) : Promise.resolve([]),
+      capabilities.diff ? api.loadDiff(config, sessionID, directory).catch(() => []) : Promise.resolve([]),
+      capabilities.questions ? api.loadQuestions(config, directory).catch(() => []) : Promise.resolve([])
     ])
     if (requestID !== loadSelectedRequestRef.current) return
     const current = loadedMessagesRef.current
+    const authoritativeExternalHistory = selectedSessionRef.current?.id === sessionID && selectedSessionRef.current.external
     if (
       !messagesHaveSameContent(current, msg) &&
-      assistantPayloadLength(current) <= assistantPayloadLength(msg)
+      (authoritativeExternalHistory || assistantPayloadLength(current) <= assistantPayloadLength(msg))
     ) {
       shouldAutoScrollRef.current = messagesExtendContent(current, msg) && isNearMessagesBottom()
       loadedMessagesRef.current = msg
@@ -2169,24 +2219,6 @@ function App() {
   }, [])
 
   useEffect(() => {
-    let listenerHandle: PluginListenerHandle | undefined
-    CapacitorApp.addListener("backButton", () => {
-      setView((current) => {
-        if (current === "sessions") {
-          CapacitorApp.exitApp()
-          return current
-        }
-        return "sessions"
-      })
-    }).then((handle) => {
-      listenerHandle = handle
-    })
-    return () => {
-      listenerHandle?.remove()
-    }
-  }, [])
-
-  useEffect(() => {
     const mediaQuery = window.matchMedia("(prefers-color-scheme: dark)")
 
     function applyThemePreference() {
@@ -2243,8 +2275,8 @@ function App() {
     initialSessionLoadRef.current = true
     refreshSessions(true).catch(() => undefined)
     loadCommands().catch(() => undefined)
-    loadAgents().catch(() => undefined)
-    if (config.backend !== "omp") loadModels().catch(() => undefined)
+    if (capabilities.agents) loadAgents().catch(() => undefined)
+    if (capabilities.models) loadModels().catch(() => undefined)
     const timer = setInterval(() => {
       // Live SSE events already keep sessions and the open session's messages/todos/diffs in sync
       // (via applyStreamedPartUpdate/scheduleRefresh), so polling on top of a working stream is a
@@ -2255,9 +2287,10 @@ function App() {
       // the open session is actually receiving events.
       if (eventStreamStateRef.current === "live") {
         const openSession = selectedSessionRef.current
-        if (!openSession) return
-        const lastEventAt = lastEventBySessionRef.current.get(openSession.id) ?? 0
-        if (Date.now() - lastEventAt < SESSION_STREAM_QUIET_MS) return
+        if (openSession) {
+          const lastEventAt = lastEventBySessionRef.current.get(openSession.id) ?? 0
+          if (Date.now() - lastEventAt < SESSION_STREAM_QUIET_MS) return
+        }
       }
       refreshSessions(true).catch(() => undefined)
       if (selectedSession) {
@@ -2265,7 +2298,14 @@ function App() {
       }
     }, 3500)
     return () => clearInterval(timer)
-  }, [config.backend, config.host, config.port, config.username, config.password, selectedSession?.id, selectedNewSessionDirectory])
+  }, [capabilities.agents, capabilities.models, config.backend, config.host, config.port, config.username, config.password, selectedSession?.id, selectedNewSessionDirectory])
+
+  useEffect(() => {
+    const fallback = DEFAULT_HARNESS_CAPABILITIES[config.backend]
+    setCapabilities(fallback)
+    if (config.backend === "opencode" || !isValidServerConfig(config)) return
+    api.capabilities(config).then(setCapabilities).catch(() => setCapabilities(fallback))
+  }, [config.backend, config.host, config.port, config.username, config.password])
 
   useEffect(() => {
     if (!isValidServerConfig(config)) {
@@ -2295,9 +2335,11 @@ function App() {
     const onEvent = (event: { data: unknown; name: string }) => {
       const type = eventType(event.data) ?? event.name
       const payload = eventPayload(event.data)
-      const body = (payload?.properties ?? payload?.data) as
+      const body = (payload?.properties ?? payload?.data ?? payload) as
         | {
             sessionID?: string
+            sessionId?: string
+            message?: string
             part?: MessagePart
             messageID?: string
             partID?: string
@@ -2306,6 +2348,12 @@ function App() {
             info?: { id?: string; sessionID?: string }
           }
         | undefined
+      if (type === "session.error" && body?.sessionId && body.sessionId === selectedSessionRef.current?.id) {
+        completionShouldPlayRef.current = false
+        setAwaitingAssistantReply(false)
+        setBusySending(false)
+        setRuntimeError(body.message ?? "The agent stopped with an error")
+      }
       if (type === "message.part.updated" && body?.sessionID && body.part) {
         setMessages((current) => applyStreamedPartUpdate(current, body.sessionID!, body.part!))
       } else if (
@@ -2322,7 +2370,7 @@ function App() {
       }
       if (type.startsWith("session.") || type.startsWith("message.") || type.startsWith("todo.") || type.startsWith("question.")) {
         // `session.*` events carry the id on the session itself; `message.*`/`todo.*` use sessionID.
-        const sessionID = body?.sessionID ?? body?.info?.sessionID ?? body?.info?.id
+        const sessionID = body?.sessionID ?? body?.sessionId ?? body?.info?.sessionID ?? body?.info?.id
         if (sessionID) lastEventBySessionRef.current.set(sessionID, Date.now())
         setLiveEventCount((count) => count + 1)
         scheduleRefresh()
@@ -2519,6 +2567,7 @@ function App() {
             >
               <option value="opencode">OpenCode</option>
               <option value="omp">Oh My Pi (bridge)</option>
+              <option value="pi">PI (bridge)</option>
             </select>
           </label>
 
@@ -2529,10 +2578,8 @@ function App() {
               value={draftConfig.host}
               onChange={(event) => setDraftConfig({ ...draftConfig, host: event.target.value })}
               placeholder={t('settings.hostPlaceholder')}
-              aria-describedby="host-hint"
             />
           </label>
-          <p className="field-hint" id="host-hint">{t('settings.hostHint')}</p>
           
           <label htmlFor="port">
             {t('settings.port')}
@@ -2757,7 +2804,7 @@ function App() {
                     <span className={`pill ${session.status}`}>{session.status}</span>
                   </div>
                   <div className="inline-actions">
-                    {config.backend !== "omp" && (
+                    {capabilities.sessionRename && capabilities.sessionDelete && (
                       <>
                         <button
                           className="btn-secondary"
@@ -2908,8 +2955,7 @@ function App() {
                       </div>
                     ) : (
                       <>
-                        {selectedSession.title}
-                        {config.backend !== "omp" && (
+                        {capabilities.sessionRename && (
                           <button
                             className="btn-icon btn-secondary compact"
                             onClick={() => startRename(selectedSession)}
@@ -2939,8 +2985,7 @@ function App() {
             <section className="session-context-strip" aria-label={t('detail.contextStripLabel')}>
               {showModelChip && (
                 <button type="button" className="context-chip" onClick={() => setActiveDetailSheet("ai")}>
-                  <span>{t('detail.aiChip')}</span>
-                  <strong>{config.backend === "omp" ? activeModelOption?.modelName ?? t('detail.modelLoading') : `${agentLabel(activeAgent ?? { id: activeAgentID, name: activeAgentID, mode: "primary" })} · ${activeModelOption?.modelName ?? t('detail.modelLoading')}`}</strong>
+                  <strong>{capabilities.agents ? `${agentLabel(activeAgent ?? { id: activeAgentID, name: activeAgentID, mode: "primary" })} · ${activeModelOption?.modelName ?? t('detail.modelLoading')}` : activeModelOption?.modelName ?? t('detail.modelLoading')}</strong>
                 </button>
               )}
 
@@ -2998,6 +3043,10 @@ function App() {
             onMessagesScroll={handleMessagesScroll}
             onQuestionResolved={handleQuestionResolved}
           />
+
+          {selectedSession?.external && (
+            <p className="field-hint">{t('detail.externalSession')}</p>
+          )}
 
           <div className="composer" ref={composerRef}>
             <textarea
@@ -3072,7 +3121,7 @@ function App() {
                   <RefreshIcon size={16} />
                   {t('detail.refreshAi')}
                 </button>
-                {config.backend !== "omp" && (primaryAgentOptions.length > 0 ? (
+                {capabilities.agents && (primaryAgentOptions.length > 0 ? (
                   <div className="agent-controls">
                     <label htmlFor="agent-select">
                       {t('detail.agentSelectLabel')}
@@ -3290,31 +3339,36 @@ function App() {
 
           {helpPage === "server" && (
             <div className="help-content fade-in">
-              <h3>{config.backend === "omp" ? "Oh My Pi bridge" : "OpenCode server"}</h3>
+              <h3>{config.backend === "opencode" ? "OpenCode server" : config.backend === "omp" ? "Oh My Pi bridge" : "PI bridge"}</h3>
               <p>
                 This page keeps setup brief. Full, versioned backend guides live in the Harness Remote repository so new
                 backends do not make the app help unwieldy.
               </p>
               <div className="code-blocks">
-                {config.backend === "omp" ? (
-                  <>
-                    <h4>OMP bridge (macOS / Linux)</h4>
-                    <pre>npx --yes ./bridge --host 0.0.0.0 --port 4097 --username omp --password your-password --root "$PWD"</pre>
-                  </>
-                ) : (
+                {config.backend === "opencode" ? (
                   <>
                     <h4>OpenCode server (macOS / Linux)</h4>
                     <pre>OPENCODE_SERVER_USERNAME=opencode OPENCODE_SERVER_PASSWORD=your-password npx -y opencode-ai serve --hostname 0.0.0.0 --port 4096</pre>
+                  </>
+                ) : config.backend === "omp" ? (
+                  <>
+                    <h4>OMP bridge (macOS / Linux)</h4>
+                    <pre>node bridge/src/cli.js --host 0.0.0.0 --port 4097 --username omp --password your-password --root "$PWD"</pre>
+                  </>
+                ) : (
+                  <>
+                    <h4>PI bridge (macOS / Linux)</h4>
+                    <pre>node bridge/src/cli.js --harness pi --pi-bin "$(command -v pi)" --host 0.0.0.0 --port 4097 --username pi --password your-password --root "$PWD"</pre>
                   </>
                 )}
               </div>
               <p>
                 <a
-                  href={`https://github.com/giuliastro/harness-remote#${config.backend === "omp" ? "oh-my-pi-bridge-setup" : "opencode-server-setup"}`}
+                  href={`https://github.com/giuliastro/harness-remote#${config.backend === "opencode" ? "opencode-server-setup" : config.backend === "omp" ? "oh-my-pi-bridge-setup" : "pi-bridge-setup"}`}
                   target="_blank"
                   rel="noreferrer"
                 >
-                  Open the complete {config.backend === "omp" ? "OMP bridge" : "OpenCode server"} guide in the repository
+                  Open the complete {config.backend === "opencode" ? "OpenCode server" : config.backend === "omp" ? "OMP bridge" : "PI bridge"} guide in the repository
                 </a>
               </p>
             </div>
