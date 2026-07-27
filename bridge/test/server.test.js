@@ -495,6 +495,13 @@ test("allows only explicitly configured browser origins", async () => {
     })
     assert.equal(foreign.headers.get("access-control-allow-origin"), null, "unlisted origins must not be granted access")
     assert.equal(foreign.status, 200)
+
+    // Renaming a session is a PATCH and deleting one is a DELETE; a preflight that omits them
+    // lets the browser fail the real request with nothing but a network error.
+    const methods = preflight.headers.get("access-control-allow-methods") ?? ""
+    for (const method of ["GET", "POST", "PATCH", "DELETE", "OPTIONS"]) {
+      assert.ok(methods.includes(method), `${method} must be allowed for browser clients, got "${methods}"`)
+    }
   } finally {
     await bridge.close()
   }

@@ -33,6 +33,7 @@ import {
   LoadingIcon,
   RefreshIcon,
   OfflineIcon,
+  ChevronLeftIcon,
   PencilIcon,
   CloseIcon
 } from "./Icons"
@@ -1841,6 +1842,9 @@ function App() {
     () => sessions.find((session) => session.id === selectedID) ?? null,
     [sessions, selectedID]
   )
+  const isRenamingSelected = selectedSession && renamingSessionID === selectedSession.id && renameSource === "header"
+    ? selectedSession
+    : null
   const projectPath = projectDashboard?.project
     ? pickString(projectDashboard.project.path) || pickString(projectDashboard.project.directory) || pickString(projectDashboard.project.root)
     : null
@@ -3520,66 +3524,70 @@ function App() {
 
       {mainView === "detail" && (
         <main className="panel detail fade-in">
-          <div className="detail-topbar">
-            {!isDesktop && (
-              <button className="btn-secondary" onClick={() => {
-                setView("sessions");
-                requestAnimationFrame(() => document.querySelector<HTMLElement>(".session-card.active")?.scrollIntoView({ block: "center" }));
-              }}>{t('detail.backToSessions')}</button>
-            )}
-          </div>
-          <div className="header-row detail-header">
-              <div>
-              <h2>
-                {selectedSession ? (
-                  <div className="detail-title-row">
-                    {renamingSessionID === selectedSession.id && renameSource === "header" ? (
-                      <div className="rename-inline">
-                        <input
-                          ref={renameInputRef}
-                          value={renameValue}
-                          onChange={(event) => setRenameValue(event.target.value)}
-                          onKeyDown={(event) => {
-                            if (event.key === "Enter") {
-                              event.preventDefault()
-                              renameSession(selectedSession.id, renameValue, selectedSession.directory).catch(() => undefined)
-                            } else if (event.key === "Escape") {
-                              cancelRename()
-                            }
-                          }}
-                          onBlur={() => {
-                            if (renameValue === selectedSession.title || !renameValue.trim()) {
-                              cancelRename()
-                            }
-                          }}
-                          placeholder={t('session.renamePlaceholder')}
-                          className="rename-input"
-                          autoComplete="off"
-                        />
-                        {/* Two unlabelled 14px glyphs asked the user to guess which one commits.
-                            One labelled primary action, and cancel as the quieter icon. */}
-                        <button
-                          className="btn-icon btn-primary compact rename-save"
-                          onClick={() => renameSession(selectedSession.id, renameValue, selectedSession.directory).catch(() => undefined)}
-                          onMouseDown={(event) => event.preventDefault()}
-                          disabled={!renameValue.trim() || renameValue === selectedSession.title}
-                          title={t('session.renameConfirm')}
-                          aria-label={t('session.renameConfirm')}
-                        >
-                          <SaveIcon size={16} />
-                        </button>
-                        <button
-                          className="btn-icon btn-secondary compact"
-                          onClick={() => cancelRename()}
-                          onMouseDown={(event) => event.preventDefault()}
-                          title={t('session.cancel')}
-                          aria-label={t('session.cancel')}
-                        >
-                          <CloseIcon size={18} />
-                        </button>
-                      </div>
-                    ) : (
-                      <>
+          {/* Back, title and status share one compact row on mobile; desktop keeps the sidebar-first navigation. */}
+          <div className="detail-headline">
+            {isRenamingSelected ? (
+              <div className="rename-inline">
+                <input
+                  ref={renameInputRef}
+                  value={renameValue}
+                  onChange={(event) => setRenameValue(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") {
+                      event.preventDefault()
+                      renameSession(isRenamingSelected.id, renameValue, isRenamingSelected.directory).catch(() => undefined)
+                    } else if (event.key === "Escape") {
+                      cancelRename()
+                    }
+                  }}
+                  onBlur={() => {
+                    if (renameValue === isRenamingSelected.title || !renameValue.trim()) {
+                      cancelRename()
+                    }
+                  }}
+                  placeholder={t('session.renamePlaceholder')}
+                  className="rename-input"
+                  autoComplete="off"
+                />
+                <button
+                  className="btn-primary compact rename-save"
+                  onClick={() => renameSession(isRenamingSelected.id, renameValue, isRenamingSelected.directory).catch(() => undefined)}
+                  onMouseDown={(event) => event.preventDefault()}
+                  disabled={!renameValue.trim() || renameValue === isRenamingSelected.title}
+                >
+                  <SaveIcon size={16} />
+                  {t('session.renameConfirm')}
+                </button>
+                <button
+                  className="btn-icon btn-secondary compact"
+                  onClick={() => cancelRename()}
+                  onMouseDown={(event) => event.preventDefault()}
+                  title={t('session.cancel')}
+                  aria-label={t('session.cancel')}
+                >
+                  <CloseIcon size={18} />
+                </button>
+              </div>
+            ) : (
+              <>
+                {!isDesktop && (
+                  <button
+                    type="button"
+                    className="btn-icon btn-secondary compact detail-back"
+                    title={t('detail.backToSessions')}
+                    aria-label={t('detail.backToSessions')}
+                    onClick={() => {
+                      setView("sessions")
+                      requestAnimationFrame(() => document.querySelector<HTMLElement>(".session-card.active")?.scrollIntoView({ block: "center" }))
+                    }}
+                  >
+                    <ChevronLeftIcon size={20} />
+                  </button>
+                )}
+                <div className="detail-headline-main">
+                  <h2>
+                    {selectedSession ? (
+                      <div className="detail-title-row">
                         {/* A 14px glyph is a poor target and a poor hint. The title itself is the
                             button; the pencil only says that it can be edited. */}
                         {capabilities.sessionRename ? (
@@ -3596,26 +3604,26 @@ function App() {
                         ) : (
                           <span className="session-title-text">{selectedSession.title}</span>
                         )}
-                      </>
+                      </div>
+                    ) : (
+                      t('detail.selectSession')
                     )}
-                  </div>
-                ) : (
-                  t('detail.selectSession')
-                )}
-              </h2>
-              {selectedSession && (
-                <p className="subtle detail-subline" title={selectedSession.directory}>
-                  <span className="detail-subline-path">{shortDirectory(selectedSession.directory)}</span>
-                  {/* Moved up from between the messages and the composer, where the sticky
-                      composer covered half of it. Written out rather than tagged: a one-word
-                      label needed a tooltip to be understood, and touch has no tooltip. */}
-                  {selectedSession.external && (
-                    <span className="detail-subline-note">{t('detail.externalSession')}</span>
+                  </h2>
+                  {selectedSession && (
+                    <p className="subtle detail-subline" title={selectedSession.directory}>
+                      <span className="detail-subline-path">{shortDirectory(selectedSession.directory)}</span>
+                      {selectedSession.external && (
+                        <span className="detail-subline-note">{t('detail.externalSession')}</span>
+                      )}
+                    </p>
                   )}
-                </p>
+                </div>
+                {selectedSession && (
+                  <span className={`pill ${selectedSession.status}`}>{selectedSession.status}</span>
                 )}
-              </div>
-            </div>
+              </>
+            )}
+          </div>
 
           {selectedSession && (
             <section className="session-context-strip" aria-label={t('detail.contextStripLabel')}>

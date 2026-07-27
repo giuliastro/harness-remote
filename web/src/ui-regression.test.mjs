@@ -250,4 +250,29 @@ assert.ok(app.includes("t('sessions.retry')"), 'an offline state should offer a 
 assert.ok(app.includes('disabled={creatingSession || isOffline}'), 'an action that cannot succeed offline must not be offered')
 assert.ok(styles.includes('.empty-state-actions'), 'the offline actions should be styled')
 
+// The session screen opened with the status pill on one line, a decorative icon on the next and
+// the title on a third: 227px of chrome above 251px of conversation. Back, title and status
+// belong on one row.
+assert.equal(app.includes('detail-topbar'), false, 'back and status must not occupy a row of their own')
+assert.equal(styles.includes('.detail-topbar'), false, 'the stacked topbar rules should go with it')
+assert.equal(app.includes('<ChatIcon size={24} className="icon-inline-heading" />'), false, 'the session heading should not spend a line on decoration')
+const headlineBlock = app.slice(app.indexOf('className="detail-headline"'), app.indexOf('session-context-strip'))
+assert.ok(headlineBlock.includes('pill ${selectedSession.status}'), 'the status pill belongs on the headline row')
+assert.ok(headlineBlock.includes('session-title-button') && headlineBlock.includes('detail-back'), 'back and title belong on the headline row too')
+
+// Renaming nested inside the title left the field 214px wide and stranded Cancel alone on a
+// second line, so the form replaces the row rather than living inside it.
+assert.ok(headlineBlock.includes('isRenamingSelected ? ('), 'renaming should be a branch of the headline row')
+const headingBlock = headlineBlock.slice(headlineBlock.indexOf('<h2>'), headlineBlock.indexOf('</h2>'))
+assert.ok(headingBlock, 'the headline should still carry the session title')
+assert.equal(headingBlock.includes('rename-input'), false, 'the rename field must not be nested inside the title')
+assert.match(styles, /\.rename-inline \.rename-input \{[\s\S]*?flex: 1 1 100%/, 'the rename field should own its line so the buttons stay together')
+
+// A flex item will not shrink below its content unless told to, so a long title used to widen the
+// row past its parent and slide out to the right instead of ellipsising.
+assert.match(styles, /\.detail-title-row \{[\s\S]*?min-width: 0/, 'a long title must be allowed to truncate')
+
+// One chip stretched to full width reads as an empty banner; several must still share the row.
+assert.match(styles, /\.context-chip:only-child \{[\s\S]*?flex: 0 1 auto/, 'a lone context chip should take only the width it needs')
+
 console.log('ui regression tests passed')

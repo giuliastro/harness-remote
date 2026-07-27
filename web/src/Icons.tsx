@@ -429,6 +429,24 @@ export const OfflineIcon = ({ className = "", size = 20 }: { className?: string;
   </svg>
 )
 
+export const ChevronLeftIcon = ({ className = "", size = 20 }: { className?: string; size?: number }) => (
+  <svg
+    width={size}
+    height={size}
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    className={className}
+    role="img"
+    aria-label="Back"
+  >
+    <path d="M15 18l-6-6 6-6" />
+  </svg>
+)
+
 export const JumpToTopIcon = ({ className = "", size = 20 }: { className?: string; size?: number }) => (
   <svg
     width={size}
