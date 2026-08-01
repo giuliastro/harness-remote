@@ -103,6 +103,7 @@ type TranslationKey =
   | 'detail.copyMarkdown'
   | 'detail.undo'
   | 'detail.redo'
+  | 'detail.sessionActions'
   | 'detail.nothingToUndo'
   | 'detail.nothingToRedo'
   | 'detail.revertToMessage'
@@ -338,6 +339,7 @@ const translations: Record<LanguageCode, Record<TranslationKey, string>> = {
     'detail.copyMarkdown': 'Copy as markdown',
     'detail.undo': 'Undo last turn',
     'detail.redo': 'Redo last undone turn',
+    'detail.sessionActions': 'Session actions',
     'detail.nothingToUndo': 'Nothing to undo in this session.',
     'detail.nothingToRedo': 'Nothing to redo in this session.',
     'detail.revertToMessage': 'Revert to this message',
@@ -572,6 +574,7 @@ const translations: Record<LanguageCode, Record<TranslationKey, string>> = {
     'detail.copyMarkdown': 'Copia come Markdown',
     'detail.undo': 'Annulla ultimo turno',
     'detail.redo': 'Ripristina ultimo turno annullato',
+    'detail.sessionActions': 'Azioni sessione',
     'detail.nothingToUndo': 'Non c’è nulla da annullare in questa sessione.',
     'detail.nothingToRedo': 'Non c’è nulla da ripristinare in questa sessione.',
     'detail.revertToMessage': 'Ripristina fino a questo messaggio',
@@ -806,6 +809,7 @@ const translations: Record<LanguageCode, Record<TranslationKey, string>> = {
     'detail.copyMarkdown': '複製為 Markdown',
     'detail.undo': '復原上一個回合',
     'detail.redo': '重做上一個復原的回合',
+    'detail.sessionActions': '工作階段動作',
     'detail.nothingToUndo': '此工作階段沒有可復原的內容。',
     'detail.nothingToRedo': '此工作階段沒有可重做的內容。',
     'detail.revertToMessage': '還原到這則訊息',

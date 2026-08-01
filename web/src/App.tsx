@@ -34,7 +34,8 @@ import {
   RefreshIcon,
   OfflineIcon,
   PencilIcon,
-  CloseIcon
+  CloseIcon,
+  MoreVerticalIcon
 } from "./Icons"
 
 const REMARK_PLUGINS = [remarkGfm]
@@ -1512,6 +1513,74 @@ type MessageMenuAction = {
   onSelect: () => void
 }
 
+/** A ⋯ control in the conversation header exposing session-level actions from the connected
+ *  harness/extension (currently Undo/Redo). The message context menu only reaches those actions
+ *  when a bubble exists to host it — an Undo that empties the transcript leaves Redo enabled but
+ *  unreachable, so the header menu is the interaction surface that never depends on transcript
+ *  contents. Availability still comes from the harness via the caller. */
+function SessionActionsMenu({
+  actions,
+  t
+}: {
+  actions: MessageMenuAction[]
+  t: Translator
+}) {
+  const [open, setOpen] = useState(false)
+  const menuRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!open) return
+    const dismiss = (event: PointerEvent) => {
+      if (menuRef.current && !menuRef.current.contains(event.target as Node)) setOpen(false)
+    }
+    const dismissOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setOpen(false)
+    }
+    const dismissOnResize = () => setOpen(false)
+    window.addEventListener("pointerdown", dismiss)
+    window.addEventListener("keydown", dismissOnEscape)
+    window.addEventListener("resize", dismissOnResize)
+    return () => {
+      window.removeEventListener("pointerdown", dismiss)
+      window.removeEventListener("keydown", dismissOnEscape)
+      window.removeEventListener("resize", dismissOnResize)
+    }
+  }, [open])
+
+  return (
+    <div className="session-actions" ref={menuRef}>
+      <button
+        type="button"
+        className="btn-icon session-actions-toggle"
+        onClick={() => setOpen((value) => !value)}
+        aria-expanded={open}
+        aria-haspopup="menu"
+        aria-label={t('detail.sessionActions')}
+        title={t('detail.sessionActions')}
+      >
+        <MoreVerticalIcon size={20} />
+      </button>
+      {open && (
+        <div className="session-actions-menu" role="menu">
+          {actions.map((action) => (
+            <button
+              key={action.id}
+              type="button"
+              role="menuitem"
+              onClick={() => {
+                setOpen(false)
+                action.onSelect()
+              }}
+            >
+              {action.label}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
 /** Wraps a bubble in the copy menu. Takes the text to copy rather than a message, because what a
  *  bubble shows is not always one message's text: a run merges several, and some carry none at all. */
 function MessageContextMenu({
@@ -2109,6 +2178,24 @@ function App() {
     const supportsRedo = config.backend === "opencode" || !!redoAction || supported.has("redo")
     if (supportsUndo && hasUndo) actions.push({ id: "undo", label: t('detail.undo'), onSelect: () => void runNativeHistoryCommand("undo") })
     if (supportsRedo && hasRedo) actions.push({ id: "redo", label: t('detail.redo'), onSelect: () => void runNativeHistoryCommand("redo") })
+    return actions
+  }, [commands, config.backend, extensionActions, messages, selectedSession?.revertMessageID, t])
+  /** Session-level actions for the header ⋯ menu. Unlike the message context menu, availability
+   *  follows the harness/extension's own enabled state rather than the transcript contents: an
+   *  Undo that empties the conversation leaves Redo enabled but with no bubble left to host a menu,
+   *  so this menu stays reachable and mirrors exactly what the bridge reports. */
+  const sessionHeaderActions = useMemo(() => {
+    const supported = new Set(commands.map((command) => command.name.toLowerCase()))
+    const actions: MessageMenuAction[] = []
+    const revertMessageID = selectedSession?.revertMessageID
+    const undoAction = extensionActions.find((action) => action.id === "undo")
+    const redoAction = extensionActions.find((action) => action.id === "redo")
+    const hasUndo = config.backend === "opencode"
+      ? messages.some((message) => message.info.role === "user" && (!revertMessageID || message.info.id < revertMessageID))
+      : undoAction ? undoAction.enabled : supported.has("undo")
+    const hasRedo = config.backend === "opencode" ? !!revertMessageID : redoAction ? redoAction.enabled : supported.has("redo")
+    if (hasUndo) actions.push({ id: "undo", label: t('detail.undo'), onSelect: () => void runNativeHistoryCommand("undo") })
+    if (hasRedo) actions.push({ id: "redo", label: t('detail.redo'), onSelect: () => void runNativeHistoryCommand("redo") })
     return actions
   }, [commands, config.backend, extensionActions, messages, selectedSession?.revertMessageID, t])
   const selectedNewSessionDirectory = normalizeDirectory(newSessionDirectory)
@@ -3991,6 +4078,9 @@ function App() {
                 </p>
                 )}
               </div>
+              {selectedSession && sessionHeaderActions.length > 0 && (
+                <SessionActionsMenu actions={sessionHeaderActions} t={t} />
+              )}
             </div>
 
           {selectedSession && (

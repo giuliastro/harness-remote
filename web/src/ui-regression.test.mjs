@@ -439,4 +439,23 @@ assert.ok(app.includes('result.applied !== false'), 'unknown results should stil
 assert.ok(app.includes("command === \"undo\" ? 'detail.nothingToUndo' : 'detail.nothingToRedo'"), 'the no-op message should describe the attempted action')
 assert.ok(app.includes('{actionNotice && <div className=\"notice info fade-in\">'), 'no-op action feedback should render as visible information rather than an error')
 
+// Session actions in the header (issue #104): Undo can strip the transcript to nothing, leaving
+// Redo enabled but unreachable through the message context menu, which needs a bubble to exist.
+// A header ⋯ menu must therefore render the harness actions independently of transcript contents.
+assert.ok(app.includes('function SessionActionsMenu'), 'session actions should have their own header menu component')
+assert.ok(app.includes('<MoreVerticalIcon'), 'the session actions menu should open from a ⋯ control in the conversation header')
+assert.match(app, /sessionHeaderActions\.length > 0 && \(/, 'the header actions menu should appear only when the harness offers actions')
+assert.match(app, /session-actions-menu/, 'the header actions menu should render harness actions as menu items')
+assert.match(app, /aria-haspopup="menu"/, 'the session actions toggle should announce that it opens a menu')
+assert.match(app, /aria-expanded=\{open\}/, 'the session actions toggle should reflect the menu open state for assistive tech')
+assert.ok(app.includes('detail.sessionActions'), 'the session actions toggle should have a translated accessible label')
+assert.match(
+  app,
+  /const hasRedo = config\.backend === "opencode" \? !!revertMessageID : redoAction \? redoAction\.enabled : supported\.has\("redo"\)/,
+  'the header menu must follow harness/extension availability instead of gating Redo on transcript contents'
+)
+assert.match(app, /session-actions-menu/, 'the header actions menu should have its own styles')
+assert.match(styles, /\.session-actions-menu\s*\{[\s\S]*?position:\s*absolute/, 'the header actions menu must overlay the conversation rather than push its layout')
+assert.match(styles, /\.session-actions-menu\s*\{[\s\S]*?z-index:\s*20/, 'the header actions menu must stack above the message list')
+
 console.log('ui regression tests passed')
