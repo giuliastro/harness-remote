@@ -2752,19 +2752,28 @@ function App() {
    *  anything reading scroll position has to look at whichever of the two actually scrolls. */
   function messagesScrollMetrics(): ScrollMetrics {
     const container = messagesRef.current
-    return scrollsItself(container) ? elementScrollMetrics(container) : windowScrollMetrics()
+    if (scrollsItself(container)) return elementScrollMetrics(container)
+
+    // The fixed mobile composer is intentionally outside document flow. The transcript reserves
+    // enough tail space to place its sentinel just above that composer, so the visually-correct
+    // live tail is not the document's maximum scrollY. Measure the remaining transcript travel
+    // directly instead; using document.scrollHeight here leaves the pin false by roughly one
+    // composer height even while the last message is exactly where it belongs.
+    const endRect = messagesEndRef.current?.getBoundingClientRect()
+    const composerRect = composerRef.current?.getBoundingClientRect()
+    if (!endRect || !composerRect) return windowScrollMetrics()
+    const liveTailBottom = composerRect.top - 12
+    return {
+      fromTop: window.scrollY,
+      fromBottom: Math.max(0, endRect.bottom - liveTailBottom)
+    }
   }
 
   function isNearMessagesBottom(): boolean {
-    const container = messagesRef.current
-    if (!container) return true
-    const containerDistance = container.scrollHeight - container.scrollTop - container.clientHeight
-    if (containerDistance > BOTTOM_STICK_THRESHOLD) return false
-    // The page itself can also scroll (the composer is pinned via fixed positioning), so a user
-    // scrolling the outer window away from the bottom must also break the auto-scroll pin.
-    const doc = document.documentElement
-    const windowDistance = doc.scrollHeight - window.scrollY - window.innerHeight
-    return windowDistance <= BOTTOM_STICK_THRESHOLD
+    // Read only the scroller that is active for this layout. On mobile `.messages` deliberately has
+    // overflow: visible and the window scrolls; treating the overflowing element as a second scroller
+    // makes its permanently-zero scrollTop disable the live-tail pin after almost every swipe.
+    return messagesScrollMetrics().fromBottom <= BOTTOM_STICK_THRESHOLD
   }
 
   const handleMessagesScroll = useCallback(() => {
@@ -3357,7 +3366,7 @@ function App() {
     if (view !== "detail") return
     if (!stickToBottomRef.current) return
     scrollMessagesToBottom("auto")
-  }, [view, messageScrollSignature, isWorking, showTypingBubble, pendingQuestions, pendingPermissions])
+  }, [view, renderedMessages, isWorking, showTypingBubble, pendingQuestions, pendingPermissions])
 
   // Growing or swapping the transcript changes the distance to each end without any scroll event
   // firing, so the jump buttons have to be re-evaluated off the content too.
@@ -3396,12 +3405,28 @@ function App() {
       if (stickToBottomRef.current) scrollMessagesToBottom("auto")
     })
     observer.observe(container)
-    const timeout = setTimeout(() => observer.disconnect(), 2000)
     return () => {
       observer.disconnect()
-      clearTimeout(timeout)
     }
   }, [view, selectedID])
+
+  // Mobile detail and sessions share the window scroller. Leaving a long transcript therefore
+  // preserves a large page offset which is usually clamped to the end of the shorter sessions page.
+  // Restore the selected card after React has committed and the replacement page has laid out. This
+  // single path also covers the Android system back button, the header button and bottom navigation.
+  useEffect(() => {
+    if (isDesktop || mainView !== "sessions" || !selectedID) return
+    let innerFrame = 0
+    const outerFrame = requestAnimationFrame(() => {
+      innerFrame = requestAnimationFrame(() => {
+        document.querySelector<HTMLElement>(".session-card.active")?.scrollIntoView({ block: "center" })
+      })
+    })
+    return () => {
+      cancelAnimationFrame(outerFrame)
+      if (innerFrame) cancelAnimationFrame(innerFrame)
+    }
+  }, [isDesktop, mainView, selectedID])
 
   useEffect(() => {
     loadedMessagesRef.current = messages
@@ -4066,10 +4091,9 @@ function App() {
           <div className="detail-topbar">
             {!isDesktop && (
               <>
-                <button className="btn-secondary detail-back-button" onClick={() => {
-                  setView("sessions");
-                  requestAnimationFrame(() => document.querySelector<HTMLElement>(".session-card.active")?.scrollIntoView({ block: "center" }));
-                }}>{t('detail.backToSessions')}</button>
+                <button className="btn-secondary detail-back-button" onClick={() => setView("sessions")}>
+                  {t('detail.backToSessions')}
+                </button>
                 {selectedSession && sessionHeaderActions.length > 0 && (
                   <SessionActionsMenu actions={sessionHeaderActions} t={t} />
                 )}
@@ -4788,12 +4812,7 @@ http://YOUR_PC_IP:4096/global/health</pre>
           <button
             key={item.view}
             className={view === item.view ? "active" : ""}
-            onClick={() => {
-              setView(item.view);
-              if (item.view === "sessions") {
-                requestAnimationFrame(() => document.querySelector<HTMLElement>(".session-card.active")?.scrollIntoView({ block: "center" }));
-              }
-            }}
+            onClick={() => setView(item.view)}
             disabled={item.disabled}
             aria-label={item.label}
           >

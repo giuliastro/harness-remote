@@ -32,6 +32,21 @@ assert.ok(
   /if \(!stickToBottomRef\.current\) return[\s\S]*?scrollMessagesToBottom\("auto"\)/.test(app),
   'content-driven auto-scroll must be gated on the user already being pinned to the bottom, so background refreshes cannot force the conversation to scroll while the user has scrolled away'
 )
+assert.match(
+  app,
+  /return messagesScrollMetrics\(\)\.fromBottom <= BOTTOM_STICK_THRESHOLD/,
+  'the live-tail pin must measure only the active scroller; mobile messages overflow into the page and are not themselves scrollable'
+)
+assert.match(
+  app,
+  /const liveTailBottom = composerRect\.top - 12[\s\S]*?fromBottom: Math\.max\(0, endRect\.bottom - liveTailBottom\)/,
+  'mobile bottom distance must be measured between the transcript sentinel and fixed composer, not against unused document tail space'
+)
+assert.match(
+  app,
+  /\}, \[view, renderedMessages, isWorking, showTypingBubble, pendingQuestions, pendingPermissions\]\)/,
+  'auto-scroll must react to every rendered message update, including tool output that changes layout without changing message text'
+)
 assert.ok(app.includes('}, [view, selectedID])'), 'auto-scroll should run only when opening a selected session')
 assert.ok(app.includes('scrollMessagesToBottom("smooth")'), 'focusing the composer should scroll to the bottom')
 assert.ok(app.includes('messagesEndRef'), 'auto-scroll should target a bottom sentinel marker')
@@ -43,7 +58,12 @@ assert.ok(app.includes('scrollBy({ top: coveredByComposer'), 'page-level auto-sc
 assert.ok(/\.messages[\s\S]*?padding-bottom:\s*var\(--chat-bottom-clearance/.test(styles), 'messages pane should reserve bottom space for the sticky composer')
 assert.ok(/\.messages-end[\s\S]*?scroll-margin-bottom:\s*var\(--chat-bottom-clearance/.test(styles), 'bottom sentinel should keep the latest output above the sticky composer')
 assert.ok(/requestAnimationFrame\(\(\) => \{[\s\S]*?requestAnimationFrame\(\(\) => \{/.test(app), 'auto-scroll should wait for the next two frames so freshly rendered content is laid out before scrolling')
-assert.ok(app.includes('session-card.active') && app.includes('scrollIntoView({ block: "center" })'), 'returning to sessions should center the active session card instead of restoring a stale scroll coordinate')
+assert.match(
+  app,
+  /if \(isDesktop \|\| mainView !== "sessions" \|\| !selectedID\) return[\s\S]*?session-card\.active[\s\S]*?scrollIntoView\(\{ block: "center" \}\)/,
+  'every mobile return path, including Android back, should center the active session after the sessions page commits'
+)
+assert.match(styles, /@media \(max-width: 780px\)[\s\S]*?\.composer\s*\{[\s\S]*?position:\s*fixed;/, 'the mobile composer must be out of document flow so its reserved clearance cannot become a real blank gap')
 assert.ok(app.includes('typing-bubble'), 'detail view should render a temporary typing bubble while waiting for OpenCode output')
 assert.ok(app.includes('typing-dot'), 'typing bubble should show animated dots')
 assert.ok(app.includes('awaitingAssistantReply'), 'typing bubble should stay visible after the send request returns and until a new assistant message arrives')

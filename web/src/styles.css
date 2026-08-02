@@ -2438,9 +2438,8 @@ button.compact {
     min-height: 240px;
     overflow: visible;
     padding: 0;
-    /* The side padding goes away here, but the bottom clearance must not: the composer is sticky at
-       an offset above the page bottom, so without it the newest messages settle underneath it and
-       the page has no room left to scroll them clear. */
+    /* The side padding goes away here, but the bottom clearance must not: the fixed composer is out
+       of flow, so this is the one reserved area that lets the newest message settle above it. */
     padding-bottom: var(--chat-bottom-clearance, 140px);
     scroll-padding-bottom: var(--chat-bottom-clearance, 140px);
   }
@@ -2465,9 +2464,11 @@ button.compact {
   }
 
   .composer {
+    position: fixed;
+    left: calc(var(--space-5) + env(safe-area-inset-left));
+    right: calc(var(--space-5) + env(safe-area-inset-right));
     bottom: calc(72px + env(safe-area-inset-bottom));
-    margin-left: calc(var(--space-2) * -1);
-    margin-right: calc(var(--space-2) * -1);
+    margin: 0;
   }
 
   .help-tabs {
