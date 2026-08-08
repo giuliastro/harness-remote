@@ -68,7 +68,7 @@ offering a control that fails.
   when a session finishes while you are working elsewhere
 - jump to the top or the bottom of a long transcript or session list without dragging through it
 - play a completion sound when a running session finishes
-- switch UI language between English, Italian, and Traditional Chinese, and the theme between light,
+- switch UI language between English, Italian, Traditional Chinese, and Simplified Chinese, and the theme between light,
   dark, and system
 
 Depending on the harness:
@@ -183,7 +183,7 @@ npx -y opencode-ai serve --hostname 0.0.0.0 --port 4096 --cors https://giuliastr
 - mobile packaging: Capacitor (Android APK)
 - networking: per-harness transports behind one app-side API — the OpenCode HTTP API spoken directly, and the local HTTP/SSE bridge in `bridge/` that fronts both OMP and PI over ACP
 - CI/CD: GitHub Actions for cloud APK and unsigned desktop builds
-- i18n: lightweight custom i18n module with English, Italian, and Traditional Chinese
+- i18n: lightweight custom i18n module with English, Italian, Traditional Chinese, and Simplified Chinese
 
 ## Download
 

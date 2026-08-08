@@ -211,9 +211,9 @@ encode what you observed in a fake.
 
 ## Internationalisation
 
-The UI ships in English, Italian and Traditional Chinese, in one small module with no framework.
+The UI ships in English, Italian, Traditional Chinese and Simplified Chinese, in one small module with no framework.
 `test:i18n` enforces key parity, so a string added to one language and not the others fails the
-suite. Add all three.
+suite. Add all four.
 
 ## Android packaging
 
