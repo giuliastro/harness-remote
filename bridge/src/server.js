@@ -47,11 +47,58 @@ function matchesCredentials(request, config) {
   return received.length === expected.length && timingSafeEqual(received, expected)
 }
 
+const ATTACHMENT_MIME_TYPES = new Set(["image/png", "image/jpeg", "image/webp", "image/gif"])
+const MAX_ATTACHMENTS = 8
+const MAX_ATTACHMENT_BYTES = 5 * 1024 * 1024
+const MAX_ATTACHMENT_TOTAL_BYTES = 15 * 1024 * 1024
+
+/** base64 carries 3 bytes per 4 characters, so measure it rather than decoding megabytes to count them. */
+function base64ByteLength(value) {
+  const padding = value.endsWith("==") ? 2 : value.endsWith("=") ? 1 : 0
+  return Math.floor(value.length / 4) * 3 - padding
+}
+
+function attachmentPayload(url) {
+  const match = typeof url === "string" ? /^data:[^;,]+;base64,(.+)$/s.exec(url) : null
+  if (!match) throw new Error("An attachment must be a base64 data URL")
+  return match[1]
+}
+
+/**
+ * Attachments are validated before the prompt reaches the agent: a mime type the harness
+ * cannot read, or a payload large enough to stall the turn, is a client mistake worth
+ * naming rather than a failure to discover mid-stream.
+ */
+function parseAttachments(parts) {
+  const files = (Array.isArray(parts) ? parts : []).filter((part) => part?.type === "file")
+  if (files.length > MAX_ATTACHMENTS) {
+    throw new Error(`At most ${MAX_ATTACHMENTS} attachments per prompt`)
+  }
+  let total = 0
+  return files.map((file) => {
+    const mime = typeof file.mime === "string" ? file.mime.toLowerCase() : ""
+    if (!ATTACHMENT_MIME_TYPES.has(mime)) {
+      throw new Error(
+        `Unsupported attachment type ${mime || "unknown"}: accepted types are image/png, image/jpeg, image/webp and image/gif`
+      )
+    }
+    const data = attachmentPayload(file.url)
+    if (base64ByteLength(data) > MAX_ATTACHMENT_BYTES) {
+      throw new Error("Each attachment must stay under 5MB")
+    }
+    total += base64ByteLength(data)
+    if (total > MAX_ATTACHMENT_TOTAL_BYTES) {
+      throw new Error("Attachments must stay under 15MB in total")
+    }
+    return { mime, filename: typeof file.filename === "string" ? file.filename : "attachment", data }
+  })
+}
+
 async function readBody(request) {
   let body = ""
   for await (const chunk of request) {
     body += chunk
-    if (body.length > 1_000_000) throw new Error("Request body is too large")
+    if (body.length > 25_000_000) throw new Error("Request body is too large")
   }
   return body ? JSON.parse(body) : {}
 }
@@ -228,9 +275,12 @@ export function createBridgeServer({ config, acp, serviceOptions }) {
         }
         if (request.method === "POST" && operation === "prompt_async") {
           const body = await readBody(request)
-          const text = body.parts?.find((part) => part.type === "text")?.text
-          if (!text) throw new Error("A text prompt is required")
-          await service.prompt(sessionID, text, modelWireName(body.model))
+          const text = body.parts?.find((part) => part.type === "text")?.text ?? ""
+          const attachments = parseAttachments(body.parts)
+          // An image on its own is a complete prompt: a screenshot with no caption is the
+          // most common thing to send from a phone.
+          if (!text && !attachments.length) throw new Error("A text prompt is required")
+          await service.prompt(sessionID, text, modelWireName(body.model), attachments)
           writeJSON(response, 200, true)
           return
         }

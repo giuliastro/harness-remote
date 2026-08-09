@@ -32,6 +32,7 @@ export class AcpClient extends EventEmitter {
   #pending = new Map()
   #starting
   #agentInfo
+  #promptCapabilities = {}
   #stderr = ""
 
   constructor({ command = "omp", args = ["acp"], permissionMode = "deny", preferredAuthMethod, spawnProcess = spawn } = {}) {
@@ -45,6 +46,14 @@ export class AcpClient extends EventEmitter {
 
   get agentInfo() {
     return this.#agentInfo
+  }
+
+  /**
+   * What the agent says it accepts in a prompt. The bridge refuses an attachment the
+   * agent never advertised rather than sending a block it would reject mid-turn.
+   */
+  get promptCapabilities() {
+    return this.#promptCapabilities
   }
 
   /** PID identifies extension runtime state published by this exact ACP process. */
@@ -97,6 +106,7 @@ export class AcpClient extends EventEmitter {
         clientInfo: { name: "harness-remote-bridge", version: "0.1.7" }
       }, START_TIMEOUT_MS)
       this.#agentInfo = initialized.agentInfo
+      this.#promptCapabilities = initialized.agentCapabilities?.promptCapabilities ?? {}
       // The bridge always runs beside a harness the user already configured, so prefer a method
       // that uses those credentials. PI's adapter offers `anthropic-api-key` first and
       // `pi-stored-credentials` last: picking the first would claim an API key from an

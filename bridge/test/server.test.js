@@ -1697,3 +1697,164 @@ test("fills the command catalog once a session is loaded, so a cold bridge recov
     await bridge.close()
   }
 })
+
+// A one-pixel PNG, so the assertions read against a payload that is genuinely an image
+// rather than arbitrary bytes that happen to carry an image mime type.
+const PNG_BASE64 =
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFAAH/q842iQAAAABJRU5ErkJggg=="
+
+class AttachmentAcp extends EventEmitter {
+  agentInfo = { version: "17.2.10" }
+  promptCapabilities = { image: true, embeddedContext: true }
+  prompts = []
+
+  async start() {}
+
+  async listSessions() {
+    return [{ sessionId: "session-1", title: "Test", cwd: process.cwd(), updatedAt: "2026-08-08T00:00:00.000Z" }]
+  }
+
+  async request(method, params) {
+    if (method === "session/prompt") {
+      this.prompts.push(params.prompt)
+      return { stopReason: "end_turn" }
+    }
+    return { configOptions: [] }
+  }
+
+  notify() {}
+}
+
+class TextOnlyAcp extends AttachmentAcp {
+  promptCapabilities = { embeddedContext: true }
+}
+
+function sendParts(bridge, parts) {
+  return fetch(`${bridge.baseURL}/session/session-1/prompt_async`, {
+    method: "POST",
+    headers: jsonHeaders(),
+    body: JSON.stringify({ parts })
+  })
+}
+
+test("delivers an attached image to the agent as an ACP image block", async () => {
+  const acp = new AttachmentAcp()
+  const bridge = await startServer({ acp })
+  try {
+    const response = await sendParts(bridge, [
+      { type: "text", text: "why does this fail?" },
+      { type: "file", mime: "image/png", filename: "shot.png", url: `data:image/png;base64,${PNG_BASE64}` }
+    ])
+    assert.equal(response.status, 200)
+    await waitForIdle(bridge.baseURL, "session-1")
+
+    assert.deepEqual(acp.prompts, [[
+      { type: "text", text: "why does this fail?" },
+      { type: "image", mimeType: "image/png", data: PNG_BASE64 }
+    ]], "the agent must receive the text block followed by the decoded image block")
+  } finally {
+    await bridge.close()
+  }
+})
+
+test("shows an attached image in the transcript as soon as it is sent", async () => {
+  const acp = new AttachmentAcp()
+  const bridge = await startServer({ acp })
+  try {
+    await sendParts(bridge, [
+      { type: "text", text: "look at this" },
+      { type: "file", mime: "image/png", filename: "shot.png", url: `data:image/png;base64,${PNG_BASE64}` }
+    ])
+
+    const messages = await readJSON(bridge.baseURL, "/session/session-1/message")
+    const user = messages.find((message) => message.info.role === "user")
+    const file = user.parts.find((part) => part.type === "file")
+    assert.equal(file.mime, "image/png", "the echoed part must carry its mime so the app can render a thumbnail")
+    assert.equal(file.filename, "shot.png")
+    assert.equal(file.url, `data:image/png;base64,${PNG_BASE64}`)
+  } finally {
+    await bridge.close()
+  }
+})
+
+test("refuses a mime type outside the image allowlist without reaching the agent", async () => {
+  const acp = new AttachmentAcp()
+  const bridge = await startServer({ acp })
+  try {
+    const response = await sendParts(bridge, [
+      { type: "text", text: "read this" },
+      { type: "file", mime: "application/pdf", filename: "spec.pdf", url: "data:application/pdf;base64,JVBERi0=" }
+    ])
+    assert.equal(response.status, 400)
+    assert.match((await response.json()).error, /image\/png/, "the message must name what is accepted")
+    assert.deepEqual(acp.prompts, [], "a rejected attachment must not reach the agent")
+  } finally {
+    await bridge.close()
+  }
+})
+
+test("refuses attachments when the agent does not advertise image support", async () => {
+  const acp = new TextOnlyAcp()
+  const bridge = await startServer({ acp })
+  try {
+    const response = await sendParts(bridge, [
+      { type: "text", text: "look" },
+      { type: "file", mime: "image/png", filename: "shot.png", url: `data:image/png;base64,${PNG_BASE64}` }
+    ])
+    assert.equal(response.status, 400)
+    assert.match((await response.json()).error, /does not accept images/)
+    assert.deepEqual(acp.prompts, [], "an unsupported attachment must not reach the agent")
+  } finally {
+    await bridge.close()
+  }
+})
+
+test("refuses an attachment above the per-image size limit", async () => {
+  const acp = new AttachmentAcp()
+  const bridge = await startServer({ acp })
+  try {
+    // 6MB decoded, above the 5MB ceiling: base64 carries 3 bytes per 4 characters.
+    const oversized = "A".repeat(Math.ceil((6 * 1024 * 1024) / 3) * 4)
+    const response = await sendParts(bridge, [
+      { type: "text", text: "big" },
+      { type: "file", mime: "image/png", filename: "huge.png", url: `data:image/png;base64,${oversized}` }
+    ])
+    assert.equal(response.status, 400)
+    assert.match((await response.json()).error, /5MB/)
+    assert.deepEqual(acp.prompts, [], "an oversized attachment must not reach the agent")
+  } finally {
+    await bridge.close()
+  }
+})
+
+test("keeps a text-only prompt as a single text block", async () => {
+  const acp = new AttachmentAcp()
+  const bridge = await startServer({ acp })
+  try {
+    await sendParts(bridge, [{ type: "text", text: "no attachment here" }])
+    await waitForIdle(bridge.baseURL, "session-1")
+
+    assert.deepEqual(acp.prompts, [[{ type: "text", text: "no attachment here" }]],
+      "the existing text-only path must be untouched")
+  } finally {
+    await bridge.close()
+  }
+})
+
+test("accepts an attachment with no text, so a bare screenshot is a valid prompt", async () => {
+  const acp = new AttachmentAcp()
+  const bridge = await startServer({ acp })
+  try {
+    const response = await sendParts(bridge, [
+      { type: "file", mime: "image/jpeg", filename: "shot.jpg", url: `data:image/jpeg;base64,${PNG_BASE64}` }
+    ])
+    assert.equal(response.status, 200)
+    await waitForIdle(bridge.baseURL, "session-1")
+
+    assert.deepEqual(acp.prompts, [[
+      { type: "image", mimeType: "image/jpeg", data: PNG_BASE64 }
+    ]], "an image alone must be sent without an empty text block")
+  } finally {
+    await bridge.close()
+  }
+})

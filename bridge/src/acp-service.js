@@ -459,7 +459,13 @@ export class AcpService {
    * still working is queued rather than rejected. It is recorded straight away, which
    * is what makes it visible in the conversation while it waits.
    */
-  async prompt(sessionID, text, model) {
+  async prompt(sessionID, text, model, attachments = []) {
+    // Refuse before touching the session: an agent that never advertised image support
+    // would reject the block mid-turn, which reads as a failed prompt rather than a
+    // rejected attachment.
+    if (attachments.length && !this.#acp.promptCapabilities?.image) {
+      throw new Error("This harness does not accept images")
+    }
     if (this.#historyLoader && !this.#ownedSessions.has(sessionID)) {
       this.#ownedSessions.add(sessionID)
       this.#loaded.delete(sessionID)
@@ -474,29 +480,32 @@ export class AcpService {
     }
     this.#resetActionsForSessionChange(sessionID)
     if (this.#active.has(sessionID)) {
-      const messageID = this.#recordPrompt(sessionID, text)
+      const messageID = this.#recordPrompt(sessionID, text, attachments)
       const queue = this.#queues.get(sessionID) ?? []
-      queue.push({ text, model, messageID })
+      queue.push({ text, model, messageID, attachments })
       this.#queues.set(sessionID, queue)
       this.#emit("session.updated", sessionID)
       return
     }
     if (model) await this.setModel(sessionID, model)
-    this.#startTurn(sessionID, text)
+    this.#startTurn(sessionID, text, false, attachments)
   }
 
-  #startTurn(sessionID, text, recorded = false) {
+  #startTurn(sessionID, text, recorded = false, attachments = []) {
     const generation = (this.#turnGenerations.get(sessionID) ?? 0) + 1
     this.#turnGenerations.set(sessionID, generation)
     this.#cancelledSessions.delete(sessionID)
     this.#promptedSessions.add(sessionID)
-    if (!recorded) this.#recordPrompt(sessionID, text)
+    if (!recorded) this.#recordPrompt(sessionID, text, attachments)
     this.#active.add(sessionID)
     this.#chunkMessageIDs.delete(`${sessionID}:assistant`)
     this.#emit("session.updated", sessionID)
     void this.#acp.request("session/prompt", {
       sessionId: sessionID,
-      prompt: [{ type: "text", text }]
+      prompt: [
+        ...(text ? [{ type: "text", text }] : []),
+        ...attachments.map((attachment) => ({ type: "image", mimeType: attachment.mime, data: attachment.data }))
+      ]
     }, 300_000).catch((error) => {
       if (this.#turnGenerations.get(sessionID) === generation) {
         this.#emit("session.error", sessionID, { message: error.message })
@@ -525,7 +534,7 @@ export class AcpService {
         this.#emit("session.error", sessionID, { message: error.message })
       }
     }
-    this.#startTurn(sessionID, next.text, true)
+    this.#startTurn(sessionID, next.text, true, next.attachments ?? [])
   }
 
   /** Cancelling drops anything still queued, including the messages recorded for it. */
@@ -749,13 +758,22 @@ export class AcpService {
     if (Array.isArray(configOptions)) this.#configOptions.set(sessionID, configOptions)
   }
 
-  #recordPrompt(sessionID, text) {
+  #recordPrompt(sessionID, text, attachments = []) {
     const messageID = randomUUID()
     const messages = this.#messages.get(sessionID) ?? []
     this.#messages.set(sessionID, messages)
     messages.push({
       info: { id: messageID, role: "user", sessionID, time: { created: Date.now() } },
-      parts: [{ id: `${messageID}:text`, type: "text", text }]
+      parts: [
+        { id: `${messageID}:text`, type: "text", text },
+        ...attachments.map((attachment, index) => ({
+          id: `${messageID}:file:${index}`,
+          type: "file",
+          mime: attachment.mime,
+          filename: attachment.filename,
+          url: `data:${attachment.mime};base64,${attachment.data}`
+        }))
+      ]
     })
     this.#promptAcknowledgements.set(sessionID, { text, received: "" })
     this.#emit("message.updated", sessionID)
