@@ -38,3 +38,68 @@ test("reads only the authoritative branch from an OMP session transcript", async
     await rm(root, { recursive: true, force: true })
   }
 })
+
+test("replays a persisted image so an attachment survives reopening the session", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "harness-remote-omp-image-"))
+  const sessionID = "session-image"
+  // OMP re-encodes what it receives and stores no filename, so the mime must come from the
+  // record rather than from what the app originally uploaded.
+  const data = "UklGRpwAAABXRUJQVlA4IJAAAAAQDQCd"
+  const records = [
+    {
+      type: "message",
+      id: "user-1",
+      parentId: null,
+      timestamp: "2026-08-08T10:00:00.000Z",
+      message: { role: "user", content: [{ type: "text", text: "what colour is this?" }, { type: "image", data, mimeType: "image/webp" }] }
+    },
+    {
+      type: "message",
+      id: "assistant-1",
+      parentId: "user-1",
+      timestamp: "2026-08-08T10:00:01.000Z",
+      message: { role: "assistant", content: [{ type: "text", text: "Magenta" }] }
+    }
+  ]
+  await writeFile(path.join(root, `2026-08-08_${sessionID}.jsonl`), `${records.map((record) => JSON.stringify(record)).join("\n")}\n`)
+
+  try {
+    const loadHistory = createOmpHistoryLoader(root)
+    const messages = await loadHistory(sessionID, { activeSessionLeaf: "assistant-1" })
+    const user = messages.find((message) => message.info.role === "user")
+    assert.deepEqual(user.parts.map((part) => part.type), ["text", "file"], "the image must replay beside its caption")
+
+    const file = user.parts[1]
+    assert.equal(file.mime, "image/webp", "the stored mime must be used, not the uploaded one")
+    assert.equal(file.url, `data:image/webp;base64,${data}`)
+    assert.equal(file.messageID, "user-1")
+
+    const withoutData = await loadHistory(sessionID, { activeSessionLeaf: "assistant-1" })
+    assert.equal(withoutData.length, 2, "replay must stay stable across calls")
+  } finally {
+    await rm(root, { recursive: true, force: true })
+  }
+})
+
+test("ignores an image record carrying no payload", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "harness-remote-omp-image-empty-"))
+  const sessionID = "session-empty-image"
+  const records = [
+    {
+      type: "message",
+      id: "user-1",
+      parentId: null,
+      timestamp: "2026-08-08T10:00:00.000Z",
+      message: { role: "user", content: [{ type: "text", text: "look" }, { type: "image", mimeType: "image/png" }] }
+    }
+  ]
+  await writeFile(path.join(root, `2026-08-08_${sessionID}.jsonl`), `${records.map((record) => JSON.stringify(record)).join("\n")}\n`)
+
+  try {
+    const loadHistory = createOmpHistoryLoader(root)
+    const messages = await loadHistory(sessionID, { activeSessionLeaf: "user-1" })
+    assert.deepEqual(messages[0].parts.map((part) => part.type), ["text"], "an empty image must not become a broken thumbnail")
+  } finally {
+    await rm(root, { recursive: true, force: true })
+  }
+})

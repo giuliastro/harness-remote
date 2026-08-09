@@ -1952,6 +1952,20 @@ a:focus-visible,
   line-height: 1.62;
 }
 
+/* A phone photo would otherwise render at its natural width and widen the whole page — the same
+   failure the reasoning and tool blocks already guard against. Height is capped too so one
+   screenshot cannot push the rest of the turn off screen. */
+.message-attachment {
+  display: block;
+  max-width: 100%;
+  max-height: 22rem;
+  width: auto;
+  margin-top: var(--space-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface-subtle);
+}
+
 .message-content > *:first-child {
   margin-top: 0;
 }

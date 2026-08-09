@@ -53,6 +53,14 @@ assert.ok(
   'sending must clear the staged attachments so the next prompt does not resend them'
 )
 
+// Without this the image vanishes from the conversation the moment it is sent: the composer chip
+// is cleared and nothing in the transcript draws the part the bridge replays.
+assert.ok(app.includes('part.type === "file"'), 'the transcript must render an attached image')
+assert.ok(app.includes('message-attachment'), 'an attached image needs its own transcript style')
+
+const styles = readFileSync(new URL('./styles.css', import.meta.url), 'utf8')
+assert.match(styles, /\.message-attachment\s*\{[^}]*max-width:/, 'a thumbnail must be bounded so a photo cannot widen the page')
+
 const api = readFileSync(new URL('./api.ts', import.meta.url), 'utf8')
 assert.ok(
   api.includes('...attachments'),

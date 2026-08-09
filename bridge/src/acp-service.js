@@ -879,14 +879,28 @@ export class AcpService {
     const thought = update.sessionUpdate === "agent_thought_chunk"
     const messageChunk = update.sessionUpdate === "user_message_chunk" || update.sessionUpdate === "agent_message_chunk"
     if (!thought && !messageChunk) return
-    if (update.content?.type !== "text" || !update.content.text) return
+    // A replayed image becomes a file part, so reopening a session still shows what was attached.
+    // Replay only: a live turn already recorded its own attachment in #recordPrompt, so accepting an
+    // image chunk there would draw the same thumbnail twice. OMP is not observed to echo a live
+    // prompt back (see docs/DEPENDENCIES.md), which makes this a guard rather than a workaround.
+    const image = replaying
+      && messageChunk
+      && update.content?.type === "image"
+      && typeof update.content.data === "string"
+      && update.content.data
+      ? {
+        mime: typeof update.content.mimeType === "string" && update.content.mimeType ? update.content.mimeType : "image/png",
+        data: update.content.data
+      }
+      : undefined
+    if (!image && (update.content?.type !== "text" || !update.content.text)) return
     const role = update.sessionUpdate === "user_message_chunk" ? "user" : "assistant"
-    const partType = thought ? "reasoning" : "text"
+    const partType = thought ? "reasoning" : image ? "file" : "text"
     // Acknowledgements only suppress a live echo of the prompt we just recorded;
     if (role === "assistant" && !replaying && this.#cancelledSessions.has(sessionId)) return
     if (role === "assistant" && !replaying && !this.#active.has(sessionId) && !this.#promptedSessions.has(sessionId)) return
     if (role === "user" && !replaying && this.#isAcknowledgedPromptChunk(sessionId, update.content.text)) return
-    if (role === "user" && isHarnessInjectedText(update.content.text)) return
+    if (role === "user" && !image && isHarnessInjectedText(update.content.text)) return
     if (!replaying && session) session.updatedAt = new Date().toISOString()
     const counterpartKey = `${sessionId}:${role === "user" ? "assistant" : "user"}`
     this.#chunkMessageIDs.delete(counterpartKey)
@@ -908,7 +922,15 @@ export class AcpService {
     if (previous?.type === "reasoning" && partType !== "reasoning" && previous.time && !previous.time.end) {
       previous.time.end = now
     }
-    if (previous?.type === partType) {
+    if (image) {
+      message.parts.push({
+        id: `${messageID}:file:${message.parts.length}`,
+        messageID,
+        type: "file",
+        mime: image.mime,
+        url: `data:${image.mime};base64,${image.data}`
+      })
+    } else if (previous?.type === partType) {
       previous.text += update.content.text
     } else {
       message.parts.push({

@@ -1858,3 +1858,70 @@ test("accepts an attachment with no text, so a bare screenshot is a valid prompt
     await bridge.close()
   }
 })
+
+class ImageReplayAcp extends EventEmitter {
+  agentInfo = { version: "17.2.10" }
+  promptCapabilities = { image: true }
+  liveEchoes = 0
+
+  async start() {}
+
+  async listSessions() {
+    return [{ sessionId: "session-1", title: "Persisted", cwd: process.cwd(), updatedAt: "2026-08-08T00:00:00.000Z" }]
+  }
+
+  #chunk(content) {
+    this.emit("notification", {
+      method: "session/update",
+      params: { sessionId: "session-1", update: { sessionUpdate: "user_message_chunk", messageId: "persisted-user", content } }
+    })
+  }
+
+  async request(method) {
+    if (method === "session/load") {
+      this.#chunk({ type: "text", text: "what colour is this?" })
+      this.#chunk({ type: "image", data: PNG_BASE64, mimeType: "image/webp" })
+      return { configOptions: [] }
+    }
+    return {}
+  }
+
+  /** A live turn records its own attachment, so an image chunk outside replay would duplicate it. */
+  echoLiveImage() {
+    this.liveEchoes += 1
+    this.#chunk({ type: "image", data: PNG_BASE64, mimeType: "image/webp" })
+  }
+
+  notify() {}
+}
+
+test("replays an image from the harness so a reopened session still shows it", async () => {
+  const acp = new ImageReplayAcp()
+  const bridge = await startServer({ acp })
+  try {
+    const messages = await readJSON(bridge.baseURL, "/session/session-1/message")
+    const user = messages.find((message) => message.info.role === "user")
+    assert.deepEqual(user.parts.map((part) => part.type), ["text", "file"])
+
+    const file = user.parts[1]
+    assert.equal(file.mime, "image/webp", "the mime the harness replayed must be kept")
+    assert.equal(file.url, `data:image/webp;base64,${PNG_BASE64}`)
+  } finally {
+    await bridge.close()
+  }
+})
+
+test("ignores a live image echo, which the bridge already recorded when it sent the prompt", async () => {
+  const acp = new ImageReplayAcp()
+  const bridge = await startServer({ acp })
+  try {
+    await readJSON(bridge.baseURL, "/session/session-1/message")
+    acp.echoLiveImage()
+
+    const messages = await readJSON(bridge.baseURL, "/session/session-1/message")
+    const files = messages.flatMap((message) => message.parts.filter((part) => part.type === "file"))
+    assert.equal(files.length, 1, "an echoed image must not appear twice in the transcript")
+  } finally {
+    await bridge.close()
+  }
+})

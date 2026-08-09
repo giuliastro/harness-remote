@@ -14,6 +14,18 @@ function messageParts(content, messageID) {
     if (item?.type === "thinking" && typeof item.thinking === "string" && item.thinking) {
       return [{ id: `${messageID}:reasoning:${index}`, messageID, type: "reasoning", text: item.thinking }]
     }
+    // OMP stores what it re-encoded and keeps no filename, so the mime comes from the record
+    // and the app renders the thumbnail without a label.
+    if (item?.type === "image" && typeof item.data === "string" && item.data) {
+      const mime = typeof item.mimeType === "string" && item.mimeType ? item.mimeType : "image/png"
+      return [{
+        id: `${messageID}:file:${index}`,
+        messageID,
+        type: "file",
+        mime,
+        url: `data:${mime};base64,${item.data}`
+      }]
+    }
     return []
   })
 }

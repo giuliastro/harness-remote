@@ -1156,6 +1156,15 @@ function MessagePartView({
     )
   }
 
+  if (part.type === "file") {
+    if (!part.url) return null
+    return (
+      <div className="message-content">
+        <img className="message-attachment" src={part.url} alt={part.filename || t('detail.attachedImage')} />
+      </div>
+    )
+  }
+
   if (part.type === "reasoning") {
     return <ReasoningPartView part={part} timestamp={timestamp} t={t} />
   }

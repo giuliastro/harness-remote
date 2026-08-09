@@ -116,6 +116,9 @@ export type MessagePart = {
   state?: ToolState
   hash?: string
   files?: string[]
+  mime?: string
+  url?: string
+  filename?: string
   time?: { start: number; end?: number }
 }
 

@@ -34,6 +34,18 @@ First-party command, no third party in the path. The bridge uses `session/new`, 
 | The agent approves its own tool calls and never sends `session/request_permission` | the permission path would start being exercised |
 | `available_commands_update` is emitted after extension initialization and contains registered command names | optional extension actions are not discovered |
 
+**Also assumed, observed on OMP 17.2.10 while adding image attachments:**
+
+| Assumption | What breaks if it changes |
+|---|---|
+| `initialize` advertises `agentCapabilities.promptCapabilities.image` | the composer hides its attachment picker and the bridge refuses attachments; a harness that dropped the flag would lose the feature rather than fail a prompt |
+| A prompt may carry `{type:"image", mimeType, data}` blocks alongside text, and an image with no text is accepted | sending a bare screenshot would need a synthetic caption |
+| No `audio` prompt capability is advertised | voice would have to be transcribed before it reaches a prompt |
+| `session/load` replays a stored image as `user_message_chunk` with `content: {type:"image", data, mimeType}`, sharing the `messageId` of the text chunk in that turn | the thumbnail stops reappearing when a session is reopened, or lands in a message of its own |
+| Images are re-encoded on the way in: a PNG upload replays and persists as `image/webp` | a mime taken from the upload rather than from the record would mislabel the part |
+| The persisted transcript stores no filename for an image | the app labels a replayed thumbnail generically instead of by name |
+| `session/load` mints a fresh `messageId` on every load | ids cannot be used to recognise the same message across two loads, which is why history dedup elsewhere falls back to text and timestamps |
+
 **Watch:** any of the above and new `sessionUpdate` kinds; unknown updates are ignored by design.
 
 #### Optional OMP extension actions
