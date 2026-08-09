@@ -2,6 +2,7 @@ import { Capacitor, CapacitorHttp } from "@capacitor/core"
 import { desktopRequest, isDesktopPlatform } from "./desktopBridge"
 import { streamURL } from "./opencode-events"
 import { baseUrl, isValidServerConfig } from "./serverConfig"
+import type { AttachmentPart } from "./attachments"
 import type {
   AgentOption,
   CommandInfo,
@@ -357,10 +358,10 @@ export const api = {
     })
   },
 
-  sendPrompt(config: ServerConfig, sessionID: string, text: string, directory?: string, model?: ModelSelection, agentID?: string) {
+  sendPrompt(config: ServerConfig, sessionID: string, text: string, directory?: string, model?: ModelSelection, agentID?: string, attachments: AttachmentPart[] = []) {
     return request<boolean>(config, withDirectory(`/session/${sessionID}/prompt_async`, directory), {
       method: "POST",
-      body: { parts: [{ type: "text", text }], model: toModelBody(model), agent: agentID, variant: model?.variant || undefined }
+      body: { parts: [{ type: "text", text }, ...attachments], model: toModelBody(model), agent: agentID, variant: model?.variant || undefined }
     })
   },
 

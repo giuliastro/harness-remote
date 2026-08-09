@@ -29,6 +29,7 @@ import { DEFAULT_HARNESS_CAPABILITIES } from "./backendCapabilities"
 import { BACKEND_CLIENTS } from "./backendClient"
 import { copyToClipboard } from "./clipboard"
 import { backendDisplayName, isBridgeBackend } from "./backendSetup"
+import { ATTACHMENT_MAX_COUNT, fileToAttachment, type AttachmentPart } from "./attachments"
 import { CommandPalette, MenuBar, ServerSwitcher, type MenuDefinition, type MenuEntry, type PaletteCommand } from "./components/shell"
 import { ConnectServerWizard, NewSessionDialog } from "./components/panels"
 import { createServerProfile, loadActiveServerProfile, loadServerProfiles, persistServerProfiles, type SavedServerProfile } from "./serverProfiles"
@@ -36,6 +37,7 @@ import type { DesktopMenuCommand, DesktopMenuTemplate } from "../electron/ipc-co
 import type { AgentOption, CommandInfo, DiffFile, FileEntry, FileStatusEntry, HarnessAction, HarnessCapabilities, MessageEnvelope, MessagePart, ModelOption, ModelSelection, PathInfo, PermissionRequest, ProjectDashboard, QuestionInfo, QuestionRequest, ServerConfig, Session, SessionStatus, SessionView, TodoItem } from "./types"
 import {
   SettingsIcon,
+  PaperclipIcon,
   ArrowLeftIcon,
   FolderIcon,
   ChatIcon,
@@ -2227,6 +2229,8 @@ function App() {
   const [todosExpanded, setTodosExpanded] = useState(false)
   const [query, setQuery] = useState("")
   const [composer, setComposer] = useState("")
+  const [attachments, setAttachments] = useState<AttachmentPart[]>([])
+  const attachmentInputRef = useRef<HTMLInputElement | null>(null)
   const [busySending, setBusySending] = useState(false)
   const [loadingSessionID, setLoadingSessionID] = useState<string | null>(null)
   /** The empty transcript state is only meaningful after this session's first history snapshot succeeds. */
@@ -2453,7 +2457,7 @@ function App() {
   const isSessionRunning = Boolean(selectedSession && isSessionWorking(selectedSession.status))
   const isWaitingForOpenCodeReply = awaitingAssistantReply || busySending || isSessionRunning
   const isWorking = isWaitingForOpenCodeReply
-  const showStopAction = isWorking && !composer.trim()
+  const showStopAction = isWorking && !composer.trim() && attachments.length === 0
   const showTypingBubble = Boolean(selectedSession) && isWaitingForOpenCodeReply
   const activeSessions = sessions.filter((session) => isSessionWorking(session.status)).length
   const changedSessions = sessions.filter(
@@ -3151,7 +3155,8 @@ function App() {
   async function send() {
     if (!selectedSession) return
     const text = composer.trim()
-    if (!text) return
+    // An image with no caption is a complete prompt, so emptiness is about both.
+    if (!text && attachments.length === 0) return
     setActionNotice(null)
 
     if (text.startsWith("/")) {
@@ -3236,6 +3241,7 @@ function App() {
     }
 
     setComposer("")
+    setAttachments([])
     const optimisticMessage = createOptimisticUserMessage(selectedSession.id, text)
     setOptimisticUserMessages((current) => [...current, optimisticMessage])
     awaitingAssistantBaselineRef.current = assistantResponseSignature
@@ -3246,7 +3252,7 @@ function App() {
     setBusySending(true)
     setRuntimeError(null)
     try {
-      await api.sendPrompt(config, selectedSession.id, text, selectedSession.directory, activeModel, activeAgentID)
+      await api.sendPrompt(config, selectedSession.id, text, selectedSession.directory, activeModel, activeAgentID, attachments)
       await loadSelected(selectedSession.id, selectedSession.directory)
       await refreshSessions()
     } catch (err) {
@@ -3254,6 +3260,8 @@ function App() {
       setAwaitingAssistantReply(false)
       setOptimisticUserMessages((current) => current.filter((message) => message.info.id !== optimisticMessage.info.id))
       setComposer((current) => current || text)
+      // Losing a staged image to a failed send would mean picking it out of the gallery again.
+      setAttachments((current) => current.length ? current : attachments)
       setRuntimeError((err as Error).message)
     } finally {
       setBusySending(false)
@@ -4883,6 +4891,22 @@ function App() {
 
 
           <div className="composer" ref={composerRef}>
+            {attachments.length > 0 && (
+              <div className="composer-chips">
+                {attachments.map((attachment, index) => (
+                  <span className="composer-chip" key={`${attachment.filename}-${index}`}>
+                    <strong>{attachment.filename}</strong>
+                    <button
+                      className="btn-ghost btn-icon"
+                      aria-label={t('detail.removeAttachment')}
+                      onClick={() => setAttachments((current) => current.filter((_, position) => position !== index))}
+                    >
+                      <CloseIcon size={12} />
+                    </button>
+                  </span>
+                ))}
+              </div>
+            )}
             <textarea
               ref={composerInputRef}
               value={composer}
@@ -4908,19 +4932,53 @@ function App() {
               }}
               disabled={!selectedSession}
             />
-            {/* While the agent works the same button stops it, but starts sending again as
-                soon as there is something to send, so a follow-up can be queued. */}
-            <button
-              onClick={showStopAction ? abortSession : send}
-              disabled={!selectedSession}
-              className={showStopAction ? "btn-danger" : "btn-primary"}
-            >
-              {showStopAction ? (
-                <StopCircleIcon size={18} />
-              ) : (
-                <SendIcon size={18} />
-              )}
-            </button>
+            <div className="composer-bar">
+              {/* The OS picker is the camera, the gallery and the file browser in one, so the app
+                  needs no capture UI of its own. */}
+              <input
+                ref={attachmentInputRef}
+                type="file"
+                accept="image/*"
+                multiple
+                hidden
+                onChange={async (event) => {
+                  const chosen = Array.from(event.target.files ?? []).slice(0, ATTACHMENT_MAX_COUNT - attachments.length)
+                  event.target.value = ""
+                  if (!chosen.length) return
+                  try {
+                    const prepared = await Promise.all(chosen.map((file) => fileToAttachment(file)))
+                    setAttachments((current) => [...current, ...prepared])
+                    setRuntimeError(null)
+                  } catch (err) {
+                    setRuntimeError((err as Error).message)
+                  }
+                }}
+              />
+              <button
+                className="btn-ghost btn-icon"
+                title={t('detail.attachImage')}
+                aria-label={t('detail.attachImage')}
+                onClick={() => attachmentInputRef.current?.click()}
+                disabled={!selectedSession || attachments.length >= ATTACHMENT_MAX_COUNT}
+              >
+                <PaperclipIcon size={18} />
+              </button>
+              <div className="composer-actions">
+                {/* While the agent works the same button stops it, but starts sending again as
+                    soon as there is something to send, so a follow-up can be queued. */}
+                <button
+                  onClick={showStopAction ? abortSession : send}
+                  disabled={!selectedSession}
+                  className={showStopAction ? "btn-danger composer-send" : "btn-primary composer-send"}
+                >
+                  {showStopAction ? (
+                    <StopCircleIcon size={18} />
+                  ) : (
+                    <SendIcon size={18} />
+                  )}
+                </button>
+              </div>
+            </div>
           </div>
 
           {runtimeError && <div className="error fade-in">✗ {runtimeError}</div>}
