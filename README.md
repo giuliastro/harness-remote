@@ -315,6 +315,26 @@ directory, so clearing or moving `--state-dir` restores the harness title and ma
 visible again. ACP defines no physical session deletion, so the native OMP history stays intact and
 remains visible to desktop clients.
 
+#### Image attachments
+
+OMP advertises `promptCapabilities.image` over ACP, so the composer can attach images to a prompt:
+tap the paperclip, pick from the camera, the gallery or the file browser, and send with or without a
+caption. A screenshot on its own is a complete prompt. Each attachment appears as a chip above the
+input and can be removed before sending.
+
+Images are resized in the app before upload — the longest edge is clamped to 1568px — because a phone
+photo is several megabytes of pixels no model needs, and the cost lands twice: once on a mobile
+uplink, once in tokens. A PNG that needed no resizing stays PNG so screenshot text stays crisp;
+anything else is encoded as JPEG, which also normalises whatever the picker returns, HEIC included.
+
+The bridge accepts `image/png`, `image/jpeg`, `image/webp` and `image/gif`, up to 8 attachments per
+prompt, 5MB each and 15MB in total, and refuses anything else with a message naming what it accepts
+rather than failing mid-turn. Nothing is written to disk: the image travels as base64 inside the ACP
+prompt.
+
+The backends reached through the ACP bridge that do not advertise image support — PI, Claude Code and
+Codex CLI — hide the paperclip, and the bridge refuses an attachment sent to them.
+
 #### What `--root` does and does not restrict
 
 `--root` restricts the bridge's own surface: which directories the app may browse (`/file`, `/path`) and which working directory a new session may use. It is not a sandbox for the agent. Once a session is running, OMP executes with your full user privileges and approves its own tool calls, so it can read and write outside the configured roots exactly as it would on the desktop. Point the bridge only at machines and accounts where you would already let OMP work unattended.
