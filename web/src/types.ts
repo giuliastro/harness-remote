@@ -24,6 +24,7 @@ export type HarnessCapabilities = {
   actions: boolean
   sessionRename: boolean
   sessionDelete: boolean
+  attachments: boolean
 }
 
 export type HealthResponse = {

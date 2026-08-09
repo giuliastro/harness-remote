@@ -3477,6 +3477,9 @@ function App() {
 
   useEffect(() => {
     const fallback = DEFAULT_HARNESS_CAPABILITIES[config.backend]
+    // A staged image belongs to the connection it was staged on, and the next server may not accept
+    // images at all: dropping it here keeps the chips from outliving the control that made them.
+    setAttachments([])
     setCapabilities(fallback)
     if (config.backend === "opencode" || !isValidServerConfig(config)) return
     api.capabilities(config).then(setCapabilities).catch(() => setCapabilities(fallback))
@@ -4942,36 +4945,42 @@ function App() {
               disabled={!selectedSession}
             />
             <div className="composer-bar">
-              {/* The OS picker is the camera, the gallery and the file browser in one, so the app
-                  needs no capture UI of its own. */}
-              <input
-                ref={attachmentInputRef}
-                type="file"
-                accept="image/*"
-                multiple
-                hidden
-                onChange={async (event) => {
-                  const chosen = Array.from(event.target.files ?? []).slice(0, ATTACHMENT_MAX_COUNT - attachments.length)
-                  event.target.value = ""
-                  if (!chosen.length) return
-                  try {
-                    const prepared = await Promise.all(chosen.map((file) => fileToAttachment(file)))
-                    setAttachments((current) => [...current, ...prepared])
-                    setRuntimeError(null)
-                  } catch (err) {
-                    setRuntimeError((err as Error).message)
-                  }
-                }}
-              />
-              <button
-                className="btn-ghost btn-icon"
-                title={t('detail.attachImage')}
-                aria-label={t('detail.attachImage')}
-                onClick={() => attachmentInputRef.current?.click()}
-                disabled={!selectedSession || attachments.length >= ATTACHMENT_MAX_COUNT}
-              >
-                <PaperclipIcon size={18} />
-              </button>
+              {/* Gated on what the harness advertised: PI, Claude Code and Codex CLI expose no image
+                  prompt capability, and offering a picker whose only outcome is a refusal at send
+                  time is worse than not offering one. The OS picker is the camera, the gallery and
+                  the file browser in one, so the app needs no capture UI of its own. */}
+              {capabilities.attachments && (
+                <>
+                  <input
+                    ref={attachmentInputRef}
+                    type="file"
+                    accept="image/*"
+                    multiple
+                    hidden
+                    onChange={async (event) => {
+                      const chosen = Array.from(event.target.files ?? []).slice(0, ATTACHMENT_MAX_COUNT - attachments.length)
+                      event.target.value = ""
+                      if (!chosen.length) return
+                      try {
+                        const prepared = await Promise.all(chosen.map((file) => fileToAttachment(file)))
+                        setAttachments((current) => [...current, ...prepared])
+                        setRuntimeError(null)
+                      } catch (err) {
+                        setRuntimeError((err as Error).message)
+                      }
+                    }}
+                  />
+                  <button
+                    className="btn-ghost btn-icon"
+                    title={t('detail.attachImage')}
+                    aria-label={t('detail.attachImage')}
+                    onClick={() => attachmentInputRef.current?.click()}
+                    disabled={!selectedSession || attachments.length >= ATTACHMENT_MAX_COUNT}
+                  >
+                    <PaperclipIcon size={18} />
+                  </button>
+                </>
+              )}
               <div className="composer-actions">
                 {/* While the agent works the same button stops it, but starts sending again as
                     soon as there is something to send, so a follow-up can be queued. */}

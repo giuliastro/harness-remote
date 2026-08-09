@@ -16,7 +16,9 @@ export const DEFAULT_HARNESS_CAPABILITIES: Record<BackendKind, HarnessCapabiliti
     commands: true,
     actions: false,
     sessionRename: true,
-    sessionDelete: true
+    sessionDelete: true,
+    // Attachments reach the harness through the bridge; the OpenCode transport has no such path yet.
+    attachments: false
   },
   omp: {
     sessions: true,
@@ -33,7 +35,9 @@ export const DEFAULT_HARNESS_CAPABILITIES: Record<BackendKind, HarnessCapabiliti
     commands: true,
     actions: true,
     sessionRename: true,
-    sessionDelete: true
+    sessionDelete: true,
+    // Replaced by the live handshake as soon as /v1/capabilities answers.
+    attachments: false
   },
   pi: {
     sessions: true,
@@ -50,7 +54,8 @@ export const DEFAULT_HARNESS_CAPABILITIES: Record<BackendKind, HarnessCapabiliti
     commands: true,
     actions: false,
     sessionRename: true,
-    sessionDelete: true
+    sessionDelete: true,
+    attachments: false
   },
   claude: {
     sessions: true,
@@ -67,7 +72,8 @@ export const DEFAULT_HARNESS_CAPABILITIES: Record<BackendKind, HarnessCapabiliti
     commands: false,
     actions: false,
     sessionRename: true,
-    sessionDelete: true
+    sessionDelete: true,
+    attachments: false
   },
   codex: {
     sessions: true,
@@ -84,6 +90,7 @@ export const DEFAULT_HARNESS_CAPABILITIES: Record<BackendKind, HarnessCapabiliti
     commands: true,
     actions: false,
     sessionRename: true,
-    sessionDelete: true
+    sessionDelete: true,
+    attachments: false
   }
 }

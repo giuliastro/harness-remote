@@ -1925,3 +1925,17 @@ test("ignores a live image echo, which the bridge already recorded when it sent 
     await bridge.close()
   }
 })
+
+test("advertises attachment support from the agent's own prompt capabilities", async () => {
+  const capable = await startServer({ acp: new AttachmentAcp() })
+  const incapable = await startServer({ acp: new TextOnlyAcp() })
+  try {
+    // Taken from the handshake rather than the profile table: the app hides its attachment
+    // control on this flag, and a harness that stopped advertising images would otherwise keep
+    // offering a control whose only outcome is a refusal at send time.
+    assert.equal((await readJSON(capable.baseURL, "/v1/capabilities")).attachments, true)
+    assert.equal((await readJSON(incapable.baseURL, "/v1/capabilities")).attachments, false)
+  } finally {
+    await Promise.all([capable.close(), incapable.close()])
+  }
+})

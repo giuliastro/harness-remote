@@ -184,7 +184,11 @@ export function createBridgeServer({ config, acp, serviceOptions }) {
         return
       }
       if (request.method === "GET" && url.pathname === "/v1/capabilities") {
-        writeJSON(response, 200, profile.capabilities)
+        // Attachment support comes from the handshake rather than the profile table: it is the agent
+        // that decides, and the app hides its attachment control on this flag. A static `true` would
+        // keep offering the control after a harness stopped accepting images.
+        await acp.start()
+        writeJSON(response, 200, { ...profile.capabilities, attachments: Boolean(acp.promptCapabilities?.image) })
         return
       }
       if (request.method === "GET" && (url.pathname === "/v1/events" || url.pathname === "/global/event")) {

@@ -61,6 +61,19 @@ assert.ok(app.includes('message-attachment'), 'an attached image needs its own t
 const styles = readFileSync(new URL('./styles.css', import.meta.url), 'utf8')
 assert.match(styles, /\.message-attachment\s*\{[^}]*max-width:/, 'a thumbnail must be bounded so a photo cannot widen the page')
 
+// The bridge refuses attachments a harness never advertised. Offering the control anyway means the
+// only way to discover that is a failed send, which is the confusing path this gate removes.
+assert.ok(
+  app.includes('capabilities.attachments &&'),
+  'the attachment control must be gated on the capability the bridge reports'
+)
+const defaults = readFileSync(new URL('./backendCapabilities.ts', import.meta.url), 'utf8')
+assert.equal(
+  (defaults.match(/attachments:/g) ?? []).length,
+  5,
+  'every backend default must state its attachment support, so a failed capability fetch cannot enable the control by omission'
+)
+
 const api = readFileSync(new URL('./api.ts', import.meta.url), 'utf8')
 assert.ok(
   api.includes('...attachments'),
