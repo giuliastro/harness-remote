@@ -1,12 +1,13 @@
-import type { BackendKind } from "./types"
+import type { BackendKind, ServerConfig } from "./types"
 
 /** Declaration order everywhere a harness has to be listed, so the Settings picker, the connect
  *  wizard and the docs links can never drift out of sync with each other. */
-export const BACKEND_KINDS: BackendKind[] = ["opencode", "omp", "pi", "claude", "codex"]
+export const BACKEND_KINDS: BackendKind[] = ["opencode", "omp", "pi", "prime", "claude", "codex"]
 
 export function backendDisplayName(backend: BackendKind): string {
   if (backend === "omp") return "Oh My Pi"
   if (backend === "pi") return "PI"
+  if (backend === "prime") return "Prime Agent"
   if (backend === "claude") return "Claude Code"
   if (backend === "codex") return "Codex CLI"
   return "OpenCode"
@@ -15,7 +16,7 @@ export function backendDisplayName(backend: BackendKind): string {
 /** Whether the harness is reached through the bundled bridge rather than by talking to a server it
  *  runs itself — which is what decides the command the user has to run on the host machine. */
 export function isBridgeBackend(backend: BackendKind): boolean {
-  return backend === "omp" || backend === "pi" || backend === "claude" || backend === "codex"
+  return backend === "omp" || backend === "pi" || backend === "prime" || backend === "claude" || backend === "codex"
 }
 
 export function backendDefaultPort(backend: BackendKind): number {
@@ -28,6 +29,7 @@ export function backendDefaultUsername(backend: BackendKind): string {
 
 export function backendDocsAnchor(backend: BackendKind): string {
   if (backend === "pi") return "pi-bridge-setup"
+  if (backend === "prime") return "prime-agent-bridge-setup"
   if (backend === "claude") return "claude-code-bridge-setup"
   if (backend === "codex") return "codex-bridge-setup"
   if (backend === "omp") return "oh-my-pi-bridge-setup"
