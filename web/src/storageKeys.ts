@@ -15,6 +15,7 @@ export const SERVER_STORAGE_KEYS = [
   BACKEND_STORAGE_KEYS.opencode,
   BACKEND_STORAGE_KEYS.omp,
   BACKEND_STORAGE_KEYS.pi,
+  BACKEND_STORAGE_KEYS.prime,
   BACKEND_STORAGE_KEYS.claude,
   BACKEND_STORAGE_KEYS.codex,
   "opencode.remote.model",
