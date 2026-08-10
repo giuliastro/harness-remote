@@ -181,7 +181,7 @@ npx -y opencode-ai serve --hostname 0.0.0.0 --port 4096 --cors https://giuliastr
 - frontend: React + TypeScript + Vite
 - desktop packaging: Electron + electron-builder (unsigned Windows, macOS and Linux builds)
 - mobile packaging: Capacitor (Android APK)
-- networking: per-harness transports behind one app-side API — the OpenCode HTTP API spoken directly, and the local HTTP/SSE bridge in `bridge/` that fronts both OMP and PI over ACP
+- networking: per-harness transports behind one app-side API — the OpenCode HTTP API spoken directly, and the local HTTP/SSE bridge in `bridge/` that fronts OMP, PI, Claude Code and Codex CLI over ACP
 - CI/CD: GitHub Actions for cloud APK and unsigned desktop builds
 - i18n: lightweight custom i18n module with English, Italian, Traditional Chinese, and Simplified Chinese
 
