@@ -3,6 +3,7 @@ import path from "node:path"
 import { AcpClient } from "./acp-client.js"
 import { parseConfig, usage } from "./config.js"
 import { harnessProfile } from "./harness-profiles.js"
+import { PrimeAcpClient } from "./prime-acp-client.js"
 import { createBridgeServer } from "./server.js"
 
 let config
@@ -20,7 +21,8 @@ if (config?.help) {
 
 if (config) {
   const profile = harnessProfile(config.backend)
-  const acp = new AcpClient({ command: config.acpCommand, args: config.acpArgs, permissionMode: profile.permissionMode, preferredAuthMethod: profile.authMethod })
+  const Client = config.backend === "prime" ? PrimeAcpClient : AcpClient
+  const acp = new Client({ command: config.acpCommand, args: config.acpArgs, permissionMode: profile.permissionMode, preferredAuthMethod: profile.authMethod })
   const server = createBridgeServer({
     config,
     acp,
