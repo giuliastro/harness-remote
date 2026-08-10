@@ -59,13 +59,19 @@ function semanticMessagePart(part) {
   return semantic
 }
 
+function semanticMessageSignature(message) {
+  return JSON.stringify({
+    role: message?.info?.role,
+    parts: (message?.parts ?? []).map(semanticMessagePart)
+  })
+}
+
 function semanticHistorySignature(messages) {
   return JSON.stringify(messages.map((message) => ({
     role: message?.info?.role,
     parts: (message?.parts ?? []).map(semanticMessagePart)
   })))
 }
-
 
 function mergeReplay(previous, replayed) {
   if (previous.length === 0) return replayed
@@ -100,19 +106,20 @@ function mergeReplay(previous, replayed) {
   return [...merged, ...previous.slice(leftIndex), ...replayed.slice(rightIndex)]
 }
 
-function mergeExternalHistory(persisted, cached) {
+export function mergeExternalHistory(persisted, cached) {
   const persistedIDs = new Set(persisted.map((message) => message.info.id))
-  const persistedBySignature = new Map()
+  const remainingBySignature = new Map()
   for (const message of persisted) {
-    const signature = messageSignature(message)
-    const times = persistedBySignature.get(signature) ?? []
-    times.push(message.info.time.created)
-    persistedBySignature.set(signature, times)
+    const signature = semanticMessageSignature(message)
+    remainingBySignature.set(signature, (remainingBySignature.get(signature) ?? 0) + 1)
   }
   const cachedOnly = cached.filter((message) => {
     if (persistedIDs.has(message.info.id)) return false
-    const duplicateTimes = persistedBySignature.get(messageSignature(message)) ?? []
-    return !duplicateTimes.some((created) => Math.abs(created - message.info.time.created) < 30_000)
+    const signature = semanticMessageSignature(message)
+    const remaining = remainingBySignature.get(signature) ?? 0
+    if (remaining === 0) return true
+    remainingBySignature.set(signature, remaining - 1)
+    return false
   })
   return [...persisted, ...cachedOnly].sort((left, right) => left.info.time.created - right.info.time.created)
 }
@@ -203,7 +210,6 @@ export class AcpService {
     this.#actionProviders = actionProviders
     acp.on("notification", (notification) => this.#handleNotification(notification))
   }
-
 
   subscribe(listener) {
     this.#listeners.add(listener)
