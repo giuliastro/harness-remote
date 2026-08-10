@@ -1,4 +1,4 @@
-import type { BackendKind, ServerConfig } from "./types"
+import type { BackendKind } from "./types"
 
 /** Declaration order everywhere a harness has to be listed, so the Settings picker, the connect
  *  wizard and the docs links can never drift out of sync with each other. */
