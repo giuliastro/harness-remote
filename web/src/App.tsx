@@ -125,6 +125,15 @@ function defaultSidebarWidth(): number {
  *  to say the one the user's keyboard actually has. */
 const IS_APPLE = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent)
 
+/** Touch-primary devices have no Shift key on the soft keyboard, so the composer's
+ *  "Enter sends, Shift+Enter for a new line" model must flip there: Enter inserts a new line,
+ *  Ctrl/Cmd+Enter sends, and the send button covers soft-keyboard-only devices. Desktop and
+ *  any device with a fine pointer (including hybrid laptops whose primary pointer is a mouse)
+ *  keep the physical-keyboard behaviour untouched. */
+const SOFT_KEYBOARD_DEVICE =
+  isAndroidPlatform(Capacitor.getPlatform()) ||
+  (typeof window !== "undefined" && window.matchMedia("(pointer: coarse)").matches)
+
 function shortcut(key: string): string {
   return IS_APPLE ? `⌘${key}` : `Ctrl+${key}`
 }
@@ -4924,7 +4933,7 @@ function App() {
               value={composer}
               onChange={(event) => setComposer(event.target.value)}
               placeholder={t('detail.composerPlaceholder')}
-              enterKeyHint="send"
+              enterKeyHint={SOFT_KEYBOARD_DEVICE ? "enter" : "send"}
               autoCapitalize="sentences"
               autoCorrect="on"
               onFocus={() => {
@@ -4937,7 +4946,17 @@ function App() {
                 window.addEventListener("resize", onResize, { once: true })
               }}
               onKeyDown={(event) => {
-                if (event.key === "Enter" && !event.shiftKey) {
+                if (event.key !== "Enter") return
+                if (SOFT_KEYBOARD_DEVICE) {
+                  // The soft keyboard has no Shift key, so Enter inserts a new line by default
+                  // and Ctrl/Cmd+Enter (hardware keyboards) sends.
+                  if (event.ctrlKey || event.metaKey) {
+                    event.preventDefault()
+                    send().catch(() => undefined)
+                  }
+                  return
+                }
+                if (!event.shiftKey) {
                   event.preventDefault()
                   send().catch(() => undefined)
                 }
@@ -5295,7 +5314,9 @@ function App() {
                 <li><strong>Interact:</strong> {isDesktop
                   ? "Read and reply in the conversation beside it"
                   : "Open a session and chat in the Detail view"}</li>
-                <li><strong>Quick Input:</strong> Press Enter to send, Shift+Enter for new lines</li>
+                <li><strong>Quick Input:</strong> {SOFT_KEYBOARD_DEVICE
+                  ? `Enter for new lines, ${shortcut("Enter")} to send`
+                  : "Press Enter to send, Shift+Enter for new lines"}</li>
                 <li><strong>Slash Commands:</strong> Text starting with <code>/</code> is sent as a command</li>
               </ul>
 

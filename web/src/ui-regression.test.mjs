@@ -294,11 +294,16 @@ for (const cls of ['.harness-badge', '.harness-omp', '.harness-pi', '.brand-serv
 }
 assert.match(styles, /\.brand-server[\s\S]*?text-overflow: ellipsis/, 'a long address must truncate rather than push the badge off screen')
 
-// Mobile keyboard: an address is not a sentence, a port is a number, and Enter sends.
+// Mobile keyboard: an address is not a sentence, a port is a number, and a soft keyboard has
+// no Shift key — so the composer flips on touch-primary devices: Enter inserts a new line,
+// Ctrl/Cmd+Enter sends, the send button covers soft-keyboard-only devices. Fine pointers keep
+// Enter sends / Shift+Enter new line, untouched for every user with a physical keyboard.
 assert.ok(app.includes('inputMode="url"') && app.includes('autoCapitalize="none"'), 'the host field must not be autocapitalised or autocorrected')
 assert.ok(app.includes('inputMode="numeric"'), 'the port field should raise a numeric keypad')
 assert.ok(app.includes('autoComplete="username"') && app.includes('autoComplete="current-password"'), 'credentials should be offerable by a password manager')
-assert.ok(app.includes('enterKeyHint="send"'), "the composer's action key should say send")
+assert.ok(app.includes('enterKeyHint={SOFT_KEYBOARD_DEVICE ? "enter" : "send"}'), "the composer's action key should say send on a fine pointer and new line on a soft keyboard")
+assert.ok(app.includes('if (event.ctrlKey || event.metaKey)'), 'a soft keyboard must send with Ctrl/Cmd+Enter and newline with plain Enter')
+assert.ok(app.includes('if (!event.shiftKey)'), 'a fine pointer must keep Enter sends / Shift+Enter new line')
 
 // A session card showed a full absolute path over three lines, a third of its height.
 assert.ok(app.includes('function shortDirectory'), 'the card should shorten the directory it shows')
