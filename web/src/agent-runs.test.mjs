@@ -20,6 +20,19 @@ assert.equal(normalizeAgentRunStatus('waiting'), 'waiting')
 assert.equal(normalizeAgentRunStatus('BUSY'), 'working', 'status normalization should be case-insensitive')
 assert.equal(normalizeAgentRunStatus('unknown-backend-state'), 'idle', 'unknown states must fail safe')
 
+// These words already fall through the unknown branch above, so they name a decision rather than
+// add behaviour: terminal states come only from the explicit terminalStatus signal. An earlier
+// revision mapped them directly, which would have promoted a harness reporting a transient `error`
+// to a terminal failed run — visible in a future Inbox as finished, with no way back to working.
+// Without a case that says so, restoring those aliases would pass the suite.
+for (const word of ['error', 'failure', 'done', 'success', 'completed', 'cancelled', 'aborted']) {
+  assert.equal(
+    normalizeAgentRunStatus(word),
+    'idle',
+    `a harness reporting "${word}" must not be read as a terminal run`
+  )
+}
+
 const openCodeRun = toAgentRun(session({ status: 'busy' }), 'opencode')
 assert.deepEqual(openCodeRun, {
   id: 'opencode:session-1',
