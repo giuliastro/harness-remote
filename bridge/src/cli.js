@@ -3,7 +3,7 @@ import path from "node:path"
 import { AcpClient } from "./acp-client.js"
 import { parseConfig, usage } from "./config.js"
 import { harnessProfile } from "./harness-profiles.js"
-import { loadMachineIdentity, MachineRegistry } from "./machine-registry.js"
+import { loadMachineIdentity, MachineRegistry, trackAgentHostLifecycle } from "./machine-registry.js"
 import { createBridgeServer } from "./server.js"
 
 let config
@@ -32,7 +32,11 @@ if (config) {
     capabilities: profile.capabilities
   })
 
-  const acp = new AcpClient({ command: config.acpCommand, args: config.acpArgs, permissionMode: profile.permissionMode, preferredAuthMethod: profile.authMethod })
+  const acp = trackAgentHostLifecycle(
+    new AcpClient({ command: config.acpCommand, args: config.acpArgs, permissionMode: profile.permissionMode, preferredAuthMethod: profile.authMethod }),
+    machineRegistry,
+    profile.id
+  )
   const server = createBridgeServer({
     config,
     acp,
@@ -54,7 +58,6 @@ if (config) {
     process.stderr.write(`[${config.backend}] handled agent request: ${message.method}\n`)
   })
   acp.on("exit", (error) => {
-    machineRegistry.updateHost(profile.id, { state: "unavailable" })
     if (!shuttingDown) process.stderr.write(`[${config.backend}] ${error.message}\n`)
   })
 
