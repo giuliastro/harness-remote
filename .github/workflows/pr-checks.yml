@@ -131,6 +131,12 @@ jobs:
       - name: Sync Android version metadata
         run: node web/scripts/sync-android-version.mjs "${{ steps.version.outputs.app_version }}" "${{ steps.version.outputs.version_code }}"
 
+      # Same applicationId as the installed release build plus a different signing key means Android
+      # refuses the install outright, so trying a pull request would cost you the app you already
+      # have and its configured servers. This gives the debug build its own id and launcher label.
+      - name: Give the debug build its own application id
+        run: node web/scripts/set-debug-app-id.mjs
+
       # `assembleDebug` signs with the auto-generated debug keystore, so this needs none of the
       # release signing secrets and works on a pull request from a fork.
       - name: Build debug APK
