@@ -2,18 +2,32 @@
 
 The shortest setup path uses the existing bridge through the new `harness-remote` launcher.
 
-From a local checkout:
+Run the repository directly with `npx`:
+
+```bash
+npx github:giuliastro/harness-remote
+```
+
+If more than one supported agent CLI is installed, select one explicitly:
+
+```bash
+npx github:giuliastro/harness-remote --backend codex
+```
+
+From a local checkout the equivalent path is:
 
 ```bash
 npm install
 npm start
 ```
 
-When installed from the package/repository, the equivalent command is:
+When installed as a repository/package binary, the command is:
 
 ```bash
 harness-remote
 ```
+
+The root package intentionally remains private for now: this documents a real GitHub/repository launch path without claiming that an npm package has already been published.
 
 The launcher is intentionally thin: it does **not** implement the future Universal Daemon. It starts one current ACP-backed Harness backend using the existing bridge.
 
@@ -21,13 +35,13 @@ The launcher is intentionally thin: it does **not** implement the future Univers
 
 - detects `omp`, `pi`, `claude`, and `codex` executables on `PATH` without running them;
 - auto-selects the backend when exactly one supported CLI is detected;
-- otherwise asks you to choose explicitly with `--backend`;
+- otherwise requires an explicit choice with `--backend`;
 - binds to the LAN by default (`0.0.0.0`) and automatically generates HTTP Basic Auth credentials;
 - starts at port `4097` and chooses the next available port when the default is busy;
 - prints the address and credentials to enter in the Harness Remote client;
 - forwards advanced bridge options such as `--root`, `--cors`, `--state-dir`, and `--log-requests`.
 
-Example when several agent CLIs are installed:
+Example with an installed binary when several agent CLIs are present:
 
 ```bash
 harness-remote --backend codex --root ~/dev
