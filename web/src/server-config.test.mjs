@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { streamURL } from './opencode-events.ts'
-import { baseUrl, isValidServerConfig } from './serverConfig.ts'
+import { authHeader, baseUrl, hasCredentials, isValidServerConfig } from './serverConfig.ts'
 
 const config = (host, port = 4096) => ({ backend: 'opencode', host, port, username: 'opencode', password: 'secret' })
 
@@ -53,5 +53,56 @@ assert.match(main, /<ErrorBoundary resetKeys=\{SERVER_STORAGE_KEYS\}>/, 'a crash
 
 const boundary = readFileSync(new URL('./ErrorBoundary.tsx', import.meta.url), 'utf8')
 assert.match(boundary, /localStorage\.removeItem\(key\)/, 'recovery must clear the saved server configuration')
+
+// Basic Auth, built from two fields typed on a phone keyboard into inputs that show nothing back.
+const creds = (username, password) => ({ backend: 'opencode', host: 'localhost', port: 4096, username, password })
+
+assert.equal(
+  authHeader(creds('opencode', 'secret')),
+  'Basic b3BlbmNvZGU6c2VjcmV0',
+  'the ordinary case must still produce the standard header'
+)
+
+// The password field is masked and the stored config keeps what was typed, so a space accepted from
+// a keyboard suggestion is invisible in the UI and fatal on the wire. Host and username were already
+// trimmed elsewhere; the credentials were not, in either field.
+assert.equal(
+  authHeader(creds(' opencode ', ' secret ')),
+  authHeader(creds('opencode', 'secret')),
+  'surrounding whitespace must not change the credentials sent'
+)
+
+// `btoa` encodes Latin-1: `à` went out as one byte where curl and every other client send the two
+// UTF-8 bytes the server decodes, so the password silently did not match. Above U+00FF it threw.
+assert.equal(
+  authHeader(creds('opencode', 'pàssword')),
+  'Basic b3BlbmNvZGU6cMOgc3N3b3Jk',
+  'credentials must be encoded as UTF-8 before base64'
+)
+assert.notEqual(
+  authHeader(creds('opencode', 'pàssword')),
+  'Basic b3BlbmNvZGU6cOBzc3dvcmQ=',
+  'the Latin-1 encoding btoa produces on its own must not be what goes on the wire'
+)
+assert.doesNotThrow(() => authHeader(creds('opencode', 'påsswörd☂')), 'a character above U+00FF must not throw')
+
+// The connection test enables itself without a password, so a request can go out unauthenticated
+// against a server that requires Basic Auth. That has to be distinguishable from a wrong password:
+// one is a field left empty, the other is a credential to re-check.
+assert.equal(hasCredentials(creds('opencode', 'secret')), true, 'a complete pair must count as credentials')
+assert.equal(hasCredentials(creds('opencode', '')), false, 'a missing password must not be sent as an empty one')
+assert.equal(hasCredentials(creds('opencode', '   ')), false, 'a password of only spaces is an empty one')
+assert.equal(hasCredentials(creds('', 'secret')), false, 'a password without a username cannot form a header')
+
+const api = readFileSync(new URL('./api.ts', import.meta.url), 'utf8')
+assert.ok(
+  api.includes('function unauthorizedDetail(') && api.includes('and none were sent.'),
+  'a 401 must say whether credentials were sent at all, not just that the request was unauthorized'
+)
+assert.equal(
+  api.includes('config.username && config.password'),
+  false,
+  'credential checks must go through the shared helper, so an untrimmed field cannot pass one check and fail another'
+)
 
 console.log('server config regression tests passed')

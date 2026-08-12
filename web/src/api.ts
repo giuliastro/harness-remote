@@ -1,7 +1,7 @@
 import { Capacitor, CapacitorHttp } from "@capacitor/core"
 import { desktopRequest, isDesktopPlatform } from "./desktopBridge"
 import { streamURL } from "./opencode-events"
-import { baseUrl, isValidServerConfig } from "./serverConfig"
+import { authHeader, baseUrl, hasCredentials, isValidServerConfig } from "./serverConfig"
 import type { AttachmentPart } from "./attachments"
 import type {
   AgentOption,
@@ -27,11 +27,17 @@ import type {
   VcsStatus
 } from "./types"
 
-function authHeader(config: ServerConfig): string {
-  return `Basic ${btoa(`${config.username}:${config.password}`)}`
-}
-
 export { baseUrl, isValidServerConfig }
+
+// A 401 says the server wants credentials, not that the ones given are wrong — and the app can tell
+// the two apart, because it knows whether it sent any. The connection test enables itself without a
+// password, so the common case is a server with Basic Auth and an empty password field, which read
+// as "wrong password" and sent people back to re-check credentials that were correct.
+function unauthorizedDetail(config: ServerConfig): string {
+  return hasCredentials(config)
+    ? "HTTP 401: the server rejected these credentials."
+    : "HTTP 401: this server requires a username and password, and none were sent."
+}
 
 function withDirectory(path: string, directory?: string): string {
   if (!directory) return path
@@ -125,7 +131,7 @@ async function requestWithHeaders<T>(config: ServerConfig, path: string, options
   const headers: Record<string, string> = {
     Accept: "application/json"
   }
-  if (config.username && config.password) {
+  if (hasCredentials(config)) {
     headers.Authorization = authHeader(config)
   }
   if (options.body !== undefined) {
@@ -148,6 +154,7 @@ async function requestWithHeaders<T>(config: ServerConfig, path: string, options
     }
 
     if (response.status >= 400) {
+      if (response.status === 401) throw new Error(responseDetail(response.data) || unauthorizedDetail(config))
       throw new Error(responseDetail(response.data) || `HTTP ${response.status}`)
     }
 
@@ -166,14 +173,14 @@ async function requestWithHeaders<T>(config: ServerConfig, path: string, options
   } catch {
     // Kept short: this text reaches a phone screen. The CORS note only means something in a
     // browser, where it is the usual cause, and nothing at all inside the app.
-    const corsHint = config.username && config.password
+    const corsHint = hasCredentials(config)
       ? " In a browser, Basic Auth also needs the bridge started with --cors for this origin."
       : ""
     throw new Error(`Cannot reach ${config.host}:${config.port}.${corsHint}`)
   }
 
   if (!response.ok) {
-    let detail = `HTTP ${response.status}`
+    let detail = response.status === 401 ? unauthorizedDetail(config) : `HTTP ${response.status}`
     try {
       // A Response body is a one-shot stream. Read it once and let responseDetail
       // parse JSON when applicable, so a plain-text server error remains useful.
@@ -223,7 +230,7 @@ function modelWireName(model?: ModelSelection) {
 export const api = {
   eventStream(config: ServerConfig) {
     const headers: Record<string, string> = {}
-    if (config.username && config.password) headers.Authorization = authHeader(config)
+    if (hasCredentials(config)) headers.Authorization = authHeader(config)
     return { url: streamURL(baseUrl(config), "global"), headers }
   },
 
