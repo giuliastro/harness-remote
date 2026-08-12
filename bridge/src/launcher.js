@@ -74,7 +74,7 @@ export function buildBridgeArgs(args, { backend, host, port, username, password 
   return result
 }
 
-function canListen(port, host) {
+export function canListen(port, host) {
   return new Promise((resolve) => {
     const probe = net.createServer()
     probe.unref()
@@ -118,7 +118,16 @@ async function main() {
   if (!Number.isInteger(requestedPort) || requestedPort < 1 || requestedPort > 65_535) {
     throw new Error("--port must be an integer between 1 and 65535")
   }
-  const port = hasOption(args, "--port") ? requestedPort : await findAvailablePort(requestedPort, host)
+
+  let port
+  if (hasOption(args, "--port")) {
+    if (!(await canListen(requestedPort, host))) {
+      throw new Error(`Port ${requestedPort} is not available on ${host}. Choose another port or omit --port for automatic selection.`)
+    }
+    port = requestedPort
+  } else {
+    port = await findAvailablePort(requestedPort, host)
+  }
 
   let username = optionValue(args, "--username")
   let password = optionValue(args, "--password")
@@ -154,8 +163,16 @@ async function main() {
   })
 }
 
-const invokedDirectly = process.argv[1] && path.resolve(process.argv[1]) === path.resolve(fileURLToPath(import.meta.url))
-if (invokedDirectly) {
+function isDirectInvocation() {
+  if (!process.argv[1]) return false
+  try {
+    return fs.realpathSync(process.argv[1]) === fs.realpathSync(fileURLToPath(import.meta.url))
+  } catch {
+    return path.resolve(process.argv[1]) === path.resolve(fileURLToPath(import.meta.url))
+  }
+}
+
+if (isDirectInvocation()) {
   main().catch((error) => {
     process.stderr.write(`${error.message}\n\n${launcherUsage()}\n`)
     process.exitCode = 1
