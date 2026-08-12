@@ -1,0 +1,164 @@
+name: PR checks
+
+# The regression suites only ran on `main`, inside the Pages deploy, so a pull request was merged
+# blind and a red suite was discovered after the fact — by which point the deploy that gates the
+# hosted app had already failed. The same gap hid the APK: it is built on `main` and on tags, so a
+# change to the app could not be installed on a phone until after it landed. Both run here instead,
+# on the pull request, which is where the answer is still cheap to act on.
+
+"on":
+  workflow_dispatch: {}
+  pull_request:
+    paths:
+      - 'web/**'
+      - 'bridge/**'
+      - '.github/workflows/pr-checks.yml'
+
+permissions:
+  contents: read
+
+# A pull request that is pushed to twice in a minute does not need the first Android build to
+# finish: it takes the longest and its APK is already stale.
+concurrency:
+  group: pr-checks-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  tests:
+    name: Type-check and regressions
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Install web dependencies
+        run: npm ci
+        working-directory: web
+
+      # `npm run build` is `tsc -b && vite build`, so this type-checks as well as bundles.
+      - name: Type-check and build web app
+        run: npm run build
+        working-directory: web
+
+      # The same list the Pages deploy gates on, plus `test:platform`. Keep the two in step: a suite
+      # that runs only after the merge is the situation this workflow exists to end.
+      - name: Run web regression tests
+        run: |
+          npm run test:i18n
+          npm run test:config
+          npm run test:ui
+          npm run test:settings
+          npm run test:model
+          npm run test:events
+          npm run test:profiles
+          npm run test:markdown
+          npm run test:attachments
+          npm run test:platform
+        working-directory: web
+
+      - name: Run bridge tests
+        run: npm test
+        working-directory: bridge
+
+  apk:
+    name: Debug APK
+    needs: tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Install web dependencies
+        run: npm ci
+        working-directory: web
+
+      - name: Build web app
+        run: npm run build
+        working-directory: web
+
+      - name: Setup JDK 21
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v4
+
+      - name: Install Android 36 SDK packages
+        run: sdkmanager "platform-tools" "platforms;android-36" "build-tools;36.0.0"
+
+      - name: Accept Android SDK licenses
+        run: yes | sdkmanager --licenses
+
+      - name: Add Capacitor Android platform
+        run: |
+          if [ ! -d android ]; then
+            npx cap add android
+          fi
+        working-directory: web
+
+      - name: Generate Android app icon assets
+        run: npx @capacitor/assets generate --android --assetPath public --iconBackgroundColor '#FFFFFF' --iconBackgroundColorDark '#FFFFFF'
+        working-directory: web
+
+      - name: Sync Capacitor project
+        run: npm run cap:sync:android
+        working-directory: web
+
+      - name: Read app version
+        id: version
+        run: |
+          APP_VERSION=$(node -p "require('./web/package.json').version")
+          VERSION_CODE=$(node -e "const [major, minor, patch] = process.argv[1].split('.').map(Number); console.log((major * 10000) + (minor * 100) + patch)" "$APP_VERSION")
+          echo "app_version=$APP_VERSION" >> "$GITHUB_OUTPUT"
+          echo "version_code=$VERSION_CODE" >> "$GITHUB_OUTPUT"
+
+      - name: Sync Android version metadata
+        run: node web/scripts/sync-android-version.mjs "${{ steps.version.outputs.app_version }}" "${{ steps.version.outputs.version_code }}"
+
+      # Same applicationId as the installed release build plus a different signing key means Android
+      # refuses the install outright, so trying a pull request would cost you the app you already
+      # have and its configured servers. This gives the debug build its own id and launcher label.
+      - name: Give the debug build its own application id
+        run: node web/scripts/set-debug-app-id.mjs
+
+      # `assembleDebug` signs with the auto-generated debug keystore, so this needs none of the
+      # release signing secrets and works on a pull request from a fork.
+      - name: Build debug APK
+        run: ./gradlew assembleDebug --stacktrace --no-daemon
+        working-directory: web/android
+
+      - name: Verify debug APK signature
+        run: |
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose web/android/app/build/outputs/apk/debug/app-debug.apk
+
+      # The head SHA, not `github.sha`: on a pull request the latter is the ephemeral merge commit,
+      # which names nothing you can check out to reproduce the build.
+      - name: Name the artifact after the commit it was built from
+        id: build
+        run: echo "sha=$(git rev-parse --short "${{ github.event.pull_request.head.sha || github.sha }}")" >> "$GITHUB_OUTPUT"
+
+      # Two weeks is longer than any pull request needs its APK, and the default 90 days would leave
+      # one build per push sitting in the Actions tab for a quarter.
+      - name: Upload debug APK artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: harness-remote-debug-v${{ steps.version.outputs.app_version }}-${{ steps.build.outputs.sha }}
+          path: web/android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+          retention-days: 14
