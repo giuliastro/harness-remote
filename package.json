@@ -4,10 +4,12 @@
   "private": true,
   "type": "module",
   "bin": {
-    "harness-remote": "./bridge/src/launcher.js"
+    "harness-remote": "./bridge/src/launcher.js",
+    "harness-remote-daemon": "./bridge/src/daemon-cli.js"
   },
   "scripts": {
     "start": "node bridge/src/launcher.js",
+    "daemon": "node bridge/src/daemon-cli.js",
     "test": "npm --prefix bridge test"
   },
   "engines": {
