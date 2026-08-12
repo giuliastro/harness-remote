@@ -5,6 +5,7 @@ import path from "node:path"
 import { AcpService } from "./acp-service.js"
 import { harnessProfile } from "./harness-profiles.js"
 
+
 function writeJSON(response, status, body) {
   response.writeHead(status, { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store" })
   response.end(JSON.stringify(body))
@@ -30,6 +31,8 @@ function applyCorsHeaders(request, response, config) {
   response.setHeader("Access-Control-Allow-Credentials", "true")
   response.setHeader("Access-Control-Allow-Headers", "authorization, content-type")
   response.setHeader("Access-Control-Allow-Methods", "GET, POST, PATCH, DELETE, OPTIONS")
+  // Chromium's Private Network Access preflight is sent when this public PWA
+  // connects to a local bridge (for example github.io -> localhost).
   if (request.headers["access-control-request-private-network"] === "true") {
     response.setHeader("Access-Control-Allow-Private-Network", "true")
   }
@@ -49,6 +52,7 @@ const MAX_ATTACHMENTS = 8
 const MAX_ATTACHMENT_BYTES = 5 * 1024 * 1024
 const MAX_ATTACHMENT_TOTAL_BYTES = 15 * 1024 * 1024
 
+/** base64 carries 3 bytes per 4 characters, so measure it rather than decoding megabytes to count them. */
 function base64ByteLength(value) {
   const padding = value.endsWith("==") ? 2 : value.endsWith("=") ? 1 : 0
   return Math.floor(value.length / 4) * 3 - padding
@@ -60,19 +64,32 @@ function attachmentPayload(url) {
   return match[1]
 }
 
+/**
+ * Attachments are validated before the prompt reaches the agent: a mime type the harness
+ * cannot read, or a payload large enough to stall the turn, is a client mistake worth
+ * naming rather than a failure to discover mid-stream.
+ */
 function parseAttachments(parts) {
   const files = (Array.isArray(parts) ? parts : []).filter((part) => part?.type === "file")
-  if (files.length > MAX_ATTACHMENTS) throw new Error(`At most ${MAX_ATTACHMENTS} attachments per prompt`)
+  if (files.length > MAX_ATTACHMENTS) {
+    throw new Error(`At most ${MAX_ATTACHMENTS} attachments per prompt`)
+  }
   let total = 0
   return files.map((file) => {
     const mime = typeof file.mime === "string" ? file.mime.toLowerCase() : ""
     if (!ATTACHMENT_MIME_TYPES.has(mime)) {
-      throw new Error(`Unsupported attachment type ${mime || "unknown"}: accepted types are image/png, image/jpeg, image/webp and image/gif`)
+      throw new Error(
+        `Unsupported attachment type ${mime || "unknown"}: accepted types are image/png, image/jpeg, image/webp and image/gif`
+      )
     }
     const data = attachmentPayload(file.url)
-    if (base64ByteLength(data) > MAX_ATTACHMENT_BYTES) throw new Error("Each attachment must stay under 5MB")
+    if (base64ByteLength(data) > MAX_ATTACHMENT_BYTES) {
+      throw new Error("Each attachment must stay under 5MB")
+    }
     total += base64ByteLength(data)
-    if (total > MAX_ATTACHMENT_TOTAL_BYTES) throw new Error("Attachments must stay under 15MB in total")
+    if (total > MAX_ATTACHMENT_TOTAL_BYTES) {
+      throw new Error("Attachments must stay under 15MB in total")
+    }
     return { mime, filename: typeof file.filename === "string" ? file.filename : "attachment", data }
   })
 }
@@ -105,6 +122,15 @@ function modelWireName(model) {
   return model.providerID && modelID ? `${model.providerID}/${modelID}` : undefined
 }
 
+/**
+ * The app's model API is OpenCode's, which names a model `provider/model`. ACP has no such rule:
+ * OMP and PI happen to use that shape, while Claude Code's adapter offers bare ids — `sonnet`,
+ * `opus[1m]`. Splitting on "/" and requiring both halves silently dropped every one of them, which
+ * is why that backend looked like it exposed no models at all.
+ *
+ * A bare id is presented under the backend's own name instead, so it reads and behaves like the
+ * others — `claude/sonnet`. `AcpService.setModel` puts it back to the id the agent knows.
+ */
 function providersResponse(models, fallbackProviderID) {
   const providers = new Map()
   const defaults = {}
@@ -118,6 +144,7 @@ function providersResponse(models, fallbackProviderID) {
     provider.models[modelID] = {
       id: modelID,
       name: option.name ?? modelID,
+      // Where the harness puts the version: "Sonnet 5 · Efficient for routine tasks".
       description: option.description || undefined,
       status: "active"
     }
@@ -133,6 +160,7 @@ export function createBridgeServer({ config, acp, serviceOptions, machineRegistr
   const service = new AcpService(acp, { ...serviceOptions, actionProviders: profile.actionProviders })
   return http.createServer(async (request, response) => {
     applyCorsHeaders(request, response, config)
+    // Browsers omit credentials on the preflight, so it must be answered before auth.
     if (request.method === "OPTIONS") {
       response.writeHead(allowedOrigin(request, config) ? 204 : 403)
       response.end()
@@ -164,6 +192,9 @@ export function createBridgeServer({ config, acp, serviceOptions, machineRegistr
         return
       }
       if (request.method === "GET" && url.pathname === "/v1/capabilities") {
+        // Attachment support comes from the handshake rather than the profile table: it is the agent
+        // that decides, and the app hides its attachment control on this flag. A static `true` would
+        // keep offering the control after a harness stopped accepting images.
         await acp.start()
         writeJSON(response, 200, { ...profile.capabilities, attachments: Boolean(acp.promptCapabilities?.image) })
         return
@@ -176,6 +207,9 @@ export function createBridgeServer({ config, acp, serviceOptions, machineRegistr
         })
         response.write(": connected\n\n")
         const unsubscribe = service.subscribe((event) => writeSSE(response, event.type, event))
+        // Clients treat a long silence as a dead connection, because a TCP stream can die
+        // without ever delivering an error. OpenCode beats every 10s; without matching it an
+        // idle session looks broken and the client reconnects on a loop.
         const heartbeat = setInterval(() => response.write(": ping\n\n"), config.heartbeatMs ?? 10_000)
         heartbeat.unref?.()
         request.on("close", () => {
@@ -255,11 +289,16 @@ export function createBridgeServer({ config, acp, serviceOptions, machineRegistr
           const body = await readBody(request)
           const text = body.parts?.find((part) => part.type === "text")?.text ?? ""
           const attachments = parseAttachments(body.parts)
+          // An image on its own is a complete prompt: a screenshot with no caption is the
+          // most common thing to send from a phone.
           if (!text && !attachments.length) throw new Error("A text prompt is required")
           await service.prompt(sessionID, text, modelWireName(body.model), attachments)
           writeJSON(response, 200, true)
           return
         }
+        // ACP has no command channel: a harness command is prompt text beginning
+        // with a slash, which is exactly what the app's composer would have sent
+        // had the picker never existed.
         if (request.method === "POST" && operation === "command") {
           const body = await readBody(request)
           if (typeof body.command !== "string" || !body.command) throw new Error("A command name is required")
