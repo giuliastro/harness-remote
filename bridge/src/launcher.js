@@ -148,6 +148,22 @@ export async function startManagedOpenCode({ host, port, username, password, com
   return managed
 }
 
+export function createManagedShutdown(managed, processObject = process) {
+  let signalCount = 0
+  let exitCode = 0
+  return (signal) => {
+    signalCount += 1
+    if (signalCount === 1) {
+      exitCode = signal === "SIGINT" ? 130 : 143
+      processObject.exitCode = exitCode
+      managed.stop("SIGTERM")
+      return
+    }
+    managed.stop("SIGKILL")
+    processObject.exit(exitCode || 1)
+  }
+}
+
 async function main() {
   const args = process.argv.slice(2)
   if (hasOption(args, "--help")) {
@@ -199,10 +215,10 @@ async function main() {
     process.stdout.write(`OpenCode is ready on ${host}:${port}. Keep this process running while Harness Remote is connected.\n`)
 
     let shuttingDown = false
-    const shutdown = () => {
-      if (shuttingDown) return
+    const shutdown = createManagedShutdown(managed)
+    const handleSignal = (signal) => {
       shuttingDown = true
-      managed.stop()
+      shutdown(signal)
     }
     managed.on("unavailable", (error) => {
       if (!shuttingDown) {
@@ -210,8 +226,8 @@ async function main() {
         process.exitCode = 1
       }
     })
-    process.on("SIGINT", shutdown)
-    process.on("SIGTERM", shutdown)
+    process.on("SIGINT", () => handleSignal("SIGINT"))
+    process.on("SIGTERM", () => handleSignal("SIGTERM"))
     return
   }
 
