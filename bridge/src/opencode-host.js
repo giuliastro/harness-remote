@@ -5,6 +5,8 @@ const DEFAULT_START_TIMEOUT_MS = 15_000
 const READINESS_RETRY_MS = 100
 const READINESS_ATTEMPT_MS = 1_000
 
+class OpenCodeCredentialError extends Error {}
+
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms))
 }
@@ -30,11 +32,11 @@ export async function waitForOpenCodeHealth({ host, port, username, password, ti
       })
       if (response.status === 200) return
       if (response.status === 401) {
-        throw new Error(`OpenCode health check rejected the generated credentials on ${host}:${port}`)
+        throw new OpenCodeCredentialError(`OpenCode health check rejected the generated credentials on ${host}:${port}`)
       }
       lastError = new Error(`OpenCode health check returned HTTP ${response.status}`)
     } catch (error) {
-      if (error?.message?.includes("rejected the generated credentials")) throw error
+      if (error instanceof OpenCodeCredentialError) throw error
       lastError = error
     } finally {
       clearTimeout(timer)
@@ -86,7 +88,8 @@ export class ManagedOpenCodeHost extends EventEmitter {
   }
 
   get processID() {
-    return Number.isInteger(this.child?.pid) ? this.child.pid : undefined
+    if (!this.child || this.child.exitCode != null || this.child.signalCode != null) return undefined
+    return Number.isInteger(this.child.pid) ? this.child.pid : undefined
   }
 
   async start() {
