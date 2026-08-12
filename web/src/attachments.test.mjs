@@ -44,10 +44,13 @@ assert.throws(
   'a remote URL must be refused: the bridge cannot fetch it'
 )
 
-// Composer wiring, in the source-assertion style the other web regressions use.
+// Composer wiring, in the source-assertion style the other web regressions use. The picker and the
+// part-building live in the extracted composer; the staged list and the transcript stay with the
+// coordinator state in `App.tsx`, so each assertion has to read the module that now owns it.
 const app = readFileSync(new URL('./App.tsx', import.meta.url), 'utf8')
-assert.ok(app.includes('accept="image/*"'), 'the composer must offer an image picker')
-assert.ok(app.includes('fileToAttachment('), 'the composer must build parts through the shared helper')
+const composerView = readFileSync(new URL('./components/session-composer.tsx', import.meta.url), 'utf8')
+assert.ok(composerView.includes('accept="image/*"'), 'the composer must offer an image picker')
+assert.ok(composerView.includes('fileToAttachment('), 'the composer must build parts through the shared helper')
 assert.ok(
   app.includes('setAttachments([])'),
   'sending must clear the staged attachments so the next prompt does not resend them'
@@ -62,9 +65,15 @@ const styles = readFileSync(new URL('./styles.css', import.meta.url), 'utf8')
 assert.match(styles, /\.message-attachment\s*\{[^}]*max-width:/, 'a thumbnail must be bounded so a photo cannot widen the page')
 
 // The bridge refuses attachments a harness never advertised. Offering the control anyway means the
-// only way to discover that is a failed send, which is the confusing path this gate removes.
+// only way to discover that is a failed send, which is the confusing path this gate removes. The
+// gate spans two modules now, and losing either half re-opens the control: `App.tsx` reads the
+// reported capability into the prop, the composer renders nothing without it.
 assert.ok(
-  app.includes('capabilities.attachments &&'),
+  app.includes('supportsAttachments={capabilities.attachments}'),
+  'the composer must be handed the attachment capability the bridge reports'
+)
+assert.ok(
+  composerView.includes('supportsAttachments && <>'),
   'the attachment control must be gated on the capability the bridge reports'
 )
 const defaults = readFileSync(new URL('./backendCapabilities.ts', import.meta.url), 'utf8')
