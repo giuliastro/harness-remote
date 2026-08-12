@@ -153,9 +153,12 @@ jobs:
         id: build
         run: echo "sha=$(git rev-parse --short "${{ github.event.pull_request.head.sha || github.sha }}")" >> "$GITHUB_OUTPUT"
 
+      # Two weeks is longer than any pull request needs its APK, and the default 90 days would leave
+      # one build per push sitting in the Actions tab for a quarter.
       - name: Upload debug APK artifact
         uses: actions/upload-artifact@v7
         with:
           name: harness-remote-debug-v${{ steps.version.outputs.app_version }}-${{ steps.build.outputs.sha }}
           path: web/android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
+          retention-days: 14
