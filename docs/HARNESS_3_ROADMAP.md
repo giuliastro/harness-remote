@@ -2,7 +2,7 @@
 
 > **Status:** product direction, not a promise that every item below will ship exactly as written.
 >
-> Execution is tracked in [roadmap issue #133](https://github.com/giuliastro/harness-remote/issues/133).
+> Execution is tracked in [roadmap issue #133](https://github.com/giuliastro/harness-remote/issues/133). Issues and PRs are canonical for implementation scope; this document is canonical for product direction and sequencing rationale.
 
 ## 1. Vision
 
@@ -13,11 +13,17 @@ Harness should evolve into a **local-first control plane for running AI coding w
 Codex, Claude Code, OpenCode, OMP, PI and future ACP-compatible agents remain execution engines. Harness owns the workflow above them:
 
 - machines;
-- projects/repositories;
+- projects and repositories;
 - available agents and capabilities;
 - tasks, runs and workspaces;
 - human attention;
 - results and Git lifecycle.
+
+The target hierarchy is:
+
+```text
+fleet → machine → project → task → agent run → backend
+```
 
 A representative end state is:
 
@@ -28,8 +34,6 @@ A representative end state is:
 2 need attention
 ```
 
-The product should feel like the place where agent work is managed, regardless of which supported agent executes it.
-
 ## 2. Positioning
 
 Vendor-native products will provide excellent experiences for their own agents. Generic multi-agent orchestration is also an established category.
@@ -38,370 +42,314 @@ Therefore neither of these is enough by itself:
 
 > use your coding agent from your phone
 
-or:
-
 > one control plane for all coding agents
 
 The sharper proposition is:
 
 > **Run and supervise AI coding work across your machines, from anywhere, while execution and credentials stay on them.**
 
-The long-term hierarchy becomes:
+Remote access becomes a capability of the control plane rather than the category definition.
 
-```text
-fleet → machine → project → task → agent run → backend
-```
+## 3. Market decision — August 2026
 
-Backend identity stays visible when it matters but is not the primary navigation model.
+The August 2026 market review changed the sequencing materially.
 
-## 3. Market context — August 2026
+Observed category facts:
 
-This section is dated deliberately so the strategy can be re-checked rather than inherited.
-
-Observed category state:
-
-- leading open orchestrators already provide one-command startup, isolated worktrees, multi-agent task launch, diffs/logs and PR-oriented workflows;
-- worktree-per-task parallelism is table stakes rather than differentiation;
+- leading open orchestrators already provide multi-agent boards, worktree-per-task execution, diffs and PR flows;
+- worktree isolation and parallel task execution are becoming table stakes;
 - mobile orchestration already has entrants;
-- vendors increasingly own single-agent supervision;
-- ACP adoption is broad, reducing the defensibility of backend normalization itself.
+- vendor apps increasingly supervise concurrent long-running agents;
+- ACP adoption makes “support many agents” progressively less defensible as proprietary engineering;
+- leading tools reach a useful state from a single command, making setup friction disqualifying rather than cosmetic.
 
-Implications:
+The strongest currently identified underserved position is **multi-machine, vendor-neutral, local-first fleet management**.
 
-### Generic control-plane positioning is a category description, not a wedge
+That is a wedge hypothesis, not a permanent moat and not yet a proven demand signal. Before making fleet work the largest investment, Harness should validate that a meaningful number of users actually run coding agents across multiple machines.
 
-Harness still needs to be agent-neutral, but neutrality alone is not a reason to switch.
-
-### Setup friction is disqualifying
-
-Zero-config is not Phase-B polish. In a market where competitors reach a working state with one command, it is a prerequisite for evaluation.
-
-### Task launch and worktrees are cost of entry
-
-Harness must be able to create work, not merely observe work started elsewhere.
-
-### Multi-machine fleet management is the strongest currently identified wedge
-
-The strongest scarce position found in the August 2026 review is a vendor-neutral, local-first control plane spanning multiple user machines.
-
-This is a **current wedge, not a guaranteed permanent moat**. The compounding advantage should come from the graph Harness builds above it:
+The compounding advantage should come from the graph Harness can build above the fleet:
 
 > machines × projects × agents × capabilities × tasks × attention × results
 
-Sources for the market review are collected in the market-check comment on issue #133 and were introduced through PR #144.
+## 4. Defensibility
 
-## 4. Product principles
+No individual UI component is a moat. Defensibility should come from several layers compounding together.
 
-### Local-first
+### Agent neutrality
 
-Agent credentials, execution and source stay on the user's machines by default. Cloud connectivity may improve access later but must not be required for ordinary local/LAN use.
+One workflow should survive changes in agent or vendor.
 
-### Agent-neutral
+### Local-first execution
 
-Harness should survive changes in agent/vendor. Backend-specific features remain available without dictating the whole workflow.
+Credentials, source code and agent runtimes stay on execution machines by default.
 
-### Fleet-safe from the start
+### Machine/project/task graph
 
-Machine identity and normalized APIs must not assume only one machine will ever exist.
+Harness should know where repositories live, which agents are available, which work is running and where results belong.
 
-### Task-centric
+### Durable task lifecycle
 
-The durable unit is a task, not a chat session:
+The unit of value should move beyond a chat session:
 
 ```text
-start → work → human attention → verify → review → PR → finish
+start → work → attention → verify → review → PR → finish
 ```
 
-### Event-first where possible
+### Universal attention
 
-Operational state and attention should prefer push/event-driven collection over polling fan-out, especially on mobile.
+Questions, permissions, failures and review-ready work should become normalized operational concepts rather than backend-specific UI details.
 
-### Progressive complexity
+### Open protocol leverage
 
-Build explicit machine and agent selection before automatic routing. Build reliable task lifecycle before orchestration.
+ACP and generic adapters should make additional agents cheaper to support. Backend compatibility is infrastructure, not the primary growth story.
 
-## 5. Core architecture
+## 5. Architecture direction
 
-Evolve the existing `bridge/`; do not casually replace it.
+Evolve the existing `bridge/`; do not casually replace it with a greenfield system.
 
-The first target is one Universal Daemon per machine:
+The long-term machine primitive is a Universal Daemon:
 
 ```text
 Harness clients
       │
       ▼
-Machine daemon
+Fleet control
       │
-      ├── AgentHost[codex]
-      ├── AgentHost[claude]
-      ├── AgentHost[opencode]
-      ├── AgentHost[omp]
-      └── AgentHost[pi]
+      ├── Machine A daemon
+      │     ├ AgentHost[codex]
+      │     ├ AgentHost[claude]
+      │     └ AgentHost[opencode]
+      │
+      ├── Machine B daemon
+      │     ├ AgentHost[codex]
+      │     └ AgentHost[omp]
+      │
+      └── later machines…
 ```
 
-Later, the control plane composes several daemons:
+Each daemon should expose stable machine identity, agent health/capabilities, projects, runs/tasks and an integration point for attention state.
+
+Machine-scoped identifiers must be designed so a second or third machine can be added without redefining the model.
+
+## 6. Execution sequencing
+
+The roadmap has two dependency tracks, but **not an assumption of parallel maintainer capacity**. When capacity conflicts, Product/Adoption work wins.
+
+### Primary track — Product / Adoption
+
+#### P0A — One-command startup (#147)
+
+Ship the cheap adoption win **before** the daemon refactor.
+
+Use the bridge that exists today and provide a thin launcher that can:
+
+- detect/select one supported backend;
+- choose a usable port;
+- preserve authentication requirements;
+- print concise connection information;
+- start the existing bridge;
+- keep advanced/manual setup available.
+
+Representative experience:
 
 ```text
-Harness fleet
-   │
-   ├── Machine A daemon → agents / projects / tasks
-   ├── Machine B daemon → agents / projects / tasks
-   └── Machine C daemon → agents / projects / tasks
+harness-remote
+
+Backend: codex
+Connect to: http://192.168.1.20:4097
+Username: harness
+Password: ...
 ```
 
-Each daemon should expose:
+This milestone deliberately does not require the multi-agent daemon.
 
+#### P0B — Universal Daemon (#143)
+
+After first-run friction is reduced, evolve the bridge into one machine-level multi-agent runtime.
+
+Core goals:
+
+- one daemon represents multiple local agent hosts;
 - stable machine identity;
-- agent availability/capabilities;
-- projects/repositories;
-- sessions/runs/tasks;
-- host health;
-- an integration point for Attention Plane state.
+- safe agent discovery;
+- isolated per-host health/failure;
+- fleet-safe API shapes;
+- backward-compatible migration from current bridge use;
+- integration boundary for the Attention Plane.
 
-## 6. Execution model — two parallel tracks
+Real heterogeneous multi-host validation requires at least one reachable ACP-backed harness environment. Test doubles may validate architecture/mechanics, but they must not be presented as proof of real harness compatibility.
 
-The roadmap is no longer one blocking sequence.
+#### P1 — Create work (#145)
 
-### Track 1 — Product / Adoption (priority)
+Harness must create work, not only observe sessions started elsewhere.
 
-#### P0 — Zero-config + Universal Daemon
-
-Tracked by [#143](https://github.com/giuliastro/harness-remote/issues/143).
-
-Target:
-
-```bash
-npx harness
-```
-
-or an equivalently low-friction first run.
-
-Expected result:
+Minimum category-entry loop:
 
 ```text
-Harness daemon
-Machine: workstation
-
-Detected agents
-✓ Codex
-✓ Claude Code
-✓ OpenCode
-✓ OMP
-✓ PI
+project → task → isolated worktree → agent → run
 ```
 
-One connection represents one machine and all supported local agents. The API is fleet-safe even though multi-machine aggregation is not yet implemented.
+Several tasks must be able to run concurrently in separate worktrees. Worktree isolation without concurrency delivers the mechanism but not the reason the category uses it.
 
-#### P1 — Create work
+Explicit agent and machine selection is enough initially. `Auto` routing comes later.
 
-Tracked by [#145](https://github.com/giuliastro/harness-remote/issues/145).
+#### P1B — Finish work
 
-Target:
+A tightly following milestone should close the competitive loop:
 
 ```text
-Project      harness-remote
-Task         Fix issue #200 and run tests
-Machine      Workstation
-Agent        Codex
-Workspace    New worktree
+run → diff → tests/checks → review → PR
 ```
 
-Remote task launch and safe worktree isolation are table stakes.
+Keep this separate from #145 if necessary to ship sooner, but do not describe task launch alone as the complete table-stakes experience.
 
-#### P2 — Multi-machine Fleet
+#### P2 — Multi-machine Fleet (#146)
 
-Tracked by [#146](https://github.com/giuliastro/harness-remote/issues/146).
+Before implementation becomes the largest roadmap investment, validate demand cheaply with existing users/contributors:
 
-Target:
+- do they run coding agents on more than one machine?
+- which combinations: workstation/laptop/server/VM?
+- would one control surface materially change their workflow?
+
+If demand is validated, Harness should aggregate multiple machine daemons while keeping code and credentials local.
+
+Initial placement can be explicit:
 
 ```text
-Workstation
-  Codex      working
-  Claude     available
-
-MacBook
-  Claude     working
-  Codex      available
-
-Server
-  OMP        working
+Task       Fix issue #200
+Machine    Workstation
+Agent      Codex
+Workspace  New worktree
 ```
 
-The first version uses explicit machine placement. `Machine: Auto` comes later.
+Automatic machine selection comes later.
 
-#### P3 — Finish work
+#### P3 — Coordinate
 
-Planned follow-ups:
-
-- diff/review;
-- test/check status;
-- create PR;
-- CI/PR visibility;
-- task/worktree cleanup and completion lifecycle.
-
-#### P4 — Coordinate
-
-Only after the fundamentals are reliable:
+Only after task/fleet fundamentals are reliable:
 
 - `Auto` agent selection;
 - `Auto` machine selection;
 - availability/capability/cost/rate-limit/workload-aware routing;
-- parallel implementation/review workflows;
-- optional E2E hosted relay and self-hosted relay;
+- parallel implementation/review patterns;
+- optional E2E relay/self-hosted relay;
 - later team/RBAC/audit surfaces.
 
-### Track 2 — Attention (parallel, non-blocking)
+### Secondary track — Attention
 
-Completed:
+Completed foundations:
 
 - #130 — session UI extraction;
 - #131 — normalized `AgentRun`.
 
-Current:
-
-- [#141](https://github.com/giuliastro/harness-remote/issues/141) — deferred ACP permissions split into bridge mechanics and real-harness compatibility;
-- [#142](https://github.com/giuliastro/harness-remote/issues/142) — backend-neutral Attention Plane;
-- [#132](https://github.com/giuliastro/harness-remote/issues/132) — Agent Inbox component.
-
-Important sequencing decisions:
-
-- #141 Track A is testable now with ACP doubles;
-- #141 Track B waits for real ACP-backed harness environments and does not block Track 1;
-- #142 can proceed without the full compatibility matrix, gating only backend-specific permission policy;
-- #132 can ship as a component after #142 for the active connection;
-- the Inbox should become the default launch screen/product story only after #143/#145 create enough concurrent work to justify it;
-- after #146 the same surface can become a fleet-wide **Needs You** view.
-
-## 7. Attention Plane
-
-Attention should normalize moments where autonomous work needs a human:
-
-- question / decision required;
-- permission where safely supported;
-- failed run;
-- completed work awaiting review;
-- later machine/policy problems.
-
-Lifecycle:
+Current dependency chain:
 
 ```text
-raised → pending → answered/acknowledged → cleared
+#141 Track A mechanics → #142 Attention Plane → #132 Inbox component
+#141 Track B real-harness compatibility → backend-specific ACP permission policy
 ```
 
-The Attention Plane must be knowable without opening session detail and must use machine-scopable identifiers so fleet aggregation composes naturally later.
+#### #141 Track A
 
-Deferred ACP permission support remains opt-in only where real harness evidence supports it.
+Implement hold/expose/answer mechanics using controlled ACP doubles.
 
-## 8. Agent Inbox
+The duration contract must remain **parameterized**:
 
-The Inbox is a useful component, particularly on mobile, but not the current market wedge.
+- configurable deadline;
+- pluggable expiry/fallback policy;
+- reconnect behavior;
+- no duplicate/resurrected requests.
 
-Before the daemon/task launcher it may accurately represent only the active connection. It must not fabricate cross-backend coverage by polling every saved profile.
+Track A proves mechanics, not that real agents can wait indefinitely.
 
-After fleet support, its strongest form is:
+#### #141 Track B
 
-> **Which agent across all my machines needs me now?**
+When real ACP-backed environments are reachable, measure Codex, Claude Code, OMP and PI behavior and produce per-backend GO/PARTIAL/NO-GO results.
 
-A prioritized list is especially suited to phones, where desktop-style kanban boards scale poorly.
+#### #142 Attention Plane
 
-## 9. Connectivity
+Build persistent, event-first, backend-neutral attention state. It may proceed without the full Track B matrix; only backend-specific deferred-permission policy remains gated on real evidence.
 
-Connectivity should remain progressive:
+#### #132 Agent Inbox
 
-1. local/LAN, no cloud account required;
-2. existing private networking such as VPN/Tailscale;
-3. optional Harness Relay for zero-config remote access.
+The Inbox can ship as a component after #142 for the active connection. It should not become the main product story merely because it exists.
 
-A future relay should not require plaintext access to prompts, output or source code, and a self-hostable path should remain possible.
+Once daemon/task/fleet work creates meaningful concurrent activity, the same mobile-friendly ordered list can become a strong fleet-level “Needs You” surface.
 
-## 10. Security principles
+## 7. Zero-config principles
 
-- credentials remain on each execution machine;
-- filesystem roots remain explicit;
+Setup is part of the product.
+
+- the shortest path should be obvious and measured;
+- the user should not need to understand one host/port/server process per backend;
+- non-loopback exposure must remain authenticated;
+- agent/provider credentials must never be printed or centralized;
+- unusual environments retain explicit advanced overrides;
+- future pairing should simplify authentication without weakening it.
+
+## 8. Security principles
+
+- credentials remain on execution machines;
+- source code does not need to be centralized;
+- filesystem roots stay explicit;
 - no unauthenticated non-loopback exposure;
-- pairing/machine identity must preserve or strengthen authentication;
-- an unreachable machine is represented as unreachable, not empty;
-- deferred permissions require explicit timeout/disconnect fallback semantics;
-- source code does not need to be centralized to manage the fleet;
-- relay design should avoid plaintext application payloads.
+- machine identity/pairing must preserve or strengthen authentication;
+- deferred permissions ship only where real protocol evidence supports them;
+- future relay design should not require plaintext access to source, prompts or output;
+- LAN/VPN/self-hosted paths remain valid.
 
-## 11. Defensibility test
+## 9. What not to optimize for
 
-For each proposed feature ask:
+Do not prioritize:
 
-> Does this make Harness harder to replace with one vendor's native remote UI or with a single-machine orchestrator?
-
-Higher-value work:
-
-- dramatically lowers first-run friction;
-- works across competing agents;
-- spans multiple user machines;
-- compounds machine/project/task knowledge;
-- creates durable task lifecycle above sessions;
-- turns attention into a fleet-level human queue;
-- later uses the graph to choose both machine and agent.
-
-Low strategic value on its own:
-
-- “remote Codex/Claude but nicer”;
-- raw harness-count expansion;
+- raw harness count as a growth metric;
 - another generic kanban board;
-- presenting worktrees as unique differentiation;
-- smart routing before reliable task launch.
+- worktrees marketed as unique differentiation;
+- a polished Inbox built on incomplete attention data;
+- smart routing before reliable task launch;
+- a hosted cloud backend before local value is excellent;
+- a greenfield rewrite without implementation evidence;
+- multi-machine implementation before demand is validated.
 
-## 12. Current priority map
+## 10. Validation gates
+
+The roadmap should remain falsifiable.
+
+Before or during P0B:
+
+- obtain at least one reachable ACP-backed harness environment for real integration validation.
+
+Before P2 becomes the largest build:
+
+- validate real multi-machine demand.
+
+Before hosted relay or automatic routing:
+
+- prove that users value the local task/fleet graph enough for routing/connectivity to compound rather than distract.
+
+## 11. Current priority order
 
 ```text
-PRODUCT / ADOPTION
-#143 Zero-config + Universal Daemon
-   ↓
-#145 Task launch + worktree
-   ↓
-#146 Multi-machine Fleet
-   ↓
-Review / PR lifecycle
-   ↓
-Auto machine + agent routing / orchestration
+PRIMARY
+#147  One-command startup
+  ↓
+#143  Universal Daemon
+  ↓
+#145  Concurrent task launch + worktrees
+  ↓
+       Diff / tests / review / PR
+  ↓
+#146  Multi-machine Fleet (after demand validation)
+  ↓
+       Auto machine + agent routing / orchestration
 
-ATTENTION (parallel)
-#141 Track A mechanics ──→ #142 Attention Plane ──→ #132 Inbox component
-#141 Track B real-harness compatibility ─────────→ ACP permission policy
+SECONDARY / NON-BLOCKING
+#141 Track A → #142 → #132
+#141 Track B ─────────→ ACP permission policy
 ```
 
-## 13. Success criteria
+## 12. Success test
 
-Harness is making the transition when users describe it as the place they manage agent work across their machines rather than merely the app they use to open one agent session remotely.
+Harness is succeeding when users describe it as **the place they run and manage agent work**, not merely the app they use to remote into one coding session.
 
-Signals include:
-
-- first run approaches one-command evaluation;
-- users operate more than one agent through one daemon;
-- tasks are routinely launched from Harness;
-- worktree isolation is reliable;
-- more than one machine can participate in the same control plane;
-- machine/project/task identity matters more than server-profile configuration;
-- attention becomes a useful fleet-level mobile surface;
-- users can complete a meaningful portion of the task lifecycle without returning to each agent's native UI.
-
-## 14. Strategic questions to keep revisiting
-
-1. Is multi-machine fleet management still scarce as competitors evolve?
-2. Is #143 narrow enough to ship quickly while actually achieving low-friction evaluation?
-3. What is the minimum #145 scope required to be compared fairly with current orchestrators?
-4. Does #146 create a real reason to switch or merely another copyable feature?
-5. Which fleet graph data becomes compounding value rather than incidental metadata?
-6. What assumption should be falsified before investing in hosted relay or automatic routing?
-
-Concrete code- and market-based criticism is preferred over agreement.
-
-## 15. Canonical planning references
-
-- [#133 — execution roadmap](https://github.com/giuliastro/harness-remote/issues/133)
-- [#143 — Universal Daemon / zero-config](https://github.com/giuliastro/harness-remote/issues/143)
-- [#145 — task launch / worktree](https://github.com/giuliastro/harness-remote/issues/145)
-- [#146 — multi-machine fleet](https://github.com/giuliastro/harness-remote/issues/146)
-- [#141 — deferred ACP permission mechanics/compatibility](https://github.com/giuliastro/harness-remote/issues/141)
-- [#142 — Attention Plane](https://github.com/giuliastro/harness-remote/issues/142)
-- [#132 — Agent Inbox](https://github.com/giuliastro/harness-remote/issues/132)
-
-This document is canonical **why and where**. GitHub issues remain canonical **what next and how**.
+The strongest product test is not whether Harness supports the most agents. It is whether one workflow remains useful as the user changes agents, projects and machines while local execution stays under their control.
