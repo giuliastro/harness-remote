@@ -38,7 +38,7 @@ The launcher remains intentionally thin while #143 evolves toward the Universal 
 - generates credentials for loopback quick start too;
 - keeps generated credentials out of child-process argv and passes them through environment variables;
 - starts ACP-backed agents from port `4097` and OpenCode from port `4096`, choosing the next available port when the default is busy;
-- for OpenCode, waits for an authenticated `/global/health` response before reporting the host ready;
+- for OpenCode, reports readiness only after an authenticated `/global/health` request succeeds with the generated credentials;
 - supervises the OpenCode process and escalates a repeated shutdown signal from graceful `SIGTERM` to `SIGKILL`;
 - prints one or more plausible LAN addresses while preferring non-virtual interfaces;
 - forwards advanced bridge options such as `--root`, `--cors`, `--state-dir`, and `--log-requests` for ACP-backed agents.
@@ -77,7 +77,7 @@ The launcher now owns the process lifecycle, though. Running:
 harness-remote --backend opencode
 ```
 
-will start `opencode serve` itself, pass the generated credentials through `OPENCODE_SERVER_USERNAME` and `OPENCODE_SERVER_PASSWORD`, wait for the authenticated health endpoint to succeed, print the connection details, and keep supervising the child process until shutdown.
+will start `opencode serve` itself, pass the generated credentials through `OPENCODE_SERVER_USERNAME` and `OPENCODE_SERVER_PASSWORD`, verify the authenticated health endpoint, print the connection details, and keep supervising the child process until shutdown.
 
 This means there is no second OpenCode command to copy and run manually.
 
