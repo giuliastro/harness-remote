@@ -1,0 +1,16 @@
+{
+  "name": "harness-remote",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "harness-remote": "./bridge/src/launcher.js"
+  },
+  "scripts": {
+    "start": "node bridge/src/launcher.js",
+    "test": "npm --prefix bridge test"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
