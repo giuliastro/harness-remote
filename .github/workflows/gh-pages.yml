@@ -57,6 +57,7 @@ jobs:
           npm run test:profiles
           npm run test:markdown
           npm run test:attachments
+          npm run test:agent-runs
         working-directory: web
 
       - name: Build web app
