@@ -13,7 +13,7 @@ function httpHost(host) {
   return host.includes(":") && !host.startsWith("[") ? `[${host}]` : host
 }
 
-async function waitForOpenCodeHealth({ host, port, username, password, timeoutMs = DEFAULT_START_TIMEOUT_MS, fetchImpl = fetch }) {
+export async function waitForOpenCodeHealth({ host, port, username, password, timeoutMs = DEFAULT_START_TIMEOUT_MS, fetchImpl = fetch }) {
   const deadline = Date.now() + timeoutMs
   const authorization = Buffer.from(`${username}:${password}`).toString("base64")
   const url = `http://${httpHost(host)}:${port}/global/health`
