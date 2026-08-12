@@ -41,15 +41,12 @@ export type AgentRunSignals = {
 const WORKING_STATUSES = new Set(["busy", "working", "running"])
 const RETRYING_STATUSES = new Set(["retry", "retrying"])
 const WAITING_STATUSES = new Set(["waiting"])
-const COMPLETED_STATUSES = new Set(["completed", "complete", "done", "success", "succeeded"])
-const FAILED_STATUSES = new Set(["failed", "failure", "error"])
-const STOPPED_STATUSES = new Set(["stopped", "cancelled", "canceled", "aborted"])
 
 /**
- * Normalize the status vocabulary exposed by individual harnesses into the operational states used
- * by the control-plane layer. The currently supported session list uses idle/busy/retry/waiting;
- * the additional aliases keep the boundary tolerant of richer lifecycle data without teaching UI
- * consumers about backend-specific words later.
+ * Normalize the status vocabulary exposed by currently supported harnesses into the operational
+ * states used by the control-plane layer. Terminal states are deliberately supplied only through
+ * the explicit terminalStatus signal: inferring them from raw harness words such as "error" or
+ * "done" could turn transient or backend-specific states into false terminal runs in the Inbox.
  */
 export function normalizeAgentRunStatus(status: string, terminalStatus?: AgentRunSignals["terminalStatus"]): AgentRunStatus {
   if (terminalStatus) return terminalStatus
@@ -58,9 +55,6 @@ export function normalizeAgentRunStatus(status: string, terminalStatus?: AgentRu
   if (WORKING_STATUSES.has(normalized)) return "working"
   if (RETRYING_STATUSES.has(normalized)) return "retrying"
   if (WAITING_STATUSES.has(normalized)) return "waiting"
-  if (COMPLETED_STATUSES.has(normalized)) return "completed"
-  if (FAILED_STATUSES.has(normalized)) return "failed"
-  if (STOPPED_STATUSES.has(normalized)) return "stopped"
   return "idle"
 }
 
