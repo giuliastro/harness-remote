@@ -23,7 +23,6 @@ async function waitForOpenCodeHealth({ host, port, username, password, timeoutMs
     const remaining = Math.max(1, deadline - Date.now())
     const controller = new AbortController()
     const timer = setTimeout(() => controller.abort(), Math.min(READINESS_ATTEMPT_MS, remaining))
-    timer.unref?.()
     try {
       const response = await fetchImpl(url, {
         headers: { Authorization: `Basic ${authorization}` },
@@ -54,7 +53,6 @@ function startTimeout(host, port, timeoutMs) {
     timer = setTimeout(() => reject(new Error(
       `OpenCode did not become ready on ${host}:${port} within ${timeoutMs}ms`
     )), timeoutMs)
-    timer.unref?.()
   })
   return { promise, cancel: () => clearTimeout(timer) }
 }
