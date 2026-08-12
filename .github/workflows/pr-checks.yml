@@ -60,6 +60,7 @@ jobs:
           npm run test:profiles
           npm run test:markdown
           npm run test:attachments
+          npm run test:agent-runs
           npm run test:platform
         working-directory: web
 
