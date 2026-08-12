@@ -2,7 +2,21 @@
 
 The shortest setup path uses the existing bridge through the new `harness-remote` launcher.
 
-Run the repository directly with `npx`:
+## Testing this PR before merge
+
+While PR #148 is still open, the root `package.json` only exists on the feature branch, so the `npx` command must include that branch explicitly:
+
+```bash
+npx github:giuliastro/harness-remote#agent/one-command-startup
+```
+
+For OpenCode on the PR branch:
+
+```bash
+npx github:giuliastro/harness-remote#agent/one-command-startup --backend opencode
+```
+
+After #148 is merged to `main`, the shorter command becomes valid:
 
 ```bash
 npx github:giuliastro/harness-remote
