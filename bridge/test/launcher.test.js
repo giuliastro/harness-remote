@@ -1,7 +1,7 @@
 import assert from "node:assert/strict"
 import path from "node:path"
 import test from "node:test"
-import { bridgeEnvironment, buildBridgeArgs, detectBackends, lanAddresses, resolveBackend, startManagedOpenCode } from "../src/launcher.js"
+import { bridgeEnvironment, buildBridgeArgs, createManagedShutdown, detectBackends, lanAddresses, resolveBackend, startManagedOpenCode } from "../src/launcher.js"
 
 test("detects executable agent files on PATH without running them", () => {
   const pathValue = ["/bin", "/tools"].join(path.delimiter)
@@ -57,6 +57,25 @@ test("delegates OpenCode startup to the managed host", async () => {
     username: "harness",
     password: "secret"
   })
+})
+
+test("escalates a second shutdown signal from SIGTERM to SIGKILL", () => {
+  const signals = []
+  const exits = []
+  const processObject = {
+    exitCode: 0,
+    exit(code) { exits.push(code) }
+  }
+  const shutdown = createManagedShutdown({ stop: (signal) => signals.push(signal) }, processObject)
+
+  shutdown("SIGINT")
+  assert.equal(processObject.exitCode, 130)
+  assert.deepEqual(signals, ["SIGTERM"])
+  assert.deepEqual(exits, [])
+
+  shutdown("SIGINT")
+  assert.deepEqual(signals, ["SIGTERM", "SIGKILL"])
+  assert.deepEqual(exits, [130])
 })
 
 test("uses an explicit backend even when discovery is empty", () => {
