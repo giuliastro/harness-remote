@@ -8,6 +8,8 @@ const icons = readFileSync(new URL('./Icons.tsx', import.meta.url), 'utf8')
 const styles = readFileSync(new URL('./styles.css', import.meta.url), 'utf8')
 const shell = readFileSync(new URL('./components/shell.tsx', import.meta.url), 'utf8')
 const panels = readFileSync(new URL('./components/panels.tsx', import.meta.url), 'utf8')
+const sessionList = readFileSync(new URL('./components/session-list.tsx', import.meta.url), 'utf8')
+const composerView = readFileSync(new URL('./components/session-composer.tsx', import.meta.url), 'utf8')
 
 assert.ok(api.includes('const body = await response.text()'), 'failed HTTP responses must consume their body only once')
 // The bridge reports failures as {"error": "..."}; without unwrapping that the app printed the raw
@@ -16,10 +18,10 @@ assert.ok(api.includes('const body = await response.text()'), 'failed HTTP respo
 assert.match(api, /typeof value\.error === "string" \? value\.error : undefined/, 'a bridge error body must be unwrapped to its message')
 assert.equal(api.includes('const text = await response.text()'), false, 'error handling must not try to read an already consumed response stream')
 
-const refreshButton = app.match(/<button onClick=\{refreshSessionsWithIndicator\}[\s\S]*?\{t\('sessions\.refresh'\)\}[\s\S]*?<\/button>/)
-assert.ok(refreshButton, 'sessions refresh button should call refreshSessionsWithIndicator')
+const refreshButton = sessionList.match(/<button onClick=\{onRefresh\}[\s\S]*?\{t\('sessions\.refresh'\)\}[\s\S]*?<\/button>/)
+assert.ok(refreshButton, 'sessions refresh button should receive the shared refresh callback')
 assert.ok(refreshButton[0].includes('RefreshIcon'), 'idle sessions refresh button should render a non-spinning RefreshIcon')
-assert.ok(refreshButton[0].includes('refreshingSessions ? <LoadingIcon'), 'refresh button should spin only during an active manual refresh')
+assert.ok(refreshButton[0].includes('refreshing ? <LoadingIcon'), 'refresh button should spin only during an active manual refresh')
 assert.match(styles, /\.session-card-main\s*\{[\s\S]*?min-width:\s*0;/, 'session card content should be allowed to shrink inside narrow layouts')
 // The invariant is that a long title cannot widen its card, not how that is achieved. Asserting the
 // nowrap/ellipsis spelling instead pinned a truncation the mobile cards never had: their titles wrap,
@@ -141,8 +143,8 @@ assert.ok(
   !/assistantPayloadLength\(current\) <= assistantPayloadLength\(msg\)/.test(app),
   'a leaner snapshot must not be rejected wholesale: the optimistic user bubble is cleared against that same snapshot, so dropping it makes a just-sent message vanish and latches every later message out of the transcript until the session is reopened'
 )
-assert.ok(app.includes('SendIcon') && app.includes('<SendIcon size={18} />'), 'composer send button should use the clear paper-plane SendIcon')
-assert.ok(app.includes('StopCircleIcon') && app.includes('<StopCircleIcon size={18} />'), 'composer waiting button should use a clear stop-task icon')
+assert.ok(composerView.includes('SendIcon') && composerView.includes('<SendIcon size={18} />'), 'composer send button should use the clear paper-plane SendIcon')
+assert.ok(composerView.includes('StopCircleIcon') && composerView.includes('<StopCircleIcon size={18} />'), 'composer waiting button should use a clear stop-task icon')
 assert.match(icons, /export const StopCircleIcon/, 'StopCircleIcon should exist in the shared SVG icon set')
 assert.ok(app.includes('api.loadDiff(config, sessionID, directory)'), 'detail view should load /session/:id/diff for changed-file details')
 assert.ok(app.includes('diffFiles.length > 0'), 'changed-file panel should be hidden when there are no changed files')
@@ -157,13 +159,13 @@ assert.ok(/\.project-dashboard[\s\S]*?grid-template-columns:\s*repeat\(3/.test(s
 assert.ok(/@media \(max-width: 780px\)[\s\S]*?\.project-dashboard[\s\S]*?grid-template-columns:\s*1fr/.test(styles), 'project dashboard should stack on mobile')
 assert.ok(app.includes('connectionState'), 'sessions view should track connection state separately from one-off runtime errors')
 assert.ok(app.includes('backgroundFailureCountRef.current += 1'), 'background refresh should count failures before showing persistent offline errors')
-assert.ok(app.includes('connection-pending'), 'initial slow connection should show an explicit loading state instead of an empty sessions list')
+assert.ok(sessionList.includes('connection-pending'), 'initial slow connection should show an explicit loading state instead of an empty sessions list')
 assert.ok(app.includes("t('connection.reconnecting')"), 'slow reconnecting state should be translated and shown quietly')
 assert.ok(styles.includes('.connection-status'), 'connection status should have a dedicated non-error visual treatment')
 assert.ok(app.includes('createFetchOpenCodeEventSubscription'), 'app should use an authenticated fetch-based event stream')
 assert.ok(app.includes('api.eventStream(config)'), 'app should derive the event stream URL and auth headers from server config')
 assert.ok(app.includes('setEventStreamState("live")'), 'app should expose live event-stream state in the UI')
-assert.ok(app.includes('event-stream'), 'sessions header should visibly show the event stream state')
+assert.ok(sessionList.includes('event-stream'), 'sessions header should visibly show the event stream state')
 assert.ok(app.includes('isNativeEventTransport()'), 'Android should select the native SSE transport instead of WebView fetch streaming')
 assert.ok(app.includes('createNativeOpenCodeEventSubscription'), 'Android should use the native event transport')
 assert.match(styles, /\.connection-status\s*\{\s*display:\s*flex;/, 'connection and live-status rows should be stacked, not joined inline')
@@ -252,7 +254,7 @@ assert.ok(
   "the marker must read as a sentence, not a one-word tag that needs a tooltip touch cannot show"
 )
 assert.equal(app.includes("disabled={!selectedSession || selectedSession.external}"), false, "external sessions must remain writable")
-assert.ok(app.includes('onClick={showStopAction ? abortSession : send}'), 'the action button should send a queued follow-up instead of only stopping')
+assert.ok(composerView.includes('onClick={showStopAction ? onAbort : onSend}'), 'the action button should send a queued follow-up instead of only stopping')
 
 // A run bubble merges action groups that a message boundary split apart. Consecutive replies with
 // nothing groupable in them must stay separate, or two answers to two queued prompts render as one.
@@ -301,14 +303,14 @@ assert.match(styles, /\.brand-server[\s\S]*?text-overflow: ellipsis/, 'a long ad
 assert.ok(app.includes('inputMode="url"') && app.includes('autoCapitalize="none"'), 'the host field must not be autocapitalised or autocorrected')
 assert.ok(app.includes('inputMode="numeric"'), 'the port field should raise a numeric keypad')
 assert.ok(app.includes('autoComplete="username"') && app.includes('autoComplete="current-password"'), 'credentials should be offerable by a password manager')
-assert.ok(app.includes('enterKeyHint={SOFT_KEYBOARD_DEVICE ? "enter" : "send"}'), "the composer's action key should say send on a fine pointer and new line on a soft keyboard")
-assert.ok(app.includes('if (event.ctrlKey || event.metaKey)'), 'a soft keyboard must send with Ctrl/Cmd+Enter and newline with plain Enter')
-assert.ok(app.includes('if (!event.shiftKey)'), 'a fine pointer must keep Enter sends / Shift+Enter new line')
+assert.ok(composerView.includes('enterKeyHint={softKeyboard ? "enter" : "send"}'), "the composer's action key should say send on a fine pointer and new line on a soft keyboard")
+assert.ok(composerView.includes('if (event.ctrlKey || event.metaKey)'), 'a soft keyboard must send with Ctrl/Cmd+Enter and newline with plain Enter')
+assert.ok(composerView.includes('if (!event.shiftKey)'), 'a fine pointer must keep Enter sends / Shift+Enter new line')
 
 // A session card showed a full absolute path over three lines, a third of its height.
-assert.ok(app.includes('function shortDirectory'), 'the card should shorten the directory it shows')
-assert.ok(app.includes('<p title={session.directory}>{shortDirectory(session.directory)}</p>'), 'the full path should stay available as a title')
-assert.equal(app.includes("t('sessions.noFileChanges')"), false, 'absence of changes needs no line of its own on a phone')
+assert.ok(sessionList.includes('function shortDirectory'), 'the card should shorten the directory it shows')
+assert.ok(sessionList.includes('<p title={session.directory}>{shortDirectory(session.directory)}</p>'), 'the full path should stay available as a title')
+assert.equal(sessionList.includes("t('sessions.noFileChanges')"), false, 'absence of changes needs no line of its own on a phone')
 
 // Hover is not a state a finger can produce.
 // The defect was a control left at 60% opacity until hovered, a state a finger cannot produce.
@@ -333,11 +335,11 @@ assert.ok(
 )
 assert.ok(app.includes('eventStreamText = isOffline'), 'the event stream must not claim to be reconnecting while the connection is down')
 assert.ok(
-  app.includes('runtimeError && !(isOffline && filteredSessions.length === 0)'),
+  sessionList.includes('runtimeError && !(offline && filteredSessions.length === 0)'),
   'the offline state explains itself; the raw transport error must not repeat it'
 )
-assert.ok(app.includes("t('sessions.retry')"), 'an offline state should offer a way out')
-assert.ok(app.includes('disabled={creatingSession || isOffline}'), 'an action that cannot succeed offline must not be offered')
+assert.ok(sessionList.includes("t('sessions.retry')"), 'an offline state should offer a way out')
+assert.ok(sessionList.includes('disabled={creating || offline}'), 'an action that cannot succeed offline must not be offered')
 assert.ok(styles.includes('.empty-state-actions'), 'the offline actions should be styled')
 
 // The question tool's own parameter schema has no `custom` field at all, so a question always
