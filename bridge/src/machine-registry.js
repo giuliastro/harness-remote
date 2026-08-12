@@ -30,6 +30,9 @@ async function installIdentity(machineFile, identity) {
   const temporary = `${machineFile}.${process.pid}.${randomUUID()}.tmp`
   await writeFile(temporary, `${JSON.stringify(identity, null, 2)}\n`, { mode: 0o600 })
   try {
+    // Hard-linking the complete temp file is an atomic "create if absent" operation. If
+    // another daemon wins the race, use its identity rather than returning two identities
+    // for the same state directory.
     await link(temporary, machineFile)
     return identity
   } catch (error) {
@@ -114,4 +117,24 @@ export class MachineRegistry {
       }))
     }
   }
+}
+
+/**
+ * ACP starts lazily, so lifecycle tracking has to wrap every start attempt rather than only
+ * initial daemon boot. A successful restart restores availability after a prior process exit.
+ */
+export function trackAgentHostLifecycle(agent, registry, hostID) {
+  const start = agent.start.bind(agent)
+  agent.start = async (...args) => {
+    try {
+      const result = await start(...args)
+      registry.updateHost(hostID, { state: "available" })
+      return result
+    } catch (error) {
+      registry.updateHost(hostID, { state: "unavailable" })
+      throw error
+    }
+  }
+  agent.on("exit", () => registry.updateHost(hostID, { state: "unavailable" }))
+  return agent
 }
