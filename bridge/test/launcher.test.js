@@ -1,7 +1,7 @@
 import assert from "node:assert/strict"
 import path from "node:path"
 import test from "node:test"
-import { bridgeEnvironment, buildBridgeArgs, detectBackends, lanAddresses, resolveBackend } from "../src/launcher.js"
+import { bridgeEnvironment, buildBridgeArgs, detectBackends, lanAddresses, resolveBackend, startManagedOpenCode } from "../src/launcher.js"
 
 test("detects executable agent files on PATH without running them", () => {
   const pathValue = ["/bin", "/tools"].join(path.delimiter)
@@ -24,7 +24,7 @@ test("ignores non-executable PATH entries on Unix", () => {
   }), [])
 })
 
-test("detects OpenCode so its direct HTTP path can be explained", () => {
+test("detects OpenCode as a managed direct-HTTP backend", () => {
   const candidate = path.join("/tools", "opencode")
   assert.deepEqual(detectBackends({
     pathValue: "/tools",
@@ -33,6 +33,30 @@ test("detects OpenCode so its direct HTTP path can be explained", () => {
     access: () => {}
   }), ["opencode"])
   assert.equal(resolveBackend([], ["opencode"]), "opencode")
+})
+
+test("delegates OpenCode startup to the managed host", async () => {
+  let options
+  class FakeHost {
+    constructor(value) { options = value }
+    async start() { this.started = true }
+  }
+  const managed = await startManagedOpenCode({
+    host: "0.0.0.0",
+    port: 4096,
+    username: "harness",
+    password: "secret",
+    command: "/tools/opencode",
+    Host: FakeHost
+  })
+  assert.equal(managed.started, true)
+  assert.deepEqual(options, {
+    command: "/tools/opencode",
+    host: "0.0.0.0",
+    port: 4096,
+    username: "harness",
+    password: "secret"
+  })
 })
 
 test("uses an explicit backend even when discovery is empty", () => {
