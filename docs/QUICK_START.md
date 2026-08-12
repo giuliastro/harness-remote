@@ -1,8 +1,6 @@
 # Harness Remote quick start
 
-The shortest setup path is the repository-level `harness-remote` launcher.
-
-Run directly from GitHub:
+The shortest setup path uses the `harness-remote` launcher.
 
 ```bash
 npx github:giuliastro/harness-remote
@@ -27,7 +25,9 @@ When installed as a repository/package binary, the command is:
 harness-remote
 ```
 
-The root package intentionally remains private for now: this documents a real GitHub/repository launch path without claiming that an npm registry package has already been published.
+The root package intentionally remains private for now: this documents a real GitHub/repository launch path without claiming that an npm package has already been published.
+
+The launcher remains intentionally thin while #143 evolves toward the Universal Daemon. ACP-backed agents still use the existing bridge. OpenCode is now started and supervised directly by Harness Remote rather than requiring a second command.
 
 ## What it does
 
@@ -35,11 +35,11 @@ The root package intentionally remains private for now: this documents a real Gi
 - auto-selects the backend when exactly one supported CLI is found;
 - otherwise requires an explicit choice with `--backend`;
 - binds to the LAN by default (`0.0.0.0`) and automatically generates HTTP Basic Auth credentials;
-- generates credentials for loopback quick start too, so local applications/users do not get an unauthenticated server by default;
-- keeps generated credentials out of child-process argv and passes them through environment variables instead;
-- starts ACP-backed agents through the existing bridge from port `4097`;
-- starts and supervises OpenCode directly from port `4096`;
-- chooses the next available port when the default is busy;
+- generates credentials for loopback quick start too;
+- keeps generated credentials out of child-process argv and passes them through environment variables;
+- starts ACP-backed agents from port `4097` and OpenCode from port `4096`, choosing the next available port when the default is busy;
+- for OpenCode, waits for an authenticated `/global/health` response before reporting the host ready;
+- supervises the OpenCode process and escalates a repeated shutdown signal from graceful `SIGTERM` to `SIGKILL`;
 - prints one or more plausible LAN addresses while preferring non-virtual interfaces;
 - forwards advanced bridge options such as `--root`, `--cors`, `--state-dir`, and `--log-requests` for ACP-backed agents.
 
@@ -69,27 +69,18 @@ harness-remote \
 
 ## OpenCode
 
-OpenCode remains a direct-HTTP backend: the Harness Remote client talks to the OpenCode server rather than translating it through ACP.
+OpenCode remains different at the protocol layer: the Harness Remote client connects directly to the OpenCode HTTP server rather than through the ACP bridge.
 
-The launcher now manages that server for you. Running:
+The launcher now owns the process lifecycle, though. Running:
 
 ```bash
-npx github:giuliastro/harness-remote --backend opencode
+harness-remote --backend opencode
 ```
 
-will:
+will start `opencode serve` itself, pass the generated credentials through `OPENCODE_SERVER_USERNAME` and `OPENCODE_SERVER_PASSWORD`, wait for the authenticated health endpoint to succeed, print the connection details, and keep supervising the child process until shutdown.
 
-1. generate or accept Basic Auth credentials;
-2. select an available port starting at `4096`;
-3. start `opencode serve` itself;
-4. pass credentials through `OPENCODE_SERVER_USERNAME` and `OPENCODE_SERVER_PASSWORD`, never through argv;
-5. wait until the server is actually accepting connections before reporting it ready;
-6. keep the OpenCode child process supervised until the launcher is stopped.
-
-There is no second command to copy and paste. Keep the launcher process running and configure the Harness Remote client with the printed address and credentials.
-
-This managed-host primitive is also intended to be reused by the Universal Daemon work in #143, where OpenCode and ACP-backed agents will coexist under one machine-level process manager.
+This means there is no second OpenCode command to copy and run manually.
 
 ## Advanced/manual setup
 
-The existing backend-specific bridge commands and direct `opencode serve` setup remain supported. Use them when you need unusual networking or other advanced settings documented in the main README.
+The existing backend-specific bridge commands remain supported. Use them when you need custom adapter commands, unusual networking, browser CORS configuration, or other advanced settings documented in the main README.
