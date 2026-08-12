@@ -66,6 +66,26 @@ The proposition is:
 
 Remote access becomes a capability of the control plane rather than the whole identity of the product.
 
+### 2.1 Market context — August 2026
+
+The positioning above is argued from first principles. This subsection records the observable state of the category so the argument can be re-checked rather than assumed, and so a later reader can tell which conclusions were evidence and which were belief. It should be dated and revised, not quietly deleted.
+
+- The most-starred open orchestrator in this category is at roughly **27,500 stars** and installs with a single `npx` command; moving a task card creates an isolated worktree, starts the linked agent, captures diffs and logs, and can open a pull request. Its parent company shut down in April 2026 and it continues community-maintained.
+- **Worktree-per-task parallelism is table stakes**, not differentiation. Numerous desktop orchestrators ship it, and JetBrains added first-class worktree support in 2026.1.
+- **Mobile orchestration already has entrants.** At least two products ship phone apps that supervise agents executing on the user's own machine, one of them with a touch-optimised board and worktree per card.
+- **Vendors own single-agent supervision.** A dashboard for parallel sessions shipped in May 2026 for one major agent, and a competing vendor's app is built explicitly around supervising concurrent long-running agents.
+- **ACP adoption is broad**: 25+ agents by March 2026, adoption by JetBrains, Google and GitHub, and a registry since January 2026.
+
+Three implications for this document:
+
+**The category statement in section 2 is now the consensus position, not a wedge.** "One control plane for all of your coding agents" describes what several funded products already claim. It remains the correct description of the product; it is no longer, by itself, a reason anyone would choose it.
+
+**Setup friction is disqualifying rather than unfortunate.** Section 8 treats zero-config as a direction. Against a competitor that reaches a working board in one command, it is the precondition for being evaluated at all. Every layer built above a multi-step setup is built for users who never arrive.
+
+**Multi-machine is the one claim in this document with no visible incumbent.** Every orchestrator observed runs agents on the machine running the app. The success criteria in section 13 open with `3 machines`, and that line — combined with agent neutrality, which vendors will not adopt, and local-first, against a broadly cloud-shaped market — is the sharpest available answer to "why this and not the leader".
+
+Sources for the above are collected in the market-check comment on issue #133.
+
 ## 3. Where defensibility should come from
 
 No single UI component is a moat. The defensible product should come from several layers compounding together.
@@ -472,6 +492,20 @@ Harness → tests, compare results, surface disagreement
 ```
 
 **Outcome:** Harness coordinates agent capacity rather than merely exposing it.
+
+### Sequencing risks
+
+The phases above are ordered by architectural dependency, which is the right instinct and produces one problem: measured against section 2.1, the work that decides whether anyone evaluates the product sits in later phases than the work that improves it for people who already have.
+
+Three specific tensions, recorded so the ordering is a decision rather than an oversight:
+
+**Zero-config sits in Phase B, behind the attention model.** Nothing in Phase A is reachable by a user who has not already completed a multi-step, per-harness setup. A one-command first run belongs alongside Phase B's daemon at the latest, and arguably in parallel with Phase A, because it changes who can see any of it. A useful internal benchmark: the current setup took the author of this repository most of a working day to complete on a phone.
+
+**Task launch and worktrees sit in Phase C.** Section 2.1 puts them at table stakes. Until Harness can start work rather than only observe work somebody started by hand, it is not in the comparison the category is actually making — however good the Attention Plane is.
+
+**Multi-machine aggregation is a trailing bullet in Phase C** and a declared non-goal in #142 and #143. It is also the only unclaimed position identified in section 2.1. It does not need to be built early, but its boundary should be designed before Phase B hardens a single-machine machine API that later has to be undone.
+
+**Phase A's own gating risk:** #141 requires one of the four ACP-backed harnesses. #142 depends on its outcome and #132 depends on #142, so the whole phase gates on an experiment that cannot run in an OpenCode-only environment, since OpenCode is reached directly over HTTP rather than through the ACP bridge. Splitting it — bridge-side hold/answer/timeout mechanics against the existing ACP test doubles, then the real-harness compatibility matrix when such a harness is reachable — keeps the phase moving without inventing the evidence the spike exists to gather.
 
 ## 12. What not to prioritize yet
 
