@@ -113,7 +113,10 @@ jobs:
           fi
         working-directory: web
 
+      # Pull-request APKs are disposable test builds. Icon generation is cosmetic and depends on an
+      # on-demand npx install, so it must not block verification of unrelated application changes.
       - name: Generate Android app icon assets
+        continue-on-error: true
         run: npx @capacitor/assets generate --android --assetPath public --iconBackgroundColor '#FFFFFF' --iconBackgroundColorDark '#FFFFFF'
         working-directory: web
 
