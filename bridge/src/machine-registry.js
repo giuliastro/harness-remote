@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto"
-import { mkdir, readFile, rename, writeFile } from "node:fs/promises"
+import { link, mkdir, readFile, rename, unlink, writeFile } from "node:fs/promises"
 import { hostname } from "node:os"
 import path from "node:path"
 
@@ -9,13 +9,50 @@ function validIdentity(value) {
   return value && typeof value.id === "string" && value.id.length > 0 && typeof value.name === "string" && value.name.length > 0
 }
 
+async function readIdentity(machineFile) {
+  const parsed = JSON.parse(await readFile(machineFile, "utf8"))
+  return validIdentity(parsed) ? parsed : undefined
+}
+
+async function preserveCorruptIdentity(machineFile, warn) {
+  const corruptFile = `${machineFile}.corrupt-${Date.now()}-${process.pid}`
+  try {
+    await rename(machineFile, corruptFile)
+  } catch (error) {
+    if (error?.code === "ENOENT") return undefined
+    throw error
+  }
+  warn(`Invalid Harness machine identity moved to ${corruptFile}; generating a new identity.`)
+  return corruptFile
+}
+
+async function installIdentity(machineFile, identity) {
+  const temporary = `${machineFile}.${process.pid}.${randomUUID()}.tmp`
+  await writeFile(temporary, `${JSON.stringify(identity, null, 2)}\n`, { mode: 0o600 })
+  try {
+    await link(temporary, machineFile)
+    return identity
+  } catch (error) {
+    if (error?.code !== "EEXIST") throw error
+    const existing = await readIdentity(machineFile)
+    if (existing) return existing
+    throw new Error("Concurrent Harness daemon created an invalid machine identity")
+  } finally {
+    await unlink(temporary).catch(() => {})
+  }
+}
+
 export async function loadMachineIdentity(stateDirectory, options = {}) {
   const machineFile = path.join(stateDirectory, IDENTITY_FILE)
+  const warn = options.warn ?? ((message) => process.stderr.write(`[machine] ${message}\n`))
+
   try {
-    const parsed = JSON.parse(await readFile(machineFile, "utf8"))
-    if (validIdentity(parsed)) return parsed
+    const existing = await readIdentity(machineFile)
+    if (existing) return existing
+    await preserveCorruptIdentity(machineFile, warn)
   } catch (error) {
     if (error?.code !== "ENOENT" && !(error instanceof SyntaxError)) throw error
+    if (error instanceof SyntaxError) await preserveCorruptIdentity(machineFile, warn)
   }
 
   const identity = {
@@ -24,10 +61,7 @@ export async function loadMachineIdentity(stateDirectory, options = {}) {
     createdAt: new Date().toISOString()
   }
   await mkdir(stateDirectory, { recursive: true })
-  const temporary = `${machineFile}.${process.pid}.tmp`
-  await writeFile(temporary, `${JSON.stringify(identity, null, 2)}\n`, { mode: 0o600 })
-  await rename(temporary, machineFile)
-  return identity
+  return installIdentity(machineFile, identity)
 }
 
 export class MachineRegistry {
