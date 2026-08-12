@@ -4,10 +4,12 @@
   "private": true,
   "type": "module",
   "bin": {
-    "harness-remote-bridge": "./src/cli.js"
+    "harness-remote-bridge": "./src/cli.js",
+    "harness-remote-daemon": "./src/daemon-cli.js"
   },
   "scripts": {
     "start": "node src/cli.js",
+    "daemon": "node src/daemon-cli.js",
     "test": "node --test"
   },
   "engines": {
