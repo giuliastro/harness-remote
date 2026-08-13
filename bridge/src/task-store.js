@@ -7,6 +7,12 @@ function machineFileName(machineID) {
   return `tasks-${digest}.json`
 }
 
+function taskError(code, message) {
+  const error = new Error(message)
+  error.code = code
+  return error
+}
+
 export class TaskStore {
   constructor({ machineID, stateDirectory, idFactory = randomUUID, clock = () => new Date().toISOString(), warn = (message) => process.stderr.write(`${message}\n`) }) {
     this.machineID = machineID
@@ -84,10 +90,29 @@ export class TaskStore {
   async setWorkspace(taskID, workspace) {
     await this.load()
     const index = this.tasks.findIndex((task) => task.id === taskID)
-    if (index < 0) throw new Error(`Unknown task: ${taskID}`)
+    if (index < 0) throw taskError("unknown_task", `Unknown task: ${taskID}`)
     const task = this.tasks[index]
-    if (task.status !== "draft") throw new Error("Only draft tasks can change workspace")
+    if (task.status !== "draft") throw taskError("invalid_state", "Only draft tasks can change workspace")
     const updated = { ...task, workspace: structuredClone(workspace), updatedAt: this.clock() }
+    this.tasks[index] = updated
+    await this.persist()
+    return structuredClone(updated)
+  }
+
+  async clearWorkspace(taskID) {
+    await this.load()
+    const index = this.tasks.findIndex((task) => task.id === taskID)
+    if (index < 0) throw taskError("unknown_task", `Unknown task: ${taskID}`)
+    const task = this.tasks[index]
+    if (task.status === "starting" || task.status === "running") {
+      throw taskError("task_active", "An active task cannot release its workspace")
+    }
+    if (task.workspace?.mode !== "worktree") return structuredClone(task)
+    const updated = {
+      ...task,
+      workspace: { mode: "project", path: task.project.path },
+      updatedAt: this.clock()
+    }
     this.tasks[index] = updated
     await this.persist()
     return structuredClone(updated)
