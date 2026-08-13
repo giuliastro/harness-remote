@@ -67,6 +67,7 @@ function sameProfile(left: DesktopProfile, right: DesktopProfile): boolean {
     && left.port === right.port
     && left.username === right.username
     && left.password === right.password
+    && left.agentId === right.agentId
 }
 
 function sameSnapshot(left: DesktopProfile[], right: DesktopProfile[]): boolean {
@@ -151,6 +152,7 @@ export function desktopProfileID(config: ServerConfig): string | null {
       && candidate.port === config.port
       && candidate.username === config.username
       && candidate.password === config.password
+      && candidate.agentId === config.agentId
   })
   return profile?.id ?? null
 }
