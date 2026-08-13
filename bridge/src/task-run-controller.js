@@ -1,10 +1,12 @@
 import { randomUUID } from "node:crypto"
 import { taskLaunchError } from "./task-errors.js"
+import { WorktreeManager } from "./worktree-manager.js"
 
 export class TaskRunController {
-  constructor({ taskStore, taskLauncher, runIDFactory = randomUUID, clock = () => new Date().toISOString() }) {
+  constructor({ taskStore, taskLauncher, worktreeManager, runIDFactory = randomUUID, clock = () => new Date().toISOString() }) {
     this.taskStore = taskStore
     this.taskLauncher = taskLauncher
+    this.worktreeManager = worktreeManager ?? (taskStore?.stateDirectory ? new WorktreeManager({ stateDirectory: taskStore.stateDirectory }) : undefined)
     this.runIDFactory = runIDFactory
     this.clock = clock
   }
@@ -16,6 +18,29 @@ export class TaskRunController {
       if (current.status !== "starting" && current.status !== "running") return
       await this.taskStore.setRunState(taskID, { status: "failed", run: current.run, error })
     } catch {}
+  }
+
+  async inspectWorkspace(taskID) {
+    const task = await this.taskStore.get(taskID)
+    if (!task) throw taskLaunchError("unknown_task", `Unknown task: ${taskID}`)
+    if (task.workspace?.mode !== "worktree") return { managed: false, dirty: false, changeCount: 0 }
+    if (!this.worktreeManager) throw new Error("Worktree manager is not configured")
+    return this.worktreeManager.inspect(task.workspace)
+  }
+
+  async cleanupWorkspace(taskID) {
+    const task = await this.taskStore.get(taskID)
+    if (!task) throw taskLaunchError("unknown_task", `Unknown task: ${taskID}`)
+    if (task.status === "starting" || task.status === "running") {
+      throw taskLaunchError("task_active", "An active task cannot release its workspace")
+    }
+    if (task.workspace?.mode !== "worktree") {
+      return { task, cleanup: { removed: false, branchDeleted: false } }
+    }
+    if (!this.worktreeManager) throw new Error("Worktree manager is not configured")
+    const cleanup = await this.worktreeManager.cleanup(task.workspace)
+    const updated = await this.taskStore.clearWorkspace(taskID)
+    return { task: updated, cleanup }
   }
 
   async launch(taskID) {
