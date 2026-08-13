@@ -1,7 +1,7 @@
 import assert from "node:assert/strict"
 import { EventEmitter } from "node:events"
 import test from "node:test"
-import { createTaskLaunchServer } from "../src/task-launch-server.js"
+import { createTaskLaunchServer, launchStatus } from "../src/task-launch-server.js"
 
 async function listen(server) {
   await new Promise((resolve, reject) => {
@@ -32,7 +32,7 @@ test("POST launch returns the persisted running task", async () => {
   }
 })
 
-test("launch maps missing tasks to 404 and delegates unrelated routes", async () => {
+test("launch maps coded missing tasks to 404 and delegates unrelated routes", async () => {
   const innerServer = new EventEmitter()
   let delegated = false
   innerServer.on("request", (_request, response) => {
@@ -43,7 +43,7 @@ test("launch maps missing tasks to 404 and delegates unrelated routes", async ()
   const server = createTaskLaunchServer({
     innerServer,
     config: { username: "", password: "", corsOrigins: [] },
-    taskRunController: { async launch(id) { throw new Error(`Unknown task: ${id}`) } }
+    taskRunController: { async launch(id) { const error = new Error(`Unknown task: ${id}`); error.code = "unknown_task"; throw error } }
   })
   const port = await listen(server)
   try {
@@ -55,4 +55,8 @@ test("launch maps missing tasks to 404 and delegates unrelated routes", async ()
   } finally {
     await close(server)
   }
+})
+
+test("launch status ignores prose when no structured code is present", () => {
+  assert.equal(launchStatus(new Error("unknown task worktree unavailable")), 500)
 })
