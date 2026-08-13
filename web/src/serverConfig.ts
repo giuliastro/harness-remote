@@ -4,7 +4,7 @@ import type { ServerConfig } from "./types.js"
  * Kept free of Capacitor imports so it can be unit tested directly: the rules here
  * decide whether the app is allowed to build a URL at all.
  */
-export function baseUrl(config: ServerConfig): string {
+export function machineBaseUrl(config: ServerConfig): string {
   const host = config.host.trim()
   const schemeMatch = host.match(/^(https?):\/\//)
   const scheme = schemeMatch ? schemeMatch[1] : "http"
@@ -12,7 +12,17 @@ export function baseUrl(config: ServerConfig): string {
   return `${scheme}://${cleanHost}:${config.port}`
 }
 
-/** Legacy server profiles have no agent id, so their wire paths remain byte-for-byte unchanged. */
+/**
+ * A daemon-backed profile points at one agent below the machine address. Legacy profiles have no
+ * agent id, so their base URL remains byte-for-byte identical to previous releases.
+ */
+export function baseUrl(config: ServerConfig): string {
+  const machine = machineBaseUrl(config)
+  const agentID = config.agentId?.trim()
+  return agentID ? `${machine}/v1/agents/${encodeURIComponent(agentID)}` : machine
+}
+
+/** Useful when a caller already has a path and does not build through baseUrl. */
 export function agentScopedPath(config: ServerConfig, path: string): string {
   const agentID = config.agentId?.trim()
   if (!agentID) return path
@@ -51,7 +61,7 @@ export function authHeader(config: ServerConfig): string {
 export function isValidServerConfig(config: ServerConfig): boolean {
   if (!config.host.trim() || !Number.isInteger(config.port) || config.port <= 0 || config.port > 65535) return false
   try {
-    const url = new URL(baseUrl(config))
+    const url = new URL(machineBaseUrl(config))
     return Boolean(url.hostname)
   } catch {
     return false
