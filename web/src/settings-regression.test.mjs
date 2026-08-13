@@ -33,12 +33,16 @@ assert.ok(app.includes('health.backend && health.backend !== configToTest.backen
 assert.ok(app.includes('https://github.com/giuliastro/harness-remote#'), 'Help should link to the canonical repository')
 assert.equal(app.includes('https://github.com/gervaso-assistant/opencode-remote-android#'), false, 'Help must not link to the obsolete repository owner')
 
-// A daemon-backed connection discovers the machine after the ordinary connection test succeeds.
-// Legacy servers return null from discovery and therefore keep the exact existing save flow.
+// A daemon-backed connection discovers the machine before falling back to the backend-specific
+// health check. Legacy servers return null from discovery and therefore keep the existing save flow.
 assert.ok(panels.includes('await import("../machineClient")'), 'the connection wizard should discover a machine without requiring App-level wiring')
-assert.ok(panels.includes('discoverMachine(candidate)'), 'the wizard should call machine discovery after a successful connection test')
+assert.ok(panels.includes('discoverMachine(candidate)'), 'the wizard should call machine discovery when testing the connection')
 assert.ok(panels.includes('agentId: agentId || undefined'), 'the selected machine agent should be persisted in the saved server config')
-assert.ok(panels.includes('One machine connection; requests are routed to the selected agent.'), 'the wizard should explain machine-scoped routing when discovery succeeds')
+assert.ok(panels.includes("t('detail.agentTitle')"), 'the discovered-agent picker label should use translated UI copy')
+assert.ok(panels.includes("t('detail.unavailable')"), 'unavailable machine hosts should use translated UI copy')
+assert.equal(panels.includes('Agent on '), false, 'the machine picker must not introduce hardcoded English labels')
+assert.equal(panels.includes('agents discovered'), false, 'machine discovery feedback must not introduce hardcoded English copy')
+assert.equal(panels.includes('{agent.label} · {agent.state}'), false, 'protocol host states must not be rendered verbatim')
 assert.ok(panels.includes('agent.state !== "available" && agent.state !== "configured"'), 'unavailable machine agents must not be selectable')
 
 // The server picker used to caption itself with a visually-hidden span, but no rule ever hid it: the
