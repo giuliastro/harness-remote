@@ -9,7 +9,16 @@ export class TaskRunController {
     this.worktreeManager = worktreeManager ?? (taskStore?.stateDirectory ? new WorktreeManager({ stateDirectory: taskStore.stateDirectory }) : undefined)
     this.runIDFactory = runIDFactory
     this.clock = clock
-    this.reconciliation = typeof taskStore?.list === "function" ? this.reconcileAll() : Promise.resolve()
+    this.reconciliationError = null
+    this.reconciliation = (typeof taskStore?.list === "function" ? this.reconcileAll() : Promise.resolve())
+      .catch((error) => { this.reconciliationError = error })
+  }
+
+  async #awaitReconciliation() {
+    await this.reconciliation
+    if (this.reconciliationError) {
+      throw taskLaunchError("task_state_unavailable", "Task state is unavailable", { cause: this.reconciliationError })
+    }
   }
 
   async #terminal(taskID, run, status, error = null) {
@@ -31,7 +40,7 @@ export class TaskRunController {
   }
 
   async inspectWorkspace(taskID) {
-    await this.reconciliation
+    await this.#awaitReconciliation()
     const task = await this.taskStore.get(taskID)
     if (!task) throw taskLaunchError("unknown_task", `Unknown task: ${taskID}`)
     if (task.workspace?.mode !== "worktree") return { managed: false, dirty: false, changeCount: 0 }
@@ -40,7 +49,7 @@ export class TaskRunController {
   }
 
   async cleanupWorkspace(taskID) {
-    await this.reconciliation
+    await this.#awaitReconciliation()
     const task = await this.taskStore.get(taskID)
     if (!task) throw taskLaunchError("unknown_task", `Unknown task: ${taskID}`)
     if (task.status === "starting" || task.status === "running") throw taskLaunchError("task_active", "An active task cannot release its workspace")
@@ -52,7 +61,7 @@ export class TaskRunController {
   }
 
   async launch(taskID) {
-    await this.reconciliation
+    await this.#awaitReconciliation()
     const task = await this.taskStore.get(taskID)
     if (!task) throw taskLaunchError("unknown_task", `Unknown task: ${taskID}`)
     if (task.status !== "draft") throw taskLaunchError("invalid_state", "Only draft tasks can be launched")
