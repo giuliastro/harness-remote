@@ -12,8 +12,8 @@ export class TaskRunController {
     this.reconciliation = typeof taskStore?.list === "function" ? this.reconcileAll() : Promise.resolve()
   }
 
-  async #terminal(taskID, runID, status, error = null) {
-    try { await this.taskStore.setRunState(taskID, { status, error, expectedRunId: runID }) } catch {}
+  async #terminal(taskID, run, status, error = null) {
+    try { await this.taskStore.setRunState(taskID, { status, run, error, expectedRunId: run?.id }) } catch {}
   }
 
   async reconcileAll() {
@@ -25,8 +25,8 @@ export class TaskRunController {
       }
       let state = "unknown"
       try { state = await this.taskLauncher.inspectRun?.(task) ?? "unknown" } catch {}
-      if (state === "completed") await this.#terminal(task.id, task.run.id, "completed")
-      else if (state !== "running") await this.#terminal(task.id, task.run.id, "failed", new Error("Task run could not be confirmed after daemon restart"))
+      if (state === "completed") await this.#terminal(task.id, task.run, "completed")
+      else if (state !== "running") await this.#terminal(task.id, task.run, "failed", new Error("Task run could not be confirmed after daemon restart"))
     }
   }
 
@@ -65,13 +65,13 @@ export class TaskRunController {
       const session = await this.taskLauncher.createSession(current)
       const linkedRun = { ...run, sessionId: session.sessionId, transport: session.transport }
       current = await this.taskStore.setRunState(taskID, { status: "starting", run: linkedRun, expectedRunId: run.id })
-      const onFailed = (error) => void this.#terminal(taskID, linkedRun.id, "failed", error)
+      const onFailed = (error) => void this.#terminal(taskID, linkedRun, "failed", error)
       onFailed.onFailed = onFailed
-      onFailed.onCompleted = () => void this.#terminal(taskID, linkedRun.id, "completed")
+      onFailed.onCompleted = () => void this.#terminal(taskID, linkedRun, "completed")
       await this.taskLauncher.startPrompt(current, session, onFailed)
       return await this.taskStore.setRunState(taskID, { status: "running", run: linkedRun, expectedRunId: linkedRun.id })
     } catch (error) {
-      await this.#terminal(taskID, current.run?.id ?? run.id, "failed", error)
+      await this.#terminal(taskID, current.run ?? run, "failed", error)
       throw error
     }
   }
