@@ -141,30 +141,50 @@ test("failed eager startup is isolated and reported in the machine snapshot", as
   assert.equal(daemon.snapshot().agents.find((host) => host.id === "codex").state, "configured")
 })
 
-test("machine server receives the shared multi-host registry", () => {
+test("machine server wires the shared registry through the bridge and agent router", () => {
   const daemon = new MachineDaemon({ id: "machine_test", name: "workstation" })
   const acp = new FakeAcp()
   const openCode = new FakeHttpHost()
   daemon.registerAcpHost({ id: "pi", agent: acp })
   daemon.registerManagedHttpHost({ id: "opencode", host: openCode })
 
-  let received
-  const server = { marker: true }
+  let bridgeOptions
+  let routerOptions
+  const bridgeServer = { marker: "bridge" }
+  const routedServer = { marker: "router" }
   const value = createMachineDaemonServer({
     daemon,
-    config: { port: 4097 },
+    config: { backend: "pi", port: 4097 },
     primaryAcp: acp,
+    primaryAgentID: "pi",
     serviceOptions: { snapshotDirectory: "/tmp/test" },
     createServer: (options) => {
-      received = options
-      return server
+      bridgeOptions = options
+      return bridgeServer
+    },
+    createRouter: (options) => {
+      routerOptions = options
+      return routedServer
     }
   })
 
-  assert.equal(value, server)
-  assert.equal(received.machineRegistry, daemon.registry)
-  assert.equal(received.acp, acp)
-  assert.deepEqual(received.machineRegistry.snapshot().agents.map((host) => host.id), ["pi", "opencode"])
+  assert.equal(value, routedServer)
+  assert.equal(bridgeOptions.machineRegistry, daemon.registry)
+  assert.equal(bridgeOptions.acp, acp)
+  assert.equal(routerOptions.daemon, daemon)
+  assert.equal(routerOptions.bridgeServer, bridgeServer)
+  assert.equal(routerOptions.primaryAgentID, "pi")
+  assert.deepEqual(bridgeOptions.machineRegistry.snapshot().agents.map((host) => host.id), ["pi", "opencode"])
+})
+
+test("daemon exposes registered host entries to its internal router", () => {
+  const daemon = new MachineDaemon({ id: "machine_test", name: "workstation" })
+  const openCode = new FakeHttpHost()
+  daemon.registerManagedHttpHost({ id: "opencode", host: openCode })
+  const entry = daemon.hostEntry("opencode")
+  assert.equal(entry.id, "opencode")
+  assert.equal(entry.kind, "http")
+  assert.equal(entry.host, openCode)
 })
 
 test("daemon shutdown closes ACP and terminates managed HTTP hosts", () => {
