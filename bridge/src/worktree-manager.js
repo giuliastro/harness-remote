@@ -46,4 +46,18 @@ export class WorktreeManager {
 
     return { mode: "worktree", path: worktreePath, branch, source: task.project.path }
   }
+
+  async rollback(workspace) {
+    if (workspace?.mode !== "worktree" || !workspace.path || !workspace.branch || !workspace.source) return
+    try {
+      await this.runGit(["-C", workspace.source, "worktree", "remove", "--force", workspace.path])
+    } catch {
+      return
+    }
+    try {
+      await this.runGit(["-C", workspace.source, "branch", "-D", workspace.branch])
+    } catch {
+      // The worktree is already detached from the project; a leftover branch is safe to keep.
+    }
+  }
 }
