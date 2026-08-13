@@ -3,6 +3,7 @@ import { MachineRegistry, trackAgentHostLifecycle } from "./machine-registry.js"
 import { trackManagedHostLifecycle } from "./opencode-host.js"
 import { discoverProjects } from "./project-catalog.js"
 import { createBridgeServer } from "./server.js"
+import { createTaskFinishServer } from "./task-finish-server.js"
 import { createTaskLaunchServer } from "./task-launch-server.js"
 import { TaskLauncher } from "./task-launcher.js"
 import { TaskRunController } from "./task-run-controller.js"
@@ -78,6 +79,7 @@ export function createMachineDaemonServer({
   createServer = createBridgeServer,
   createRouter = createAgentRoutingServer,
   createLaunchServer = createTaskLaunchServer,
+  createFinishServer = createTaskFinishServer,
   taskStore,
   projectCatalog,
   worktreeManager,
@@ -107,5 +109,6 @@ export function createMachineDaemonServer({
     projectCatalog: projects,
     worktreeManager: worktrees
   })
-  return createLaunchServer({ innerServer, config, taskRunController: runs })
+  const launchServer = createLaunchServer({ innerServer, config, taskRunController: runs })
+  return createFinishServer({ innerServer: launchServer, config, taskStore: tasks, worktreeManager: worktrees })
 }
