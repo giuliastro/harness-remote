@@ -19,7 +19,7 @@ import {
   backendSetupCommand
 } from "../backendSetup"
 import type { Translator } from "../i18n"
-import type { BackendKind, FileEntry, ServerConfig } from "../types"
+import type { BackendKind, FileEntry, MachineSnapshot, ServerConfig } from "../types"
 
 /** Breadcrumb pieces for an absolute path, POSIX or Windows, each carrying the path to browse to.
  *  Typing or pasting a deep path and then wanting to step back up one level is the common case, and
@@ -69,13 +69,6 @@ function CopyButton({ text, copyLabel, copiedLabel }: { text: string; copyLabel:
   )
 }
 
-/**
- * Choosing where a new session runs. The old dialog dropped the user into whatever folder the
- * server happened to report and offered a flat list plus a "parent folder" row — no way to see
- * where you were, no way to type a path you already knew, and no shortcut to a project you had
- * opened ten minutes earlier. All three are here now, and the folder that will actually be used is
- * stated in full before the button that uses it.
- */
 export function NewSessionDialog({
   t,
   path,
@@ -231,25 +224,20 @@ export function NewSessionDialog({
 type WizardStep = "harness" | "address" | "credentials"
 const WIZARD_STEPS: WizardStep[] = ["harness", "address", "credentials"]
 
-/**
- * Adding a server used to mean creating a blank profile and then filling in a five-field form with
- * no explanation of what any harness expects, no idea which port is right, and no way to know that
- * something also has to be started on the other machine. The wizard asks the three questions in the
- * order they matter, defaults the port and username from the harness, and shows the finished
- * command to run on the host before asking for credentials that cannot work without it.
- */
 export function ConnectServerWizard({
   t,
   initialName,
   onCancel,
   onSave,
-  onTest
+  onTest,
+  onDiscover
 }: {
   t: Translator
   initialName: string
   onCancel: () => void
   onSave: (name: string, config: ServerConfig) => void
   onTest: (config: ServerConfig) => Promise<{ ok: boolean; message: string }>
+  onDiscover?: (config: ServerConfig) => Promise<MachineSnapshot | null>
 }) {
   const [step, setStep] = useState<WizardStep>("harness")
   const [backend, setBackend] = useState<BackendKind>("opencode")
@@ -260,12 +248,26 @@ export function ConnectServerWizard({
   const [password, setPassword] = useState("")
   const [testing, setTesting] = useState(false)
   const [testResult, setTestResult] = useState<{ ok: boolean; message: string } | null>(null)
+  const [machine, setMachine] = useState<MachineSnapshot | null>(null)
+  const [agentId, setAgentId] = useState("")
 
-  const config: ServerConfig = { backend, host: host.trim(), port, username: username.trim(), password }
+  const selectedAgent = machine?.agents.find((agent) => agent.id === agentId)
+  const selectedBackend = selectedAgent && BACKEND_KINDS.includes(selectedAgent.backend as BackendKind)
+    ? selectedAgent.backend as BackendKind
+    : backend
+  const config: ServerConfig = {
+    backend: selectedBackend,
+    host: host.trim(),
+    port,
+    username: username.trim(),
+    password,
+    agentId: agentId || undefined
+  }
+  const discoveryConfig: ServerConfig = { backend, host: host.trim(), port, username: username.trim(), password }
   const command = backendSetupCommand(backend, { port, username, password })
   const stepIndex = WIZARD_STEPS.indexOf(step)
   const canLeaveAddress = Boolean(host.trim()) && port > 0
-  const canSave = canLeaveAddress && Boolean(username.trim())
+  const canSave = canLeaveAddress && Boolean(username.trim()) && (!machine || Boolean(agentId))
 
   function chooseBackend(next: BackendKind) {
     setBackend(next)
@@ -273,14 +275,27 @@ export function ConnectServerWizard({
     setUsername(backendDefaultUsername(next))
     setName(`${backendDisplayName(next)} server`)
     setTestResult(null)
+    setMachine(null)
+    setAgentId("")
     setStep("address")
   }
 
   async function test() {
     setTesting(true)
     setTestResult(null)
+    setMachine(null)
+    setAgentId("")
     try {
-      setTestResult(await onTest(config))
+      const result = await onTest(discoveryConfig)
+      setTestResult(result)
+      if (!result.ok || !onDiscover) return
+      const discovered = await onDiscover(discoveryConfig)
+      if (!discovered) return
+      const available = discovered.agents.filter((agent) => agent.state === "available" || agent.state === "configured")
+      const preferred = available.find((agent) => agent.backend === backend) ?? available[0]
+      setMachine(discovered)
+      setAgentId(preferred?.id ?? "")
+      if (preferred) setName(`${discovered.machine.name} · ${preferred.label}`)
     } finally {
       setTesting(false)
     }
@@ -305,8 +320,6 @@ export function ConnectServerWizard({
           </button>
         </div>
 
-        {/* The steps double as navigation. A failed test is usually the address or the port rather
-            than the password, and stepping back one screen at a time to check made that a chore. */}
         <ol className="wizard-steps">
           {WIZARD_STEPS.map((candidate, index) => {
             const reachable = candidate !== "credentials" || canLeaveAddress
@@ -405,6 +418,8 @@ export function ConnectServerWizard({
                     onChange={(event) => {
                       setUsername(event.target.value)
                       setTestResult(null)
+                      setMachine(null)
+                      setAgentId("")
                     }}
                     autoCapitalize="none"
                     autoCorrect="off"
@@ -420,6 +435,8 @@ export function ConnectServerWizard({
                     onChange={(event) => {
                       setPassword(event.target.value)
                       setTestResult(null)
+                      setMachine(null)
+                      setAgentId("")
                     }}
                     placeholder={t('settings.passwordPlaceholder')}
                     autoComplete="current-password"
@@ -427,17 +444,39 @@ export function ConnectServerWizard({
                 </label>
               </div>
               <p className="field-hint">{t('connect.credentialsHint')}</p>
+
+              {machine && (
+                <label className="field fade-in">
+                  <span>Agent on {machine.machine.name}</span>
+                  <select
+                    value={agentId}
+                    onChange={(event) => {
+                      const nextID = event.target.value
+                      setAgentId(nextID)
+                      const next = machine.agents.find((agent) => agent.id === nextID)
+                      if (next) setName(`${machine.machine.name} · ${next.label}`)
+                    }}
+                  >
+                    {machine.agents.map((agent) => (
+                      <option
+                        key={agent.id}
+                        value={agent.id}
+                        disabled={agent.state !== "available" && agent.state !== "configured"}
+                      >
+                        {agent.label} · {agent.state}
+                      </option>
+                    ))}
+                  </select>
+                  <small className="field-hint">One machine connection; requests are routed to the selected agent.</small>
+                </label>
+              )}
             </>
           )}
         </div>
 
-        {/* Outside the scrolling body on purpose. Testing the connection is the first thing anyone
-            does on this step, and with a keyboard open the body is only a couple of lines tall — a
-            test button living at the end of it scrolled out of sight and came to rest against the
-            save button, which is the one press you do not want to hit by accident. */}
         {step === "credentials" && (
           <div className="wizard-test">
-            <button type="button" className="btn-secondary" onClick={() => void test()} disabled={testing || !canSave}>
+            <button type="button" className="btn-secondary" onClick={() => void test()} disabled={testing || !canLeaveAddress || !username.trim()}>
               {testing ? <LoadingIcon size={15} /> : <TestIcon size={15} />}
               {testing ? t('settings.testing') : t('settings.test')}
             </button>
@@ -445,6 +484,7 @@ export function ConnectServerWizard({
               <div className={`notice ${testResult.ok ? "success" : "error"} fade-in`}>
                 {testResult.ok ? "✓ " : "✗ "}
                 {testResult.message}
+                {testResult.ok && machine ? ` · ${machine.agents.length} agent${machine.agents.length === 1 ? "" : "s"} discovered` : ""}
               </div>
             )}
           </div>
