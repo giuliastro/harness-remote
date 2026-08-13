@@ -52,6 +52,12 @@ export class TaskStore {
     return this.tasks.map((task) => structuredClone(task))
   }
 
+  async get(taskID) {
+    await this.load()
+    const task = this.tasks.find((candidate) => candidate.id === taskID)
+    return task ? structuredClone(task) : undefined
+  }
+
   async create({ project, agentId, prompt }) {
     await this.load()
     const text = typeof prompt === "string" ? prompt.trim() : ""
@@ -73,5 +79,17 @@ export class TaskStore {
     this.tasks.push(task)
     await this.persist()
     return structuredClone(task)
+  }
+
+  async setWorkspace(taskID, workspace) {
+    await this.load()
+    const index = this.tasks.findIndex((task) => task.id === taskID)
+    if (index < 0) return undefined
+    const task = this.tasks[index]
+    if (task.status !== "draft") throw new Error("Only draft tasks can change workspace")
+    const updated = { ...task, workspace: structuredClone(workspace), updatedAt: this.clock() }
+    this.tasks[index] = updated
+    await this.persist()
+    return structuredClone(updated)
   }
 }
