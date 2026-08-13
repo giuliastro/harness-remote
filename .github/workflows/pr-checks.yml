@@ -68,6 +68,31 @@ jobs:
         run: npm test
         working-directory: bridge
 
+  # The bridge is the half of this repository that touches the filesystem, and it ships inside the
+  # desktop app for all three platforms — which is where its tests were first run on anything but
+  # Linux, on `main`, after the merge. A test that compared a path against the raw `mkdtemp` result
+  # passed here and failed there, because the temporary directory is a symlink on macOS and an 8.3
+  # alias on Windows. Node and the test suite are cheap; the two extra runners close that window.
+  bridge-platforms:
+    name: Bridge tests (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22
+
+      - name: Run bridge tests
+        run: npm test
+        working-directory: bridge
+
   apk:
     name: Debug APK
     needs: tests
