@@ -1,5 +1,5 @@
 import http from "node:http"
-import { timingSafeEqual } from "node:crypto"
+import { allowedOrigin, applyCorsHeaders, matchesCredentials, writeJSON } from "./http-policy.js"
 
 const AGENT_ROUTE = /^\/v1\/agents\/([^/]+)(\/.*)?$/
 const HOP_BY_HOP = new Set([
@@ -12,40 +12,8 @@ const HOP_BY_HOP = new Set([
   "transfer-encoding",
   "upgrade"
 ])
-
-function allowedOrigin(request, config) {
-  const origin = request.headers.origin
-  if (!origin || !config.corsOrigins?.length) return undefined
-  return config.corsOrigins.includes(origin) ? origin : undefined
-}
-
-function applyCorsHeaders(request, response, config) {
-  if (!config.corsOrigins?.length) return
-  response.setHeader("Vary", "Origin")
-  const origin = allowedOrigin(request, config)
-  if (!origin) return
-  response.setHeader("Access-Control-Allow-Origin", origin)
-  response.setHeader("Access-Control-Allow-Credentials", "true")
-  response.setHeader("Access-Control-Allow-Headers", "authorization, content-type")
-  response.setHeader("Access-Control-Allow-Methods", "GET, POST, PATCH, DELETE, OPTIONS")
-  if (request.headers["access-control-request-private-network"] === "true") {
-    response.setHeader("Access-Control-Allow-Private-Network", "true")
-  }
-}
-
-function matchesCredentials(request, config) {
-  if (!config.username) return true
-  const header = request.headers.authorization
-  if (!header?.startsWith("Basic ")) return false
-  const expected = Buffer.from(`${config.username}:${config.password}`)
-  const received = Buffer.from(header.slice("Basic ".length), "base64")
-  return received.length === expected.length && timingSafeEqual(received, expected)
-}
-
-function writeJSON(response, status, body) {
-  response.writeHead(status, { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store" })
-  response.end(JSON.stringify(body))
-}
+const STREAMING_PATHS = new Set(["/global/event", "/v1/events"])
+const DEFAULT_PROXY_TIMEOUT_MS = 15_000
 
 function proxyHeaders(headers, authorization) {
   const result = {}
@@ -89,21 +57,67 @@ export function agentScopedRequest(request) {
   }
 }
 
-export function proxyManagedHttpRequest({ request, response, route, host, requestImpl = http.request }) {
+export function proxyManagedHttpRequest({
+  request,
+  response,
+  route,
+  host,
+  requestImpl = http.request,
+  timeoutMs = DEFAULT_PROXY_TIMEOUT_MS
+}) {
   return new Promise((resolve, reject) => {
+    let upstreamResponse
+    let settled = false
+    const streaming = STREAMING_PATHS.has(route.path)
+
+    const finish = (error) => {
+      if (settled) return
+      settled = true
+      cleanup()
+      if (error) reject(error)
+      else resolve()
+    }
+
     const upstream = requestImpl({
       host: host.readinessHost ?? host.host ?? "127.0.0.1",
       port: host.port,
       method: request.method,
       path: `${route.path}${route.search}`,
       headers: proxyHeaders(request.headers, internalAuthorization(host))
-    }, (upstreamResponse) => {
-      forwardResponseHeaders(upstreamResponse, response)
-      response.writeHead(upstreamResponse.statusCode ?? 502)
-      upstreamResponse.pipe(response)
-      upstreamResponse.once("end", resolve)
+    }, (incoming) => {
+      upstreamResponse = incoming
+      forwardResponseHeaders(incoming, response)
+      response.writeHead(incoming.statusCode ?? 502)
+      incoming.pipe(response)
+      incoming.once("end", () => finish())
+      incoming.once("error", (error) => {
+        upstream.destroy()
+        finish(error)
+      })
+      incoming.once("aborted", () => {
+        upstream.destroy()
+        finish(new Error("Managed agent response was aborted"))
+      })
     })
-    upstream.once("error", reject)
+
+    const onClientClose = () => {
+      upstreamResponse?.destroy()
+      upstream.destroy()
+      finish()
+    }
+    const cleanup = () => {
+      request.off("aborted", onClientClose)
+      response.off("close", onClientClose)
+    }
+
+    request.once("aborted", onClientClose)
+    response.once("close", onClientClose)
+    upstream.once("error", (error) => finish(error))
+    if (!streaming && timeoutMs > 0) {
+      upstream.setTimeout?.(timeoutMs, () => {
+        upstream.destroy(new Error(`Managed agent request timed out after ${timeoutMs}ms`))
+      })
+    }
     request.pipe(upstream)
   })
 }
