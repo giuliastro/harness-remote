@@ -64,6 +64,8 @@ export class TaskLauncher {
       })
       const session = await responseJSON(response, `Creating ${task.agentId} session`)
       if (!session?.id) throw new Error(`Agent ${task.agentId} did not return a session id`)
+      // Managed host connection details, especially authorization, are intentionally
+      // kept on this in-memory launch object and must never be persisted on task.run.
       return { sessionId: session.id, transport: "http", directory: task.workspace.path, base, authorization }
     }
 
@@ -91,6 +93,7 @@ export class TaskLauncher {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
+          // Authorization belongs to the ephemeral createSession() result only.
           ...(run.authorization ? { Authorization: run.authorization } : {})
         },
         body: JSON.stringify({ parts: [{ type: "text", text: task.prompt }] })
@@ -113,8 +116,8 @@ export class TaskLauncher {
     try {
       await entry.host.start?.()
       const host = entry.host.readinessHost ?? entry.host.host ?? "127.0.0.1"
-      const base = run.base ?? `http://${httpHost(host)}:${entry.host.port}`
-      const authorization = run.authorization ?? basicAuthorization(entry.host.username, entry.host.password)
+      const base = `http://${httpHost(host)}:${entry.host.port}`
+      const authorization = basicAuthorization(entry.host.username, entry.host.password)
       const response = await this.fetchImpl(`${base}/session/status?directory=${encodeURIComponent(task.workspace?.path ?? run.directory ?? "")}`, {
         headers: authorization ? { Authorization: authorization } : {}
       })
