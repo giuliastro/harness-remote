@@ -77,24 +77,8 @@ test("eager managed hosts start concurrently rather than serially", async () => 
   const firstGate = new Promise((resolve) => { releaseFirst = resolve })
   const secondGate = new Promise((resolve) => { releaseSecond = resolve })
 
-  daemon.registerManagedHttpHost({
-    id: "first",
-    host: new FakeHttpHost({
-      startImpl: async () => {
-        firstStarted = true
-        await firstGate
-      }
-    })
-  })
-  daemon.registerManagedHttpHost({
-    id: "second",
-    host: new FakeHttpHost({
-      startImpl: async () => {
-        secondStarted = true
-        await secondGate
-      }
-    })
-  })
+  daemon.registerManagedHttpHost({ id: "first", host: new FakeHttpHost({ startImpl: async () => { firstStarted = true; await firstGate } }) })
+  daemon.registerManagedHttpHost({ id: "second", host: new FakeHttpHost({ startImpl: async () => { secondStarted = true; await secondGate } }) })
 
   const starting = daemon.startManagedHosts()
   await new Promise((resolve) => setImmediate(resolve))
@@ -104,21 +88,16 @@ test("eager managed hosts start concurrently rather than serially", async () => 
   releaseFirst()
   releaseSecond()
   const result = await starting
-  assert.deepEqual(result.map(({ id, status }) => [id, status]), [
-    ["first", "available"],
-    ["second", "available"]
-  ])
+  assert.deepEqual(result.map(({ id, status }) => [id, status]), [["first", "available"], ["second", "available"]])
 })
 
 test("one host failure does not erase or stop the other host", async () => {
   const daemon = new MachineDaemon({ id: "machine_test", name: "workstation" })
   const acp = new FakeAcp()
   const openCode = new FakeHttpHost()
-
   daemon.registerAcpHost({ id: "claude", label: "Claude Code", agent: acp })
   daemon.registerManagedHttpHost({ id: "opencode", label: "OpenCode", host: openCode })
   await acp.start()
-
   openCode.emit("unavailable", new Error("OpenCode crashed"))
   const snapshot = daemon.snapshot()
   assert.equal(snapshot.agents.find((host) => host.id === "claude").state, "available")
@@ -131,17 +110,15 @@ test("failed eager startup is isolated and reported in the machine snapshot", as
   const acp = new FakeAcp()
   const openCode = new FakeHttpHost()
   openCode.shouldFail = true
-
   daemon.registerAcpHost({ id: "codex", agent: acp })
   daemon.registerManagedHttpHost({ id: "opencode", host: openCode })
-
   const result = await daemon.startManagedHosts()
   assert.equal(result[0].status, "unavailable")
   assert.equal(daemon.snapshot().agents.find((host) => host.id === "opencode").state, "unavailable")
   assert.equal(daemon.snapshot().agents.find((host) => host.id === "codex").state, "configured")
 })
 
-test("machine server wires the shared registry, agent router, and task launch wrapper", () => {
+test("machine server wires the shared registry, agent router, task launch, and finish wrappers", () => {
   const daemon = new MachineDaemon({ id: "machine_test", name: "workstation" })
   const acp = new FakeAcp()
   const openCode = new FakeHttpHost()
@@ -151,30 +128,24 @@ test("machine server wires the shared registry, agent router, and task launch wr
   let bridgeOptions
   let routerOptions
   let launchOptions
+  let finishOptions
   const bridgeServer = { marker: "bridge" }
   const routedServer = { marker: "router" }
   const launchServer = { marker: "launch" }
+  const finishServer = { marker: "finish" }
   const value = createMachineDaemonServer({
     daemon,
     config: { backend: "pi", port: 4097 },
     primaryAcp: acp,
     primaryAgentID: "pi",
     serviceOptions: { snapshotDirectory: "/tmp/test" },
-    createServer: (options) => {
-      bridgeOptions = options
-      return bridgeServer
-    },
-    createRouter: (options) => {
-      routerOptions = options
-      return routedServer
-    },
-    createLaunchServer: (options) => {
-      launchOptions = options
-      return launchServer
-    }
+    createServer: (options) => { bridgeOptions = options; return bridgeServer },
+    createRouter: (options) => { routerOptions = options; return routedServer },
+    createLaunchServer: (options) => { launchOptions = options; return launchServer },
+    createFinishServer: (options) => { finishOptions = options; return finishServer }
   })
 
-  assert.equal(value, launchServer)
+  assert.equal(value, finishServer)
   assert.equal(bridgeOptions.machineRegistry, daemon.registry)
   assert.equal(bridgeOptions.acp, acp)
   assert.equal(routerOptions.daemon, daemon)
@@ -182,6 +153,9 @@ test("machine server wires the shared registry, agent router, and task launch wr
   assert.equal(routerOptions.primaryAgentID, "pi")
   assert.equal(launchOptions.innerServer, routedServer)
   assert.equal(typeof launchOptions.taskRunController.launch, "function")
+  assert.equal(finishOptions.innerServer, launchServer)
+  assert.equal(finishOptions.taskStore, routerOptions.taskStore)
+  assert.equal(finishOptions.worktreeManager, routerOptions.worktreeManager)
   assert.deepEqual(bridgeOptions.machineRegistry.snapshot().agents.map((host) => host.id), ["pi", "opencode"])
 })
 
@@ -201,7 +175,6 @@ test("daemon shutdown closes ACP and terminates managed HTTP hosts", () => {
   const openCode = new FakeHttpHost()
   daemon.registerAcpHost({ id: "codex", agent: acp })
   daemon.registerManagedHttpHost({ id: "opencode", host: openCode })
-
   daemon.close()
   assert.equal(acp.closed, true)
   assert.deepEqual(openCode.stopped, ["SIGTERM"])
