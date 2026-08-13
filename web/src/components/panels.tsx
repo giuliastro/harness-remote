@@ -288,8 +288,12 @@ export function ConnectServerWizard({
     try {
       const result = await onTest(discoveryConfig)
       setTestResult(result)
-      if (!result.ok || !onDiscover) return
-      const discovered = await onDiscover(discoveryConfig)
+      if (!result.ok) return
+      const discover = onDiscover ?? (async (candidate: ServerConfig) => {
+        const { discoverMachine } = await import("../machineClient")
+        return discoverMachine(candidate)
+      })
+      const discovered = await discover(discoveryConfig)
       if (!discovered) return
       const available = discovered.agents.filter((agent) => agent.state === "available" || agent.state === "configured")
       const preferred = available.find((agent) => agent.backend === backend) ?? available[0]
