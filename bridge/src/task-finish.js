@@ -5,7 +5,14 @@ function output(result) {
 export async function inspectTaskWork(workspace, worktreeManager) {
   const status = await worktreeManager.inspect(workspace)
   const sourceHead = output(await worktreeManager.runGit(["-C", workspace.source, "rev-parse", "HEAD"]))
-  const branchHead = output(await worktreeManager.runGit(["-C", workspace.source, "rev-parse", workspace.branch]))
+  let branchHead
+  let branchMissing = false
+  try {
+    branchHead = output(await worktreeManager.runGit(["-C", workspace.source, "rev-parse", workspace.branch]))
+  } catch {
+    branchMissing = true
+    branchHead = output(await worktreeManager.runGit(["-C", workspace.path, "rev-parse", "HEAD"]))
+  }
   const counts = output(await worktreeManager.runGit([
     "-C", workspace.source, "rev-list", "--left-right", "--count", `${sourceHead}...${branchHead}`
   ])).split(/\s+/).map((value) => Number.parseInt(value, 10))
@@ -15,6 +22,7 @@ export async function inspectTaskWork(workspace, worktreeManager) {
   return {
     ...status,
     branch: workspace.branch,
+    branchMissing,
     source: workspace.source,
     sourceHead,
     branchHead,
