@@ -71,3 +71,27 @@ test("launch failures persist failed state", async () => {
   await assert.rejects(() => controller.launch("task-1"), /agent unavailable/)
   assert.deepEqual(states, ["starting", "failed"])
 })
+
+test("asynchronous prompt failures mark the same running run failed", async () => {
+  let current = draft()
+  let rejectPrompt
+  const store = {
+    async get() { return structuredClone(current) },
+    async setRunState(_id, update) {
+      current = { ...current, status: update.status, run: structuredClone(update.run), error: update.error }
+      return structuredClone(current)
+    }
+  }
+  const launcher = {
+    async createSession(task) { return { sessionId: "session-1", transport: "acp", directory: task.workspace.path } },
+    async startPrompt(_task, _session, onPromptFailed) { rejectPrompt = onPromptFailed }
+  }
+  const controller = new TaskRunController({ taskStore: store, taskLauncher: launcher, runIDFactory: () => "run-1" })
+  const launched = await controller.launch("task-1")
+  assert.equal(launched.status, "running")
+
+  rejectPrompt(new Error("prompt failed"))
+  await new Promise((resolve) => setImmediate(resolve))
+  assert.equal(current.status, "failed")
+  assert.equal(current.run.id, "run-1")
+})
