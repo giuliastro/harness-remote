@@ -2,6 +2,7 @@ import http from "node:http"
 import { allowedOrigin, applyCorsHeaders, matchesCredentials, writeJSON } from "./http-policy.js"
 
 const AGENT_ROUTE = /^\/v1\/agents\/([^/]+)(\/.*)?$/
+const TASK_WORKTREE_ROUTE = /^\/v1\/tasks\/([^/]+)\/worktree$/
 const MACHINE_ROUTES = new Set(["/v1/projects", "/v1/tasks"])
 const HOP_BY_HOP = new Set([
   "connection",
@@ -154,12 +155,14 @@ export function createAgentRoutingServer({
   bridgeServer,
   taskStore,
   projectCatalog,
+  worktreeManager,
   createServer = http.createServer,
   proxyRequest = proxyManagedHttpRequest
 }) {
   return createServer(async (request, response) => {
     const requestURL = new URL(request.url ?? "/", `http://${request.headers.host ?? "localhost"}`)
-    if (MACHINE_ROUTES.has(requestURL.pathname)) {
+    const worktreeMatch = TASK_WORKTREE_ROUTE.exec(requestURL.pathname)
+    if (MACHINE_ROUTES.has(requestURL.pathname) || worktreeMatch) {
       if (!authenticateMachineRequest(request, response, config)) return
       try {
         if (request.method === "GET" && requestURL.pathname === "/v1/projects") {
@@ -192,7 +195,25 @@ export function createAgentRoutingServer({
           writeJSON(response, 201, await taskStore.create({ project, agentId: agentID, prompt }))
           return
         }
-        response.writeHead(405, { Allow: requestURL.pathname === "/v1/tasks" ? "GET, POST, OPTIONS" : "GET, OPTIONS" })
+        if (request.method === "POST" && worktreeMatch) {
+          const taskID = decodeURIComponent(worktreeMatch[1])
+          const task = await taskStore.get(taskID)
+          if (!task) {
+            writeJSON(response, 404, { error: `Unknown task: ${taskID}` })
+            return
+          }
+          const workspace = await worktreeManager.prepare(task)
+          try {
+            const updated = await taskStore.setWorkspace(taskID, workspace)
+            writeJSON(response, 200, updated)
+          } catch (error) {
+            await worktreeManager.rollback(workspace)
+            throw error
+          }
+          return
+        }
+        const allow = worktreeMatch ? "POST, OPTIONS" : requestURL.pathname === "/v1/tasks" ? "GET, POST, OPTIONS" : "GET, OPTIONS"
+        response.writeHead(405, { Allow: allow })
         response.end()
       } catch (error) {
         writeJSON(response, 500, { error: error instanceof Error ? error.message : String(error) })
