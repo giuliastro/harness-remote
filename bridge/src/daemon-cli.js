@@ -3,6 +3,7 @@ import path from "node:path"
 import { AcpClient } from "./acp-client.js"
 import { parseConfig, usage as bridgeUsage } from "./config.js"
 import { harnessProfile } from "./harness-profiles.js"
+import { canListen } from "./launcher.js"
 import { loadMachineIdentity } from "./machine-registry.js"
 import { MachineDaemon, createMachineDaemonServer } from "./machine-daemon.js"
 import { ManagedOpenCodeHost } from "./opencode-host.js"
@@ -24,6 +25,7 @@ export function parseDaemonOptions(args, environment = process.env) {
   const options = {
     openCode: true,
     openCodeCommand: environment.HARNESS_REMOTE_OPENCODE_COMMAND ?? "opencode",
+    openCodeHost: environment.HARNESS_REMOTE_OPENCODE_HOST ?? "127.0.0.1",
     openCodePort: parsePort(environment.HARNESS_REMOTE_OPENCODE_PORT ?? "4096", "--opencode-port")
   }
 
@@ -35,6 +37,11 @@ export function parseDaemonOptions(args, environment = process.env) {
     }
     if (option === "--opencode-command") {
       options.openCodeCommand = requireValue(args, index, option)
+      index += 1
+      continue
+    }
+    if (option === "--opencode-host") {
+      options.openCodeHost = requireValue(args, index, option)
       index += 1
       continue
     }
@@ -54,7 +61,12 @@ export function parseDaemonOptions(args, environment = process.env) {
 }
 
 export function daemonUsage() {
-  return `${bridgeUsage()}\n\nMulti-host daemon options:\n  --opencode-command <path>  OpenCode executable (default: opencode)\n  --opencode-port <port>     Managed OpenCode port (default: 4096)\n  --no-opencode              Start only the primary ACP host`
+  return `${bridgeUsage()}\n\nMulti-host daemon options:\n  --opencode-command <path>  OpenCode executable (default: opencode)\n  --opencode-host <host>     Managed OpenCode bind host (default: 127.0.0.1)\n  --opencode-port <port>     Managed OpenCode port (default: 4096)\n  --no-opencode              Start only the primary ACP host`
+}
+
+export async function ensureOpenCodePortAvailable({ port, host, canListenImpl = canListen }) {
+  if (await canListenImpl(port, host)) return
+  throw new Error(`OpenCode port ${port} is already in use on ${host}. Is OpenCode already running? Use --opencode-port to choose another.`)
 }
 
 async function main() {
@@ -67,15 +79,16 @@ async function main() {
     return
   }
 
-  const { config, openCode, openCodeCommand, openCodePort } = parsed
+  const { config, openCode, openCodeCommand, openCodeHost, openCodePort } = parsed
   if (config.help) {
     process.stdout.write(`${daemonUsage()}\n`)
     return
   }
 
-  if (openCode && openCodePort === config.port) {
-    throw new Error(`OpenCode port ${openCodePort} conflicts with the Harness daemon port`)
+  if (openCode && openCodeHost === config.host && openCodePort === config.port) {
+    throw new Error(`OpenCode port ${openCodePort} conflicts with the Harness daemon on ${openCodeHost}`)
   }
+  if (openCode) await ensureOpenCodePortAvailable({ port: openCodePort, host: openCodeHost })
 
   const identity = await loadMachineIdentity(config.stateDirectory)
   const daemon = new MachineDaemon(identity)
@@ -98,7 +111,7 @@ async function main() {
   if (openCode) {
     const managedOpenCode = new ManagedOpenCodeHost({
       command: openCodeCommand,
-      host: config.host,
+      host: openCodeHost,
       port: openCodePort,
       username: config.username,
       password: config.password
@@ -127,19 +140,20 @@ async function main() {
   acp.on("stderr", (line) => process.stderr.write(`[${profile.id}] ${line}`))
   acp.on("exit", (error) => process.stderr.write(`[${profile.id}] ${error.message}\n`))
 
+  server.listen(config.port, config.host, () => {
+    process.stdout.write(`Harness daemon listening on http://${config.host}:${config.port}\n`)
+    process.stdout.write(`Machine: ${identity.name} (${identity.id})\n`)
+    if (openCode) process.stdout.write(`Managed OpenCode endpoint: http://${openCodeHost}:${openCodePort}\n`)
+    for (const host of daemon.snapshot().agents) {
+      process.stdout.write(`${host.state === "available" ? "✓" : "•"} ${host.label} [${host.transport}] ${host.state}\n`)
+    }
+  })
+
   const managedResults = await daemon.startManagedHosts()
   for (const result of managedResults) {
     if (result.status === "available") process.stdout.write(`[${result.id}] available\n`)
     else process.stderr.write(`[${result.id}] unavailable: ${result.error?.message ?? "startup failed"}\n`)
   }
-
-  server.listen(config.port, config.host, () => {
-    process.stdout.write(`Harness daemon listening on http://${config.host}:${config.port}\n`)
-    process.stdout.write(`Machine: ${identity.name} (${identity.id})\n`)
-    for (const host of daemon.snapshot().agents) {
-      process.stdout.write(`${host.state === "available" ? "✓" : "•"} ${host.label} [${host.transport}] ${host.state}\n`)
-    }
-  })
 
   let shuttingDown = false
   const shutdown = () => {
