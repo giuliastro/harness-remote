@@ -1,0 +1,42 @@
+import { createHash } from "node:crypto"
+import { lstat, mkdir } from "node:fs/promises"
+import path from "node:path"
+
+function taskKey(taskID) {
+  return createHash("sha256").update(taskID).digest("hex").slice(0, 12)
+}
+
+async function exists(candidate) {
+  try {
+    await lstat(candidate)
+    return true
+  } catch (error) {
+    if (error?.code === "ENOENT") return false
+    throw error
+  }
+}
+
+export class WorktreeManager {
+  constructor({ stateDirectory, runGit }) {
+    this.stateDirectory = stateDirectory
+    this.runGit = runGit
+  }
+
+  async prepare(task) {
+    if (task?.status !== "draft") throw new Error("Only draft tasks can prepare a workspace")
+    if (task?.project?.kind !== "git") throw new Error("Worktree isolation requires a Git project")
+    if (task?.workspace?.mode === "worktree") return structuredClone(task.workspace)
+    if (typeof this.runGit !== "function") throw new Error("Git runner is not configured")
+
+    const key = taskKey(task.id)
+    const branch = `task/${key}`
+    const worktreePath = path.join(this.stateDirectory, "worktrees", key)
+    if (await exists(worktreePath)) throw new Error(`Worktree path already exists: ${worktreePath}`)
+
+    await this.runGit(["-C", task.project.path, "rev-parse", "--show-toplevel"])
+    await mkdir(path.dirname(worktreePath), { recursive: true })
+    await this.runGit(["-C", task.project.path, "worktree", "add", "-b", branch, worktreePath, "HEAD"])
+
+    return { mode: "worktree", path: worktreePath, branch, source: task.project.path }
+  }
+}
