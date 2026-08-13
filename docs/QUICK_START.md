@@ -83,7 +83,7 @@ This means there is no second OpenCode command to copy and run manually.
 
 ## Experimental multi-host daemon
 
-#143 now also has a real multi-host runtime entrypoint. It is intentionally separate from the default launcher while the client routing contract is still being migrated.
+#143 now also has a real multi-host runtime entrypoint. It is intentionally separate from the default launcher while the client UI is still being migrated.
 
 From a checkout:
 
@@ -107,15 +107,26 @@ Harness daemon :4097
 
 `GET /v1/machine` and `GET /global/machine` expose both hosts through the same machine registry and stable machine identity. Host lifecycle is isolated: OpenCode can become unavailable without making the ACP host disappear, and vice versa. The daemon HTTP API starts listening before eager managed hosts finish their health checks, so clients can observe `configured` and `unavailable` transitions instead of seeing the whole machine endpoint disappear during a slow host startup.
 
-Managed OpenCode binds to `127.0.0.1` by default even if the Harness daemon itself binds to `0.0.0.0`. This avoids silently opening a second LAN service while OpenCode still uses its direct HTTP transport. If you deliberately need the managed OpenCode listener reachable beyond loopback during this migration phase, opt in explicitly:
+Managed OpenCode binds to `127.0.0.1` by default even if the Harness daemon itself binds to `0.0.0.0`. The client no longer needs direct access to that internal port when using the agent-scoped daemon routes.
+
+Agent-scoped requests share the daemon connection:
+
+```text
+/v1/agents/codex/session
+/v1/agents/codex/global/event
+/v1/agents/opencode/session
+/v1/agents/opencode/global/event
+```
+
+The selected primary ACP agent is routed through the existing normalized bridge API. Managed OpenCode requests are streamed through the daemon to the loopback process; the daemon authenticates the external request, replaces the client credentials with the managed host credentials, and keeps CORS policy at the daemon boundary. Legacy unprefixed routes remain available during migration.
+
+If you deliberately need the managed OpenCode listener itself reachable beyond loopback, opt in explicitly:
 
 ```bash
 harness-remote-daemon --backend codex --opencode-host 0.0.0.0
 ```
 
 The daemon checks the managed OpenCode port before spawning it and fails with an actionable error if another service is already using that port. Multiple eager managed hosts are started concurrently so one slow host does not serialize daemon startup.
-
-The existing session/run endpoints are still routed through the selected primary ACP backend in this slice. Agent-scoped routing over the shared machine connection is the next #143 step.
 
 Useful migration options:
 
