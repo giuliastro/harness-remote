@@ -8,7 +8,7 @@ const METHODS = new Set(["GET", "POST", "PATCH", "DELETE"])
 const MAX_PATH_LENGTH = 8192
 const MAX_REQUEST_BODY_BYTES = 2 * 1024 * 1024
 
-function transportError(code: Exclude<DesktopRequestResult, { ok: true }>['error']['code'], message: string): DesktopRequestResult {
+function transportError(code: Exclude<DesktopRequestResult, { ok: true }>["error"]["code"], message: string): DesktopRequestResult {
   return { ok: false, error: { code, message } }
 }
 
@@ -71,16 +71,20 @@ function validPath(path: unknown): path is string {
 
 function targetURL(profile: DesktopProfile, path: string): URL | null {
   if (!validPath(path)) return null
-  let target: URL
   let approved: URL
   try {
-    target = new URL(path, baseUrl(profile))
     approved = new URL(baseUrl(profile))
   } catch {
     return null
   }
+  const prefix = approved.pathname === "/" ? "" : approved.pathname.replace(/\/$/, "")
+  const target = new URL(approved)
+  target.pathname = `${prefix}${path}`
+  target.search = ""
+  target.hash = ""
   return target.origin === approved.origin ? target : null
 }
+
 function timeoutFor(value: number | undefined): number {
   if (value === undefined) return DEFAULT_TIMEOUT_MS
   if (!Number.isFinite(value) || value <= 0 || value > MAX_TIMEOUT_MS) return 0
