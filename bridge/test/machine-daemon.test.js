@@ -13,9 +13,16 @@ class FakeHttpHost extends EventEmitter {
   processID = 5151
   stopped = []
   shouldFail = false
+  startImpl
+
+  constructor({ startImpl } = {}) {
+    super()
+    this.startImpl = startImpl
+  }
 
   async start() {
     if (this.shouldFail) throw new Error("OpenCode failed")
+    if (this.startImpl) await this.startImpl()
     this.emit("available")
   }
 
@@ -59,6 +66,48 @@ test("one machine daemon represents ACP and OpenCode concurrently", async () => 
     ["opencode", "available"]
   ])
   assert.equal(snapshot.agents.find((host) => host.id === "opencode").processID, 5151)
+})
+
+test("eager managed hosts start concurrently rather than serially", async () => {
+  const daemon = new MachineDaemon({ id: "machine_test", name: "workstation" })
+  let firstStarted = false
+  let secondStarted = false
+  let releaseFirst
+  let releaseSecond
+  const firstGate = new Promise((resolve) => { releaseFirst = resolve })
+  const secondGate = new Promise((resolve) => { releaseSecond = resolve })
+
+  daemon.registerManagedHttpHost({
+    id: "first",
+    host: new FakeHttpHost({
+      startImpl: async () => {
+        firstStarted = true
+        await firstGate
+      }
+    })
+  })
+  daemon.registerManagedHttpHost({
+    id: "second",
+    host: new FakeHttpHost({
+      startImpl: async () => {
+        secondStarted = true
+        await secondGate
+      }
+    })
+  })
+
+  const starting = daemon.startManagedHosts()
+  await new Promise((resolve) => setImmediate(resolve))
+  assert.equal(firstStarted, true)
+  assert.equal(secondStarted, true)
+
+  releaseFirst()
+  releaseSecond()
+  const result = await starting
+  assert.deepEqual(result.map(({ id, status }) => [id, status]), [
+    ["first", "available"],
+    ["second", "available"]
+  ])
 })
 
 test("one host failure does not erase or stop the other host", async () => {
