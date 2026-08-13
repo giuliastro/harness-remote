@@ -27,6 +27,11 @@ server = createServer(async (request, response) => {
     response.end(JSON.stringify({ ok: true }))
     return
   }
+  if (request.url === '/v1/agents/opencode/query?directory=%2Fwork%2Frepo' && request.method === 'GET') {
+    response.setHeader('content-type', 'application/json')
+    response.end(JSON.stringify({ url: request.url }))
+    return
+  }
   if (request.url === '/body' && request.method === 'POST') {
     let body = ''
     for await (const chunk of request) body += chunk
@@ -122,12 +127,13 @@ test('window restore selects saved monitor and keeps title bar visible', async (
 })
 
 
-
 test('request transport enforces approved profile target and HTTP contract', async () => {
   assert.deepEqual((await executeDesktopRequest(localProfile, { path: '/json' })).response.data, { ok: true })
   assert.deepEqual((await executeDesktopRequest(localProfile, { path: '/body', method: 'POST', body: { value: 2 } })).response.data, { method: 'POST', body: { value: 2 } })
   assert.equal((await executeDesktopRequest(localProfile, { path: '/empty' })).response.data, true)
-  assert.equal((await executeDesktopRequest(localProfile, { path: '/error' })).error.message, 'bad request')
+  const httpError = await executeDesktopRequest(localProfile, { path: '/error' })
+  assert.equal(httpError.error.message, 'bad request')
+  assert.equal(httpError.error.status, 422)
   assert.equal((await executeDesktopRequest(localProfile, { path: '/redirect' })).error.code, 'redirect')
   assert.equal((await executeDesktopRequest(localProfile, { path: '/large' })).error.code, 'response-too-large')
   assert.equal((await executeDesktopRequest(localProfile, { path: 'http://example.com' })).error.code, 'invalid-path')
@@ -135,4 +141,18 @@ test('request transport enforces approved profile target and HTTP contract', asy
   assert.equal((await executeDesktopRequest(localProfile, { path: '/slow', readTimeout: 10 })).error.code, 'timeout')
   assert.equal((await executeDesktopRequest(localProfile, { path: '/stall-body', readTimeout: 20 })).error.code, 'timeout')
   assert.equal((await executeDesktopRequest(localProfile, { path: '/json', readTimeout: MAX_RESPONSE_BYTES + 1 })).error.code, 'invalid-payload')
+})
+
+test('agent-scoped desktop requests preserve their query string', async () => {
+  const routed = await executeDesktopRequest(
+    { ...localProfile, agentId: 'opencode' },
+    { path: '/query?directory=%2Fwork%2Frepo' }
+  )
+  assert.deepEqual(routed.response.data, { url: '/v1/agents/opencode/query?directory=%2Fwork%2Frepo' })
+})
+
+test('HTTP errors expose status without matching prose', async () => {
+  const missing = await executeDesktopRequest(localProfile, { path: '/missing' })
+  assert.equal(missing.error.code, 'http')
+  assert.equal(missing.error.status, 404)
 })
