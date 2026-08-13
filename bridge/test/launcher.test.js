@@ -1,7 +1,7 @@
 import assert from "node:assert/strict"
 import path from "node:path"
 import test from "node:test"
-import { bridgeEnvironment, buildBridgeArgs, createManagedShutdown, detectBackends, lanAddresses, resolveBackend, startManagedOpenCode } from "../src/launcher.js"
+import { bridgeEnvironment, buildBridgeArgs, buildDaemonArgs, createManagedShutdown, detectBackends, lanAddresses, resolveBackend, resolveLaunchPlan, startManagedOpenCode } from "../src/launcher.js"
 
 test("detects executable agent files on PATH without running them", () => {
   const pathValue = ["/bin", "/tools"].join(path.delimiter)
@@ -80,18 +80,42 @@ test("escalates a second shutdown signal from SIGTERM to SIGKILL", () => {
 
 test("uses an explicit backend even when discovery is empty", () => {
   assert.equal(resolveBackend(["--backend", "claude"], []), "claude")
+  assert.deepEqual(resolveLaunchPlan(["--backend", "claude"], ["codex", "opencode"]), {
+    mode: "single",
+    backend: "claude",
+    detected: ["codex", "opencode"]
+  })
 })
 
 test("auto-selects exactly one detected backend", () => {
   assert.equal(resolveBackend([], ["omp"]), "omp")
+  assert.deepEqual(resolveLaunchPlan([], ["omp"]), { mode: "single", backend: "omp", detected: ["omp"] })
 })
 
-test("requires an explicit choice when multiple backends are detected", () => {
+test("starts the machine daemon automatically when multiple agents are detected", () => {
+  assert.deepEqual(resolveLaunchPlan([], ["claude", "codex", "opencode"]), {
+    mode: "daemon",
+    backend: "codex",
+    detected: ["claude", "codex", "opencode"],
+    openCode: true
+  })
+})
+
+test("starts a daemon without OpenCode when multiple ACP agents are detected", () => {
+  assert.deepEqual(resolveLaunchPlan([], ["omp", "claude"]), {
+    mode: "daemon",
+    backend: "claude",
+    detected: ["omp", "claude"],
+    openCode: false
+  })
+})
+
+test("keeps the legacy resolver strict for callers that still require one backend", () => {
   assert.throws(() => resolveBackend([], ["codex", "claude"]), /Multiple supported agent CLIs were found on PATH/)
 })
 
 test("requires an installed or explicit backend when discovery finds none", () => {
-  assert.throws(() => resolveBackend([], []), /No supported agent CLI was found on PATH/)
+  assert.throws(() => resolveLaunchPlan([], []), /No supported agent CLI was found on PATH/)
 })
 
 test("injects quick-start defaults but never places credentials on child argv", () => {
@@ -116,6 +140,28 @@ test("injects quick-start defaults but never places credentials on child argv", 
   assert.equal(environment.HARNESS_REMOTE_USERNAME, "harness")
   assert.equal(environment.HARNESS_REMOTE_PASSWORD, "secret")
   assert.equal(environment.PATH, "/bin")
+})
+
+test("builds daemon argv with the selected primary and disables absent OpenCode", () => {
+  assert.deepEqual(buildDaemonArgs(["--root", "/work"], {
+    backend: "codex",
+    host: "0.0.0.0",
+    port: 4097,
+    openCode: false
+  }), [
+    "--root", "/work",
+    "--backend", "codex",
+    "--host", "0.0.0.0",
+    "--port", "4097",
+    "--no-opencode"
+  ])
+
+  assert.deepEqual(buildDaemonArgs([], {
+    backend: "claude",
+    host: "0.0.0.0",
+    port: 4097,
+    openCode: true
+  }), ["--backend", "claude", "--host", "0.0.0.0", "--port", "4097"])
 })
 
 test("does not override explicit backend, host, or port", () => {
