@@ -85,8 +85,8 @@ async function main() {
     return
   }
 
-  if (openCode && openCodeHost === config.host && openCodePort === config.port) {
-    throw new Error(`OpenCode port ${openCodePort} conflicts with the Harness daemon on ${openCodeHost}`)
+  if (openCode && openCodePort === config.port) {
+    throw new Error(`OpenCode port ${openCodePort} conflicts with the Harness daemon port`)
   }
   if (openCode) await ensureOpenCodePortAvailable({ port: openCodePort, host: openCodeHost })
 
