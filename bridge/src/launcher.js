@@ -16,6 +16,7 @@ const BACKEND_EXECUTABLES = {
   opencode: ["opencode"]
 }
 
+const ACP_BACKENDS = ["codex", "claude", "omp", "pi"]
 const VIRTUAL_INTERFACE = /^(docker|br-|veth|virbr|tun|tap|utun)/i
 
 function optionValue(args, name) {
@@ -73,6 +74,25 @@ export function resolveBackend(args, detected = detectBackends()) {
   throw new Error("No supported agent CLI was found on PATH. Install/select omp, pi, claude, codex, or opencode, then re-run with --backend if needed.")
 }
 
+/** Choose the low-friction startup shape without executing any discovered CLI. */
+export function resolveLaunchPlan(args, detected = detectBackends()) {
+  const explicit = optionValue(args, "--backend")
+  if (explicit) return { mode: "single", backend: explicit, detected }
+  if (detected.length === 0) {
+    throw new Error("No supported agent CLI was found on PATH. Install/select omp, pi, claude, codex, or opencode, then re-run with --backend if needed.")
+  }
+  if (detected.length === 1) return { mode: "single", backend: detected[0], detected }
+
+  const primary = ACP_BACKENDS.find((backend) => detected.includes(backend))
+  if (!primary) return { mode: "single", backend: detected[0], detected }
+  return {
+    mode: "daemon",
+    backend: primary,
+    detected,
+    openCode: detected.includes("opencode")
+  }
+}
+
 export function generateCredentials() {
   return {
     username: "harness",
@@ -98,6 +118,12 @@ export function buildBridgeArgs(args, { backend, host, port }) {
   if (!hasOption(result, "--backend")) result.push("--backend", backend)
   if (!hasOption(result, "--host")) result.push("--host", host)
   if (!hasOption(result, "--port")) result.push("--port", String(port))
+  return result
+}
+
+export function buildDaemonArgs(args, { backend, host, port, openCode }) {
+  const result = buildBridgeArgs(args, { backend, host, port })
+  if (!openCode && !hasOption(result, "--no-opencode")) result.push("--no-opencode")
   return result
 }
 
@@ -139,7 +165,7 @@ export function lanAddresses(interfaces = networkInterfaces()) {
 }
 
 export function launcherUsage() {
-  return `Usage: harness-remote [options]\n\nQuick start options:\n  --backend <name>       Select omp, pi, claude, codex, or opencode (auto-detected when unambiguous)\n  --host <host>          Bind host (quick-start default: 0.0.0.0)\n  --port <port>          Preferred port (OpenCode default: 4096; ACP default: 4097)\n  --username <username>  Override generated Basic Auth username\n  --password <password>  Override generated Basic Auth password\n  --help                 Show this help\n\nOpenCode is started and supervised directly. Other options are forwarded to harness-remote-bridge for ACP-backed agents.`
+  return `Usage: harness-remote [options]\n\nQuick start options:\n  --backend <name>       Select omp, pi, claude, codex, or opencode (optional; multi-agent machines start the daemon automatically)\n  --host <host>          Bind host (quick-start default: 0.0.0.0)\n  --port <port>          Preferred port (OpenCode single-host default: 4096; daemon/ACP default: 4097)\n  --username <username>  Override generated Basic Auth username\n  --password <password>  Override generated Basic Auth password\n  --help                 Show this help\n\nWith one detected agent, Harness starts the existing single-backend path. With multiple detected agents and at least one ACP backend, it starts the machine daemon automatically; OpenCode is included when installed.`
 }
 
 export async function startManagedOpenCode({ host, port, username, password, command = "opencode", Host = ManagedOpenCodeHost } = {}) {
@@ -164,6 +190,22 @@ export function createManagedShutdown(managed, processObject = process) {
   }
 }
 
+function spawnNodeEntrypoint(entrypoint, args, username, password) {
+  const child = spawn(process.execPath, [entrypoint, ...args], {
+    stdio: "inherit",
+    env: bridgeEnvironment(process.env, username, password)
+  })
+  child.once("error", (error) => {
+    process.stderr.write(`Failed to start Harness runtime: ${error.message}\n`)
+    process.exitCode = 1
+  })
+  child.once("exit", (code, signal) => {
+    if (signal) process.kill(process.pid, signal)
+    else process.exitCode = code ?? 1
+  })
+  return child
+}
+
 async function main() {
   const args = process.argv.slice(2)
   if (hasOption(args, "--help")) {
@@ -171,9 +213,10 @@ async function main() {
     return
   }
 
-  const backend = resolveBackend(args)
+  const plan = resolveLaunchPlan(args)
+  const backend = plan.backend
   const host = optionValue(args, "--host") ?? "0.0.0.0"
-  const defaultPort = backend === "opencode" ? 4096 : 4097
+  const defaultPort = plan.mode === "daemon" ? 4097 : backend === "opencode" ? 4096 : 4097
   const requestedPort = Number(optionValue(args, "--port") ?? defaultPort)
   if (!Number.isInteger(requestedPort) || requestedPort < 1 || requestedPort > 65_535) {
     throw new Error("--port must be an integer between 1 and 65535")
@@ -199,7 +242,12 @@ async function main() {
   const addresses = host === "0.0.0.0" ? lanAddresses() : [host]
 
   process.stdout.write("Harness Remote quick start\n")
-  process.stdout.write(`Backend: ${backend}\n`)
+  if (plan.mode === "daemon") {
+    process.stdout.write(`Detected agents: ${plan.detected.join(", ")}\n`)
+    process.stdout.write(`Machine daemon primary: ${backend}\n`)
+  } else {
+    process.stdout.write(`Backend: ${backend}\n`)
+  }
   process.stdout.write(`Port: ${port}\n`)
   if (addresses.length) {
     for (const address of addresses) process.stdout.write(`Connect to: http://${address}:${port}\n`)
@@ -208,6 +256,14 @@ async function main() {
   }
   process.stdout.write(`Username: ${username}\n`)
   process.stdout.write(`Password: ${password}\n`)
+
+  if (plan.mode === "daemon") {
+    const daemonArgs = buildDaemonArgs(args, { backend, host, port, openCode: plan.openCode })
+    process.stdout.write("\nStarting machine daemon...\n")
+    const daemonPath = fileURLToPath(new URL("./daemon-cli.js", import.meta.url))
+    spawnNodeEntrypoint(daemonPath, daemonArgs, username, password)
+    return
+  }
 
   if (backend === "opencode") {
     process.stdout.write("\nStarting managed OpenCode host...\n")
@@ -235,18 +291,7 @@ async function main() {
   process.stdout.write("\nStarting existing bridge...\n")
 
   const cliPath = fileURLToPath(new URL("./cli.js", import.meta.url))
-  const child = spawn(process.execPath, [cliPath, ...bridgeArgs], {
-    stdio: "inherit",
-    env: bridgeEnvironment(process.env, username, password)
-  })
-  child.once("error", (error) => {
-    process.stderr.write(`Failed to start bridge: ${error.message}\n`)
-    process.exitCode = 1
-  })
-  child.once("exit", (code, signal) => {
-    if (signal) process.kill(process.pid, signal)
-    else process.exitCode = code ?? 1
-  })
+  spawnNodeEntrypoint(cliPath, bridgeArgs, username, password)
 }
 
 function isDirectInvocation() {
