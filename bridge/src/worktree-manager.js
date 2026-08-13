@@ -5,6 +5,7 @@ import path from "node:path"
 import { promisify } from "node:util"
 
 const execFileAsync = promisify(execFile)
+const DEFAULT_GIT_TIMEOUT_MS = 30_000
 
 function taskKey(taskID) {
   return createHash("sha256").update(taskID).digest("hex").slice(0, 12)
@@ -21,7 +22,14 @@ async function exists(candidate) {
 }
 
 async function defaultRunGit(args) {
-  return execFileAsync("git", args, { maxBuffer: 1024 * 1024 })
+  try {
+    return await execFileAsync("git", args, { maxBuffer: 1024 * 1024, timeout: DEFAULT_GIT_TIMEOUT_MS })
+  } catch (error) {
+    if (error?.killed || error?.signal === "SIGTERM") {
+      throw new Error(`Git operation timed out after ${DEFAULT_GIT_TIMEOUT_MS}ms`)
+    }
+    throw error
+  }
 }
 
 export class WorktreeManager {
@@ -42,7 +50,7 @@ export class WorktreeManager {
 
     await this.runGit(["-C", task.project.path, "rev-parse", "--show-toplevel"])
     await mkdir(path.dirname(worktreePath), { recursive: true })
-    await this.runGit(["-C", task.project.path, "worktree", "add", "-b", branch, worktreePath, "HEAD"])
+    await this.runGit(["-C", task.project.path, "worktree", "add", "-B", branch, worktreePath, "HEAD"])
 
     return { mode: "worktree", path: worktreePath, branch, source: task.project.path }
   }
@@ -57,7 +65,7 @@ export class WorktreeManager {
     try {
       await this.runGit(["-C", workspace.source, "branch", "-D", workspace.branch])
     } catch {
-      // The worktree is already detached from the project; a leftover branch is safe to keep.
+      // A later prepare() uses -B, so a leftover task-scoped branch cannot wedge retries.
     }
   }
 }

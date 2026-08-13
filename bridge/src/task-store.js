@@ -84,7 +84,7 @@ export class TaskStore {
   async setWorkspace(taskID, workspace) {
     await this.load()
     const index = this.tasks.findIndex((task) => task.id === taskID)
-    if (index < 0) return undefined
+    if (index < 0) throw new Error(`Unknown task: ${taskID}`)
     const task = this.tasks[index]
     if (task.status !== "draft") throw new Error("Only draft tasks can change workspace")
     const updated = { ...task, workspace: structuredClone(workspace), updatedAt: this.clock() }
