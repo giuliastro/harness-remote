@@ -28,7 +28,9 @@ The launcher inspects `PATH` without executing discovered agent binaries and cho
 - with exactly one supported CLI, it preserves the existing single-backend startup path;
 - with multiple supported CLIs and at least one ACP-backed agent, it starts the machine daemon automatically;
 - the daemon selects one detected ACP backend as its primary host and includes managed OpenCode when OpenCode is installed;
-- an explicit `--backend` keeps the existing single-backend behavior for users who want to force one agent;
+- `--backend <name>` selects the ACP primary on a multi-agent machine;
+- `--single --backend <name>` explicitly opts out of the daemon and forces the legacy single-backend path;
+- if managed OpenCode is included, the launcher chooses a free loopback port automatically instead of assuming 4096 is unused;
 - credentials are generated automatically and kept out of child-process argv;
 - the LAN address and credentials to enter in the client are printed before startup continues.
 
@@ -40,7 +42,7 @@ For example, on a workstation with Codex, Claude Code and OpenCode installed, th
 harness-remote
 ```
 
-starts one machine daemon instead of failing and asking you to choose a backend. The launcher reports the CLIs it detected, selects an ACP primary, manages OpenCode on loopback, and exposes the machine through one authenticated daemon connection.
+starts one machine daemon instead of failing and asking you to choose a backend. The launcher reports the CLIs it detected, selects an ACP primary, finds a free loopback port for managed OpenCode, and exposes the machine through one authenticated daemon connection.
 
 The current automatic multi-host shape is deliberately precise:
 
@@ -52,18 +54,24 @@ Harness daemon :4097
 
 Other detected ACP CLIs are reported by discovery but are not all instantiated concurrently by this startup slice yet. The daemon API and client are already agent-scoped, so adding more ACP host instances does not require another client transport change.
 
-## Force a single backend
+## Choose the daemon primary or force one backend
 
-The backward-compatible explicit path remains available:
+On a multi-agent machine, choose the daemon's ACP primary with:
 
 ```bash
 harness-remote --backend codex --root ~/dev
 ```
 
-For loopback-only use:
+To deliberately use the old single-agent runtime instead:
 
 ```bash
-harness-remote --backend omp --host 127.0.0.1
+harness-remote --single --backend codex --root ~/dev
+```
+
+For loopback-only single-agent use:
+
+```bash
+harness-remote --single --backend omp --host 127.0.0.1
 ```
 
 For a fixed LAN port and your own credentials:
@@ -75,6 +83,8 @@ harness-remote \
   --username harness \
   --password 'choose-a-strong-password'
 ```
+
+If OpenCode is present on a multi-agent machine, an existing process already using `127.0.0.1:4096` does not break startup: Harness scans forward for a free managed OpenCode port and passes it to the daemon. You can still choose one explicitly with `--opencode-port`.
 
 ## OpenCode
 
@@ -88,7 +98,7 @@ When the automatic machine daemon path is selected, OpenCode instead stays on it
 
 ## Machine daemon
 
-The daemon can still be started explicitly when you want to choose its primary ACP backend or advanced options:
+The daemon can still be started explicitly when you want advanced options:
 
 ```bash
 npm run daemon -- --backend codex --host 127.0.0.1
