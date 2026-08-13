@@ -4,6 +4,7 @@ import { trackManagedHostLifecycle } from "./opencode-host.js"
 import { discoverProjects } from "./project-catalog.js"
 import { createBridgeServer } from "./server.js"
 import { TaskStore } from "./task-store.js"
+import { WorktreeManager } from "./worktree-manager.js"
 
 export class MachineDaemon {
   constructor(identity, { registry = new MachineRegistry(identity) } = {}) {
@@ -74,7 +75,8 @@ export function createMachineDaemonServer({
   createServer = createBridgeServer,
   createRouter = createAgentRoutingServer,
   taskStore,
-  projectCatalog
+  projectCatalog,
+  worktreeManager
 }) {
   const bridgeServer = createServer({
     config,
@@ -84,14 +86,17 @@ export function createMachineDaemonServer({
   })
   const machineID = daemon.snapshot().machine.id
   const roots = config.roots?.length ? config.roots : [process.cwd()]
-  const tasks = taskStore ?? new TaskStore({ machineID, stateDirectory: config.stateDirectory ?? process.cwd() })
+  const stateDirectory = config.stateDirectory ?? process.cwd()
+  const tasks = taskStore ?? new TaskStore({ machineID, stateDirectory })
   const projects = projectCatalog ?? (() => discoverProjects({ machineID, roots }))
+  const worktrees = worktreeManager ?? new WorktreeManager({ stateDirectory })
   return createRouter({
     daemon,
     config,
     primaryAgentID,
     bridgeServer,
     taskStore: tasks,
-    projectCatalog: projects
+    projectCatalog: projects,
+    worktreeManager: worktrees
   })
 }
