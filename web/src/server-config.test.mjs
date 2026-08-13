@@ -123,4 +123,9 @@ assert.equal(
   'credential checks must go through the shared helper, so an untrimmed field cannot pass one check and fail another'
 )
 
+const machineClient = readFileSync(new URL('./machineClient.ts', import.meta.url), 'utf8')
+assert.match(machineClient, /status === 404 \|\| status === 503/, '404 and registry-less 503 must both fall back to legacy mode')
+assert.match(machineClient, /result\.error\.code === "http" && noMachineStatus\(result\.error\.status\)/, 'desktop discovery must use structured HTTP status')
+assert.equal(/404\|not found/i.test(machineClient), false, 'desktop discovery must not classify transport errors by matching prose')
+
 console.log('server config regression tests passed')
