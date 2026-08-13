@@ -1,5 +1,5 @@
 import assert from "node:assert/strict"
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises"
+import { mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
 import test from "node:test"
@@ -38,5 +38,30 @@ test("project ids remain stable for the same machine and canonical path", async 
     assert.notEqual(first[0].id, otherMachine[0].id)
   } finally {
     await rm(root, { recursive: true, force: true })
+  }
+})
+
+test("an unreadable or missing configured root does not hide valid roots", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "harness-project-roots-"))
+  try {
+    const projects = await discoverProjects({ machineID: "machine-1", roots: [path.join(root, "missing"), root] })
+    assert.equal(projects.length, 1)
+    assert.equal(projects[0].path, root)
+  } finally {
+    await rm(root, { recursive: true, force: true })
+  }
+})
+
+test("symlinked children cannot escape the configured root boundary", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "harness-project-boundary-"))
+  const outside = await mkdtemp(path.join(os.tmpdir(), "harness-project-outside-"))
+  try {
+    await mkdir(path.join(outside, ".git"), { recursive: true })
+    await symlink(outside, path.join(root, "external"), "dir")
+    const projects = await discoverProjects({ machineID: "machine-1", roots: [root] })
+    assert.equal(projects.some((project) => project.path === outside), false)
+  } finally {
+    await rm(root, { recursive: true, force: true })
+    await rm(outside, { recursive: true, force: true })
   }
 })
