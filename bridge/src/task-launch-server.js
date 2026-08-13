@@ -1,5 +1,5 @@
 import http from "node:http"
-import { allowedOrigin, applyCorsHeaders, matchesCredentials, writeJSON } from "./http-policy.js"
+import { authenticateDaemonRequest, writeJSON } from "./http-policy.js"
 
 const TASK_LAUNCH_ROUTE = /^\/v1\/tasks\/([^/]+)\/launch$/
 const TASK_WORKTREE_ROUTE = /^\/v1\/tasks\/([^/]+)\/worktree$/
@@ -18,21 +18,6 @@ const LAUNCH_STATUS = new Map([
   ["worktree_missing", 409]
 ])
 
-function authenticate(request, response, config) {
-  applyCorsHeaders(request, response, config)
-  if (request.method === "OPTIONS") {
-    response.writeHead(allowedOrigin(request, config) ? 204 : 403)
-    response.end()
-    return false
-  }
-  if (!matchesCredentials(request, config)) {
-    response.writeHead(401, { "WWW-Authenticate": 'Basic realm="Harness Remote Daemon"' })
-    response.end()
-    return false
-  }
-  return true
-}
-
 export function launchStatus(error) {
   return LAUNCH_STATUS.get(error?.code) ?? 500
 }
@@ -50,7 +35,7 @@ export function createTaskLaunchServer({ innerServer, config, taskRunController,
       return
     }
 
-    if (!authenticate(request, response, config)) return
+    if (!authenticateDaemonRequest(request, response, config)) return
     try {
       if (launchMatch) {
         if (request.method !== "POST") {
