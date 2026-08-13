@@ -16,6 +16,8 @@ const BACKEND_EXECUTABLES = {
   opencode: ["opencode"]
 }
 
+// This is product policy, not alphabetical order: prefer the broadest/most-tested ACP path first.
+// Reordering this changes the default primary on every multi-agent machine.
 const ACP_BACKENDS = ["codex", "claude", "omp", "pi"]
 const VIRTUAL_INTERFACE = /^(docker|br-|veth|virbr|tun|tap|utun)/i
 
@@ -77,13 +79,29 @@ export function resolveBackend(args, detected = detectBackends()) {
 /** Choose the low-friction startup shape without executing any discovered CLI. */
 export function resolveLaunchPlan(args, detected = detectBackends()) {
   const explicit = optionValue(args, "--backend")
-  if (explicit) return { mode: "single", backend: explicit, detected }
+  const forceSingle = hasOption(args, "--single")
+
   if (detected.length === 0) {
+    if (explicit) return { mode: "single", backend: explicit, detected }
     throw new Error("No supported agent CLI was found on PATH. Install/select omp, pi, claude, codex, or opencode, then re-run with --backend if needed.")
   }
-  if (detected.length === 1) return { mode: "single", backend: detected[0], detected }
 
-  const primary = ACP_BACKENDS.find((backend) => detected.includes(backend))
+  if (forceSingle) {
+    const backend = explicit ?? (detected.length === 1 ? detected[0] : null)
+    if (!backend) {
+      throw new Error(`--single requires --backend when multiple supported agent CLIs are installed (${detected.join(", ")}).`)
+    }
+    return { mode: "single", backend, detected }
+  }
+
+  if (detected.length === 1) return { mode: "single", backend: explicit ?? detected[0], detected }
+
+  if (explicit === "opencode") return { mode: "single", backend: explicit, detected }
+  if (explicit && !ACP_BACKENDS.includes(explicit)) {
+    throw new Error(`Unsupported ACP backend '${explicit}' for machine-daemon startup.`)
+  }
+
+  const primary = explicit ?? ACP_BACKENDS.find((backend) => detected.includes(backend))
   if (!primary) return { mode: "single", backend: detected[0], detected }
   return {
     mode: "daemon",
@@ -112,17 +130,25 @@ function stripOptionWithValue(args, option) {
   return result
 }
 
+function stripFlag(args, option) {
+  return args.filter((value) => value !== option)
+}
+
 export function buildBridgeArgs(args, { backend, host, port }) {
   let result = stripOptionWithValue(args, "--username")
   result = stripOptionWithValue(result, "--password")
+  result = stripFlag(result, "--single")
   if (!hasOption(result, "--backend")) result.push("--backend", backend)
   if (!hasOption(result, "--host")) result.push("--host", host)
   if (!hasOption(result, "--port")) result.push("--port", String(port))
   return result
 }
 
-export function buildDaemonArgs(args, { backend, host, port, openCode }) {
+export function buildDaemonArgs(args, { backend, host, port, openCode, openCodePort }) {
   const result = buildBridgeArgs(args, { backend, host, port })
+  if (openCode && openCodePort && !hasOption(result, "--opencode-port")) {
+    result.push("--opencode-port", String(openCodePort))
+  }
   if (!openCode && !hasOption(result, "--no-opencode")) result.push("--no-opencode")
   return result
 }
@@ -144,10 +170,12 @@ export function canListen(port, host) {
   })
 }
 
-export async function findAvailablePort(startPort = 4097, host = "0.0.0.0", attempts = 20) {
+export async function findAvailablePort(startPort = 4097, host = "0.0.0.0", attempts = 20, excludedPorts = []) {
+  const excluded = new Set(excludedPorts)
   for (let offset = 0; offset < attempts; offset += 1) {
     const port = startPort + offset
     if (port > 65_535) break
+    if (excluded.has(port)) continue
     if (await canListen(port, host)) return port
   }
   throw new Error(`No available port found from ${startPort} through ${Math.min(65_535, startPort + attempts - 1)}.`)
@@ -165,7 +193,7 @@ export function lanAddresses(interfaces = networkInterfaces()) {
 }
 
 export function launcherUsage() {
-  return `Usage: harness-remote [options]\n\nQuick start options:\n  --backend <name>       Select omp, pi, claude, codex, or opencode (optional; multi-agent machines start the daemon automatically)\n  --host <host>          Bind host (quick-start default: 0.0.0.0)\n  --port <port>          Preferred port (OpenCode single-host default: 4096; daemon/ACP default: 4097)\n  --username <username>  Override generated Basic Auth username\n  --password <password>  Override generated Basic Auth password\n  --help                 Show this help\n\nWith one detected agent, Harness starts the existing single-backend path. With multiple detected agents and at least one ACP backend, it starts the machine daemon automatically; OpenCode is included when installed.`
+  return `Usage: harness-remote [options]\n\nQuick start options:\n  --backend <name>       Select omp, pi, claude, codex, or opencode (on multi-agent machines, selects the daemon primary)\n  --single               Force the legacy single-backend path instead of the machine daemon\n  --host <host>          Bind host (quick-start default: 0.0.0.0)\n  --port <port>          Preferred port (OpenCode single-host default: 4096; daemon/ACP default: 4097)\n  --username <username>  Override generated Basic Auth username\n  --password <password>  Override generated Basic Auth password\n  --help                 Show this help\n\nWith one detected agent, Harness starts the existing single-backend path. With multiple detected agents and at least one ACP backend, it starts the machine daemon automatically; OpenCode is included when installed and receives a free loopback port automatically.`
 }
 
 export async function startManagedOpenCode({ host, port, username, password, command = "opencode", Host = ManagedOpenCodeHost } = {}) {
@@ -232,6 +260,22 @@ async function main() {
     port = await findAvailablePort(requestedPort, host)
   }
 
+  let openCodePort
+  if (plan.mode === "daemon" && plan.openCode) {
+    const explicitOpenCodePort = optionValue(args, "--opencode-port")
+    if (explicitOpenCodePort) {
+      openCodePort = Number(explicitOpenCodePort)
+      if (!Number.isInteger(openCodePort) || openCodePort < 1 || openCodePort > 65_535) {
+        throw new Error("--opencode-port must be an integer between 1 and 65535")
+      }
+      if (openCodePort === port || !(await canListen(openCodePort, "127.0.0.1"))) {
+        throw new Error(`OpenCode port ${openCodePort} is not available. Choose another --opencode-port or omit it for automatic selection.`)
+      }
+    } else {
+      openCodePort = await findAvailablePort(4096, "127.0.0.1", 20, [port])
+    }
+  }
+
   let username = optionValue(args, "--username")
   let password = optionValue(args, "--password")
   if (Boolean(username) !== Boolean(password)) {
@@ -245,6 +289,7 @@ async function main() {
   if (plan.mode === "daemon") {
     process.stdout.write(`Detected agents: ${plan.detected.join(", ")}\n`)
     process.stdout.write(`Machine daemon primary: ${backend}\n`)
+    if (openCodePort) process.stdout.write(`Managed OpenCode port: ${openCodePort}\n`)
   } else {
     process.stdout.write(`Backend: ${backend}\n`)
   }
@@ -258,7 +303,7 @@ async function main() {
   process.stdout.write(`Password: ${password}\n`)
 
   if (plan.mode === "daemon") {
-    const daemonArgs = buildDaemonArgs(args, { backend, host, port, openCode: plan.openCode })
+    const daemonArgs = buildDaemonArgs(args, { backend, host, port, openCode: plan.openCode, openCodePort })
     process.stdout.write("\nStarting machine daemon...\n")
     const daemonPath = fileURLToPath(new URL("./daemon-cli.js", import.meta.url))
     spawnNodeEntrypoint(daemonPath, daemonArgs, username, password)
