@@ -58,6 +58,12 @@ export function authHeader(config: ServerConfig): string {
   return `Basic ${btoa(binary)}`
 }
 
+/**
+ * A host typed one character at a time passes through states such as `http:` and `http://` that
+ * produce an unparseable base URL. Callers must check this before building any URL, because a throw
+ * on the render path blanks the whole app and a persisted invalid host reproduces that crash on
+ * every launch.
+ */
 export function isValidServerConfig(config: ServerConfig): boolean {
   if (!config.host.trim() || !Number.isInteger(config.port) || config.port <= 0 || config.port > 65535) return false
   try {
