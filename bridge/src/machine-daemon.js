@@ -1,7 +1,9 @@
 import { createAgentRoutingServer } from "./agent-router.js"
 import { MachineRegistry, trackAgentHostLifecycle } from "./machine-registry.js"
 import { trackManagedHostLifecycle } from "./opencode-host.js"
+import { discoverProjects } from "./project-catalog.js"
 import { createBridgeServer } from "./server.js"
+import { TaskStore } from "./task-store.js"
 
 export class MachineDaemon {
   constructor(identity, { registry = new MachineRegistry(identity) } = {}) {
@@ -70,7 +72,9 @@ export function createMachineDaemonServer({
   primaryAgentID = config.backend,
   serviceOptions,
   createServer = createBridgeServer,
-  createRouter = createAgentRoutingServer
+  createRouter = createAgentRoutingServer,
+  taskStore,
+  projectCatalog
 }) {
   const bridgeServer = createServer({
     config,
@@ -78,10 +82,16 @@ export function createMachineDaemonServer({
     machineRegistry: daemon.registry,
     serviceOptions
   })
+  const machineID = daemon.snapshot().machine.id
+  const roots = config.roots.length ? config.roots : [process.cwd()]
+  const tasks = taskStore ?? new TaskStore({ machineID, stateDirectory: config.stateDirectory })
+  const projects = projectCatalog ?? (() => discoverProjects({ machineID, roots }))
   return createRouter({
     daemon,
     config,
     primaryAgentID,
-    bridgeServer
+    bridgeServer,
+    taskStore: tasks,
+    projectCatalog: projects
   })
 }
