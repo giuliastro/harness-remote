@@ -5,6 +5,7 @@ const app = readFileSync(new URL('./App.tsx', import.meta.url), 'utf8')
 const i18n = readFileSync(new URL('./i18n.ts', import.meta.url), 'utf8')
 const styles = readFileSync(new URL('./styles.css', import.meta.url), 'utf8')
 const shell = readFileSync(new URL('./components/shell.tsx', import.meta.url), 'utf8')
+const panels = readFileSync(new URL('./components/panels.tsx', import.meta.url), 'utf8')
 
 const testConnection = app.match(/async function testConnection[\s\S]*?async function refreshSessions/)
 assert.ok(testConnection, 'testConnection function should be present')
@@ -31,6 +32,14 @@ assert.ok(app.includes('<option value="codex">Codex CLI (ACP bridge)</option>'),
 assert.ok(app.includes('health.backend && health.backend !== configToTest.backend'), 'Connection tests should reject a bridge for the wrong backend')
 assert.ok(app.includes('https://github.com/giuliastro/harness-remote#'), 'Help should link to the canonical repository')
 assert.equal(app.includes('https://github.com/gervaso-assistant/opencode-remote-android#'), false, 'Help must not link to the obsolete repository owner')
+
+// A daemon-backed connection discovers the machine after the ordinary connection test succeeds.
+// Legacy servers return null from discovery and therefore keep the exact existing save flow.
+assert.ok(panels.includes('await import("../machineClient")'), 'the connection wizard should discover a machine without requiring App-level wiring')
+assert.ok(panels.includes('discoverMachine(candidate)'), 'the wizard should call machine discovery after a successful connection test')
+assert.ok(panels.includes('agentId: agentId || undefined'), 'the selected machine agent should be persisted in the saved server config')
+assert.ok(panels.includes('One machine connection; requests are routed to the selected agent.'), 'the wizard should explain machine-scoped routing when discovery succeeds')
+assert.ok(panels.includes('agent.state !== "available" && agent.state !== "configured"'), 'unavailable machine agents must not be selectable')
 
 // The server picker used to caption itself with a visually-hidden span, but no rule ever hid it: the
 // caption rendered as stray text above the header. Every class the picker and its actions rely on has
