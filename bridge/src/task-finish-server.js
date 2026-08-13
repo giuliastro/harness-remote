@@ -1,32 +1,18 @@
 import http from "node:http"
-import { allowedOrigin, applyCorsHeaders, matchesCredentials, writeJSON } from "./http-policy.js"
+import { authenticateDaemonRequest, writeJSON } from "./http-policy.js"
 import { inspectTaskWork } from "./task-finish.js"
 
 const resultRoute = /^\/v1\/tasks\/([^/]+)\/result$/
 const finishRoute = /^\/v1\/tasks\/([^/]+)\/finish$/
 
-function authenticate(request, response, config) {
-  applyCorsHeaders(request, response, config)
-  if (request.method === "OPTIONS") {
-    response.writeHead(allowedOrigin(request, config) ? 204 : 403)
-    response.end()
-    return false
-  }
-  if (!matchesCredentials(request, config)) {
-    response.writeHead(401, { "WWW-Authenticate": 'Basic realm="Harness Remote Daemon"' })
-    response.end()
-    return false
-  }
-  return true
-}
-
 function status(error) {
   if (error?.code === "unknown_task") return 404
+  if (error?.code === "agent_unavailable") return 503
   if (["task_active", "worktree_dirty", "invalid_worktree", "worktree_outside_state", "worktree_missing"].includes(error?.code)) return 409
   return 500
 }
 
-export function createTaskFinishServer({ innerServer, config, taskStore, worktreeManager, createServer = http.createServer }) {
+export function createTaskFinishServer({ innerServer, config, taskStore, worktreeManager, taskRunController, createServer = http.createServer }) {
   return createServer(async (request, response) => {
     const pathname = new URL(request.url ?? "/", `http://${request.headers.host ?? "localhost"}`).pathname
     const resultMatch = resultRoute.exec(pathname)
@@ -37,9 +23,17 @@ export function createTaskFinishServer({ innerServer, config, taskStore, worktre
       innerServer.emit("request", request, response)
       return
     }
-    if (!authenticate(request, response, config)) return
+    if (!authenticateDaemonRequest(request, response, config)) return
 
     try {
+      if (taskRunController) {
+        await taskRunController.reconciliation
+        if (taskRunController.reconciliationError) {
+          const error = new Error("Task state is unavailable")
+          error.code = "agent_unavailable"
+          throw error
+        }
+      }
       const taskID = decodeURIComponent((resultMatch ?? finishMatch)[1])
       const task = await taskStore.get(taskID)
       if (!task) {
