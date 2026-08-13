@@ -6,6 +6,8 @@ export type ServerConfig = {
   port: number
   username: string
   password: string
+  /** Present when this profile targets one agent exposed by a Harness machine daemon. */
+  agentId?: string
 }
 
 export type HarnessCapabilities = {
@@ -25,6 +27,26 @@ export type HarnessCapabilities = {
   sessionRename: boolean
   sessionDelete: boolean
   attachments: boolean
+}
+
+export type MachineAgentHost = {
+  id: string
+  label: string
+  backend: string
+  transport: string
+  managed: boolean
+  state: "configured" | "available" | "unavailable" | string
+  capabilities: Partial<HarnessCapabilities> & Record<string, unknown>
+  processID?: number
+}
+
+export type MachineSnapshot = {
+  machine: {
+    id: string
+    name: string
+    createdAt?: string
+  }
+  agents: MachineAgentHost[]
 }
 
 export type HealthResponse = {
@@ -140,78 +162,13 @@ export type TodoItem = {
   content: string
   status: string
   priority: string
-  id: string
-}
-
-export type QuestionOption = {
-  label: string
-  description: string
-}
-
-export type QuestionInfo = {
-  question: string
-  header: string
-  options: QuestionOption[]
-  multiple?: boolean
-  custom?: boolean
-}
-
-export type QuestionRequest = {
-  id: string
-  sessionID: string
-  questions: QuestionInfo[]
-  tool?: {
-    messageID: string
-    callID: string
-  }
-}
-
-export type PermissionRequest = {
-  id: string
-  sessionID: string
-  permission: string
-  patterns: string[]
-  metadata: Record<string, unknown>
-  always: string[]
-  tool?: {
-    messageID: string
-    callID: string
-  }
-}
-
-export type DiffFile = {
-  file: string
-  additions: number
-  deletions: number
-  patch?: string
-  status?: "added" | "deleted" | "modified"
-}
-
-export type ProjectCurrent = Record<string, unknown> & {
-  name?: string
-  path?: string
-  directory?: string
-  root?: string
-}
-
-export type VcsStatus = Record<string, unknown> & {
-  branch?: string
-  status?: string
-  ahead?: number
-  behind?: number
-}
-
-export type FileStatusEntry = Record<string, unknown> & {
-  path?: string
-  file?: string
-  status?: string
 }
 
 export type FileEntry = {
   name: string
   path: string
-  absolute: string
-  type: "file" | "directory"
+  absolute?: string
+  type: string
   ignored?: boolean
 }
 
@@ -223,41 +180,97 @@ export type PathInfo = {
   directory: string
 }
 
-export type ProjectDashboard = {
-  project: ProjectCurrent | null
-  vcs: VcsStatus | null
-  files: FileStatusEntry[]
-}
-
-export type SessionView = {
-  id: string
-  title: string
-  directory: string
-  updated: number
-  status: string
-  files: number
-  additions: number
-  deletions: number
-  model?: ModelSelection
-  revertMessageID?: string
-  external?: boolean
-}
-
 export type CommandInfo = {
   name: string
   description?: string
-  source?: "command" | "mcp" | "skill"
+  agent?: string
+  model?: string
+  template?: string
+  hints?: string[]
+  source?: string
+}
+
+export type DiffFile = {
+  file: string
+  before?: string
+  after?: string
+  additions?: number
+  deletions?: number
+  status?: string
+}
+
+export type FileStatusEntry = {
+  path?: string
+  file?: string
+  status?: string
+  staged?: boolean
+  additions?: number
+  deletions?: number
+}
+
+export type VcsStatus = {
+  branch?: string
+  dirty?: boolean
+  ahead?: number
+  behind?: number
+}
+
+export type ProjectCurrent = {
+  id?: string
+  name?: string
+  worktree?: string
+  vcs?: string
 }
 
 export type HarnessAction = {
   id: string
-  source?: string
-  enabled: boolean
+  label: string
+  description?: string
+  enabled?: boolean
+  kind?: string
 }
 
 export type HarnessActionResult = {
-  action: string
-  applied: boolean | null
-  actions: HarnessAction[]
-  sessionRevision?: string
+  ok?: boolean
+  message?: string
+  session?: Session
+}
+
+export type QuestionInfo = {
+  header?: string
+  question?: string
+  options?: Array<{ label?: string; description?: string }>
+  multiple?: boolean
+  custom?: boolean
+}
+
+export type QuestionRequest = {
+  id: string
+  sessionID?: string
+  questions?: QuestionInfo[]
+  question?: QuestionInfo
+}
+
+export type PermissionRequest = {
+  id: string
+  sessionID?: string
+  permission?: string
+  patterns?: string[]
+  metadata?: Record<string, unknown>
+  time?: { created?: number }
+}
+
+export type ProjectDashboard = {
+  directory: string
+  project?: ProjectCurrent
+  vcs?: VcsStatus
+  files: FileStatusEntry[]
+}
+
+export type SessionView = {
+  session: Session
+  messages: MessageEnvelope[]
+  status?: SessionStatus
+  todos: TodoItem[]
+  diff: DiffFile[]
 }
