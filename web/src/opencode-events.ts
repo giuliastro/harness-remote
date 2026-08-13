@@ -6,7 +6,10 @@ export type { ParsedOpenCodeEvent }
 
 export type EventStreamScope = "project" | "global"
 export function streamURL(serverURL: string, scope: EventStreamScope, directory?: string): string {
-  const url = new URL(scope === "global" ? "/global/event" : "/event", serverURL)
+  const url = new URL(serverURL)
+  const prefix = url.pathname === "/" ? "" : url.pathname.replace(/\/$/, "")
+  url.pathname = `${prefix}${scope === "global" ? "/global/event" : "/event"}`
+  url.search = ""
   if (scope === "project" && directory) url.searchParams.set("directory", directory)
   return url.toString()
 }
