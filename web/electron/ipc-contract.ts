@@ -63,6 +63,7 @@ export type DesktopTransportError = {
     | "http"
     | "internal"
   message: string
+  status?: number
 }
 
 export type DesktopRequestResult =
