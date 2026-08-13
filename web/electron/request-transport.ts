@@ -77,7 +77,8 @@ function targetURL(profile: DesktopProfile, path: string): URL | null {
   } catch {
     return null
   }
-  const prefix = approved.pathname === "/" ? "" : approved.pathname.replace(/\/$/, "")
+  const machineScoped = path === "/v1/machine" || path === "/global/machine"
+  const prefix = machineScoped || approved.pathname === "/" ? "" : approved.pathname.replace(/\/$/, "")
   const target = new URL(approved)
   target.pathname = `${prefix}${path}`
   target.search = ""
