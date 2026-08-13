@@ -31,6 +31,16 @@ function daemonWith(entries, states = {}) {
   }
 }
 
+function routedServer(managed, options = {}) {
+  return createAgentRoutingServer({
+    daemon: daemonWith({ opencode: { id: "opencode", kind: "http", host: managed } }, { opencode: "available" }),
+    config: { username: "", password: "", corsOrigins: [], ...options.config },
+    primaryAgentID: "codex",
+    bridgeServer: new BridgeServer(),
+    ...options
+  })
+}
+
 test("primary ACP agent prefix reuses the normalized bridge routes", async () => {
   const bridgeServer = new BridgeServer()
   bridgeServer.on("request", (request, response) => {
@@ -67,11 +77,8 @@ test("managed HTTP routing replaces client credentials with host credentials", a
     username: "internal-user",
     password: "internal-secret"
   }
-  const server = createAgentRoutingServer({
-    daemon: daemonWith({ opencode: { id: "opencode", kind: "http", host: managed } }, { opencode: "available" }),
-    config: { username: "outer-user", password: "outer-secret", corsOrigins: [] },
-    primaryAgentID: "codex",
-    bridgeServer: new BridgeServer()
+  const server = routedServer(managed, {
+    config: { username: "outer-user", password: "outer-secret" }
   })
   const port = await listen(server)
   try {
@@ -92,11 +99,8 @@ test("managed HTTP routing replaces client credentials with host credentials", a
 test("managed HTTP agent routes keep daemon authentication", async () => {
   let proxied = false
   const managed = { readinessHost: "127.0.0.1", port: 4096, username: "internal", password: "secret" }
-  const server = createAgentRoutingServer({
-    daemon: daemonWith({ opencode: { id: "opencode", kind: "http", host: managed } }, { opencode: "available" }),
-    config: { username: "outer", password: "secret", corsOrigins: [] },
-    primaryAgentID: "codex",
-    bridgeServer: new BridgeServer(),
+  const server = routedServer(managed, {
+    config: { username: "outer", password: "secret" },
     proxyRequest: async () => { proxied = true }
   })
   const port = await listen(server)
@@ -128,5 +132,56 @@ test("unavailable and unknown agents fail without contacting a managed host", as
     assert.equal(proxied, 0)
   } finally {
     await close(server)
+  }
+})
+
+test("disconnecting an SSE client closes the managed upstream connection", async () => {
+  let upstreamClosed = false
+  const upstream = http.createServer((request, response) => {
+    response.writeHead(200, { "Content-Type": "text/event-stream" })
+    response.write(": connected\n\n")
+    request.once("close", () => { upstreamClosed = true })
+  })
+  const upstreamPort = await listen(upstream)
+  const server = routedServer({ readinessHost: "127.0.0.1", port: upstreamPort })
+  const port = await listen(server)
+  try {
+    await new Promise((resolve, reject) => {
+      const request = http.get(`http://127.0.0.1:${port}/v1/agents/opencode/global/event`, (response) => {
+        response.once("data", () => {
+          request.destroy()
+          resolve()
+        })
+      })
+      request.once("error", (error) => {
+        if (error.code !== "ECONNRESET") reject(error)
+      })
+    })
+    for (let attempt = 0; attempt < 20 && !upstreamClosed; attempt += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 10))
+    }
+    assert.equal(upstreamClosed, true)
+  } finally {
+    await close(server)
+    await close(upstream)
+  }
+})
+
+test("an upstream reset is isolated to the proxied request", async () => {
+  const upstream = http.createServer((request, response) => {
+    response.writeHead(200, { "Content-Type": "application/json" })
+    response.write("{")
+    response.socket.destroy()
+  })
+  const upstreamPort = await listen(upstream)
+  const server = routedServer({ readinessHost: "127.0.0.1", port: upstreamPort })
+  const port = await listen(server)
+  try {
+    await assert.rejects(fetch(`http://127.0.0.1:${port}/v1/agents/opencode/session`))
+    const second = await fetch(`http://127.0.0.1:${port}/v1/agents/missing/session`)
+    assert.equal(second.status, 404)
+  } finally {
+    await close(server)
+    await close(upstream)
   }
 })
