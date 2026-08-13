@@ -39,17 +39,11 @@ export class MachineDaemon {
   }
 
   async startManagedHosts() {
-    const results = []
-    for (const entry of this.hosts.values()) {
-      if (!entry.eager) continue
-      try {
-        await entry.host.start()
-        results.push({ id: entry.id, status: "available" })
-      } catch (error) {
-        results.push({ id: entry.id, status: "unavailable", error })
-      }
-    }
-    return results
+    const eager = [...this.hosts.values()].filter((entry) => entry.eager)
+    const settled = await Promise.allSettled(eager.map((entry) => entry.host.start()))
+    return eager.map((entry, index) => settled[index].status === "fulfilled"
+      ? { id: entry.id, status: "available" }
+      : { id: entry.id, status: "unavailable", error: settled[index].reason })
   }
 
   snapshot() {
