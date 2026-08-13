@@ -36,6 +36,21 @@ export function matchesCredentials(request, config) {
   return received.length === expected.length && timingSafeEqual(received, expected)
 }
 
+export function authenticateDaemonRequest(request, response, config) {
+  applyCorsHeaders(request, response, config)
+  if (request.method === "OPTIONS") {
+    response.writeHead(allowedOrigin(request, config) ? 204 : 403)
+    response.end()
+    return false
+  }
+  if (!matchesCredentials(request, config)) {
+    response.writeHead(401, { "WWW-Authenticate": 'Basic realm="Harness Remote Daemon"' })
+    response.end()
+    return false
+  }
+  return true
+}
+
 export function writeJSON(response, status, body) {
   response.writeHead(status, { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store" })
   response.end(JSON.stringify(body))
