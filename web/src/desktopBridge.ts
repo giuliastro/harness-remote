@@ -175,17 +175,21 @@ export function setDesktopApplicationMenu(template: DesktopMenuTemplate): void {
   void bridge()?.setApplicationMenu(template).catch(() => undefined)
 }
 
-export async function desktopRequest(config: ServerConfig, request: DesktopRequest): Promise<DesktopResponse> {
+export async function desktopRequestResult(config: ServerConfig, request: DesktopRequest): Promise<DesktopRequestResult> {
   const api = bridge()
-  if (!api) throw new Error("Desktop transport is unavailable")
+  if (!api) return { ok: false, error: { code: "connection", message: "Desktop transport is unavailable" } }
   try {
     await awaitDesktopProfileSync()
   } catch {
-    throw new Error("Desktop profile synchronization failed")
+    return { ok: false, error: { code: "internal", message: "Desktop profile synchronization failed" } }
   }
   const profileId = desktopProfileID(config)
-  if (!profileId) throw new Error("Unknown desktop server profile")
-  const result = await api.request(profileId, request)
+  if (!profileId) return { ok: false, error: { code: "unknown-profile", message: "Unknown desktop server profile" } }
+  return await api.request(profileId, request)
+}
+
+export async function desktopRequest(config: ServerConfig, request: DesktopRequest): Promise<DesktopResponse> {
+  const result = await desktopRequestResult(config, request)
   if (!result.ok) throw new Error(result.error.message)
   return result.response
 }
