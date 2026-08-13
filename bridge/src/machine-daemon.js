@@ -12,38 +12,20 @@ export class MachineDaemon {
   }
 
   registerAcpHost({ id, label, backend = id, capabilities = {}, agent, managed = true }) {
-    this.registry.registerHost({
-      id,
-      label,
-      backend,
-      transport: "acp",
-      managed,
-      state: "configured",
-      capabilities
-    })
+    this.registry.registerHost({ id, label, backend, transport: "acp", managed, state: "configured", capabilities })
     const tracked = trackAgentHostLifecycle(agent, this.registry, id)
     this.hosts.set(id, { id, kind: "acp", host: tracked, eager: false })
     return tracked
   }
 
   registerManagedHttpHost({ id, label, backend = id, capabilities = {}, host, managed = true }) {
-    this.registry.registerHost({
-      id,
-      label,
-      backend,
-      transport: "http",
-      managed,
-      state: "configured",
-      capabilities
-    })
+    this.registry.registerHost({ id, label, backend, transport: "http", managed, state: "configured", capabilities })
     const tracked = trackManagedHostLifecycle(host, this.registry, id)
     this.hosts.set(id, { id, kind: "http", host: tracked, eager: true })
     return tracked
   }
 
-  hostEntry(id) {
-    return this.hosts.get(id)
-  }
+  hostEntry(id) { return this.hosts.get(id) }
 
   async startManagedHosts() {
     const eager = [...this.hosts.values()].filter((entry) => entry.eager)
@@ -53,9 +35,7 @@ export class MachineDaemon {
       : { id: entry.id, status: "unavailable", error: settled[index].reason })
   }
 
-  snapshot() {
-    return this.registry.snapshot()
-  }
+  snapshot() { return this.registry.snapshot() }
 
   close() {
     for (const entry of this.hosts.values()) {
@@ -76,22 +56,10 @@ export function createMachineDaemonServer({
   taskStore,
   projectCatalog
 }) {
-  const bridgeServer = createServer({
-    config,
-    acp: primaryAcp,
-    machineRegistry: daemon.registry,
-    serviceOptions
-  })
+  const bridgeServer = createServer({ config, acp: primaryAcp, machineRegistry: daemon.registry, serviceOptions })
   const machineID = daemon.snapshot().machine.id
-  const roots = config.roots.length ? config.roots : [process.cwd()]
-  const tasks = taskStore ?? new TaskStore({ machineID, stateDirectory: config.stateDirectory })
+  const roots = config.roots?.length ? config.roots : [process.cwd()]
+  const tasks = taskStore ?? new TaskStore({ machineID, stateDirectory: config.stateDirectory ?? process.cwd() })
   const projects = projectCatalog ?? (() => discoverProjects({ machineID, roots }))
-  return createRouter({
-    daemon,
-    config,
-    primaryAgentID,
-    bridgeServer,
-    taskStore: tasks,
-    projectCatalog: projects
-  })
+  return createRouter({ daemon, config, primaryAgentID, bridgeServer, taskStore: tasks, projectCatalog: projects })
 }
