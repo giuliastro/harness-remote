@@ -9,7 +9,7 @@ function headers(config: ServerConfig): Record<string, string> {
   return value
 }
 
-function noMachineStatus(status: number | undefined): boolean {
+export function noMachineStatus(status: number | undefined): boolean {
   return status === 404 || status === 503
 }
 
