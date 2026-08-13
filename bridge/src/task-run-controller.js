@@ -18,15 +18,15 @@ export class TaskRunController {
 
   async reconcileAll() {
     for (const task of await this.taskStore.list()) {
-      if (!['starting', 'running'].includes(task.status)) continue
+      if (!["starting", "running"].includes(task.status)) continue
       if (!task.run?.id) {
-        try { await this.taskStore.setRunState(task.id, { status: 'failed', error: new Error('Active task has no persisted run identity') }) } catch {}
+        try { await this.taskStore.setRunState(task.id, { status: "failed", error: new Error("Active task has no persisted run identity") }) } catch {}
         continue
       }
-      let state = 'unknown'
-      try { state = await this.taskLauncher.inspectRun?.(task) ?? 'unknown' } catch {}
-      if (state === 'completed') await this.#terminal(task.id, task.run.id, 'completed')
-      else if (state !== 'running') await this.#terminal(task.id, task.run.id, 'failed', new Error('Task run could not be confirmed after daemon restart'))
+      let state = "unknown"
+      try { state = await this.taskLauncher.inspectRun?.(task) ?? "unknown" } catch {}
+      if (state === "completed") await this.#terminal(task.id, task.run.id, "completed")
+      else if (state !== "running") await this.#terminal(task.id, task.run.id, "failed", new Error("Task run could not be confirmed after daemon restart"))
     }
   }
 
@@ -65,10 +65,10 @@ export class TaskRunController {
       const session = await this.taskLauncher.createSession(current)
       const linkedRun = { ...run, sessionId: session.sessionId, transport: session.transport }
       current = await this.taskStore.setRunState(taskID, { status: "starting", run: linkedRun, expectedRunId: run.id })
-      await this.taskLauncher.startPrompt(current, session, {
-        onFailed: (error) => void this.#terminal(taskID, linkedRun.id, "failed", error),
-        onCompleted: () => void this.#terminal(taskID, linkedRun.id, "completed")
-      })
+      const onFailed = (error) => void this.#terminal(taskID, linkedRun.id, "failed", error)
+      onFailed.onFailed = onFailed
+      onFailed.onCompleted = () => void this.#terminal(taskID, linkedRun.id, "completed")
+      await this.taskLauncher.startPrompt(current, session, onFailed)
       return await this.taskStore.setRunState(taskID, { status: "running", run: linkedRun, expectedRunId: linkedRun.id })
     } catch (error) {
       await this.#terminal(taskID, current.run?.id ?? run.id, "failed", error)
