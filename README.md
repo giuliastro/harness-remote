@@ -4,7 +4,7 @@
 
 Harness Remote is a **local-first control plane for AI coding agents**. Connect to the machines where your code and credentials already live, then supervise OpenCode, Claude Code, Codex CLI, Oh My Pi and PI from one interface on phone, web or desktop.
 
-**One inbox. Multiple agents. Multiple machines. Your infrastructure.**
+**One interface. Multiple agents. Multiple machines. Your infrastructure.**
 
 > Harness Remote is not another coding agent. It is the control plane above them.
 
