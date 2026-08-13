@@ -16,17 +16,24 @@ async function isGitProject(directory) {
   }
 }
 
-/**
- * Discovery is intentionally shallow: configured roots are always usable projects, while immediate
- * children are added only when they are Git repositories/worktrees. This keeps a broad root such as
- * ~/dev useful without recursively walking the user's disk or crossing the configured boundary.
- */
+function insideRoot(root, candidate) {
+  const relative = path.relative(root, candidate)
+  return relative === "" || (relative !== ".." && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative))
+}
+
 export async function discoverProjects({ machineID, roots }) {
   const projects = new Map()
   for (const configuredRoot of roots) {
-    const root = await realpath(configuredRoot)
+    let root
+    try {
+      root = await realpath(configuredRoot)
+    } catch {
+      continue
+    }
+
     const add = async (candidate, configured = false) => {
       const resolved = await realpath(candidate)
+      if (!configured && !insideRoot(root, resolved)) return
       if (projects.has(resolved)) return
       const git = await isGitProject(resolved)
       if (!configured && !git) return
@@ -48,7 +55,7 @@ export async function discoverProjects({ machineID, roots }) {
       continue
     }
     for (const entry of entries) {
-      if (!entry.isDirectory()) continue
+      if (!entry.isDirectory() && !entry.isSymbolicLink()) continue
       try {
         await add(path.join(root, entry.name), false)
       } catch {
