@@ -1,10 +1,10 @@
 # Harness Remote
 
-**Run and supervise AI coding agents across your machines, from anywhere.**
+**Run and supervise AI coding agents on the machines where your code already lives, from anywhere.**
 
-Harness Remote is a **local-first control plane for AI coding agents**. Connect to the machines where your code and credentials already live, then supervise OpenCode, Claude Code, Codex CLI, Oh My Pi and PI from one interface on phone, web or desktop.
+Harness Remote is a **local-first control plane for AI coding agents**. Connect to the machine where your code and credentials already live, then supervise OpenCode, Claude Code, Codex CLI, Oh My Pi and PI from one interface on phone, web or desktop.
 
-**One interface. Multiple agents. Multiple machines. Your infrastructure.**
+**One interface. Multiple agents. Your machines, your credentials, your code.**
 
 > Harness Remote is not another coding agent. It is the control plane above them.
 
@@ -21,6 +21,18 @@ Harness Remote is a **local-first control plane for AI coding agents**. Connect 
 ```
 
 Execution stays on your machines. Repositories stay on your machines. Agent credentials and model access stay on your machines. Harness Remote coordinates and supervises the work remotely.
+
+## Quick start
+
+On the machine where your coding agents are installed:
+
+```bash
+npx github:giuliastro/harness-remote
+```
+
+It detects the supported agents on your `PATH`, picks a free port, generates credentials and prints the address to enter in the client. OpenCode is started and supervised directly; ACP-backed agents run through the local bridge or daemon.
+
+Then install a client from [GitHub Releases](https://github.com/giuliastro/harness-remote/releases/latest), or open the [web app](https://giuliastro.github.io/harness-remote/) and enter the address it printed.
 
 ## What works today
 
@@ -75,18 +87,6 @@ Current screenshots:
     <td><img src="docs/screenshots/detail.jpg" alt="Harness Remote session detail"></td>
   </tr>
 </table>
-
-## Quick start
-
-For the current one-command launcher:
-
-```bash
-npx github:giuliastro/harness-remote
-```
-
-It detects supported local agents and starts the appropriate Harness Remote path. OpenCode can be launched as a managed host; ACP-backed agents use the local bridge/daemon.
-
-For releases and packaged clients, see [GitHub Releases](https://github.com/giuliastro/harness-remote/releases/latest).
 
 ## Documentation
 
