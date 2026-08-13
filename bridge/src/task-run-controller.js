@@ -17,7 +17,7 @@ export class TaskRunController {
   async #awaitReconciliation() {
     await this.reconciliation
     if (this.reconciliationError) {
-      throw taskLaunchError("task_state_unavailable", "Task state is unavailable", { cause: this.reconciliationError })
+      throw taskLaunchError("agent_unavailable", "Task state is unavailable", { cause: this.reconciliationError })
     }
   }
 
