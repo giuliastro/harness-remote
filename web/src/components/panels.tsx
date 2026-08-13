@@ -69,6 +69,13 @@ function CopyButton({ text, copyLabel, copiedLabel }: { text: string; copyLabel:
   )
 }
 
+/**
+ * Choosing where a new session runs. The old dialog dropped the user into whatever folder the
+ * server happened to report and offered a flat list plus a "parent folder" row — no way to see
+ * where you were, no way to type a path you already knew, and no shortcut to a project you had
+ * opened ten minutes earlier. All three are here now, and the folder that will actually be used is
+ * stated in full before the button that uses it.
+ */
 export function NewSessionDialog({
   t,
   path,
@@ -224,6 +231,13 @@ export function NewSessionDialog({
 type WizardStep = "harness" | "address" | "credentials"
 const WIZARD_STEPS: WizardStep[] = ["harness", "address", "credentials"]
 
+/**
+ * Adding a server used to mean creating a blank profile and then filling in a five-field form with
+ * no explanation of what any harness expects, no idea which port is right, and no way to know that
+ * something also has to be started on the other machine. The wizard asks the three questions in the
+ * order they matter, defaults the port and username from the harness, and shows the finished
+ * command to run on the host before asking for credentials that cannot work without it.
+ */
 export function ConnectServerWizard({
   t,
   initialName,
@@ -305,7 +319,12 @@ export function ConnectServerWizard({
         setMachine(discovered)
         setAgentId(preferred?.id ?? "")
         if (preferred) setName(`${discovered.machine.name} · ${preferred.label}`)
-        setTestResult({ ok: available.length > 0, message: available.length > 0 ? `Connected to ${discovered.machine.name}` : `${discovered.machine.name} has no available agents` })
+        setTestResult({
+          ok: available.length > 0,
+          message: available.length > 0
+            ? `${t('connection.connected')} · ${discovered.machine.name}`
+            : `${discovered.machine.name} · ${t('detail.unavailable')}`
+        })
         return
       }
 
@@ -334,6 +353,8 @@ export function ConnectServerWizard({
           </button>
         </div>
 
+        {/* The steps double as navigation. A failed test is usually the address or the port rather
+            than the password, and stepping back one screen at a time to check made that a chore. */}
         <ol className="wizard-steps">
           {WIZARD_STEPS.map((candidate, index) => {
             const reachable = candidate !== "credentials" || canLeaveAddress
@@ -461,7 +482,7 @@ export function ConnectServerWizard({
 
               {machine && (
                 <label className="field fade-in">
-                  <span>Agent on {machine.machine.name}</span>
+                  <span>{t('detail.agentTitle')} · {machine.machine.name}</span>
                   <select
                     value={agentId}
                     onChange={(event) => {
@@ -477,17 +498,20 @@ export function ConnectServerWizard({
                         value={agent.id}
                         disabled={agent.state !== "available" && agent.state !== "configured"}
                       >
-                        {agent.label} · {agent.state}
+                        {agent.label}{agent.state === "unavailable" ? ` · ${t('detail.unavailable')}` : ""}
                       </option>
                     ))}
                   </select>
-                  <small className="field-hint">One machine connection; requests are routed to the selected agent.</small>
                 </label>
               )}
             </>
           )}
         </div>
 
+        {/* Outside the scrolling body on purpose. Testing the connection is the first thing anyone
+            does on this step, and with a keyboard open the body is only a couple of lines tall — a
+            test button living at the end of it scrolled out of sight and came to rest against the
+            save button, which is the one press you do not want to hit by accident. */}
         {step === "credentials" && (
           <div className="wizard-test">
             <button type="button" className="btn-secondary" onClick={() => void test()} disabled={testing || !canLeaveAddress || !username.trim()}>
@@ -498,7 +522,6 @@ export function ConnectServerWizard({
               <div className={`notice ${testResult.ok ? "success" : "error"} fade-in`}>
                 {testResult.ok ? "✓ " : "✗ "}
                 {testResult.message}
-                {testResult.ok && machine ? ` · ${machine.agents.length} agent${machine.agents.length === 1 ? "" : "s"} discovered` : ""}
               </div>
             )}
           </div>
