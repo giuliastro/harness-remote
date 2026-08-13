@@ -1,6 +1,10 @@
 import { createHash } from "node:crypto"
+import { execFile } from "node:child_process"
 import { lstat, mkdir } from "node:fs/promises"
 import path from "node:path"
+import { promisify } from "node:util"
+
+const execFileAsync = promisify(execFile)
 
 function taskKey(taskID) {
   return createHash("sha256").update(taskID).digest("hex").slice(0, 12)
@@ -16,8 +20,12 @@ async function exists(candidate) {
   }
 }
 
+async function defaultRunGit(args) {
+  return execFileAsync("git", args, { maxBuffer: 1024 * 1024 })
+}
+
 export class WorktreeManager {
-  constructor({ stateDirectory, runGit }) {
+  constructor({ stateDirectory, runGit = defaultRunGit }) {
     this.stateDirectory = stateDirectory
     this.runGit = runGit
   }
@@ -26,7 +34,6 @@ export class WorktreeManager {
     if (task?.status !== "draft") throw new Error("Only draft tasks can prepare a workspace")
     if (task?.project?.kind !== "git") throw new Error("Worktree isolation requires a Git project")
     if (task?.workspace?.mode === "worktree") return structuredClone(task.workspace)
-    if (typeof this.runGit !== "function") throw new Error("Git runner is not configured")
 
     const key = taskKey(task.id)
     const branch = `task/${key}`
