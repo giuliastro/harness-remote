@@ -26,7 +26,7 @@ test("prepares a deterministic isolated worktree without mutating the primary ch
     assert.equal(workspace.path.startsWith(path.join(stateDirectory, "worktrees")), true)
     assert.match(workspace.branch, /^task\/[0-9a-f]{12}$/)
     assert.deepEqual(calls[0], ["-C", "/repo", "rev-parse", "--show-toplevel"])
-    assert.deepEqual(calls[1], ["-C", "/repo", "worktree", "add", "-b", workspace.branch, workspace.path, "HEAD"])
+    assert.deepEqual(calls[1], ["-C", "/repo", "worktree", "add", "-B", workspace.branch, workspace.path, "HEAD"])
   } finally {
     await rm(stateDirectory, { recursive: true, force: true })
   }
@@ -53,4 +53,16 @@ test("rollback removes only a just-prepared worktree and its branch", async () =
     ["-C", "/repo", "worktree", "remove", "--force", "/state/worktrees/a"],
     ["-C", "/repo", "branch", "-D", "task/a"]
   ])
+})
+
+test("prepare uses a resettable task branch so rollback leftovers do not wedge retries", async () => {
+  const stateDirectory = await mkdtemp(path.join(os.tmpdir(), "harness-worktree-retry-"))
+  const calls = []
+  try {
+    const manager = new WorktreeManager({ stateDirectory, runGit: async (args) => { calls.push(args); return { stdout: "/repo\n" } } })
+    await manager.prepare(draft())
+    assert.equal(calls[1].includes("-B"), true)
+  } finally {
+    await rm(stateDirectory, { recursive: true, force: true })
+  }
 })

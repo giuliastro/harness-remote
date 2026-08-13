@@ -90,3 +90,16 @@ test("malformed task state is preserved before starting a fresh machine-scoped s
     await rm(stateDirectory, { recursive: true, force: true })
   }
 })
+
+test("setWorkspace fails loudly if the task disappeared before persistence", async () => {
+  const stateDirectory = await mkdtemp(path.join(os.tmpdir(), "harness-task-missing-"))
+  try {
+    const store = new TaskStore({ machineID: "machine-1", stateDirectory })
+    await assert.rejects(
+      () => store.setWorkspace("missing", { mode: "worktree", path: "/tmp/worktree" }),
+      /Unknown task: missing/
+    )
+  } finally {
+    await rm(stateDirectory, { recursive: true, force: true })
+  }
+})
