@@ -1,3 +1,4 @@
+import { createAgentRoutingServer } from "./agent-router.js"
 import { MachineRegistry, trackAgentHostLifecycle } from "./machine-registry.js"
 import { trackManagedHostLifecycle } from "./opencode-host.js"
 import { createBridgeServer } from "./server.js"
@@ -38,6 +39,10 @@ export class MachineDaemon {
     return tracked
   }
 
+  hostEntry(id) {
+    return this.hosts.get(id)
+  }
+
   async startManagedHosts() {
     const eager = [...this.hosts.values()].filter((entry) => entry.eager)
     const settled = await Promise.allSettled(eager.map((entry) => entry.host.start()))
@@ -62,13 +67,21 @@ export function createMachineDaemonServer({
   daemon,
   config,
   primaryAcp,
+  primaryAgentID = config.backend,
   serviceOptions,
-  createServer = createBridgeServer
+  createServer = createBridgeServer,
+  createRouter = createAgentRoutingServer
 }) {
-  return createServer({
+  const bridgeServer = createServer({
     config,
     acp: primaryAcp,
     machineRegistry: daemon.registry,
     serviceOptions
+  })
+  return createRouter({
+    daemon,
+    config,
+    primaryAgentID,
+    bridgeServer
   })
 }
