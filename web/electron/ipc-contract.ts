@@ -119,3 +119,95 @@ export const DESKTOP_MENU_COMMANDS = [
 ] as const
 
 export type DesktopMenuCommand = (typeof DESKTOP_MENU_COMMANDS)[number]
+
+export function isDesktopMenuCommand(value: unknown): value is DesktopMenuCommand {
+  return typeof value === "string" && (DESKTOP_MENU_COMMANDS as readonly string[]).includes(value)
+}
+
+/**
+ * The renderer owns what the menu says and when each item applies — it is the side that knows the
+ * language, the connected harness and the selected session. Main renders whatever it is handed and
+ * echoes clicks back as command ids, so the platform menu and the in-app one stay one implementation
+ * rather than two that drift.
+ */
+export type DesktopMenuItemDescriptor =
+  | {
+      kind: "item"
+      command: DesktopMenuCommand
+      label: string
+      accelerator?: string
+      enabled?: boolean
+      checked?: boolean
+    }
+  | { kind: "separator" }
+
+export type DesktopMenuDescriptor = {
+  id: string
+  label: string
+  items: DesktopMenuItemDescriptor[]
+}
+
+export type DesktopMenuTemplate = DesktopMenuDescriptor[]
+
+const MENU_LABEL_MAX_LENGTH = 80
+const MENU_ACCELERATOR_MAX_LENGTH = 40
+const MENU_MAX_MENUS = 12
+const MENU_MAX_ITEMS = 40
+/** Electron accelerators are a closed grammar; anything outside it either throws on
+ *  `buildFromTemplate` or silently binds something nobody asked for. */
+const ACCELERATOR_PATTERN = /^([A-Za-z0-9]+\+)*[A-Za-z0-9,.\/\\[\]`'-]+$/
+
+/** Menu text crosses a process boundary, so it is validated like every other IPC payload rather
+ *  than trusted: bounded, printable, and free of the control characters a native menu would render
+ *  as garbage. */
+function menuText(value: unknown, maxLength: number): value is string {
+  return typeof value === "string"
+    && value.length > 0
+    && value.length <= maxLength
+    && !/[\u0000-\u001f\u007f]/.test(value)
+}
+
+function parseMenuItem(value: unknown): DesktopMenuItemDescriptor | null {
+  if (!value || typeof value !== "object") return null
+  const candidate = value as Partial<DesktopMenuItemDescriptor> & { kind?: unknown }
+  if (candidate.kind === "separator") return { kind: "separator" }
+  if (candidate.kind !== "item") return null
+  const item = candidate as Partial<Extract<DesktopMenuItemDescriptor, { kind: "item" }>>
+  if (!isDesktopMenuCommand(item.command)) return null
+  if (!menuText(item.label, MENU_LABEL_MAX_LENGTH)) return null
+  if (item.accelerator !== undefined) {
+    if (!menuText(item.accelerator, MENU_ACCELERATOR_MAX_LENGTH)) return null
+    if (!ACCELERATOR_PATTERN.test(item.accelerator)) return null
+  }
+  if (item.enabled !== undefined && typeof item.enabled !== "boolean") return null
+  if (item.checked !== undefined && typeof item.checked !== "boolean") return null
+  return {
+    kind: "item",
+    command: item.command,
+    label: item.label,
+    accelerator: item.accelerator,
+    enabled: item.enabled,
+    checked: item.checked
+  }
+}
+
+/** Returns null rather than throwing on the first bad field: a malformed template must leave the
+ *  menu that is already installed alone, not replace it with a half-built one. */
+export function parseDesktopMenuTemplate(value: unknown): DesktopMenuTemplate | null {
+  if (!Array.isArray(value) || value.length === 0 || value.length > MENU_MAX_MENUS) return null
+  const template: DesktopMenuTemplate = []
+  for (const entry of value) {
+    if (!entry || typeof entry !== "object") return null
+    const menu = entry as Partial<DesktopMenuDescriptor>
+    if (!menuText(menu.id, MENU_LABEL_MAX_LENGTH) || !menuText(menu.label, MENU_LABEL_MAX_LENGTH)) return null
+    if (!Array.isArray(menu.items) || menu.items.length === 0 || menu.items.length > MENU_MAX_ITEMS) return null
+    const items: DesktopMenuItemDescriptor[] = []
+    for (const rawItem of menu.items) {
+      const item = parseMenuItem(rawItem)
+      if (!item) return null
+      items.push(item)
+    }
+    template.push({ id: menu.id, label: menu.label, items })
+  }
+  return template
+}
