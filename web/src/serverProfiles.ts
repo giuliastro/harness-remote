@@ -43,7 +43,8 @@ function parseConfig(value: unknown, fallbackBackend: BackendKind): ServerConfig
   const candidate = value as Partial<ServerConfig>
   const backend = isBackend(candidate.backend) ? candidate.backend : fallbackBackend
   if (typeof candidate.host !== "string" || typeof candidate.port !== "number" || typeof candidate.username !== "string" || typeof candidate.password !== "string") return null
-  return { ...defaultConfig(backend), ...candidate, backend }
+  const agentId = typeof candidate.agentId === "string" && candidate.agentId.trim() ? candidate.agentId.trim() : undefined
+  return { ...defaultConfig(backend), ...candidate, backend, agentId }
 }
 
 function profileID(): string {
