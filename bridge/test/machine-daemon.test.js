@@ -141,7 +141,7 @@ test("failed eager startup is isolated and reported in the machine snapshot", as
   assert.equal(daemon.snapshot().agents.find((host) => host.id === "codex").state, "configured")
 })
 
-test("machine server wires the shared registry through the bridge and agent router", () => {
+test("machine server wires the shared registry, agent router, and task launch wrapper", () => {
   const daemon = new MachineDaemon({ id: "machine_test", name: "workstation" })
   const acp = new FakeAcp()
   const openCode = new FakeHttpHost()
@@ -150,8 +150,10 @@ test("machine server wires the shared registry through the bridge and agent rout
 
   let bridgeOptions
   let routerOptions
+  let launchOptions
   const bridgeServer = { marker: "bridge" }
   const routedServer = { marker: "router" }
+  const launchServer = { marker: "launch" }
   const value = createMachineDaemonServer({
     daemon,
     config: { backend: "pi", port: 4097 },
@@ -165,15 +167,21 @@ test("machine server wires the shared registry through the bridge and agent rout
     createRouter: (options) => {
       routerOptions = options
       return routedServer
+    },
+    createLaunchServer: (options) => {
+      launchOptions = options
+      return launchServer
     }
   })
 
-  assert.equal(value, routedServer)
+  assert.equal(value, launchServer)
   assert.equal(bridgeOptions.machineRegistry, daemon.registry)
   assert.equal(bridgeOptions.acp, acp)
   assert.equal(routerOptions.daemon, daemon)
   assert.equal(routerOptions.bridgeServer, bridgeServer)
   assert.equal(routerOptions.primaryAgentID, "pi")
+  assert.equal(launchOptions.innerServer, routedServer)
+  assert.equal(typeof launchOptions.taskRunController.launch, "function")
   assert.deepEqual(bridgeOptions.machineRegistry.snapshot().agents.map((host) => host.id), ["pi", "opencode"])
 })
 
