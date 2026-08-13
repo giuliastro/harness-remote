@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto"
+import { taskLaunchError } from "./task-errors.js"
 
 export class TaskRunController {
   constructor({ taskStore, taskLauncher, runIDFactory = randomUUID, clock = () => new Date().toISOString() }) {
@@ -8,14 +9,23 @@ export class TaskRunController {
     this.clock = clock
   }
 
+  async #recordPromptFailure(taskID, run, error) {
+    try {
+      const current = await this.taskStore.get(taskID)
+      if (!current || current.run?.id !== run.id) return
+      if (current.status !== "starting" && current.status !== "running") return
+      await this.taskStore.setRunState(taskID, { status: "failed", run: current.run, error })
+    } catch {}
+  }
+
   async launch(taskID) {
     const task = await this.taskStore.get(taskID)
-    if (!task) throw new Error(`Unknown task: ${taskID}`)
-    if (task.status !== "draft") throw new Error("Only draft tasks can be launched")
+    if (!task) throw taskLaunchError("unknown_task", `Unknown task: ${taskID}`)
+    if (task.status !== "draft") throw taskLaunchError("invalid_state", "Only draft tasks can be launched")
     if (task.project?.kind === "git" && task.workspace?.mode !== "worktree") {
-      throw new Error("Git tasks must prepare an isolated worktree before launch")
+      throw taskLaunchError("workspace_required", "Git tasks must prepare an isolated worktree before launch")
     }
-    if (!task.workspace?.path) throw new Error("Task workspace is not prepared")
+    if (!task.workspace?.path) throw taskLaunchError("workspace_required", "Task workspace is not prepared")
 
     const run = {
       id: this.runIDFactory(),
@@ -35,7 +45,9 @@ export class TaskRunController {
         transport: session.transport
       }
       current = await this.taskStore.setRunState(taskID, { status: "starting", run: linkedRun })
-      await this.taskLauncher.startPrompt(current, session)
+      await this.taskLauncher.startPrompt(current, session, (error) => {
+        void this.#recordPromptFailure(taskID, linkedRun, error)
+      })
       return await this.taskStore.setRunState(taskID, { status: "running", run: linkedRun })
     } catch (error) {
       try {

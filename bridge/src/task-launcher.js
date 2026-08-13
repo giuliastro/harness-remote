@@ -1,3 +1,5 @@
+import { taskLaunchError } from "./task-errors.js"
+
 function basicAuthorization(username, password) {
   if (!username && !password) return undefined
   return `Basic ${Buffer.from(`${username ?? ""}:${password ?? ""}`).toString("base64")}`
@@ -27,9 +29,11 @@ export class TaskLauncher {
 
   async createSession(task) {
     const entry = this.daemon.hostEntry(task.agentId)
-    if (!entry) throw new Error(`Unknown agent: ${task.agentId}`)
-    if (this.daemon.registry.host(task.agentId)?.state === "unavailable") throw new Error(`Agent ${task.agentId} is unavailable`)
-    if (!task.workspace?.path) throw new Error("Task workspace is not prepared")
+    if (!entry) throw taskLaunchError("unknown_agent", `Unknown agent: ${task.agentId}`)
+    if (this.daemon.registry.host(task.agentId)?.state === "unavailable") {
+      throw taskLaunchError("agent_unavailable", `Agent ${task.agentId} is unavailable`)
+    }
+    if (!task.workspace?.path) throw taskLaunchError("workspace_required", "Task workspace is not prepared")
 
     if (entry.kind === "acp") {
       await entry.host.start()
@@ -56,18 +60,20 @@ export class TaskLauncher {
       return { sessionId: session.id, transport: "http", directory: task.workspace.path, base, authorization }
     }
 
-    throw new Error(`Agent ${task.agentId} cannot launch tasks`)
+    throw taskLaunchError("unsupported_agent", `Agent ${task.agentId} cannot launch tasks`)
   }
 
-  async startPrompt(task, run) {
+  async startPrompt(task, run, onPromptFailed) {
     const entry = this.daemon.hostEntry(task.agentId)
-    if (!entry) throw new Error(`Unknown agent: ${task.agentId}`)
+    if (!entry) throw taskLaunchError("unknown_agent", `Unknown agent: ${task.agentId}`)
 
     if (entry.kind === "acp") {
       void entry.host.request("session/prompt", {
         sessionId: run.sessionId,
         prompt: [{ type: "text", text: task.prompt }]
-      }, 300_000).catch(() => {})
+      }, 300_000).catch((error) => {
+        onPromptFailed?.(error)
+      })
       return
     }
 

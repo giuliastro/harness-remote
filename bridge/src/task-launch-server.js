@@ -2,6 +2,14 @@ import http from "node:http"
 import { allowedOrigin, applyCorsHeaders, matchesCredentials, writeJSON } from "./http-policy.js"
 
 const TASK_LAUNCH_ROUTE = /^\/v1\/tasks\/([^/]+)\/launch$/
+const LAUNCH_STATUS = new Map([
+  ["unknown_task", 404],
+  ["unknown_agent", 404],
+  ["agent_unavailable", 503],
+  ["invalid_state", 409],
+  ["workspace_required", 409],
+  ["unsupported_agent", 409]
+])
 
 function authenticate(request, response, config) {
   applyCorsHeaders(request, response, config)
@@ -18,12 +26,8 @@ function authenticate(request, response, config) {
   return true
 }
 
-function launchStatus(error) {
-  const message = error instanceof Error ? error.message : String(error)
-  if (message.startsWith("Unknown task:")) return 404
-  if (message.includes("unavailable")) return 503
-  if (message.includes("Only draft tasks") || message.includes("worktree") || message.includes("workspace")) return 409
-  return 500
+export function launchStatus(error) {
+  return LAUNCH_STATUS.get(error?.code) ?? 500
 }
 
 export function createTaskLaunchServer({ innerServer, config, taskRunController, createServer = http.createServer }) {
