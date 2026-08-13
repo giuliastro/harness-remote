@@ -95,3 +95,19 @@ test("asynchronous prompt failures mark the same running run failed", async () =
   assert.equal(current.status, "failed")
   assert.equal(current.run.id, "run-1")
 })
+
+test("reconciliation load failures stay isolated and surface as unavailable", async () => {
+  const controller = new TaskRunController({
+    taskStore: {
+      async list() { throw new Error("permission denied") },
+      async get() { throw new Error("should not read tasks after failed reconciliation") }
+    },
+    taskLauncher: {}
+  })
+
+  await controller.reconciliation
+  await assert.rejects(
+    () => controller.inspectWorkspace("task-1"),
+    (error) => error.code === "agent_unavailable" && error.message === "Task state is unavailable"
+  )
+})
