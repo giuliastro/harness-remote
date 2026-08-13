@@ -50,7 +50,15 @@ function writeJSON(response, status, body) {
 function proxyHeaders(headers, authorization) {
   const result = {}
   for (const [name, value] of Object.entries(headers)) {
-    if (value === undefined || HOP_BY_HOP.has(name.toLowerCase()) || name.toLowerCase() === "host" || name.toLowerCase() === "authorization") continue
+    const lower = name.toLowerCase()
+    if (
+      value === undefined ||
+      HOP_BY_HOP.has(lower) ||
+      lower === "host" ||
+      lower === "authorization" ||
+      lower === "origin" ||
+      lower.startsWith("access-control-request-")
+    ) continue
     result[name] = value
   }
   if (authorization) result.Authorization = authorization
@@ -59,7 +67,8 @@ function proxyHeaders(headers, authorization) {
 
 function forwardResponseHeaders(upstream, response) {
   for (const [name, value] of Object.entries(upstream.headers)) {
-    if (value === undefined || HOP_BY_HOP.has(name.toLowerCase())) continue
+    const lower = name.toLowerCase()
+    if (value === undefined || HOP_BY_HOP.has(lower) || lower.startsWith("access-control-")) continue
     response.setHeader(name, value)
   }
 }
