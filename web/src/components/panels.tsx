@@ -286,20 +286,30 @@ export function ConnectServerWizard({
     setMachine(null)
     setAgentId("")
     try {
-      const result = await onTest(discoveryConfig)
-      setTestResult(result)
-      if (!result.ok) return
       const discover = onDiscover ?? (async (candidate: ServerConfig) => {
         const { discoverMachine } = await import("../machineClient")
         return discoverMachine(candidate)
       })
-      const discovered = await discover(discoveryConfig)
-      if (!discovered) return
-      const available = discovered.agents.filter((agent) => agent.state === "available" || agent.state === "configured")
-      const preferred = available.find((agent) => agent.backend === backend) ?? available[0]
-      setMachine(discovered)
-      setAgentId(preferred?.id ?? "")
-      if (preferred) setName(`${discovered.machine.name} · ${preferred.label}`)
+
+      let discovered: MachineSnapshot | null = null
+      try {
+        discovered = await discover(discoveryConfig)
+      } catch {
+        // A daemon with bad credentials and an unreachable host will be explained by the ordinary
+        // backend health test below. Legacy servers intentionally return null from discovery.
+      }
+
+      if (discovered) {
+        const available = discovered.agents.filter((agent) => agent.state === "available" || agent.state === "configured")
+        const preferred = available.find((agent) => agent.backend === backend) ?? available[0]
+        setMachine(discovered)
+        setAgentId(preferred?.id ?? "")
+        if (preferred) setName(`${discovered.machine.name} · ${preferred.label}`)
+        setTestResult({ ok: available.length > 0, message: available.length > 0 ? `Connected to ${discovered.machine.name}` : `${discovered.machine.name} has no available agents` })
+        return
+      }
+
+      setTestResult(await onTest(discoveryConfig))
     } finally {
       setTesting(false)
     }
