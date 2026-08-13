@@ -12,12 +12,13 @@ export function baseUrl(config: ServerConfig): string {
   return `${scheme}://${cleanHost}:${config.port}`
 }
 
-/**
- * A host typed one character at a time passes through states such as `http:` and
- * `http://` that produce an unparseable base URL. Callers must check this before
- * building any URL, because a throw on the render path blanks the whole app and a
- * persisted invalid host reproduces that crash on every launch.
- */
+/** Legacy server profiles have no agent id, so their wire paths remain byte-for-byte unchanged. */
+export function agentScopedPath(config: ServerConfig, path: string): string {
+  const agentID = config.agentId?.trim()
+  if (!agentID) return path
+  const normalized = path.startsWith("/") ? path : `/${path}`
+  return `/v1/agents/${encodeURIComponent(agentID)}${normalized}`
+}
 
 /**
  * Credentials are typed on a phone keyboard into fields that show nothing back — the password one
