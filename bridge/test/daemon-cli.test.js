@@ -1,6 +1,6 @@
 import assert from "node:assert/strict"
 import test from "node:test"
-import { ensureOpenCodePortAvailable, parseDaemonOptions } from "../src/daemon-cli.js"
+import { daemonEnvironment, ensureOpenCodePortAvailable, isDirectInvocation, parseDaemonOptions } from "../src/daemon-cli.js"
 
 const loopbackEnv = {
   HARNESS_REMOTE_HOST: "127.0.0.1",
@@ -68,4 +68,31 @@ test("daemon preflight accepts a free managed OpenCode port", async () => {
     host: "127.0.0.1",
     canListenImpl: async () => true
   })
+})
+
+test("daemon generates ephemeral credentials when none are supplied", () => {
+  const first = daemonEnvironment([], {}, () => "first-random")
+  const second = daemonEnvironment([], {}, () => "second-random")
+  assert.equal(first.HARNESS_REMOTE_USERNAME, "harness")
+  assert.equal(first.HARNESS_REMOTE_PASSWORD, "first-random")
+  assert.equal(second.HARNESS_REMOTE_PASSWORD, "second-random")
+})
+
+test("daemon preserves explicit environment credentials", () => {
+  const environment = { HARNESS_REMOTE_USERNAME: "me", HARNESS_REMOTE_PASSWORD: "chosen" }
+  assert.equal(daemonEnvironment([], environment), environment)
+})
+
+test("daemon leaves explicit CLI credentials to parseConfig", () => {
+  const environment = {}
+  assert.equal(daemonEnvironment(["--username", "me", "--password", "chosen"], environment), environment)
+})
+
+test("recognizes npm bin symlink as a direct daemon invocation", () => {
+  const realpath = (value) => value.endsWith("harness-remote-daemon") ? "/tmp/package/bridge/src/daemon-cli.js" : value
+  assert.equal(isDirectInvocation(
+    "/tmp/node_modules/.bin/harness-remote-daemon",
+    "file:///tmp/package/bridge/src/daemon-cli.js",
+    realpath
+  ), true)
 })
