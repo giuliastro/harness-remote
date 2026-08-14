@@ -72,6 +72,7 @@ type TranslationKey =
   | 'sessions.title'
   | 'sessions.summary'
   | 'sessions.new'
+  | 'sessions.newShort'
   | 'sessions.creating'
   | 'sessions.refresh'
   | 'sessions.projectDirectoryLabel'
@@ -230,6 +231,7 @@ type TranslationKey =
   | 'sessions.typePathPlaceholder'
   | 'sessions.goToPath'
   | 'task.new'
+  | 'task.newShort'
   | 'task.start'
   | 'task.starting'
   | 'task.subtitle'
@@ -316,6 +318,7 @@ type TranslationKey =
 const translations: Record<LanguageCode, Partial<Record<TranslationKey, string>>> = {
   en: {
     'task.new': 'New Task',
+    'task.newShort': 'Task',
     'task.start': 'Start Task',
     'task.starting': 'Starting…',
     'task.subtitle': 'Start agent work on {machine}.',
@@ -399,6 +402,7 @@ const translations: Record<LanguageCode, Partial<Record<TranslationKey, string>>
     'sessions.title': 'Sessions',
     'sessions.summary': '{total} total · {active} active · {changed} changed',
     'sessions.new': 'New Session',
+    'sessions.newShort': 'Session',
     'sessions.creating': 'Creating...',
     'sessions.refresh': 'Refresh',
     'sessions.projectDirectoryLabel': 'Selected folder',
@@ -628,6 +632,7 @@ const translations: Record<LanguageCode, Partial<Record<TranslationKey, string>>
   },
   it: {
     'task.new': 'Nuovo task',
+    'task.newShort': 'Task',
     'task.start': 'Avvia task',
     'task.starting': 'Avvio…',
     'task.subtitle': 'Avvia un lavoro con un agente su {machine}.',
@@ -711,6 +716,7 @@ const translations: Record<LanguageCode, Partial<Record<TranslationKey, string>>
     'sessions.title': 'Sessioni',
     'sessions.summary': '{total} totali · {active} attive · {changed} con modifiche',
     'sessions.new': 'Nuova sessione',
+    'sessions.newShort': 'Sessione',
     'sessions.creating': 'Creazione...',
     'sessions.refresh': 'Aggiorna',
     'sessions.projectDirectoryLabel': 'Cartella selezionata',
@@ -940,6 +946,7 @@ const translations: Record<LanguageCode, Partial<Record<TranslationKey, string>>
   },
   'zh-TW': {
     'task.new': '新增任務',
+    'task.newShort': '任務',
     'task.start': '開始任務',
     'task.starting': '正在啟動…',
     'task.subtitle': '在 {machine} 上開始代理工作。',
@@ -1023,6 +1030,7 @@ const translations: Record<LanguageCode, Partial<Record<TranslationKey, string>>
     'sessions.title': '工作階段',
     'sessions.summary': '{total} 總數 · {active} 進行中 · {changed} 有變更',
     'sessions.new': '新增工作階段',
+    'sessions.newShort': '工作階段',
     'sessions.creating': '建立中...',
     'sessions.refresh': '重新整理',
     'sessions.projectDirectoryLabel': '已選資料夾',
@@ -1204,6 +1212,7 @@ const translations: Record<LanguageCode, Partial<Record<TranslationKey, string>>
   },
   'zh-CN': {
     'task.new': '新建任务',
+    'task.newShort': '任务',
     'task.start': '开始任务',
     'task.starting': '正在启动…',
     'task.subtitle': '在 {machine} 上启动代理工作。',
@@ -1287,6 +1296,7 @@ const translations: Record<LanguageCode, Partial<Record<TranslationKey, string>>
     'sessions.title': '会话',
     'sessions.summary': '{total} 总数 · {active} 进行中 · {changed} 有更改',
     'sessions.new': '新建会话',
+    'sessions.newShort': '会话',
     'sessions.creating': '创建中...',
     'sessions.refresh': '刷新',
     'sessions.projectDirectoryLabel': '已选文件夹',

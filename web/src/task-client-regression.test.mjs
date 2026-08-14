@@ -33,7 +33,22 @@ assert.equal(/<select[^>]*value=\{agentId\}/.test(dialog), false, 'the agent mus
 assert.ok(styles.includes('.task-launch-form'), 'task styles belong in the shared stylesheet')
 assert.equal(styles.includes('.sessions-header-actions > button:nth-child('), false, 'header actions must not be styled by position')
 assert.ok(styles.includes('.sessions-action-compact'), 'the action that collapses on narrow screens must say so by class')
-assert.ok(styles.includes('.sessions-action-compact .sessions-action-label'), 'the collapsing label must be addressable on its own')
+assert.ok(styles.includes('.sessions-action-label-short'), 'the narrow layout needs a label of its own, not a truncated one')
+
+// Buttons are `white-space: nowrap`, so a label that does not fit overflows the button instead of
+// wrapping: `New Session` fits a phone header, `Nuova sessione` does not. Both creation actions
+// carry a short label, and every language has to supply one.
+for (const key of ['sessions.newShort', 'task.newShort']) {
+  assert.ok(sessions.includes(`t('${key}')`), `the narrow header must use ${key}`)
+  for (const language of languageOptions) {
+    assert.notEqual(createTranslator(language.code)(key), key, `${key} must be translated for ${language.code}`)
+  }
+}
+assert.equal(
+  (sessions.match(/sessions-action-label-short/g) ?? []).length,
+  2,
+  'both creation actions need a short label; the compact action drops its label entirely'
+)
 
 // The endpoint serving sessions is often not the one serving the task APIs.
 assert.ok(dialog.includes('discoverMachineConnection(config)'), 'the Task dialog must resolve the machine endpoint separately from the session endpoint')

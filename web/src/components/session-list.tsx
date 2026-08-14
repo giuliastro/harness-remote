@@ -349,8 +349,8 @@ export function SessionsPanel({
           </div>
           <div className="inline-actions sessions-header-actions">
             <button onClick={onRefresh} className="btn-secondary sessions-action-compact" disabled={refreshing} aria-label={t('sessions.refresh')} title={t('sessions.refresh')}>{refreshing ? <LoadingIcon size={18} /> : <RefreshIcon size={18} />}<span className="sessions-action-label">{t('sessions.refresh')}</span></button>
-            <button onClick={() => setShowTaskLaunch(true)} className={taskEnabled ? "btn-primary" : "btn-secondary"} disabled={!taskEnabled} title={taskTitle}>{taskAvailability === "checking" && !offline ? <LoadingIcon size={18} /> : <PlayIcon size={18} />}{t('task.new')}</button>
-            <button onClick={onNewSession} className={taskEnabled ? "btn-secondary" : "btn-primary"} disabled={creating || offline} title={offline ? t('sessions.offlineHint') : undefined}>{creating ? <LoadingIcon size={18} /> : <PlusIcon size={18} />}{creating ? t('sessions.creating') : t('sessions.new')}</button>
+            <button onClick={() => setShowTaskLaunch(true)} className={taskEnabled ? "btn-primary" : "btn-secondary"} disabled={!taskEnabled} title={taskTitle}>{taskAvailability === "checking" && !offline ? <LoadingIcon size={18} /> : <PlayIcon size={18} />}<span className="sessions-action-label">{t('task.new')}</span><span className="sessions-action-label-short">{t('task.newShort')}</span></button>
+            <button onClick={onNewSession} className={taskEnabled ? "btn-secondary" : "btn-primary"} disabled={creating || offline} title={offline ? t('sessions.offlineHint') : undefined}>{creating ? <LoadingIcon size={18} /> : <PlusIcon size={18} />}<span className="sessions-action-label">{creating ? t('sessions.creating') : t('sessions.new')}</span><span className="sessions-action-label-short">{creating ? t('sessions.creating') : t('sessions.newShort')}</span></button>
           </div>
         </div>
         <div className="toolbar"><input placeholder={t('sessions.searchPlaceholder')} value={query} onChange={(event) => onQueryChange(event.target.value)} className="search" /></div>

@@ -4500,6 +4500,10 @@ summary,
   cursor: pointer;
 }
 
+.sessions-action-label-short {
+  display: none;
+}
+
 /* Three labelled actions do not fit a phone header. Refresh gives up its label first: it is the one
    the pull-to-refresh gesture and the connection status already cover, and its icon is unambiguous.
    The two creation actions keep their words and split the remaining width evenly, because "New Task"
@@ -4523,8 +4527,21 @@ summary,
     gap: 0;
   }
 
-  .sessions-action-compact .sessions-action-label {
+  /* `New Session` fits a phone header in English and bursts out of the button in Italian — buttons
+     are `white-space: nowrap`, so a label that does not fit overflows rather than wraps. Below this
+     width the two creation actions drop the verb and keep the noun, which is what distinguishes
+     them from each other anyway; `overflow: hidden` is the backstop for whatever language is longer
+     still. */
+  .sessions-header-actions > button {
+    overflow: hidden;
+  }
+
+  .sessions-header-actions .sessions-action-label {
     display: none;
+  }
+
+  .sessions-header-actions .sessions-action-label-short {
+    display: inline;
   }
 
   .task-context {
