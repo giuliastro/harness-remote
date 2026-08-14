@@ -109,6 +109,10 @@ export const taskClient = {
     return (await machineRequest<{ projects: MachineProject[] }>(config, "/v1/projects")).projects
   },
 
+  async listTasks(config: ServerConfig): Promise<MachineTask[]> {
+    return (await machineRequest<{ tasks: MachineTask[] }>(config, "/v1/tasks")).tasks
+  },
+
   async createTask(config: ServerConfig, input: { projectId: string; agentId: string; prompt: string }): Promise<MachineTask> {
     return machineRequest<MachineTask>(config, "/v1/tasks", { method: "POST", body: input })
   },
