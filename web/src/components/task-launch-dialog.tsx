@@ -25,12 +25,10 @@ export function TaskLaunchDialog({ t, onClose, onLaunched }: {
 
   const selectedProject = projects.find((project) => project.id === projectId)
   const availableAgents = machine ? selectableMachineAgents(machine) : []
-  // The current sessions surface is still scoped to the active saved agent profile. Until the fleet
-  // UI can switch machine/agent context as part of task launch, do not let a task start on an agent
-  // whose resulting session would immediately disappear from the screen that launched it.
-  const agents = config.agentId
-    ? availableAgents.filter((agent) => agent.id === config.agentId)
-    : availableAgents
+  // The current sessions surface is scoped to the active saved profile. New machine profiles carry
+  // agentId; migrated legacy profiles do not, so fall back to the profile backend in that case.
+  const profileAgent = availableAgents.find((agent) => config.agentId ? agent.id === config.agentId : agent.backend === config.backend)
+  const agents = profileAgent ? [profileAgent] : []
   const canStart = Boolean(projectId && agentId && prompt.trim()) && !starting
 
   useEffect(() => {
@@ -44,13 +42,15 @@ export function TaskLaunchDialog({ t, onClose, onLaunched }: {
         const knownProjects = await taskClient.listProjects(config)
         if (cancelled) return
         const selectable = selectableMachineAgents(discovered)
-        const profileAgent = config.agentId ? selectable.find((agent) => agent.id === config.agentId) : undefined
-        const preferred = profileAgent ?? selectable[0]
-        if (config.agentId && !profileAgent) throw new Error(`The active agent ${config.agentId} is unavailable on this machine.`)
+        const activeAgent = selectable.find((agent) => config.agentId ? agent.id === config.agentId : agent.backend === config.backend)
+        if (!activeAgent) {
+          const label = config.agentId ?? config.backend
+          throw new Error(`The active agent ${label} is unavailable on this machine.`)
+        }
         setMachine(discovered)
         setProjects(knownProjects)
         setProjectId(knownProjects[0]?.id ?? "")
-        setAgentId(preferred?.id ?? "")
+        setAgentId(activeAgent.id)
       } catch (cause) {
         if (!cancelled) setError(cause instanceof Error ? cause.message : String(cause))
       } finally {
@@ -111,7 +111,7 @@ export function TaskLaunchDialog({ t, onClose, onLaunched }: {
                   {agents.map((agent) => <option key={agent.id} value={agent.id}>{agent.label}</option>)}
                 </select>
               </label>
-              {config.agentId && availableAgents.length > 1 && <p className="subtle">This task stays on the active agent profile so its launched session opens in the existing session workflow. Cross-agent placement arrives with Fleet.</p>}
+              {availableAgents.length > 1 && <p className="subtle">This task stays on the active agent profile so its launched session opens in the existing session workflow. Cross-agent placement arrives with Fleet.</p>}
 
               <div className="folder-picker-current">
                 <span className="eyebrow">Machine</span>
