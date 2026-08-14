@@ -69,6 +69,15 @@ function validPath(path: unknown): path is string {
     && !/[\\\u0000-\u001f\u007f]/.test(path)
 }
 
+function isMachineScopedPath(path: string): boolean {
+  const pathname = path.split("?", 1)[0]
+  return pathname === "/v1/machine"
+    || pathname === "/global/machine"
+    || pathname === "/v1/projects"
+    || pathname === "/v1/tasks"
+    || pathname.startsWith("/v1/tasks/")
+}
+
 function targetURL(profile: DesktopProfile, path: string): URL | null {
   if (!validPath(path)) return null
   let approved: URL
@@ -77,8 +86,7 @@ function targetURL(profile: DesktopProfile, path: string): URL | null {
   } catch {
     return null
   }
-  const machineScoped = path === "/v1/machine" || path === "/global/machine"
-  const scopedPath = machineScoped ? path : agentScopedPath(profile, path)
+  const scopedPath = isMachineScopedPath(path) ? path : agentScopedPath(profile, path)
   let target: URL
   try {
     target = new URL(scopedPath, approved.origin)
