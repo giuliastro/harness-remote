@@ -285,22 +285,28 @@ async function main() {
 
   const addresses = host === "0.0.0.0" ? lanAddresses() : [host]
 
-  process.stdout.write("Harness Remote quick start\n")
-  if (plan.mode === "daemon") {
-    process.stdout.write(`Detected agents: ${plan.detected.join(", ")}\n`)
-    process.stdout.write(`Machine daemon primary: ${backend}\n`)
-    if (openCodePort) process.stdout.write(`Managed OpenCode port: ${openCodePort}\n`)
-  } else {
-    process.stdout.write(`Backend: ${backend}\n`)
-  }
-  process.stdout.write(`Port: ${port}\n`)
+  process.stdout.write("Harness Remote quick start\n\n")
+  process.stdout.write("Enter this in the app:\n")
   if (addresses.length) {
-    for (const address of addresses) process.stdout.write(`Connect to: http://${address}:${port}\n`)
+    for (const address of addresses) process.stdout.write(`  Address   http://${address}:${port}\n`)
   } else {
-    process.stdout.write(`Listening on ${host}:${port}; use this machine's LAN address in the client.\n`)
+    process.stdout.write(`  Address   http://<this machine's LAN address>:${port}\n`)
   }
-  process.stdout.write(`Username: ${username}\n`)
-  process.stdout.write(`Password: ${password}\n`)
+  process.stdout.write(`  Username  ${username}\n`)
+  process.stdout.write(`  Password  ${password}\n`)
+
+  if (plan.mode === "daemon") {
+    process.stdout.write("\nThat one connection serves every agent on this machine:\n")
+    for (const agent of plan.detected) {
+      if (agent === backend) process.stdout.write(`  ${agent} — primary agent\n`)
+      else if (agent === "opencode" && openCodePort) {
+        process.stdout.write(`  ${agent} — managed by the daemon on 127.0.0.1:${openCodePort}, internal only\n`)
+      } else process.stdout.write(`  ${agent} — detected\n`)
+    }
+    process.stdout.write("There is nothing else to configure: no second address, no second password.\n")
+  } else {
+    process.stdout.write(`\nBackend: ${backend}\n`)
+  }
 
   if (plan.mode === "daemon") {
     const daemonArgs = buildDaemonArgs(args, { backend, host, port, openCode: plan.openCode, openCodePort })

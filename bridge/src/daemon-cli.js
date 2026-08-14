@@ -3,7 +3,7 @@ import path from "node:path"
 import { AcpClient } from "./acp-client.js"
 import { parseConfig, usage as bridgeUsage } from "./config.js"
 import { harnessProfile } from "./harness-profiles.js"
-import { canListen } from "./launcher.js"
+import { canListen, resolveLaunchPlan } from "./launcher.js"
 import { loadMachineIdentity } from "./machine-registry.js"
 import { MachineDaemon, createMachineDaemonServer } from "./machine-daemon.js"
 import { ManagedOpenCodeHost } from "./opencode-host.js"
@@ -20,11 +20,19 @@ function parsePort(value, option) {
   return port
 }
 
-function requestedBackend(args, environment) {
+/**
+ * No constant default. A daemon started without `--backend` used to select `omp` whether or not it
+ * was installed, so a machine with PI and OpenCode on it announced `omp` as its primary and then
+ * failed with `spawn omp ENOENT`. Resolve from PATH the way the launcher does — it owns the ACP
+ * preference order — and let its message explain a machine with nothing installed.
+ */
+function requestedBackend(args, environment, detect) {
   for (let index = 0; index < args.length; index += 1) {
     if (args[index] === "--backend") return requireValue(args, index, "--backend")
   }
-  return environment.HARNESS_REMOTE_BACKEND ?? environment.OMP_BRIDGE_BACKEND ?? "omp"
+  const configured = environment.HARNESS_REMOTE_BACKEND ?? environment.OMP_BRIDGE_BACKEND
+  if (configured) return configured
+  return detect(args).backend
 }
 
 /**
@@ -33,20 +41,28 @@ function requestedBackend(args, environment) {
  * machine. Reuse the mature common option parser by substituting an ACP profile only while parsing
  * generic host/auth/root/state options, then restore the requested daemon backend.
  */
-export function parseDaemonOptions(args, environment = process.env) {
-  const daemonBackend = requestedBackend(args, environment)
+export function parseDaemonOptions(args, environment = process.env, detect = resolveLaunchPlan) {
+  const daemonBackend = requestedBackend(args, environment, detect)
   const bridgeArgs = []
   const options = {
     openCode: true,
     openCodeCommand: environment.HARNESS_REMOTE_OPENCODE_COMMAND ?? "opencode",
     openCodeHost: environment.HARNESS_REMOTE_OPENCODE_HOST ?? "127.0.0.1",
-    openCodePort: parsePort(environment.HARNESS_REMOTE_OPENCODE_PORT ?? "4096", "--opencode-port")
+    openCodePort: parsePort(environment.HARNESS_REMOTE_OPENCODE_PORT ?? "4096", "--opencode-port"),
+    openCodeTimeout: Number(environment.HARNESS_REMOTE_OPENCODE_TIMEOUT ?? "15000")
   }
 
   for (let index = 0; index < args.length; index += 1) {
     const option = args[index]
     if (option === "--no-opencode") {
       options.openCode = false
+      continue
+    }
+    if (option === "--opencode-timeout") {
+      const value = Number(requireValue(args, index, option))
+      if (!Number.isInteger(value) || value < 1000) throw new Error("--opencode-timeout must be at least 1000 (milliseconds)")
+      options.openCodeTimeout = value
+      index += 1
       continue
     }
     if (option === "--opencode-command") {
@@ -79,7 +95,7 @@ export function parseDaemonOptions(args, environment = process.env) {
 
   const parseEnvironment = daemonBackend === "opencode"
     ? { ...environment, HARNESS_REMOTE_BACKEND: "omp", OMP_BRIDGE_BACKEND: "omp" }
-    : environment
+    : { ...environment, HARNESS_REMOTE_BACKEND: daemonBackend }
   const config = parseConfig(bridgeArgs, parseEnvironment)
   if (daemonBackend === "opencode") config.backend = "opencode"
   if (config.backend === "opencode" && !options.openCode) {
@@ -89,7 +105,7 @@ export function parseDaemonOptions(args, environment = process.env) {
 }
 
 export function daemonUsage() {
-  return `${bridgeUsage()}\n\nMachine daemon backends:\n  --backend opencode       Run OpenCode as the primary managed agent (no ACP agent required)\n\nMulti-host daemon options:\n  --opencode-command <path>  OpenCode executable (default: opencode)\n  --opencode-host <host>     Internal managed OpenCode bind host (default: 127.0.0.1)\n  --opencode-port <port>     Internal managed OpenCode port (default: 4096)\n  --no-opencode              Start only the primary ACP host`
+  return `${bridgeUsage()}\n\nMachine daemon backends:\n  --backend opencode       Run OpenCode as the primary managed agent (no ACP agent required)\n\nMulti-host daemon options:\n  --opencode-command <path>  OpenCode executable (default: opencode)\n  --opencode-host <host>     Internal managed OpenCode bind host (default: 127.0.0.1)\n  --opencode-port <port>     Internal managed OpenCode port (default: 4096)\n  --opencode-timeout <ms>    How long managed OpenCode may take to become ready (default: 15000)\n  --no-opencode              Start only the primary ACP host`
 }
 
 export async function ensureOpenCodePortAvailable({ port, host, canListenImpl = canListen }) {
@@ -107,7 +123,7 @@ async function main() {
     return
   }
 
-  const { config, openCode, openCodeCommand, openCodeHost, openCodePort } = parsed
+  const { config, openCode, openCodeCommand, openCodeHost, openCodePort, openCodeTimeout } = parsed
   if (config.help) {
     process.stdout.write(`${daemonUsage()}\n`)
     return
@@ -145,7 +161,8 @@ async function main() {
       host: openCodeHost,
       port: openCodePort,
       username: config.username,
-      password: config.password
+      password: config.password,
+      startTimeoutMs: openCodeTimeout
     })
     daemon.registerManagedHttpHost({
       id: "opencode",
@@ -171,15 +188,20 @@ async function main() {
   })
 
   if (profile && acp) {
-    acp.on("stderr", (line) => process.stderr.write(`[${profile.id}] ${line}`))
+    acp.on("stderr", (line) => process.stderr.write(`[${profile.id}] ${line}\n`))
     acp.on("exit", (error) => process.stderr.write(`[${profile.id}] ${error.message}\n`))
   }
 
   server.listen(config.port, config.host, () => {
     process.stdout.write(`Harness daemon listening on http://${config.host}:${config.port}\n`)
     process.stdout.write(`Machine: ${identity.name} (${identity.id})\n`)
-    if (openCode) process.stdout.write(`Managed OpenCode internal endpoint: http://${openCodeHost}:${openCodePort}\n`)
-    process.stdout.write(`Primary agent: ${primaryAgentID}\n`)
+    if (openCode) process.stdout.write(`Managed OpenCode: http://${openCodeHost}:${openCodePort} (internal — reach it through the daemon port)\n`)
+    // Which adapter an ACP agent is about to run is the single most useful line when it fails to
+    // start: it separates "the adapter you installed is broken" from "we tried to fetch one".
+    // OpenCode-only machines have no adapter, so they just name the primary.
+    process.stdout.write(profile
+      ? `Primary agent: ${primaryAgentID} (adapter: ${[config.acpCommand, ...config.acpArgs].join(" ")})\n`
+      : `Primary agent: ${primaryAgentID}\n`)
     for (const host of daemon.snapshot().agents) {
       process.stdout.write(`${host.state === "available" ? "✓" : "•"} ${host.label} [${host.transport}] ${host.state}\n`)
     }

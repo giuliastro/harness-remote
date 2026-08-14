@@ -34,6 +34,7 @@ export class AcpClient extends EventEmitter {
   #agentInfo
   #promptCapabilities = {}
   #stderr = ""
+  #stderrPartial = ""
 
   constructor({ command = "omp", args = ["acp"], permissionMode = "deny", preferredAuthMethod, spawnProcess = spawn } = {}) {
     super()
@@ -84,15 +85,27 @@ export class AcpClient extends EventEmitter {
       windowsHide: true
     })
     this.#child = child
+    // Each attempt reports its own stderr. Carrying the buffer across restarts made every exit
+    // message repeat the previous ones, so a single "pi-acp: not found" arrived three times over.
+    this.#stderr = ""
+    this.#stderrPartial = ""
     child.stdout.setEncoding("utf8")
     child.stderr.setEncoding("utf8")
     child.stdout.on("data", (chunk) => this.#consume(chunk))
     child.stderr.on("data", (chunk) => {
       this.#stderr = `${this.#stderr}${chunk}`.slice(-STDERR_KEPT_CHARS)
-      this.emit("stderr", chunk)
+      // Emit whole lines. A chunk boundary falls wherever the pipe happens to flush, so a listener
+      // that prefixes what it receives would otherwise print `[pi] sh: 1: [pi] pi-acp: not found`.
+      const pending = `${this.#stderrPartial}${chunk}`.split(/\r?\n/)
+      this.#stderrPartial = pending.pop() ?? ""
+      for (const line of pending) this.emit("stderr", line)
     })
     child.on("error", (error) => this.#handleExit(error))
     child.on("exit", (code, signal) => {
+      if (this.#stderrPartial) {
+        this.emit("stderr", this.#stderrPartial)
+        this.#stderrPartial = ""
+      }
       const reason = this.#stderrSummary()
       this.#handleExit(new Error(
         `ACP adapter exited (${code ?? "unknown"}${signal ? `, ${signal}` : ""})${reason ? `: ${reason}` : ""}`
