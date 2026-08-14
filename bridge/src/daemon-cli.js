@@ -1,5 +1,8 @@
 #!/usr/bin/env node
+import { randomBytes } from "node:crypto"
+import fs from "node:fs"
 import path from "node:path"
+import { fileURLToPath } from "node:url"
 import { AcpClient } from "./acp-client.js"
 import { parseConfig, usage as bridgeUsage } from "./config.js"
 import { harnessProfile } from "./harness-profiles.js"
@@ -12,6 +15,11 @@ function requireValue(args, index, option) {
   const value = args[index + 1]
   if (!value || value.startsWith("--")) throw new Error(`${option} requires a value`)
   return value
+}
+
+function optionValue(args, option) {
+  const index = args.indexOf(option)
+  return index >= 0 ? args[index + 1] : undefined
 }
 
 function parsePort(value, option) {
@@ -65,12 +73,6 @@ export function parseDaemonOptions(args, environment = process.env, detect = res
     }
   }
 
-  // `parseConfig` defaults the backend to `omp` for the standalone bridge, where one server is one
-  // harness and the user names it. A daemon is started once per machine and is expected to work out
-  // what that machine has: without this, a phone with PI and OpenCode installed announced `omp` as
-  // its primary agent and then failed with `spawn omp ENOENT`. Resolve from PATH the way the
-  // launcher already does — it owns the ACP preference order — and let its message explain a
-  // machine with nothing installed rather than starting up and failing later.
   const named = bridgeArgs.includes("--backend") || environment.HARNESS_REMOTE_BACKEND || environment.OMP_BRIDGE_BACKEND
   if (!named) bridgeArgs.push("--backend", detect(args).backend)
 
@@ -86,10 +88,25 @@ export async function ensureOpenCodePortAvailable({ port, host, canListenImpl = 
   throw new Error(`OpenCode port ${port} is already in use on ${host}. Is OpenCode already running? Use --opencode-port to choose another.`)
 }
 
+export function daemonEnvironment(args, environment = process.env, generatePassword = () => randomBytes(18).toString("base64url")) {
+  const cliUsername = optionValue(args, "--username")
+  const cliPassword = optionValue(args, "--password")
+  if (cliUsername || cliPassword) return environment
+  const envUsername = environment.HARNESS_REMOTE_USERNAME ?? environment.OMP_BRIDGE_USERNAME
+  const envPassword = environment.HARNESS_REMOTE_PASSWORD ?? environment.OMP_BRIDGE_PASSWORD
+  if (envUsername || envPassword) return environment
+  return {
+    ...environment,
+    HARNESS_REMOTE_USERNAME: "harness",
+    HARNESS_REMOTE_PASSWORD: generatePassword()
+  }
+}
+
 async function main() {
+  const args = process.argv.slice(2)
   let parsed
   try {
-    parsed = parseDaemonOptions(process.argv.slice(2))
+    parsed = parseDaemonOptions(args, daemonEnvironment(args))
   } catch (error) {
     process.stderr.write(`${error.message}\n\n${daemonUsage()}\n`)
     process.exitCode = 1
@@ -161,9 +178,9 @@ async function main() {
   server.listen(config.port, config.host, () => {
     process.stdout.write(`Harness daemon listening on http://${config.host}:${config.port}\n`)
     process.stdout.write(`Machine: ${identity.name} (${identity.id})\n`)
+    process.stdout.write(`Username: ${config.username}\n`)
+    process.stdout.write(`Password: ${config.password}\n`)
     if (openCode) process.stdout.write(`Managed OpenCode: http://${openCodeHost}:${openCodePort} (internal — reach it through the daemon port)\n`)
-    // Which adapter an ACP agent is about to run is the single most useful line when it fails to
-    // start: it separates "the adapter you installed is broken" from "we tried to fetch one".
     process.stdout.write(`Primary agent: ${config.backend} (adapter: ${[config.acpCommand, ...config.acpArgs].join(" ")})\n`)
     for (const host of daemon.snapshot().agents) {
       process.stdout.write(`${host.state === "available" ? "✓" : "•"} ${host.label} [${host.transport}] ${host.state}\n`)
@@ -188,7 +205,17 @@ async function main() {
   process.on("SIGTERM", shutdown)
 }
 
-if (process.argv[1]?.endsWith("daemon-cli.js")) {
+export function isDirectInvocation(argv1 = process.argv[1], moduleURL = import.meta.url, realpath = fs.realpathSync) {
+  if (!argv1) return false
+  const modulePath = fileURLToPath(moduleURL)
+  try {
+    return realpath(argv1) === realpath(modulePath)
+  } catch {
+    return path.resolve(argv1) === path.resolve(modulePath)
+  }
+}
+
+if (isDirectInvocation()) {
   main().catch((error) => {
     process.stderr.write(`${error.message}\n`)
     process.exitCode = 1
