@@ -1,5 +1,6 @@
 import http from "node:http"
 import { allowedOrigin, applyCorsHeaders, matchesCredentials, writeJSON } from "./http-policy.js"
+import { normalizeTaskModel } from "./task-model.js"
 
 const AGENT_ROUTE = /^\/v1\/agents\/([^/]+)(\/.*)?$/
 const TASK_WORKTREE_ROUTE = /^\/v1\/tasks\/([^/]+)\/worktree$/
@@ -219,7 +220,8 @@ export function createAgentRoutingServer({
             writeJSON(response, 400, { error: "A task prompt is required" })
             return
           }
-          writeJSON(response, 201, await taskStore.create({ project, agentId: agentID, prompt }))
+          const model = normalizeTaskModel(body.model)
+          writeJSON(response, 201, await taskStore.create({ project, agentId: agentID, prompt, model }))
           return
         }
         if (request.method === "POST" && worktreeMatch) {

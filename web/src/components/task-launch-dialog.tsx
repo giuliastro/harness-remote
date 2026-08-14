@@ -3,8 +3,9 @@ import { CloseIcon, FolderIcon, LoadingIcon, PlayIcon, ServerIcon } from "../Ico
 import { discoverMachineConnection, selectableMachineAgents } from "../machineClient"
 import { loadActiveServerProfile, loadServerProfiles } from "../serverProfiles"
 import { taskClient, type MachineProject } from "../taskClient"
+import { api } from "../api"
 import type { Translator } from "../i18n"
-import type { MachineSnapshot, ServerConfig } from "../types"
+import type { MachineSnapshot, ModelOption, ServerConfig } from "../types"
 
 /**
  * Which agent a task runs on is not a choice yet: the launched session has to open in the existing
@@ -29,6 +30,8 @@ export function TaskLaunchDialog({ t, onClose, onLaunched }: {
   const [machine, setMachine] = useState<MachineSnapshot | null>(null)
   const [projects, setProjects] = useState<MachineProject[]>([])
   const [projectId, setProjectId] = useState("")
+  const [models, setModels] = useState<ModelOption[]>([])
+  const [modelIndex, setModelIndex] = useState(-1)
   const [prompt, setPrompt] = useState("")
   const [isolated, setIsolated] = useState(true)
   const [loading, setLoading] = useState(true)
@@ -53,6 +56,14 @@ export function TaskLaunchDialog({ t, onClose, onLaunched }: {
         if (cancelled) return
         const active = activeProfileAgent(connection.machine, config)
         if (!active) throw new Error(t('task.agentUnavailable', { agent: config.agentId ?? config.backend }))
+        // Models are an agent-scoped question, and not every agent answers it: ACP harnesses have
+        // no model listing, so a failure here means "no choice to offer", not a broken dialog.
+        const offered = await api
+          .listModels({ ...connection.config, agentId: active.id })
+          .catch(() => [] as ModelOption[])
+        if (cancelled) return
+        setModels(offered)
+        setModelIndex(offered.findIndex((option) => option.isDefault))
         setTaskConfig(connection.config)
         setMachine(connection.machine)
         setProjects(knownProjects)
@@ -71,7 +82,13 @@ export function TaskLaunchDialog({ t, onClose, onLaunched }: {
     setStarting(true)
     setError(null)
     try {
-      let task = await taskClient.createTask(taskConfig, { projectId, agentId: agent.id, prompt: prompt.trim() })
+      const model = models[modelIndex]
+      let task = await taskClient.createTask(taskConfig, {
+        projectId,
+        agentId: agent.id,
+        prompt: prompt.trim(),
+        model: model && { providerID: model.providerID, modelID: model.modelID, variant: model.variant }
+      })
       if (isolated && selectedProject?.kind === "git") task = await taskClient.prepareWorktree(taskConfig, task.id)
       await taskClient.launch(taskConfig, task.id)
       onLaunched()
@@ -125,6 +142,20 @@ export function TaskLaunchDialog({ t, onClose, onLaunched }: {
                   {projects.map((project) => <option key={project.id} value={project.id}>{project.name} — {project.path}</option>)}
                 </select>
               </label>
+
+              {models.length > 0 && (
+                <label className="field">
+                  <span>{t('task.model')}</span>
+                  <select value={String(modelIndex)} onChange={(event) => setModelIndex(Number(event.target.value))}>
+                    <option value="-1">{t('task.modelDefault')}</option>
+                    {models.map((option, index) => (
+                      <option key={`${option.providerID}/${option.modelID}/${option.variant ?? ""}`} value={String(index)}>
+                        {option.providerName} — {option.modelName}{option.variant ? ` (${option.variant})` : ""}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )}
 
               <label className="field">
                 <span>{t('task.label')}</span>

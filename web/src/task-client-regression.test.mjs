@@ -50,6 +50,15 @@ assert.equal(
   'both creation actions need a short label; the compact action drops its label entirely'
 )
 
+// A task started on the wrong model is a task that has to be thrown away, so the choice belongs
+// where the task is created — offered only when the agent has models to offer, since ACP harnesses
+// have no listing and would otherwise show an empty control.
+assert.ok(dialog.includes("t('task.model')"), 'the task dialog must offer a model')
+assert.ok(dialog.includes('models.length > 0 &&'), 'the model field must be absent when the agent has no models to list')
+assert.ok(dialog.includes("t('task.modelDefault')"), 'leaving the agent default must stay an explicit choice')
+assert.ok(dialog.includes('.catch(() => [] as ModelOption[])'), 'an agent without a model listing must not break the dialog')
+assert.ok(client.includes('model?: ModelSelection'), 'the task client must carry the selection to the daemon')
+
 // The endpoint serving sessions is often not the one serving the task APIs.
 assert.ok(dialog.includes('discoverMachineConnection(config)'), 'the Task dialog must resolve the machine endpoint separately from the session endpoint')
 assert.ok(dialog.includes('taskClient.listProjects(connection.config)'), 'project discovery must use the resolved daemon endpoint')
