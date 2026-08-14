@@ -1,0 +1,25 @@
+@media (max-width: 640px) {
+  .sessions-header-actions {
+    flex-wrap: nowrap;
+    gap: var(--space-2);
+    width: 100%;
+  }
+
+  .sessions-header-actions > button {
+    min-width: 0;
+    flex: 1 1 0;
+  }
+
+  .sessions-header-actions > button:nth-child(2) {
+    flex: 0 0 var(--control-h-lg);
+    width: var(--control-h-lg);
+    padding-inline: 0;
+    font-size: 0;
+    gap: 0;
+  }
+
+  .sessions-header-actions > button:nth-child(2) svg {
+    width: 18px;
+    height: 18px;
+  }
+}
