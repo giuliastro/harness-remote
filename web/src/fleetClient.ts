@@ -7,8 +7,11 @@ export async function loadFleet(profiles: SavedServerProfile[]): Promise<FleetMa
   return discoverFleet(profiles, async (config) => {
     const machine = await discoverMachine(config)
     if (!machine) throw new Error("Harness machine daemon is unavailable")
-    const projects = await taskClient.listProjects(config)
-    return { machine, projects }
+    const [projects, tasks] = await Promise.all([
+      taskClient.listProjects(config),
+      taskClient.listTasks(config)
+    ])
+    return { machine, projects, tasks }
   })
 }
 
