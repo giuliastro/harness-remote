@@ -3,7 +3,7 @@ import { allowedOrigin, applyCorsHeaders, matchesCredentials, writeJSON } from "
 
 const AGENT_ROUTE = /^\/v1\/agents\/([^/]+)(\/.*)?$/
 const TASK_WORKTREE_ROUTE = /^\/v1\/tasks\/([^/]+)\/worktree$/
-const MACHINE_ROUTES = new Set(["/v1/projects", "/v1/tasks"])
+const MACHINE_ROUTES = new Set(["/v1/machine", "/global/machine", "/v1/projects", "/v1/tasks"])
 const HOP_BY_HOP = new Set([
   "connection",
   "keep-alive",
@@ -148,6 +148,29 @@ export function proxyManagedHttpRequest({
   })
 }
 
+/**
+ * Presents a managed HTTP agent as the daemon's legacy/unscoped API. This is what lets an OpenCode
+ * profile point at the machine daemon's single public port while machine-level routes such as
+ * /v1/machine and /v1/tasks remain available on that same address.
+ */
+export function createManagedHttpBridgeServer({
+  host,
+  config,
+  createServer = http.createServer,
+  proxyRequest = proxyManagedHttpRequest
+}) {
+  return createServer(async (request, response) => {
+    if (!authenticateMachineRequest(request, response, config)) return
+    const url = new URL(request.url ?? "/", `http://${request.headers.host ?? "localhost"}`)
+    try {
+      await proxyRequest({ request, response, route: { path: url.pathname, search: url.search }, host })
+    } catch (error) {
+      if (!response.headersSent) writeJSON(response, 502, { error: error instanceof Error ? error.message : String(error) })
+      else response.destroy(error instanceof Error ? error : undefined)
+    }
+  })
+}
+
 export function createAgentRoutingServer({
   daemon,
   config,
@@ -165,6 +188,10 @@ export function createAgentRoutingServer({
     if (MACHINE_ROUTES.has(requestURL.pathname) || worktreeMatch) {
       if (!authenticateMachineRequest(request, response, config)) return
       try {
+        if (request.method === "GET" && (requestURL.pathname === "/v1/machine" || requestURL.pathname === "/global/machine")) {
+          writeJSON(response, 200, daemon.snapshot())
+          return
+        }
         if (request.method === "GET" && requestURL.pathname === "/v1/projects") {
           const projects = await projectCatalog()
           writeJSON(response, 200, { projects })
@@ -212,7 +239,11 @@ export function createAgentRoutingServer({
           }
           return
         }
-        const allow = worktreeMatch ? "POST, OPTIONS" : requestURL.pathname === "/v1/tasks" ? "GET, POST, OPTIONS" : "GET, OPTIONS"
+        const allow = worktreeMatch
+          ? "POST, OPTIONS"
+          : requestURL.pathname === "/v1/tasks"
+            ? "GET, POST, OPTIONS"
+            : "GET, OPTIONS"
         response.writeHead(405, { Allow: allow })
         response.end()
       } catch (error) {
