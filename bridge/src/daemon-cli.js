@@ -167,7 +167,11 @@ async function main() {
   process.on("SIGTERM", shutdown)
 }
 
-if (process.argv[1]?.endsWith("daemon-cli.js")) {
+const invokedAsDaemonCli = process.argv[1] && (
+  process.argv[1].endsWith("daemon-cli.js") || path.basename(process.argv[1]) === "harness-remote-daemon"
+)
+
+if (invokedAsDaemonCli) {
   main().catch((error) => {
     process.stderr.write(`${error.message}\n`)
     process.exitCode = 1
