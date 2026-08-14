@@ -1,6 +1,8 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises"
 import path from "node:path"
 
+export const MODEL_CATALOG_TIMEOUT_MS = 5_000
+
 function splitModelValue(value, fallbackProviderID) {
   const separator = value.indexOf("/")
   return separator > 0
@@ -66,6 +68,16 @@ function httpHost(host) {
   return host.includes(":") && !host.startsWith("[") ? `[${host}]` : host
 }
 
+function timed(promise, timeoutMs, label) {
+  let timer
+  return Promise.race([
+    promise,
+    new Promise((_, reject) => {
+      timer = setTimeout(() => reject(new Error(`${label} timed out after ${Math.ceil(timeoutMs / 1000)} seconds`)), timeoutMs)
+    })
+  ]).finally(() => clearTimeout(timer))
+}
+
 class CachedCatalog {
   cache = []
   refreshedAt = null
@@ -109,7 +121,7 @@ class CachedCatalog {
  * same session's config options instead of creating/destroying a probe session for every task.
  */
 export class AcpAgentModelCatalog extends CachedCatalog {
-  constructor({ agent, agentID, directory, stateDirectory }) {
+  constructor({ agent, agentID, directory, stateDirectory, requestTimeoutMs = MODEL_CATALOG_TIMEOUT_MS }) {
     super()
     this.agent = agent
     this.agentID = agentID
@@ -118,6 +130,7 @@ export class AcpAgentModelCatalog extends CachedCatalog {
     this.sessionID = undefined
     this.stateLoaded = false
     this.hiddenSessionIDs = new Set()
+    this.requestTimeoutMs = requestTimeoutMs
   }
 
   async #loadState() {
@@ -140,7 +153,7 @@ export class AcpAgentModelCatalog extends CachedCatalog {
   }
 
   async #newCatalogSession() {
-    const created = await this.agent.request("session/new", { cwd: this.directory, mcpServers: [] })
+    const created = await this.agent.request("session/new", { cwd: this.directory, mcpServers: [] }, this.requestTimeoutMs)
     if (!created?.sessionId) throw new Error(`Agent ${this.agentID} did not return a catalog session id`)
     this.sessionID = created.sessionId
     this.hiddenSessionIDs.add(created.sessionId)
@@ -149,15 +162,13 @@ export class AcpAgentModelCatalog extends CachedCatalog {
   }
 
   async #refreshOptions() {
-    await this.agent.start()
+    await timed(this.agent.start(), this.requestTimeoutMs, `Starting ${this.agentID} model catalog`)
     await this.#loadState()
     if (this.sessionID) {
       try {
-        const loaded = await this.agent.request("session/load", { sessionId: this.sessionID, cwd: this.directory, mcpServers: [] }, 90_000)
+        const loaded = await this.agent.request("session/load", { sessionId: this.sessionID, cwd: this.directory, mcpServers: [] }, this.requestTimeoutMs)
         return loaded?.configOptions
       } catch {
-        // The underlying harness may have deleted the durable catalog session. Replace it once;
-        // future refreshes reuse the replacement rather than generating a session per task.
         this.hiddenSessionIDs.delete(this.sessionID)
         this.sessionID = undefined
       }
@@ -186,24 +197,25 @@ export class AcpAgentModelCatalog extends CachedCatalog {
 }
 
 export class HttpAgentModelCatalog extends CachedCatalog {
-  constructor({ host, agentID, fetchImpl = fetch }) {
+  constructor({ host, agentID, fetchImpl = fetch, requestTimeoutMs = MODEL_CATALOG_TIMEOUT_MS }) {
     super()
     this.host = host
     this.agentID = agentID
     this.fetchImpl = fetchImpl
     this.hiddenSessionIDs = new Set()
+    this.requestTimeoutMs = requestTimeoutMs
   }
 
   async #refresh() {
-    await this.host.start?.()
+    await timed(Promise.resolve(this.host.start?.()), this.requestTimeoutMs, `Starting ${this.agentID} model catalog`)
     const host = this.host.readinessHost ?? this.host.host ?? "127.0.0.1"
     const base = `http://${httpHost(host)}:${this.host.port}`
     const auth = authorization(this.host.username, this.host.password)
-    const response = await this.fetchImpl(`${base}/config/providers`, {
+    const response = await timed(this.fetchImpl(`${base}/config/providers`, {
       headers: { Accept: "application/json", ...(auth ? { Authorization: auth } : {}) }
-    })
+    }), this.requestTimeoutMs, `Refreshing ${this.agentID} models`)
     if (!response.ok) throw new Error(`Refreshing ${this.agentID} models failed with HTTP ${response.status}`)
-    const models = modelsFromProvidersResponse(await response.json())
+    const models = modelsFromProvidersResponse(await timed(response.json(), this.requestTimeoutMs, `Reading ${this.agentID} models`))
     if (!models.length) throw new Error(`Agent ${this.agentID} did not advertise any models`)
     return models
   }
