@@ -10,6 +10,7 @@ class FakeAcp {
   newCalls = 0
   loadCalls = 0
   models = ["provider/one", "provider/two"]
+  requestTimeouts = []
 
   async start() { this.starts += 1 }
   close() {}
@@ -22,7 +23,8 @@ class FakeAcp {
     }]
   }
 
-  async request(method, params) {
+  async request(method, params, timeoutMs) {
+    this.requestTimeouts.push({ method, timeoutMs })
     if (method === "session/new") {
       this.newCalls += 1
       assert.equal(params.cwd, "/repo")
@@ -41,19 +43,21 @@ test("ACP model discovery creates one durable catalog session then refreshes it"
   const stateDirectory = await mkdtemp(path.join(tmpdir(), "harness-model-catalog-"))
   try {
     const agent = new FakeAcp()
-    const catalog = new AcpAgentModelCatalog({ agent, agentID: "pi", directory: "/repo", stateDirectory })
+    const catalog = new AcpAgentModelCatalog({ agent, agentID: "pi", directory: "/repo", stateDirectory, requestTimeoutMs: 4321 })
 
     const first = await catalog.list({ allowStale: false })
     assert.deepEqual(first.models.map((model) => model.modelID), ["one", "two"])
     assert.equal(agent.newCalls, 1)
     assert.equal(agent.loadCalls, 0)
     assert.equal(catalog.hiddenSessionIDs.has("catalog-session"), true)
+    assert.deepEqual(agent.requestTimeouts[0], { method: "session/new", timeoutMs: 4321 })
 
     agent.models = ["provider/two", "provider/three"]
     const refreshed = await catalog.list({ allowStale: false })
     assert.deepEqual(refreshed.models.map((model) => model.modelID), ["two", "three"])
     assert.equal(agent.newCalls, 1, "New Task must reuse the same catalog session")
     assert.equal(agent.loadCalls, 1, "each later open refreshes the harness config options")
+    assert.deepEqual(agent.requestTimeouts[1], { method: "session/load", timeoutMs: 4321 })
 
     await assert.rejects(
       () => catalog.validate({ providerID: "provider", modelID: "one" }),
@@ -105,4 +109,15 @@ test("HTTP model discovery asks the managed harness again on every refresh", asy
   models = { two: { id: "two", name: "Two" } }
   assert.deepEqual((await catalog.list()).models.map((model) => model.modelID), ["two"])
   assert.equal(calls, 2)
+})
+
+test("HTTP model discovery fails within its catalog deadline", async () => {
+  const host = { host: "127.0.0.1", port: 4096, async start() {} }
+  const catalog = new HttpAgentModelCatalog({
+    host,
+    agentID: "opencode",
+    requestTimeoutMs: 20,
+    fetchImpl: () => new Promise(() => {})
+  })
+  await assert.rejects(() => catalog.list({ allowStale: false }), /timed out/)
 })
