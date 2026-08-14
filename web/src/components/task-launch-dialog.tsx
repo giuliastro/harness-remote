@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react"
 import { CloseIcon, FolderIcon, LoadingIcon, PlusIcon, ServerIcon } from "../Icons"
-import { discoverMachine, selectableMachineAgents } from "../machineClient"
+import { discoverMachineConnection, selectableMachineAgents } from "../machineClient"
 import { loadActiveServerProfile, loadServerProfiles } from "../serverProfiles"
 import { taskCopy } from "../taskCopy"
 import { taskClient, type MachineProject } from "../taskClient"
@@ -15,6 +15,7 @@ export function TaskLaunchDialog({ t, language, onClose, onLaunched }: {
 }) {
   const profile = useMemo(() => loadActiveServerProfile(loadServerProfiles()), [])
   const config: ServerConfig = profile.config
+  const [taskConfig, setTaskConfig] = useState<ServerConfig | null>(null)
   const [machine, setMachine] = useState<MachineSnapshot | null>(null)
   const [projects, setProjects] = useState<MachineProject[]>([])
   const [projectId, setProjectId] = useState("")
@@ -29,25 +30,27 @@ export function TaskLaunchDialog({ t, language, onClose, onLaunched }: {
   const availableAgents = machine ? selectableMachineAgents(machine) : []
   const profileAgent = availableAgents.find((agent) => config.agentId ? agent.id === config.agentId : agent.backend === config.backend)
   const agents = profileAgent ? [profileAgent] : []
-  const canStart = Boolean(projectId && agentId && prompt.trim()) && !starting
+  const canStart = Boolean(taskConfig && projectId && agentId && prompt.trim()) && !starting
 
   useEffect(() => {
     let cancelled = false
     void (async () => {
       setLoading(true)
       setError(null)
+      setTaskConfig(null)
       try {
-        const discovered = await discoverMachine(config)
-        if (!discovered) throw new Error(taskCopy(language, "requiresDaemon"))
-        const knownProjects = await taskClient.listProjects(config)
+        const connection = await discoverMachineConnection(config)
+        if (!connection) throw new Error(taskCopy(language, "requiresDaemon"))
+        const knownProjects = await taskClient.listProjects(connection.config)
         if (cancelled) return
-        const selectable = selectableMachineAgents(discovered)
+        const selectable = selectableMachineAgents(connection.machine)
         const activeAgent = selectable.find((agent) => config.agentId ? agent.id === config.agentId : agent.backend === config.backend)
         if (!activeAgent) {
           const label = config.agentId ?? config.backend
           throw new Error(taskCopy(language, "agentUnavailable", { agent: label }))
         }
-        setMachine(discovered)
+        setTaskConfig(connection.config)
+        setMachine(connection.machine)
         setProjects(knownProjects)
         setProjectId(knownProjects[0]?.id ?? "")
         setAgentId(activeAgent.id)
@@ -61,13 +64,13 @@ export function TaskLaunchDialog({ t, language, onClose, onLaunched }: {
   }, [config, language])
 
   async function start() {
-    if (!canStart) return
+    if (!canStart || !taskConfig) return
     setStarting(true)
     setError(null)
     try {
-      let task = await taskClient.createTask(config, { projectId, agentId, prompt: prompt.trim() })
-      if (isolated && selectedProject?.kind === "git") task = await taskClient.prepareWorktree(config, task.id)
-      await taskClient.launch(config, task.id)
+      let task = await taskClient.createTask(taskConfig, { projectId, agentId, prompt: prompt.trim() })
+      if (isolated && selectedProject?.kind === "git") task = await taskClient.prepareWorktree(taskConfig, task.id)
+      await taskClient.launch(taskConfig, task.id)
       onLaunched()
       onClose()
     } catch (cause) {
@@ -98,38 +101,38 @@ export function TaskLaunchDialog({ t, language, onClose, onLaunched }: {
           ) : projects.length === 0 ? (
             <div className="empty-state compact"><FolderIcon size={30} /><p>{taskCopy(language, "noProjects")}</p></div>
           ) : (
-            <div style={{ display: "grid", gap: "var(--space-4)" }}>
-              <div className="folder-picker-current" style={{ margin: 0 }}>
+            <div className="task-launch-form">
+              <div className="folder-picker-current">
                 <span className="eyebrow">{taskCopy(language, "machine")}</span>
-                <strong style={{ display: "flex", alignItems: "center", gap: "var(--space-2)", minWidth: 0 }}><ServerIcon size={15} /> <span className="truncate">{machineName}</span></strong>
+                <strong><ServerIcon size={15} /> <span className="truncate">{machineName}</span></strong>
               </div>
 
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(13rem, 100%), 1fr))", gap: "var(--space-3)" }}>
-                <label className="field" style={{ minWidth: 0 }}>
+              <div className="task-launch-grid">
+                <label className="field">
                   <span>{taskCopy(language, "project")}</span>
                   <select value={projectId} onChange={(event) => setProjectId(event.target.value)}>
                     {projects.map((project) => <option key={project.id} value={project.id}>{project.name} — {project.path}</option>)}
                   </select>
                 </label>
 
-                <label className="field" style={{ minWidth: 0 }}>
+                <label className="field">
                   <span>{taskCopy(language, "agent")}</span>
                   <select value={agentId} onChange={(event) => setAgentId(event.target.value)} disabled={agents.length === 0}>
                     {agents.map((agent) => <option key={agent.id} value={agent.id}>{agent.label}</option>)}
                   </select>
                 </label>
               </div>
-              {availableAgents.length > 1 && <p className="subtle" style={{ marginTop: "calc(var(--space-2) * -1)" }}>{taskCopy(language, "activeAgent")}</p>}
+              {availableAgents.length > 1 && <p className="subtle task-launch-agent-note">{taskCopy(language, "activeAgent")}</p>}
 
               <label className="field">
                 <span>{taskCopy(language, "task")}</span>
-                <textarea value={prompt} onChange={(event) => setPrompt(event.target.value)} placeholder={taskCopy(language, "promptPlaceholder")} rows={6} autoFocus style={{ resize: "vertical", minHeight: "8rem" }} />
+                <textarea value={prompt} onChange={(event) => setPrompt(event.target.value)} placeholder={taskCopy(language, "promptPlaceholder")} rows={6} autoFocus />
               </label>
 
-              <div style={{ display: "grid", gap: "var(--space-2)" }}>
-                <label style={{ display: "flex", alignItems: "center", gap: "var(--space-3)", padding: "var(--space-3) var(--space-4)", border: "1px solid var(--border)", borderRadius: "var(--radius-lg)", background: "var(--surface-subtle)", cursor: selectedProject?.kind === "git" ? "pointer" : "default" }}>
+              <div className="task-launch-worktree">
+                <label className="task-launch-check">
                   <input type="checkbox" checked={isolated} onChange={(event) => setIsolated(event.target.checked)} disabled={selectedProject?.kind !== "git"} />
-                  <span style={{ display: "flex", alignItems: "center", gap: "var(--space-2)", minWidth: 0 }}><FolderIcon size={15} /> {taskCopy(language, "isolatedWorktree")}</span>
+                  <span><FolderIcon size={15} /> {taskCopy(language, "isolatedWorktree")}</span>
                 </label>
                 {selectedProject?.kind !== "git" && <p className="subtle">{taskCopy(language, "nonGit")}</p>}
               </div>
@@ -137,9 +140,10 @@ export function TaskLaunchDialog({ t, language, onClose, onLaunched }: {
           )}
         </div>
 
-        <div className="wizard-footer" style={{ justifyContent: "flex-end" }}>
-          <button type="button" className="btn-secondary" onClick={onClose} style={{ flex: "0 0 auto", minWidth: "6.5rem" }}>{t('session.cancel')}</button>
-          <button type="button" className="btn-primary" disabled={!canStart || loading || Boolean(error) || projects.length === 0} onClick={() => void start()} style={{ flex: "0 0 auto", minWidth: "8rem" }}>
+        <div className="wizard-footer">
+          <span className="spacer" />
+          <button type="button" className="btn-secondary" onClick={onClose}>{t('session.cancel')}</button>
+          <button type="button" className="btn-primary" disabled={!canStart || loading || Boolean(error) || projects.length === 0} onClick={() => void start()}>
             {starting ? <LoadingIcon size={15} /> : <PlusIcon size={15} />}
             {starting ? taskCopy(language, "starting") : taskCopy(language, "startTask")}
           </button>
