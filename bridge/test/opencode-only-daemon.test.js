@@ -5,6 +5,7 @@ import test from "node:test"
 import { parseDaemonOptions } from "../src/daemon-cli.js"
 import { createAgentRoutingServer } from "../src/agent-router.js"
 import { MachineDaemon, createMachineDaemonServer } from "../src/machine-daemon.js"
+import { TaskLauncher } from "../src/task-launcher.js"
 
 class FakeManagedHost extends EventEmitter {
   constructor() {
@@ -152,4 +153,42 @@ test("one public daemon port serves machine routes and legacy OpenCode routes", 
   } finally {
     await close(server)
   }
+})
+
+test("TaskLauncher creates an OpenCode session and starts the task prompt", async () => {
+  const daemon = new MachineDaemon({ id: "machine_open", name: "phone-test" })
+  const openCode = new FakeManagedHost()
+  daemon.registerManagedHttpHost({ id: "opencode", label: "OpenCode", backend: "opencode", host: openCode })
+  await daemon.startManagedHosts()
+
+  const calls = []
+  const fetchImpl = async (url, options = {}) => {
+    calls.push({ url: String(url), options })
+    if (String(url).includes("/session?directory=")) {
+      return new Response(JSON.stringify({ id: "ses_task" }), { status: 200, headers: { "Content-Type": "application/json" } })
+    }
+    if (String(url).includes("/session/ses_task/prompt_async?directory=")) {
+      return new Response(JSON.stringify(true), { status: 200, headers: { "Content-Type": "application/json" } })
+    }
+    return new Response(JSON.stringify({ error: "unexpected" }), { status: 404, headers: { "Content-Type": "application/json" } })
+  }
+
+  const launcher = new TaskLauncher({ daemon, fetchImpl })
+  const task = {
+    id: "task_open",
+    agentId: "opencode",
+    prompt: "Create smoke.txt",
+    workspace: { mode: "worktree", path: "/repo/.worktrees/task_open" }
+  }
+  const session = await launcher.createSession(task)
+  assert.equal(session.sessionId, "ses_task")
+  assert.equal(session.transport, "http")
+  await launcher.startPrompt(task, session)
+
+  assert.equal(calls.length, 2)
+  assert.match(calls[0].url, /\/session\?directory=%2Frepo%2F\.worktrees%2Ftask_open$/)
+  assert.equal(calls[0].options.method, "POST")
+  assert.match(calls[0].options.headers.Authorization, /^Basic /)
+  assert.match(calls[1].url, /\/session\/ses_task\/prompt_async\?directory=%2Frepo%2F\.worktrees%2Ftask_open$/)
+  assert.equal(JSON.parse(calls[1].options.body).parts[0].text, "Create smoke.txt")
 })
