@@ -58,12 +58,21 @@ function responseDetail(value: unknown, fallback: string): string {
   return fallback
 }
 
+function parsePayload<T>(value: unknown, label: string): T {
+  if (typeof value !== "string") return value as T
+  try {
+    return JSON.parse(value) as T
+  } catch {
+    throw new Error(`${label} returned invalid JSON.`)
+  }
+}
+
 async function machineRequest<T>(config: ServerConfig, path: string, options: TaskRequestOptions = {}): Promise<T> {
   const method = options.method ?? "GET"
   if (isDesktopPlatform()) {
     const result = await desktopRequestResult(config, { path, method, body: options.body })
     if (!result.ok) throw new Error(result.error.message)
-    return result.response.data as T
+    return parsePayload<T>(result.response.data, path)
   }
 
   const target = `${machineBaseUrl(config)}${path}`
@@ -79,11 +88,12 @@ async function machineRequest<T>(config: ServerConfig, path: string, options: Ta
         connectTimeout: 12_000,
         readTimeout: 30_000
       })
-    } catch {
-      throw new Error(`Cannot reach ${config.host}:${config.port}.`)
+    } catch (error) {
+      const detail = error instanceof Error && error.message ? ` ${error.message}` : ""
+      throw new Error(`Cannot reach ${config.host}:${config.port}.${detail}`)
     }
     if (response.status >= 400) throw new Error(responseDetail(response.data, `HTTP ${response.status}`))
-    return response.data as T
+    return parsePayload<T>(response.data, path)
   }
 
   let response: Response
@@ -104,13 +114,22 @@ async function machineRequest<T>(config: ServerConfig, path: string, options: Ta
   return await response.json() as T
 }
 
+function requireArray<T>(value: unknown, key: string, path: string): T[] {
+  if (!value || typeof value !== "object" || !Array.isArray((value as Record<string, unknown>)[key])) {
+    throw new Error(`${path} returned an incompatible response.`)
+  }
+  return (value as Record<string, unknown>)[key] as T[]
+}
+
 export const taskClient = {
   async listProjects(config: ServerConfig): Promise<MachineProject[]> {
-    return (await machineRequest<{ projects: MachineProject[] }>(config, "/v1/projects")).projects
+    const payload = await machineRequest<unknown>(config, "/v1/projects")
+    return requireArray<MachineProject>(payload, "projects", "/v1/projects")
   },
 
   async listTasks(config: ServerConfig): Promise<MachineTask[]> {
-    return (await machineRequest<{ tasks: MachineTask[] }>(config, "/v1/tasks")).tasks
+    const payload = await machineRequest<unknown>(config, "/v1/tasks")
+    return requireArray<MachineTask>(payload, "tasks", "/v1/tasks")
   },
 
   async createTask(config: ServerConfig, input: { projectId: string; agentId: string; prompt: string }): Promise<MachineTask> {
