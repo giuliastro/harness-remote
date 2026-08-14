@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 import path from "node:path"
 import { AcpClient } from "./acp-client.js"
+import { AcpAgentModelCatalog, HttpAgentModelCatalog } from "./agent-model-catalog.js"
 import { parseConfig, usage as bridgeUsage } from "./config.js"
 import { harnessProfile } from "./harness-profiles.js"
-import { createModelCatalogLoader } from "./harness-models.js"
 import { canListen, resolveLaunchPlan } from "./launcher.js"
 import { loadMachineIdentity } from "./machine-registry.js"
 import { MachineDaemon, createMachineDaemonServer } from "./machine-daemon.js"
@@ -114,6 +114,15 @@ export async function ensureOpenCodePortAvailable({ port, host, canListenImpl = 
   throw new Error(`OpenCode port ${port} is already in use on ${host}. Is OpenCode already running? Use --opencode-port to choose another.`)
 }
 
+function acpClientFor(config, profile) {
+  return new AcpClient({
+    command: config.acpCommand,
+    args: config.acpArgs,
+    permissionMode: profile.permissionMode,
+    preferredAuthMethod: profile.authMethod
+  })
+}
+
 async function main() {
   let parsed
   try {
@@ -139,20 +148,27 @@ async function main() {
   const daemon = new MachineDaemon(identity)
   const openCodeOnly = config.backend === "opencode"
   const profile = openCodeOnly ? undefined : harnessProfile(config.backend)
-  const acp = profile ? new AcpClient({
-    command: config.acpCommand,
-    args: config.acpArgs,
-    permissionMode: profile.permissionMode,
-    preferredAuthMethod: profile.authMethod
-  }) : undefined
+  const acp = profile ? acpClientFor(config, profile) : undefined
+  let primaryModelCatalog
 
   if (profile && acp) {
+    // Model discovery has its own ACP connection so refreshing a config catalog can never replay
+    // history into the user-facing bridge. It owns one durable prompt-less catalog session and
+    // reuses it; there is no create/destroy cycle on each New Task.
+    const modelAcp = acpClientFor(config, profile)
+    primaryModelCatalog = new AcpAgentModelCatalog({
+      agent: modelAcp,
+      agentID: profile.id,
+      directory: config.roots?.[0] ?? process.cwd(),
+      stateDirectory: config.stateDirectory
+    })
     daemon.registerAcpHost({
       id: profile.id,
       label: profile.label,
       backend: profile.id,
       capabilities: profile.capabilities,
-      agent: acp
+      agent: acp,
+      modelCatalog: primaryModelCatalog
     })
   }
 
@@ -165,12 +181,14 @@ async function main() {
       password: config.password,
       startTimeoutMs: openCodeTimeout
     })
+    const openCodeModels = new HttpAgentModelCatalog({ host: managedOpenCode, agentID: "opencode" })
     daemon.registerManagedHttpHost({
       id: "opencode",
       label: "OpenCode",
       backend: "opencode",
       capabilities: { sessions: true, prompt: true, abort: true, streaming: true, diff: true, filesystemBrowser: true },
-      host: managedOpenCode
+      host: managedOpenCode,
+      modelCatalog: openCodeModels
     })
   }
 
@@ -184,7 +202,7 @@ async function main() {
       snapshotDirectory: path.join(config.stateDirectory, profile.id),
       historyLoader: profile.historyLoader,
       preserveListedTimestamps: profile.preserveListedTimestamps,
-      modelCatalogLoader: createModelCatalogLoader(profile),
+      hiddenSessionIDs: primaryModelCatalog?.hiddenSessionIDs,
       reloadOnHistoryRefresh: profile.reloadOnHistoryRefresh
     } : undefined
   })
@@ -198,9 +216,6 @@ async function main() {
     process.stdout.write(`Harness daemon listening on http://${config.host}:${config.port}\n`)
     process.stdout.write(`Machine: ${identity.name} (${identity.id})\n`)
     if (openCode) process.stdout.write(`Managed OpenCode: http://${openCodeHost}:${openCodePort} (internal — reach it through the daemon port)\n`)
-    // Which adapter an ACP agent is about to run is the single most useful line when it fails to
-    // start: it separates "the adapter you installed is broken" from "we tried to fetch one".
-    // OpenCode-only machines have no adapter, so they just name the primary.
     process.stdout.write(profile
       ? `Primary agent: ${primaryAgentID} (adapter: ${[config.acpCommand, ...config.acpArgs].join(" ")})\n`
       : `Primary agent: ${primaryAgentID}\n`)
