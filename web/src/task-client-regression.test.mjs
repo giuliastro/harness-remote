@@ -20,6 +20,17 @@ for (const language of languageOptions) {
   }
 }
 assert.ok(sessions.includes("t('task.new')"), 'the task actions must be translated too')
+
+// The task path is built and hidden: it stays out of the way until a task is at least as capable
+// as the session it wraps. Promoting the weaker of two paths is how a feature gets judged before
+// it is ready, so both creation actions must be behind the same flag and New Session must keep its
+// primacy while it is off.
+assert.ok(sessions.includes('const TASK_LAUNCH_ENABLED = false'), 'the task action ships hidden until tasks are ready')
+assert.equal(
+  (sessions.match(/TASK_LAUNCH_ENABLED &&/g) ?? []).length,
+  4,
+  'both task buttons and the enabled state must read the same flag'
+)
 assert.equal(sessions.includes('taskCopy'), false, 'there must be one translation table, not two')
 
 // Machine and agent are fixed by the active profile. A select holding a single option advertises a

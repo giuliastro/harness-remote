@@ -258,12 +258,12 @@ export function createBridgeServer({ config, acp, serviceOptions, machineRegistr
         return
       }
       if (request.method === "GET" && url.pathname === "/config/providers") {
+        // A session-less request used to be answered with an empty list before the service was
+        // asked. That is what left a task — whose session does not exist until it launches — with
+        // no model to choose, while a session next to it could pick one. The service answers from
+        // the newest known catalog now, the way it already does for commands.
         const sessionID = url.searchParams.get("sessionID")
-        if (!sessionID) {
-          writeJSON(response, 200, { providers: [], default: {} })
-          return
-        }
-        writeJSON(response, 200, providersResponse(await service.models(sessionID), backend))
+        writeJSON(response, 200, providersResponse(await service.models(sessionID ?? undefined), backend))
         return
       }
       writeJSON(response, 404, { error: "Not found" })

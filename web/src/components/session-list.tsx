@@ -55,6 +55,8 @@ export function formatRelativeTime(epoch: number, locale: string): string {
  * and the sessions panel show the control, so the probe is shared: without this, mounting the two
  * surfaces asks the same daemon the same question twice on every profile change.
  */
+const TASK_LAUNCH_ENABLED = false
+
 const availabilityProbes = new Map<string, Promise<boolean>>()
 
 function probeTaskLaunch(config: ServerConfig): Promise<boolean> {
@@ -251,7 +253,10 @@ export function SessionSidebar({
 }) {
   const [showTaskLaunch, setShowTaskLaunch] = useState(false)
   const taskAvailability = useTaskLaunchAvailability(offline)
-  const taskEnabled = !offline && taskAvailability === "available"
+  // New Task stays out of sight until a task is at least as capable as the session it wraps.
+  // Promoting the weaker path is how a feature gets judged before it is ready; the flag is here
+  // rather than deleted so turning it on is one edit and one release note.
+  const taskEnabled = TASK_LAUNCH_ENABLED && !offline && taskAvailability === "available"
   const taskTitle = offline ? t('sessions.offlineHint') : taskEnabled ? t('task.new') : t('task.requiresDaemon')
   return (
     <>
@@ -262,9 +267,9 @@ export function SessionSidebar({
           <button onClick={onRefresh} className="btn-secondary" disabled={refreshing} aria-label={t('sessions.refresh')} title={t('sessions.refresh')}>
             {refreshing ? <LoadingIcon size={16} /> : <RefreshIcon size={16} />}
           </button>
-          <button onClick={() => setShowTaskLaunch(true)} className={taskEnabled ? "btn-primary" : "btn-secondary"} disabled={!taskEnabled} aria-label={t('task.new')} title={taskTitle}>
+          {TASK_LAUNCH_ENABLED && <button onClick={() => setShowTaskLaunch(true)} className={taskEnabled ? "btn-primary" : "btn-secondary"} disabled={!taskEnabled} aria-label={t('task.new')} title={taskTitle}>
             {taskAvailability === "checking" && !offline ? <LoadingIcon size={16} /> : <PlayIcon size={16} />}
-          </button>
+          </button>}
           <button onClick={onNewSession} className={taskEnabled ? "btn-secondary" : "btn-primary"} disabled={creating || offline} aria-label={t('sessions.new')} title={offline ? t('sessions.offlineHint') : t('sessions.new')}>
             {creating ? <LoadingIcon size={16} /> : <PlusIcon size={16} />}
           </button>
@@ -333,7 +338,10 @@ export function SessionsPanel({
 }) {
   const [showTaskLaunch, setShowTaskLaunch] = useState(false)
   const taskAvailability = useTaskLaunchAvailability(offline)
-  const taskEnabled = !offline && taskAvailability === "available"
+  // New Task stays out of sight until a task is at least as capable as the session it wraps.
+  // Promoting the weaker path is how a feature gets judged before it is ready; the flag is here
+  // rather than deleted so turning it on is one edit and one release note.
+  const taskEnabled = TASK_LAUNCH_ENABLED && !offline && taskAvailability === "available"
   const taskTitle = offline ? t('sessions.offlineHint') : taskEnabled ? t('task.new') : t('task.requiresDaemon')
   return (
     <>
@@ -349,7 +357,7 @@ export function SessionsPanel({
           </div>
           <div className="inline-actions sessions-header-actions">
             <button onClick={onRefresh} className="btn-secondary sessions-action-compact" disabled={refreshing} aria-label={t('sessions.refresh')} title={t('sessions.refresh')}>{refreshing ? <LoadingIcon size={18} /> : <RefreshIcon size={18} />}<span className="sessions-action-label">{t('sessions.refresh')}</span></button>
-            <button onClick={() => setShowTaskLaunch(true)} className={taskEnabled ? "btn-primary" : "btn-secondary"} disabled={!taskEnabled} title={taskTitle}>{taskAvailability === "checking" && !offline ? <LoadingIcon size={18} /> : <PlayIcon size={18} />}<span className="sessions-action-label">{t('task.new')}</span><span className="sessions-action-label-short">{t('task.newShort')}</span></button>
+            {TASK_LAUNCH_ENABLED && <button onClick={() => setShowTaskLaunch(true)} className={taskEnabled ? "btn-primary" : "btn-secondary"} disabled={!taskEnabled} title={taskTitle}>{taskAvailability === "checking" && !offline ? <LoadingIcon size={18} /> : <PlayIcon size={18} />}<span className="sessions-action-label">{t('task.new')}</span><span className="sessions-action-label-short">{t('task.newShort')}</span></button>}
             <button onClick={onNewSession} className={taskEnabled ? "btn-secondary" : "btn-primary"} disabled={creating || offline} title={offline ? t('sessions.offlineHint') : undefined}>{creating ? <LoadingIcon size={18} /> : <PlusIcon size={18} />}<span className="sessions-action-label">{creating ? t('sessions.creating') : t('sessions.new')}</span><span className="sessions-action-label-short">{creating ? t('sessions.creating') : t('sessions.newShort')}</span></button>
           </div>
         </div>
