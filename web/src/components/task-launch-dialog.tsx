@@ -3,15 +3,9 @@ import { CloseIcon, FolderIcon, LoadingIcon, PlayIcon, ServerIcon } from "../Ico
 import { discoverMachineConnection, selectableMachineAgents } from "../machineClient"
 import { loadActiveServerProfile, loadServerProfiles } from "../serverProfiles"
 import { taskClient, type MachineProject } from "../taskClient"
-import { api } from "../api"
 import type { Translator } from "../i18n"
 import type { MachineSnapshot, ModelOption, ServerConfig } from "../types"
 
-/**
- * Which agent a task runs on is not a choice yet: the launched session has to open in the existing
- * session workflow, which is scoped to the active profile. New machine profiles carry `agentId`;
- * profiles migrated from before the daemon do not, so those resolve by backend instead.
- */
 function activeProfileAgent(machine: MachineSnapshot | null, config: ServerConfig) {
   if (!machine) return undefined
   return selectableMachineAgents(machine).find((agent) => (
@@ -32,6 +26,8 @@ export function TaskLaunchDialog({ t, onClose, onLaunched }: {
   const [projectId, setProjectId] = useState("")
   const [models, setModels] = useState<ModelOption[]>([])
   const [modelIndex, setModelIndex] = useState(-1)
+  const [modelStale, setModelStale] = useState(false)
+  const [modelNotice, setModelNotice] = useState<string | null>(null)
   const [prompt, setPrompt] = useState("")
   const [isolated, setIsolated] = useState(true)
   const [loading, setLoading] = useState(true)
@@ -49,6 +45,8 @@ export function TaskLaunchDialog({ t, onClose, onLaunched }: {
       setLoading(true)
       setError(null)
       setTaskConfig(null)
+      setModelStale(false)
+      setModelNotice(null)
       try {
         const connection = await discoverMachineConnection(config)
         if (!connection) throw new Error(t('task.requiresDaemon'))
@@ -56,14 +54,16 @@ export function TaskLaunchDialog({ t, onClose, onLaunched }: {
         if (cancelled) return
         const active = activeProfileAgent(connection.machine, config)
         if (!active) throw new Error(t('task.agentUnavailable', { agent: config.agentId ?? config.backend }))
-        // Models are an agent-scoped question, and not every agent answers it: ACP harnesses have
-        // no model listing, so a failure here means "no choice to offer", not a broken dialog.
-        const offered = await api
-          .listModels({ ...connection.config, agentId: active.id })
-          .catch(() => [] as ModelOption[])
+
+        // This is deliberately machine/agent-level discovery, not a session picker shortcut. The
+        // daemon refreshes the harness catalog whenever New Task opens and may return its last known
+        // catalog only when the fresh lookup failed. Launch validates the selected model again.
+        const catalog = await taskClient.listAgentModels(connection.config, active.id)
         if (cancelled) return
-        setModels(offered)
-        setModelIndex(offered.findIndex((option) => option.isDefault))
+        setModels(catalog.models)
+        setModelIndex(catalog.models.findIndex((option) => option.isDefault))
+        setModelStale(catalog.stale)
+        setModelNotice(catalog.stale ? (catalog.error ?? "Model catalog could not be refreshed.") : null)
         setTaskConfig(connection.config)
         setMachine(connection.machine)
         setProjects(knownProjects)
@@ -90,6 +90,8 @@ export function TaskLaunchDialog({ t, onClose, onLaunched }: {
         model: model && { providerID: model.providerID, modelID: model.modelID, variant: model.variant }
       })
       if (isolated && selectedProject?.kind === "git") task = await taskClient.prepareWorktree(taskConfig, task.id)
+      // The daemon performs a second live model refresh here. If the harness removed the selected
+      // model after this dialog opened, launch is rejected instead of silently using a default.
       await taskClient.launch(taskConfig, task.id)
       onLaunched()
       onClose()
@@ -122,8 +124,6 @@ export function TaskLaunchDialog({ t, onClose, onLaunched }: {
             <div className="empty-state compact"><FolderIcon size={30} /><p>{t('task.noProjects')}</p></div>
           ) : (
             <div className="task-launch-form">
-              {/* Where the work will run. Both are decided by the active profile, so they are stated
-                  rather than offered — a select holding one option reads as a choice that is not one. */}
               <div className="task-context">
                 <div className="task-context-item">
                   <span className="eyebrow">{t('task.machine')}</span>
@@ -154,6 +154,7 @@ export function TaskLaunchDialog({ t, onClose, onLaunched }: {
                       </option>
                     ))}
                   </select>
+                  {modelStale && modelNotice && <span className="subtle">{modelNotice}</span>}
                 </label>
               )}
 
