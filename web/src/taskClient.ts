@@ -2,7 +2,7 @@ import { Capacitor, CapacitorHttp } from "@capacitor/core"
 import { desktopRequestResult, isDesktopPlatform } from "./desktopBridge"
 import { unwrapPayload } from "./machinePayload"
 import { authHeader, hasCredentials, machineBaseUrl } from "./serverConfig"
-import type { ModelSelection, ServerConfig } from "./types"
+import type { ModelOption, ModelSelection, ServerConfig } from "./types"
 
 export type MachineProject = {
   id: string
@@ -32,6 +32,13 @@ export type MachineTask = {
   run: null | { id?: string; sessionId?: string; sessionID?: string; status?: string }
   createdAt: string
   updatedAt: string
+}
+
+export type AgentModelCatalog = {
+  models: ModelOption[]
+  stale: boolean
+  refreshedAt: string | null
+  error?: string
 }
 
 type TaskRequestOptions = {
@@ -67,11 +74,6 @@ export function parseTaskPayload<T>(value: unknown, label: string): T {
   return candidate as T
 }
 
-/**
- * A 401 that only says "401" is the failure that costs the most time: a password the server refused
- * and a password that was never sent look identical from here. `api.ts` draws the same distinction
- * for the session routes, and the task routes have no reason to be vaguer.
- */
 function unauthorizedDetail(config: ServerConfig): string {
   return hasCredentials(config)
     ? "HTTP 401: the server rejected these credentials."
@@ -127,7 +129,6 @@ async function machineRequest<T>(config: ServerConfig, path: string, options: Ta
     try { detail = responseDetail(await response.text(), detail) } catch { /* keep status */ }
     throw new Error(detail)
   }
-  // Same normalization as the other two transports: one endpoint must not answer in three shapes.
   return parseTaskPayload<T>(await response.text(), path)
 }
 
@@ -136,6 +137,19 @@ function requireArray<T>(value: unknown, key: string, path: string): T[] {
     throw new Error(`${path} returned an incompatible response.`)
   }
   return (value as Record<string, unknown>)[key] as T[]
+}
+
+function requireModelCatalog(value: unknown, path: string): AgentModelCatalog {
+  if (!value || typeof value !== "object" || !Array.isArray((value as AgentModelCatalog).models)) {
+    throw new Error(`${path} returned an incompatible response.`)
+  }
+  const catalog = value as AgentModelCatalog
+  return {
+    models: catalog.models,
+    stale: Boolean(catalog.stale),
+    refreshedAt: typeof catalog.refreshedAt === "string" ? catalog.refreshedAt : null,
+    ...(typeof catalog.error === "string" ? { error: catalog.error } : {})
+  }
 }
 
 export const taskClient = {
@@ -147,6 +161,11 @@ export const taskClient = {
   async listTasks(config: ServerConfig): Promise<MachineTask[]> {
     const payload = await machineRequest<unknown>(config, "/v1/tasks")
     return requireArray<MachineTask>(payload, "tasks", "/v1/tasks")
+  },
+
+  async listAgentModels(config: ServerConfig, agentId: string): Promise<AgentModelCatalog> {
+    const path = `/v1/agents/${encodeURIComponent(agentId)}/models`
+    return requireModelCatalog(await machineRequest<unknown>(config, path), path)
   },
 
   async createTask(config: ServerConfig, input: { projectId: string; agentId: string; prompt: string; model?: ModelSelection }): Promise<MachineTask> {
