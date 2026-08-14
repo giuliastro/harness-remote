@@ -5,14 +5,15 @@ import { createTaskFinishServer } from "../src/task-finish-server.js"
 import { inspectTaskDiff, parseNumstat } from "../src/task-review.js"
 
 const workspace = { mode: "worktree", path: "/state/worktrees/t", branch: "task/t", source: "/repo" }
+const nulRecords = (...records) => `${records.join("\0")}\0`
 
 function manager() {
   return {
     async inspect() { return { managed: true, dirty: true, changeCount: 4 } },
     async runGit(args) {
       if (args.includes("rev-parse")) return { stdout: "source-head\n" }
-      if (args.includes("--numstat")) return { stdout: "4\t1\tsrc/a.js\0-\t-\tassets/logo.png\00\t3\told.txt\04\t0\tnew.txt\0" }
-      if (args.includes("--others")) return { stdout: "perché.md\0notes\twith-tab.txt\0" }
+      if (args.includes("--numstat")) return { stdout: nulRecords("4\t1\tsrc/a.js", "-\t-\tassets/logo.png", "0\t3\told.txt", "4\t0\tnew.txt") }
+      if (args.includes("--others")) return { stdout: nulRecords("perché.md", "notes\twith-tab.txt") }
       throw new Error(`Unexpected git args: ${args.join(" ")}`)
     }
   }
@@ -31,7 +32,7 @@ async function close(server) {
 }
 
 test("numstat parser preserves binary files and literal tabs with NUL records", () => {
-  assert.deepEqual(parseNumstat("4\t1\tsrc/a.js\0-\t-\tassets/logo.png\01\t0\tnotes\twith-tab.txt\0"), [
+  assert.deepEqual(parseNumstat(nulRecords("4\t1\tsrc/a.js", "-\t-\tassets/logo.png", "1\t0\tnotes\twith-tab.txt")), [
     { path: "src/a.js", additions: 4, deletions: 1, untracked: false },
     { path: "assets/logo.png", additions: null, deletions: null, untracked: false },
     { path: "notes\twith-tab.txt", additions: 1, deletions: 0, untracked: false }
