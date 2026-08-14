@@ -1,0 +1,71 @@
+name: Integration test APK
+
+on:
+  push:
+    branches: [test/integration-172-182]
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - name: Enable New Task in disposable test build
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('web/src/components/session-list.tsx')
+          s = p.read_text()
+          old = 'const TASK_LAUNCH_ENABLED = false'
+          assert old in s
+          p.write_text(s.replace(old, 'const TASK_LAUNCH_ENABLED = true', 1))
+          PY
+      - name: Install web dependencies
+        run: npm ci
+        working-directory: web
+      - name: Build web app
+        run: npm run build
+        working-directory: web
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: android-actions/setup-android@v4
+      - run: sdkmanager "platform-tools" "platforms;android-36" "build-tools;36.0.0"
+      - run: yes | sdkmanager --licenses
+      - name: Add Capacitor Android platform
+        run: if [ ! -d android ]; then npx cap add android; fi
+        working-directory: web
+      - name: Generate Android app icon assets
+        continue-on-error: true
+        run: npx @capacitor/assets generate --android --assetPath public --iconBackgroundColor '#FFFFFF' --iconBackgroundColorDark '#FFFFFF'
+        working-directory: web
+      - name: Sync Capacitor project
+        run: npm run cap:sync:android
+        working-directory: web
+      - name: Read app version
+        id: version
+        run: |
+          APP_VERSION=$(node -p "require('./web/package.json').version")
+          VERSION_CODE=$(node -e "const [major, minor, patch] = process.argv[1].split('.').map(Number); console.log((major * 10000) + (minor * 100) + patch)" "$APP_VERSION")
+          echo "app_version=$APP_VERSION" >> "$GITHUB_OUTPUT"
+          echo "version_code=$VERSION_CODE" >> "$GITHUB_OUTPUT"
+      - run: node web/scripts/sync-android-version.mjs "${{ steps.version.outputs.app_version }}" "${{ steps.version.outputs.version_code }}"
+      - run: node web/scripts/set-debug-app-id.mjs
+      - name: Build debug APK
+        run: ./gradlew assembleDebug --stacktrace --no-daemon
+        working-directory: web/android
+      - name: Verify debug APK signature
+        run: "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose web/android/app/build/outputs/apk/debug/app-debug.apk
+      - name: Short SHA
+        id: build
+        run: echo "sha=$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: harness-remote-integration-test-v${{ steps.version.outputs.app_version }}-${{ steps.build.outputs.sha }}
+          path: web/android/app/build/outputs/apk/debug/app-debug.apk
+          retention-days: 14
