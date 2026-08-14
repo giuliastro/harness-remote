@@ -3,13 +3,11 @@ import { readFileSync } from 'node:fs'
 
 const source = readFileSync(new URL('./machineClient.ts', import.meta.url), 'utf8')
 
+assert.ok(source.includes('const DEFAULT_MACHINE_DAEMON_PORT = 4097'), 'OpenCode task discovery should know the standard machine-daemon port')
 assert.ok(source.includes('["/v1/machine", "/global/machine"]'), 'daemon discovery should try both published machine snapshot routes')
-assert.ok(source.includes('hasDaemonProjectsRoute(config)'), 'OpenCode daemon discovery should still probe the machine-level projects route')
-assert.ok(source.includes('if (config.backend === "opencode")'), 'the OpenCode fallback must stay scoped to OpenCode')
-assert.ok(source.includes('return fallbackOpenCodeSnapshot(config)'), 'OpenCode discovery must produce a usable task agent snapshot')
-assert.ok(source.includes('Array.isArray(value?.projects)'), 'the projects probe must validate its payload rather than accepting any HTTP 200')
-assert.match(
-  source,
-  /if \(config\.backend === "opencode"\)[\s\S]*?if \(await hasDaemonProjectsRoute\(config\)\) return fallbackOpenCodeSnapshot\(config\)[\s\S]*?return fallbackOpenCodeSnapshot\(config\)/,
-  'a connected OpenCode profile must not leave New Task disabled solely because daemon discovery failed'
-)
+assert.ok(source.includes('hasDaemonProjectsRoute(config)'), 'daemon discovery may validate the machine-level projects route as a fallback')
+assert.ok(source.includes('config.port === DEFAULT_MACHINE_DAEMON_PORT'), 'a profile already pointing at the daemon must not get redirected')
+assert.ok(source.includes('port: DEFAULT_MACHINE_DAEMON_PORT'), 'a direct OpenCode profile should also probe the machine daemon')
+assert.ok(source.includes('export async function discoverMachineConnection'), 'task launch needs both the machine snapshot and the endpoint that supplied it')
+assert.ok(source.includes('if (machine) return { machine, config: candidate }'), 'the resolved daemon config must travel with the discovered machine')
+assert.equal(source.includes('ultimately return a synthetic'), false, 'OpenCode connectivity alone must never masquerade as daemon discovery')
