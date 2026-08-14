@@ -83,32 +83,47 @@
     },
     "linux": {
       "target": [
-        "AppImage",
-        "deb"
+        {
+          "target": "AppImage",
+          "arch": ["x64"]
+        },
+        {
+          "target": "deb",
+          "arch": ["x64"]
+        }
       ],
-      "category": "Development",
       "icon": "public/app-icon.png",
+      "category": "Development",
+      "maintainer": "Giulio Ardoino <giuliaccio@gmail.com>",
       "artifactName": "Harness-Remote-${version}-linux-${arch}.${ext}"
-    }
+    },
+    "forceCodeSigning": false,
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "deleteAppDataOnUninstall": false
+    },
+    "publish": null
   },
   "dependencies": {
     "@capacitor/android": "^8.3.4",
     "@capacitor/app": "^8.1.1",
     "@capacitor/cli": "^8.3.4",
     "@capacitor/core": "^8.3.4",
-    "react": "^18.3.1",
-    "react-dom": "^18.3.1",
+    "react": "18.3.1",
+    "react-dom": "18.3.1",
     "react-markdown": "^10.1.0",
     "remark-gfm": "^4.0.1"
   },
   "devDependencies": {
-    "@types/node": "^22.10.2",
-    "@types/react": "^18.3.12",
-    "@types/react-dom": "^18.3.1",
-    "@vitejs/plugin-react": "^4.3.4",
-    "electron": "^33.2.1",
-    "electron-builder": "^25.1.8",
-    "typescript": "~5.6.2",
-    "vite": "^6.0.5"
+    "@types/node": "^26.1.2",
+    "@types/react": "18.3.12",
+    "@types/react-dom": "18.3.1",
+    "@vitejs/plugin-react": "^6.0.2",
+    "electron": "^43.3.0",
+    "electron-builder": "^26.15.3",
+    "typescript": "5.6.3",
+    "vite": "^8.0.14"
   }
 }
