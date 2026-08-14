@@ -24,6 +24,14 @@ function task(machineId, id = "task-1") {
   }
 }
 
+function observation(machineId, name = machineId) {
+  return {
+    machine: { machine: { id: machineId, name }, agents: [] },
+    projects: [],
+    tasks: []
+  }
+}
+
 test("groups multiple agent profiles for one daemon into one machine endpoint", () => {
   const profiles = [
     profile("codex", "Workstation Codex", { agentId: "codex" }),
@@ -33,6 +41,24 @@ test("groups multiple agent profiles for one daemon into one machine endpoint", 
   const groups = groupProfilesByMachineEndpoint(profiles)
   assert.equal(groups.size, 2)
   assert.equal(groups.get(machineEndpointKey(baseConfig))?.length, 2)
+})
+
+test("tries alternate profiles for one daemon before declaring the machine unreachable", async () => {
+  const profiles = [
+    profile("stale", "Workstation stale", { agentId: "codex", password: "old" }),
+    profile("valid", "Workstation valid", { backend: "claude", agentId: "claude", password: "new" })
+  ]
+  const attempts = []
+  const fleet = await discoverFleet(profiles, async (config) => {
+    attempts.push(config.password)
+    if (config.password === "old") throw new Error("unauthorized")
+    return observation("machine:workstation", "Workstation")
+  })
+  assert.deepEqual(attempts, ["old", "new"])
+  assert.equal(fleet.length, 1)
+  assert.equal(fleet[0].state, "online")
+  assert.equal(fleet[0].config.password, "new")
+  assert.deepEqual(fleet[0].profileIds, ["stale", "valid"])
 })
 
 test("discovers two machines simultaneously and preserves daemon identity", async () => {
@@ -85,11 +111,7 @@ test("one unreachable machine does not hide reachable machines", async () => {
   ]
   const fleet = await discoverFleet(profiles, async (config) => {
     if (config.host === "laptop.local") throw new Error("offline")
-    return {
-      machine: { machine: { id: "machine:workstation", name: "Workstation" }, agents: [] },
-      projects: [],
-      tasks: []
-    }
+    return observation("machine:workstation", "Workstation")
   })
   assert.equal(fleet.length, 2)
   assert.equal(fleet[0].state, "online")
