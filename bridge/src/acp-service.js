@@ -22,6 +22,11 @@ export function sameDirectory(left, right) {
   }
   return normalize(left) === normalize(right)
 }
+function modelInfoList(configOptions) {
+  const option = configOptions?.find((item) => item.id === "model")
+  return option?.options?.map((candidate) => ({ ...candidate, currentValue: candidate.value === option.currentValue })) ?? []
+}
+
 function sessionView(session, status = "idle", title = session.title, external = false) {
   return {
     id: session.sessionId,
@@ -307,10 +312,16 @@ export class AcpService {
     return this.#todos.get(sessionID) ?? []
   }
 
+  // Same shape as commands(): the catalog is reported per ACP session, but a harness offers the
+  // same models to every session on the machine. Without the session-less fallback the picker is
+  // empty until a session loads — which is why a task, whose session does not exist until after it
+  // launches, could not offer a model at all and started on the agent default.
   async models(sessionID) {
-    await this.#loadForConfigOptions(sessionID)
-    const option = this.#configOptions.get(sessionID)?.find((item) => item.id === "model")
-    return option?.options?.map((candidate) => ({ ...candidate, currentValue: candidate.value === option.currentValue })) ?? []
+    if (sessionID) {
+      await this.#loadForConfigOptions(sessionID)
+      return modelInfoList(this.#configOptions.get(sessionID))
+    }
+    return modelInfoList([...this.#configOptions.values()].at(-1))
   }
 
   async actions(sessionID) {

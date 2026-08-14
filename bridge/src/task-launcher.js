@@ -29,6 +29,14 @@ function openCodeStatus(value) {
   return "unknown"
 }
 
+function acpModelValue(configOptions, model) {
+  if (!model) return undefined
+  const option = configOptions?.find((item) => item.id === "model")
+  const qualified = `${model.providerID}/${model.modelID}`
+  if (option?.options?.some((candidate) => candidate.value === qualified)) return qualified
+  return option?.options?.find((candidate) => candidate.value === model.modelID)?.value
+}
+
 export class TaskLauncher {
   constructor({ daemon, fetchImpl = fetch }) {
     this.daemon = daemon
@@ -47,6 +55,13 @@ export class TaskLauncher {
       await entry.host.start()
       const result = await entry.host.request("session/new", { cwd: task.workspace.path, mcpServers: [] })
       if (!result?.sessionId) throw new Error(`Agent ${task.agentId} did not return a session id`)
+      // `session/new` reports the session's config options, so the chosen model can be applied
+      // before the prompt goes out. Resolve against what the agent actually offered rather than
+      // trusting either spelling: harnesses whose ids carry no provider answer with the bare id.
+      const value = acpModelValue(result.configOptions, task.model)
+      if (value) {
+        await entry.host.request("session/set_config_option", { sessionId: result.sessionId, configId: "model", value })
+      }
       return { sessionId: result.sessionId, transport: "acp", directory: task.workspace.path }
     }
 

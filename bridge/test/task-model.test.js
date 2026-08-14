@@ -85,3 +85,45 @@ test("a task without a model sends nothing rather than an empty selection", asyn
   assert.ok(calls.every((call) => !("model" in call.body) || call.body.model === undefined))
   assert.ok(calls.every((call) => call.body.variant === undefined))
 })
+
+// A task on an ACP harness has to apply its model to the session it just created, before the
+// prompt goes out. `session/new` reports the config options, so nothing extra has to be fetched.
+test("an ACP task applies its chosen model to the session it creates", async () => {
+  const calls = []
+  const configOptions = [{ id: "model", currentValue: "openrouter/kimi", options: [
+    { value: "openrouter/deepseek-v4" },
+    { value: "openrouter/kimi" }
+  ] }]
+  const daemon = {
+    hostEntry: () => ({ kind: "acp", host: {
+      start: async () => {},
+      request: async (method, params) => {
+        calls.push({ method, params })
+        return method === "session/new" ? { sessionId: "acp-1", configOptions } : {}
+      }
+    } }),
+    registry: { host: () => ({ state: "available" }) }
+  }
+  const task = {
+    id: "task-1",
+    agentId: "pi",
+    prompt: "work",
+    model: { providerID: "openrouter", modelID: "deepseek-v4" },
+    workspace: { mode: "worktree", path: "/state/worktrees/task", branch: "task/x", source: "/repo" }
+  }
+  await new TaskLauncher({ daemon }).createSession(task)
+  const applied = calls.find((call) => call.method === "session/set_config_option")
+  assert.ok(applied, "the chosen model must be applied to the new session")
+  assert.deepEqual(applied.params, { sessionId: "acp-1", configId: "model", value: "openrouter/deepseek-v4" })
+
+  // A harness whose ids carry no provider answers with the bare id; resolve against what it offered.
+  calls.length = 0
+  configOptions[0].options = [{ value: "sonnet" }, { value: "opus" }]
+  await new TaskLauncher({ daemon }).createSession({ ...task, model: { providerID: "claude", modelID: "opus" } })
+  assert.equal(calls.find((call) => call.method === "session/set_config_option").params.value, "opus")
+
+  // No model chosen means nothing is set, so the agent default stands untouched.
+  calls.length = 0
+  await new TaskLauncher({ daemon }).createSession({ ...task, model: null })
+  assert.equal(calls.some((call) => call.method === "session/set_config_option"), false)
+})
