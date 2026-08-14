@@ -10,7 +10,6 @@ const MAX_ATTACHMENTS = 8
 const MAX_ATTACHMENT_BYTES = 5 * 1024 * 1024
 const MAX_ATTACHMENT_TOTAL_BYTES = 15 * 1024 * 1024
 
-/** base64 carries 3 bytes per 4 characters, so measure it rather than decoding megabytes to count them. */
 function base64ByteLength(value) {
   const padding = value.endsWith("==") ? 2 : value.endsWith("=") ? 1 : 0
   return Math.floor(value.length / 4) * 3 - padding
@@ -22,11 +21,6 @@ function attachmentPayload(url) {
   return match[1]
 }
 
-/**
- * Attachments are validated before the prompt reaches the agent: a mime type the harness
- * cannot read, or a payload large enough to stall the turn, is a client mistake worth
- * naming rather than a failure to discover mid-stream.
- */
 function parseAttachments(parts) {
   const files = (Array.isArray(parts) ? parts : []).filter((part) => part?.type === "file")
   if (files.length > MAX_ATTACHMENTS) throw new Error(`At most ${MAX_ATTACHMENTS} attachments per prompt`)
@@ -72,15 +66,6 @@ function modelWireName(model) {
   return model.providerID && modelID ? `${model.providerID}/${modelID}` : undefined
 }
 
-/**
- * The app's model API is OpenCode's, which names a model `provider/model`. ACP has no such rule:
- * OMP and PI happen to use that shape, while Claude Code's adapter offers bare ids — `sonnet`,
- * `opus[1m]`. Splitting on "/" and requiring both halves silently dropped every one of them, which
- * is why that backend looked like it exposed no models at all.
- *
- * A bare id is presented under the backend's own name instead, so it reads and behaves like the
- * others — `claude/sonnet`. `AcpService.setModel` puts it back to the id the agent knows.
- */
 function providersResponse(models, fallbackProviderID) {
   const providers = new Map()
   const defaults = {}
@@ -107,6 +92,9 @@ export function createBridgeServer({ config, acp, serviceOptions, machineRegistr
   const backend = config.backend ?? "omp"
   const profile = harnessProfile(backend)
   const service = new AcpService(acp, { ...serviceOptions, actionProviders: profile.actionProviders })
+  const hiddenSessionIDs = serviceOptions?.hiddenSessionIDs ?? new Set()
+  const visibleSessions = async (directory) => (await service.listSessions(directory)).filter((session) => !hiddenSessionIDs.has(session.id))
+
   return http.createServer(async (request, response) => {
     applyCorsHeaders(request, response, config)
     if (request.method === "OPTIONS") {
@@ -159,11 +147,11 @@ export function createBridgeServer({ config, acp, serviceOptions, machineRegistr
         return
       }
       if (request.method === "GET" && (url.pathname === "/v1/sessions" || url.pathname === "/session" || url.pathname === "/experimental/session")) {
-        writeJSON(response, 200, await service.listSessions(directory))
+        writeJSON(response, 200, await visibleSessions(directory))
         return
       }
       if (request.method === "GET" && url.pathname === "/session/status") {
-        const statuses = Object.fromEntries((await service.listSessions(directory)).map((session) => [session.id, service.status(session.id)]))
+        const statuses = Object.fromEntries((await visibleSessions(directory)).map((session) => [session.id, service.status(session.id)]))
         writeJSON(response, 200, statuses)
         return
       }
@@ -258,10 +246,6 @@ export function createBridgeServer({ config, acp, serviceOptions, machineRegistr
         return
       }
       if (request.method === "GET" && url.pathname === "/config/providers") {
-        // A session-less request used to be answered with an empty list before the service was
-        // asked. That is what left a task — whose session does not exist until it launches — with
-        // no model to choose, while a session next to it could pick one. The service answers from
-        // the newest known catalog now, the way it already does for commands.
         const sessionID = url.searchParams.get("sessionID")
         writeJSON(response, 200, providersResponse(await service.models(sessionID ?? undefined), backend))
         return
