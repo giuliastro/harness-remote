@@ -5,7 +5,6 @@ import App from "./App"
 import { ErrorBoundary } from "./ErrorBoundary"
 import { SERVER_STORAGE_KEYS } from "./storageKeys"
 import "./styles.css"
-import "./task-launch-mobile.css"
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>

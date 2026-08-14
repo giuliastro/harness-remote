@@ -1,18 +1,58 @@
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
+import { createTranslator, languageOptions } from './i18n.ts'
 
 const client = readFileSync(new URL('./taskClient.ts', import.meta.url), 'utf8')
 const dialog = readFileSync(new URL('./components/task-launch-dialog.tsx', import.meta.url), 'utf8')
-const css = readFileSync(new URL('./task-launch-mobile.css', import.meta.url), 'utf8')
+const sessions = readFileSync(new URL('./components/session-list.tsx', import.meta.url), 'utf8')
+const styles = readFileSync(new URL('./styles.css', import.meta.url), 'utf8')
 
-assert.ok(client.includes('candidate.replace(/^\\uFEFF/, "").trim()'), 'native task payload parsing should tolerate a UTF-8 BOM')
-assert.ok(client.includes('"data" in candidate'), 'native task payload parsing should unwrap Capacitor data wrappers')
-assert.ok(client.includes('Make sure this profile can reach the Harness machine daemon'), 'invalid machine payloads should explain the endpoint problem instead of blaming JSON formatting')
+// Every key the task surfaces ask for has to exist in every language the app offers. A second
+// translation table shipped alongside `i18n.ts` diverged from it immediately — it normalized
+// `zh-Hans` differently, so a device set to Simplified Chinese got the app translated and this
+// dialog in English. One table, checked here against every locale, is what prevents that.
+const keys = [...new Set([...dialog.matchAll(/t\('(task\.[a-zA-Z.]+)'/g)].map((match) => match[1]))]
+assert.ok(keys.length >= 12, 'the task dialog must take its strings from the shared translator')
+for (const language of languageOptions) {
+  const translate = createTranslator(language.code)
+  for (const key of keys) {
+    assert.notEqual(translate(key), key, `${key} must be translated for ${language.code}`)
+  }
+}
+assert.ok(sessions.includes("t('task.new')"), 'the task actions must be translated too')
+assert.equal(sessions.includes('taskCopy'), false, 'there must be one translation table, not two')
+
+// Machine and agent are fixed by the active profile. A select holding a single option advertises a
+// choice the user does not have; both are stated instead, next to each other.
+assert.ok(dialog.includes('className="task-context"'), 'machine and agent belong to the same context strip')
+assert.equal(/<select[^>]*value=\{agentId\}/.test(dialog), false, 'the agent must not be offered as a one-option select')
+
+// Task styling belongs to the same stylesheet as everything else, and must respond to width by
+// class rather than by DOM position: adding or reordering a header button must not silently
+// restyle a different one.
+assert.ok(styles.includes('.task-launch-form'), 'task styles belong in the shared stylesheet')
+assert.equal(styles.includes('.sessions-header-actions > button:nth-child('), false, 'header actions must not be styled by position')
+assert.ok(styles.includes('.sessions-action-compact'), 'the action that collapses on narrow screens must say so by class')
+assert.ok(styles.includes('.sessions-action-compact .sessions-action-label'), 'the collapsing label must be addressable on its own')
+
+// The endpoint serving sessions is often not the one serving the task APIs.
 assert.ok(dialog.includes('discoverMachineConnection(config)'), 'the Task dialog must resolve the machine endpoint separately from the session endpoint')
 assert.ok(dialog.includes('taskClient.listProjects(connection.config)'), 'project discovery must use the resolved daemon endpoint')
 assert.ok(dialog.includes('taskClient.createTask(taskConfig'), 'task creation must stay on the resolved daemon endpoint')
+
+// Android hands back shapes the browser never produces. All three transports normalize the same way
+// and name the same failures, so one endpoint cannot answer in three different ways.
+assert.ok(client.includes('unwrapPayload'), 'native task payload parsing must reuse the shared unwrapping rules')
+assert.ok(client.includes('Make sure this profile can reach the Harness machine daemon'), 'invalid machine payloads should explain the endpoint problem instead of blaming JSON formatting')
+assert.equal(
+  (client.match(/unauthorizedDetail\(config\)/g) ?? []).length,
+  3,
+  'desktop, native and browser must all distinguish a rejected password from one that was never sent'
+)
+assert.equal(client.includes('await response.json() as T'), false, 'the browser transport must normalize like the other two')
+
+// Shared layout, no one-off sizing.
 assert.ok(dialog.includes('<div className="wizard-footer">'), 'Task actions should use the same shared wizard footer as New Session')
-assert.equal(dialog.includes('minWidth: "6.5rem"'), false, 'Task cancel must not have a one-off width')
-assert.equal(dialog.includes('minWidth: "8rem"'), false, 'Task start must not have a one-off width')
-assert.ok(css.includes('.sessions-header-actions > button:first-child'), 'mobile toolbar should spend the icon-only slot on Refresh')
-assert.ok(css.includes('.sessions-header-actions > button:nth-child(2),'), 'New Task and New Session should keep balanced labeled slots on mobile')
+assert.equal(/style=\{\{/.test(dialog), false, 'the dialog must not override the design system with inline styles')
+
+console.log('task client regression tests passed')

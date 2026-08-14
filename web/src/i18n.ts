@@ -229,6 +229,23 @@ type TranslationKey =
   | 'sessions.typePathLabel'
   | 'sessions.typePathPlaceholder'
   | 'sessions.goToPath'
+  | 'task.new'
+  | 'task.start'
+  | 'task.starting'
+  | 'task.subtitle'
+  | 'task.project'
+  | 'task.label'
+  | 'task.agent'
+  | 'task.machine'
+  | 'task.loading'
+  | 'task.promptPlaceholder'
+  | 'task.isolatedWorktree'
+  | 'task.nonGit'
+  | 'task.activeAgent'
+  | 'task.requiresDaemon'
+  | 'task.noProjects'
+  | 'task.agentUnavailable'
+  | 'task.credentialsRejected'
   | 'action.close'
   | 'action.thinking'
   | 'action.thoughtFor'
@@ -298,6 +315,23 @@ type TranslationKey =
 
 const translations: Record<LanguageCode, Partial<Record<TranslationKey, string>>> = {
   en: {
+    'task.new': 'New Task',
+    'task.start': 'Start Task',
+    'task.starting': 'Starting…',
+    'task.subtitle': 'Start agent work on {machine}.',
+    'task.project': 'Project',
+    'task.label': 'Task',
+    'task.agent': 'Agent',
+    'task.machine': 'Machine',
+    'task.loading': 'Loading machine projects and agents…',
+    'task.promptPlaceholder': 'Describe the work the agent should complete…',
+    'task.isolatedWorktree': 'Use a new isolated Git worktree',
+    'task.nonGit': 'This project is not a Git repository, so the task will run in the project directory.',
+    'task.activeAgent': 'This task stays on the active agent profile so its launched session remains in the current session workflow.',
+    'task.requiresDaemon': 'Task launch requires the Harness machine daemon.',
+    'task.noProjects': 'This machine has no known projects. Configure a project root on the daemon before starting a task.',
+    'task.agentUnavailable': 'The active agent {agent} is unavailable on this machine.',
+    'task.credentialsRejected': 'The machine daemon rejected these credentials. Check the username and password for this profile.',
     'app.title': 'Harness Remote',
     'notification.title': 'Harness Remote',
     'notification.body': 'Agent completed a task',
@@ -593,6 +627,23 @@ const translations: Record<LanguageCode, Partial<Record<TranslationKey, string>>
     'sessions.goToPath': 'Go'
   },
   it: {
+    'task.new': 'Nuovo task',
+    'task.start': 'Avvia task',
+    'task.starting': 'Avvio…',
+    'task.subtitle': 'Avvia un lavoro con un agente su {machine}.',
+    'task.project': 'Progetto',
+    'task.label': 'Task',
+    'task.agent': 'Agente',
+    'task.machine': 'Macchina',
+    'task.loading': 'Caricamento di progetti e agenti della macchina…',
+    'task.promptPlaceholder': 'Descrivi il lavoro che l’agente deve completare…',
+    'task.isolatedWorktree': 'Usa un nuovo worktree Git isolato',
+    'task.nonGit': 'Questo progetto non è un repository Git, quindi il task verrà eseguito nella directory del progetto.',
+    'task.activeAgent': 'Il task resta sull’agente attivo, così la sessione avviata rimane nel flusso delle sessioni corrente.',
+    'task.requiresDaemon': 'L’avvio dei task richiede il daemon Harness della macchina.',
+    'task.noProjects': 'Questa macchina non ha progetti noti. Configura una root di progetto nel daemon prima di avviare un task.',
+    'task.agentUnavailable': 'L’agente attivo {agent} non è disponibile su questa macchina.',
+    'task.credentialsRejected': 'Il daemon della macchina ha rifiutato queste credenziali. Controlla nome utente e password di questo profilo.',
     'app.title': 'Harness Remote',
     'notification.title': 'Harness Remote',
     'notification.body': 'Agente ha completato un’attività',
@@ -888,6 +939,23 @@ const translations: Record<LanguageCode, Partial<Record<TranslationKey, string>>
     'sessions.goToPath': 'Vai'
   },
   'zh-TW': {
+    'task.new': '新增任務',
+    'task.start': '開始任務',
+    'task.starting': '正在啟動…',
+    'task.subtitle': '在 {machine} 上開始代理工作。',
+    'task.project': '專案',
+    'task.label': '任務',
+    'task.agent': '代理',
+    'task.machine': '機器',
+    'task.loading': '正在載入機器的專案與代理…',
+    'task.promptPlaceholder': '描述代理應完成的工作…',
+    'task.isolatedWorktree': '使用新的隔離 Git worktree',
+    'task.nonGit': '此專案不是 Git 儲存庫，因此任務將在專案目錄中執行。',
+    'task.activeAgent': '此任務會使用目前的代理設定檔，讓啟動的工作階段留在目前的工作流程中。',
+    'task.requiresDaemon': '啟動任務需要 Harness machine daemon。',
+    'task.noProjects': '此機器沒有已知專案。請先在 daemon 設定專案根目錄。',
+    'task.agentUnavailable': '目前的代理 {agent} 在此機器上不可用。',
+    'task.credentialsRejected': 'machine daemon 拒絕了這組認證。請檢查此設定檔的使用者名稱與密碼。',
     'app.title': 'Harness Remote',
     'app.jumpToTop': '跳到頂部',
     'app.jumpToBottom': '跳到底部',
@@ -1135,6 +1203,23 @@ const translations: Record<LanguageCode, Partial<Record<TranslationKey, string>>
     'permission.deny': '拒絕'
   },
   'zh-CN': {
+    'task.new': '新建任务',
+    'task.start': '开始任务',
+    'task.starting': '正在启动…',
+    'task.subtitle': '在 {machine} 上启动代理工作。',
+    'task.project': '项目',
+    'task.label': '任务',
+    'task.agent': '代理',
+    'task.machine': '机器',
+    'task.loading': '正在加载机器的项目和代理…',
+    'task.promptPlaceholder': '描述代理应完成的工作…',
+    'task.isolatedWorktree': '使用新的隔离 Git worktree',
+    'task.nonGit': '此项目不是 Git 仓库，因此任务将在项目目录中运行。',
+    'task.activeAgent': '此任务会使用当前代理配置，使启动的会话保留在当前会话流程中。',
+    'task.requiresDaemon': '启动任务需要 Harness machine daemon。',
+    'task.noProjects': '此机器没有已知项目。请先在 daemon 中配置项目根目录。',
+    'task.agentUnavailable': '当前代理 {agent} 在此机器上不可用。',
+    'task.credentialsRejected': 'machine daemon 拒绝了这组凭据。请检查此配置文件的用户名和密码。',
     'app.title': 'Harness Remote',
     'app.jumpToTop': '跳到顶部',
     'app.jumpToBottom': '跳到底部',

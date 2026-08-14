@@ -17,8 +17,7 @@ import {
 import type { Translator } from "../i18n"
 import { discoverMachine } from "../machineClient"
 import { loadActiveServerProfile, loadServerProfiles, SERVER_PROFILES_CHANGED_EVENT } from "../serverProfiles"
-import { taskCopy } from "../taskCopy"
-import type { HarnessCapabilities, SessionView } from "../types"
+import type { HarnessCapabilities, ServerConfig, SessionView } from "../types"
 import { TaskLaunchDialog } from "./task-launch-dialog"
 
 export function shortDirectory(directory: string): string {
@@ -51,7 +50,26 @@ export function formatRelativeTime(epoch: number, locale: string): string {
   return formatter.format(deltaSeconds, "second")
 }
 
-function useTaskLaunchAvailability(offline: boolean) {
+/**
+ * Task launch needs the machine daemon, which a pre-daemon profile does not have. Both the sidebar
+ * and the sessions panel show the control, so the probe is shared: without this, mounting the two
+ * surfaces asks the same daemon the same question twice on every profile change.
+ */
+const availabilityProbes = new Map<string, Promise<boolean>>()
+
+function probeTaskLaunch(config: ServerConfig): Promise<boolean> {
+  const key = `${config.host.trim()}:${config.port}:${config.agentId ?? config.backend}`
+  const pending = availabilityProbes.get(key)
+  if (pending) return pending
+  const probe = discoverMachine(config).then((machine) => Boolean(machine)).catch(() => false)
+  availabilityProbes.set(key, probe)
+  // The answer is only cached for as long as the request is in flight: a daemon that has just been
+  // started must become usable without restarting the app.
+  void probe.finally(() => availabilityProbes.delete(key))
+  return probe
+}
+
+function useTaskLaunchAvailability(offline: boolean): "checking" | "available" | "legacy" {
   const [profileRevision, setProfileRevision] = useState(0)
   useEffect(() => {
     const refreshProfile = () => setProfileRevision((value) => value + 1)
@@ -67,10 +85,8 @@ function useTaskLaunchAvailability(offline: boolean) {
     }
     let cancelled = false
     setState("checking")
-    void discoverMachine(profile.config).then((machine) => {
-      if (!cancelled) setState(machine ? "available" : "legacy")
-    }).catch(() => {
-      if (!cancelled) setState("legacy")
+    void probeTaskLaunch(profile.config).then((available) => {
+      if (!cancelled) setState(available ? "available" : "legacy")
     })
     return () => { cancelled = true }
   }, [offline, profile])
@@ -236,7 +252,7 @@ export function SessionSidebar({
   const [showTaskLaunch, setShowTaskLaunch] = useState(false)
   const taskAvailability = useTaskLaunchAvailability(offline)
   const taskEnabled = !offline && taskAvailability === "available"
-  const taskTitle = offline ? t('sessions.offlineHint') : taskEnabled ? taskCopy(sessionCardProps.language, "newTask") : taskCopy(sessionCardProps.language, "requiresDaemon")
+  const taskTitle = offline ? t('sessions.offlineHint') : taskEnabled ? t('task.new') : t('task.requiresDaemon')
   return (
     <>
       <aside className="desktop-sidebar fade-in" style={{ width, flex: `0 0 ${width}px` }}>
@@ -246,8 +262,8 @@ export function SessionSidebar({
           <button onClick={onRefresh} className="btn-secondary" disabled={refreshing} aria-label={t('sessions.refresh')} title={t('sessions.refresh')}>
             {refreshing ? <LoadingIcon size={16} /> : <RefreshIcon size={16} />}
           </button>
-          <button onClick={() => setShowTaskLaunch(true)} className={taskEnabled ? "btn-primary" : "btn-secondary"} disabled={!taskEnabled} aria-label={taskCopy(sessionCardProps.language, "newTask")} title={taskTitle}>
-            <PlayIcon size={16} />
+          <button onClick={() => setShowTaskLaunch(true)} className={taskEnabled ? "btn-primary" : "btn-secondary"} disabled={!taskEnabled} aria-label={t('task.new')} title={taskTitle}>
+            {taskAvailability === "checking" && !offline ? <LoadingIcon size={16} /> : <PlayIcon size={16} />}
           </button>
           <button onClick={onNewSession} className={taskEnabled ? "btn-secondary" : "btn-primary"} disabled={creating || offline} aria-label={t('sessions.new')} title={offline ? t('sessions.offlineHint') : t('sessions.new')}>
             {creating ? <LoadingIcon size={16} /> : <PlusIcon size={16} />}
@@ -267,7 +283,7 @@ export function SessionSidebar({
           <button type="button" className="btn-secondary" onClick={onShowSettings} title={t('nav.settings')}><SettingsIcon size={18} /><span className="sidebar-footer-label">{t('nav.settings')}</span></button>
         </div>
       </aside>
-      {showTaskLaunch && <TaskLaunchDialog t={t} language={sessionCardProps.language} onClose={() => setShowTaskLaunch(false)} onLaunched={onRefresh} />}
+      {showTaskLaunch && <TaskLaunchDialog t={t} onClose={() => setShowTaskLaunch(false)} onLaunched={onRefresh} />}
     </>
   )
 }
@@ -318,7 +334,7 @@ export function SessionsPanel({
   const [showTaskLaunch, setShowTaskLaunch] = useState(false)
   const taskAvailability = useTaskLaunchAvailability(offline)
   const taskEnabled = !offline && taskAvailability === "available"
-  const taskTitle = offline ? t('sessions.offlineHint') : taskEnabled ? taskCopy(sessionCardProps.language, "newTask") : taskCopy(sessionCardProps.language, "requiresDaemon")
+  const taskTitle = offline ? t('sessions.offlineHint') : taskEnabled ? t('task.new') : t('task.requiresDaemon')
   return (
     <>
       <section className="panel sessions fade-in">
@@ -332,8 +348,8 @@ export function SessionsPanel({
             </div>}
           </div>
           <div className="inline-actions sessions-header-actions">
-            <button onClick={onRefresh} className="btn-secondary" disabled={refreshing}>{refreshing ? <LoadingIcon size={18} /> : <RefreshIcon size={18} />}{t('sessions.refresh')}</button>
-            <button onClick={() => setShowTaskLaunch(true)} className={taskEnabled ? "btn-primary" : "btn-secondary"} disabled={!taskEnabled} title={taskTitle}><PlayIcon size={18} />{taskCopy(sessionCardProps.language, "newTask")}</button>
+            <button onClick={onRefresh} className="btn-secondary sessions-action-compact" disabled={refreshing} aria-label={t('sessions.refresh')} title={t('sessions.refresh')}>{refreshing ? <LoadingIcon size={18} /> : <RefreshIcon size={18} />}<span className="sessions-action-label">{t('sessions.refresh')}</span></button>
+            <button onClick={() => setShowTaskLaunch(true)} className={taskEnabled ? "btn-primary" : "btn-secondary"} disabled={!taskEnabled} title={taskTitle}>{taskAvailability === "checking" && !offline ? <LoadingIcon size={18} /> : <PlayIcon size={18} />}{t('task.new')}</button>
             <button onClick={onNewSession} className={taskEnabled ? "btn-secondary" : "btn-primary"} disabled={creating || offline} title={offline ? t('sessions.offlineHint') : undefined}>{creating ? <LoadingIcon size={18} /> : <PlusIcon size={18} />}{creating ? t('sessions.creating') : t('sessions.new')}</button>
           </div>
         </div>
@@ -347,7 +363,7 @@ export function SessionsPanel({
         {runtimeError && !(offline && filteredSessions.length === 0) && <div className="error fade-in">✗ {runtimeError}</div>}
         {jumpControls}
       </section>
-      {showTaskLaunch && <TaskLaunchDialog t={t} language={sessionCardProps.language} onClose={() => setShowTaskLaunch(false)} onLaunched={onRefresh} />}
+      {showTaskLaunch && <TaskLaunchDialog t={t} onClose={() => setShowTaskLaunch(false)} onLaunched={onRefresh} />}
     </>
   )
 }

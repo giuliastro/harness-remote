@@ -1,9 +1,10 @@
 import { Capacitor, CapacitorHttp } from "@capacitor/core"
 import { desktopRequestResult, isDesktopPlatform } from "./desktopBridge"
+import { machineCandidates, parseMachineSnapshot } from "./machinePayload"
 import { authHeader, hasCredentials, machineBaseUrl } from "./serverConfig"
 import type { MachineSnapshot, ServerConfig } from "./types"
 
-const DEFAULT_MACHINE_DAEMON_PORT = 4097
+export { selectableMachineAgents } from "./machinePayload"
 
 export type MachineConnection = {
   machine: MachineSnapshot
@@ -20,53 +21,10 @@ export function noMachineStatus(status: number | undefined): boolean {
   return status === 404 || status === 503
 }
 
-function unwrapPayload(value: unknown): unknown {
-  let candidate = value
-  for (let pass = 0; pass < 3; pass += 1) {
-    if (typeof candidate === "string") {
-      const text = candidate.replace(/^\uFEFF/, "").trim()
-      if (!text) return candidate
-      try {
-        candidate = JSON.parse(text)
-        continue
-      } catch {
-        return candidate
-      }
-    }
-    if (candidate && typeof candidate === "object" && "data" in candidate) {
-      candidate = (candidate as { data?: unknown }).data
-      continue
-    }
-    break
-  }
-  return candidate
-}
-
-function parseMachineSnapshot(value: unknown): MachineSnapshot {
-  const candidate = unwrapPayload(value)
-  const snapshot = candidate as Partial<MachineSnapshot> | null
-  if (!snapshot?.machine || typeof snapshot.machine.id !== "string" || !Array.isArray(snapshot.agents)) {
-    throw new Error("The machine daemon returned an incompatible machine snapshot.")
-  }
-  return snapshot as MachineSnapshot
-}
-
-function fallbackOpenCodeSnapshot(config: ServerConfig): MachineSnapshot {
-  return {
-    machine: {
-      id: `daemon:${config.host.trim()}:${config.port}`,
-      name: config.host.trim()
-    },
-    agents: [{
-      id: config.agentId?.trim() || "opencode",
-      label: "OpenCode",
-      backend: "opencode",
-      transport: "http",
-      managed: true,
-      state: "available",
-      capabilities: { sessions: true }
-    }]
-  }
+function unauthorized(config: ServerConfig): Error {
+  return new Error(hasCredentials(config)
+    ? "HTTP 401: the server rejected these credentials."
+    : "HTTP 401: this server requires a username and password, and none were sent.")
 }
 
 async function nativeGet(config: ServerConfig, path: string) {
@@ -87,11 +45,18 @@ async function browserGet(config: ServerConfig, path: string): Promise<Response>
   }
 }
 
+/**
+ * Resolves to a snapshot when this endpoint is a machine daemon, to null when it demonstrably is
+ * not — 404, a registry-less 503, or a 200 carrying something else, which is what a direct OpenCode
+ * server answers. Anything else throws, because a rejected password and an unreachable host are
+ * facts the caller has to be able to tell apart from "there is no daemon here".
+ */
 async function discoverMachinePath(config: ServerConfig, path: string): Promise<MachineSnapshot | null> {
   if (isDesktopPlatform()) {
     const result = await desktopRequestResult(config, { path })
     if (!result.ok) {
       if (result.error.code === "http" && noMachineStatus(result.error.status)) return null
+      if (result.error.code === "http" && result.error.status === 401) throw unauthorized(config)
       throw new Error(result.error.message)
     }
     return parseMachineSnapshot(result.response.data)
@@ -100,88 +65,50 @@ async function discoverMachinePath(config: ServerConfig, path: string): Promise<
   if (Capacitor.isNativePlatform()) {
     const response = await nativeGet(config, path)
     if (noMachineStatus(response.status)) return null
+    if (response.status === 401) throw unauthorized(config)
     if (response.status >= 400) throw new Error(`HTTP ${response.status}`)
     return parseMachineSnapshot(response.data)
   }
 
   const response = await browserGet(config, path)
   if (noMachineStatus(response.status)) return null
+  if (response.status === 401) throw unauthorized(config)
   if (!response.ok) throw new Error(`HTTP ${response.status}`)
   return parseMachineSnapshot(await response.json())
 }
 
-async function hasDaemonProjectsRoute(config: ServerConfig): Promise<boolean> {
-  if (isDesktopPlatform()) {
-    const result = await desktopRequestResult(config, { path: "/v1/projects" })
-    if (!result.ok) return false
-    const value = unwrapPayload(result.response.data) as { projects?: unknown } | null
-    return Array.isArray(value?.projects)
-  }
-
-  if (Capacitor.isNativePlatform()) {
-    const response = await nativeGet(config, "/v1/projects")
-    if (response.status >= 400) return false
-    const value = unwrapPayload(response.data) as { projects?: unknown } | null
-    return Array.isArray(value?.projects)
-  }
-
-  const response = await browserGet(config, "/v1/projects")
-  if (!response.ok) return false
-  try {
-    const value = await response.json() as { projects?: unknown }
-    return Array.isArray(value.projects)
-  } catch {
-    return false
-  }
-}
-
-function machineCandidates(config: ServerConfig): ServerConfig[] {
-  const current = { ...config }
-  if (config.backend !== "opencode" || config.port === DEFAULT_MACHINE_DAEMON_PORT) return [current]
-  return [
-    current,
-    { ...config, port: DEFAULT_MACHINE_DAEMON_PORT, agentId: config.agentId?.trim() || "opencode" }
-  ]
-}
-
+/** Both routes are published; older daemons answer only the second. */
 async function discoverAt(config: ServerConfig): Promise<MachineSnapshot | null> {
   for (const path of ["/v1/machine", "/global/machine"]) {
-    try {
-      const machine = await discoverMachinePath(config, path)
-      if (machine) return machine
-    } catch {
-      // A direct OpenCode endpoint can return unrelated payloads for these paths. Keep probing until
-      // we either positively identify a machine daemon or exhaust the candidate endpoint.
-    }
-  }
-
-  if (config.backend === "opencode" && await hasDaemonProjectsRoute(config)) {
-    return fallbackOpenCodeSnapshot(config)
+    const machine = await discoverMachinePath(config, path)
+    if (machine) return machine
   }
   return null
 }
 
 /**
  * Resolve the machine-level endpoint separately from the saved agent/session endpoint. An existing
- * OpenCode profile commonly points at 4096, while the Harness machine daemon defaults to 4097. Task
- * APIs must use the daemon connection, not whatever endpoint happens to serve OpenCode sessions.
+ * OpenCode profile commonly points at 4096 while the daemon defaults to 4097, so the task APIs may
+ * live one port away from the sessions the profile was saved for.
+ *
+ * A candidate that answers "no daemon" is a clean negative and the next candidate is tried. A
+ * candidate that fails for any other reason is remembered: if nothing is found, that failure is
+ * what the caller is told, so a wrong password never surfaces as a missing daemon.
  */
 export async function discoverMachineConnection(config: ServerConfig): Promise<MachineConnection | null> {
+  let failure: unknown
   for (const candidate of machineCandidates(config)) {
     try {
       const machine = await discoverAt(candidate)
       if (machine) return { machine, config: candidate }
-    } catch {
-      // Try the next candidate. The dialog will report the daemon requirement if none qualify.
+    } catch (cause) {
+      failure ??= cause
     }
   }
+  if (failure !== undefined) throw failure
   return null
 }
 
 export async function discoverMachine(config: ServerConfig): Promise<MachineSnapshot | null> {
   return (await discoverMachineConnection(config))?.machine ?? null
-}
-
-export function selectableMachineAgents(machine: MachineSnapshot): MachineSnapshot["agents"] {
-  return (Array.isArray(machine.agents) ? machine.agents : []).filter((agent) => agent.state === "available" || agent.state === "configured")
 }

@@ -1,5 +1,6 @@
 import { Capacitor, CapacitorHttp } from "@capacitor/core"
 import { desktopRequestResult, isDesktopPlatform } from "./desktopBridge"
+import { unwrapPayload } from "./machinePayload"
 import { authHeader, hasCredentials, machineBaseUrl } from "./serverConfig"
 import type { ServerConfig } from "./types"
 
@@ -59,31 +60,32 @@ function responseDetail(value: unknown, fallback: string): string {
 }
 
 export function parseTaskPayload<T>(value: unknown, label: string): T {
-  let candidate = value
-  for (let pass = 0; pass < 4; pass += 1) {
-    if (typeof candidate === "string") {
-      const text = candidate.replace(/^\uFEFF/, "").trim()
-      try {
-        candidate = JSON.parse(text)
-        continue
-      } catch {
-        throw new Error(`${label} returned an incompatible response. Make sure this profile can reach the Harness machine daemon.`)
-      }
-    }
-    if (candidate && typeof candidate === "object" && "data" in candidate) {
-      candidate = (candidate as { data?: unknown }).data
-      continue
-    }
-    break
+  const candidate = unwrapPayload(value)
+  if (typeof candidate === "string") {
+    throw new Error(`${label} returned an incompatible response. Make sure this profile can reach the Harness machine daemon.`)
   }
   return candidate as T
+}
+
+/**
+ * A 401 that only says "401" is the failure that costs the most time: a password the server refused
+ * and a password that was never sent look identical from here. `api.ts` draws the same distinction
+ * for the session routes, and the task routes have no reason to be vaguer.
+ */
+function unauthorizedDetail(config: ServerConfig): string {
+  return hasCredentials(config)
+    ? "HTTP 401: the server rejected these credentials."
+    : "HTTP 401: this server requires a username and password, and none were sent."
 }
 
 async function machineRequest<T>(config: ServerConfig, path: string, options: TaskRequestOptions = {}): Promise<T> {
   const method = options.method ?? "GET"
   if (isDesktopPlatform()) {
     const result = await desktopRequestResult(config, { path, method, body: options.body })
-    if (!result.ok) throw new Error(result.error.message)
+    if (!result.ok) {
+      if (result.error.code === "http" && result.error.status === 401) throw new Error(unauthorizedDetail(config))
+      throw new Error(result.error.message)
+    }
     return parseTaskPayload<T>(result.response.data, path)
   }
 
@@ -104,6 +106,7 @@ async function machineRequest<T>(config: ServerConfig, path: string, options: Ta
       const detail = error instanceof Error && error.message ? ` ${error.message}` : ""
       throw new Error(`Cannot reach ${config.host}:${config.port}.${detail}`)
     }
+    if (response.status === 401) throw new Error(unauthorizedDetail(config))
     if (response.status >= 400) throw new Error(responseDetail(response.data, `HTTP ${response.status}`))
     return parseTaskPayload<T>(response.data, path)
   }
@@ -118,12 +121,14 @@ async function machineRequest<T>(config: ServerConfig, path: string, options: Ta
   } catch {
     throw new Error(`Cannot reach ${config.host}:${config.port}.`)
   }
+  if (response.status === 401) throw new Error(unauthorizedDetail(config))
   if (!response.ok) {
     let detail = `HTTP ${response.status}`
     try { detail = responseDetail(await response.text(), detail) } catch { /* keep status */ }
     throw new Error(detail)
   }
-  return await response.json() as T
+  // Same normalization as the other two transports: one endpoint must not answer in three shapes.
+  return parseTaskPayload<T>(await response.text(), path)
 }
 
 function requireArray<T>(value: unknown, key: string, path: string): T[] {

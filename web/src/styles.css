@@ -4429,3 +4429,105 @@ summary,
     visibility: visible;
   }
 }
+
+/* ---------------------------------------------------------------------------
+   Task launch
+   --------------------------------------------------------------------------- */
+
+.task-launch-form {
+  display: grid;
+  gap: var(--space-4);
+}
+
+/* Machine and agent are decided by the active profile, so they are shown as facts rather than
+   offered as controls. Two equal columns, collapsing to a stack when there is no room for both. */
+.task-context {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-3);
+}
+
+.task-context-item {
+  display: grid;
+  gap: var(--space-1);
+  min-width: 0;
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--surface-subtle);
+}
+
+.task-context-item strong {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+  font-weight: 600;
+}
+
+.task-launch-note {
+  margin-top: calc(var(--space-2) * -1);
+}
+
+.task-launch-form textarea {
+  resize: vertical;
+  min-height: 8rem;
+}
+
+.task-launch-worktree {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.task-launch-check {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--surface-subtle);
+}
+
+.task-launch-check span {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.task-launch-check:has(input:not(:disabled)) {
+  cursor: pointer;
+}
+
+/* Three labelled actions do not fit a phone header. Refresh gives up its label first: it is the one
+   the pull-to-refresh gesture and the connection status already cover, and its icon is unambiguous.
+   The two creation actions keep their words and split the remaining width evenly, because "New Task"
+   and "New Session" are only distinguishable by them. */
+@media (max-width: 640px) {
+  .sessions-header-actions {
+    flex-wrap: nowrap;
+    gap: var(--space-2);
+    width: 100%;
+  }
+
+  .sessions-header-actions > button {
+    min-width: 0;
+    flex: 1 1 0;
+  }
+
+  .sessions-action-compact {
+    flex: 0 0 var(--control-h-lg);
+    width: var(--control-h-lg);
+    padding-inline: 0;
+    gap: 0;
+  }
+
+  .sessions-action-compact .sessions-action-label {
+    display: none;
+  }
+
+  .task-context {
+    grid-template-columns: 1fr;
+  }
+}

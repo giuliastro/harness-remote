@@ -77,9 +77,10 @@ test("discovers two machines simultaneously and preserves daemon identity", asyn
       tasks: [task(machineId)]
     }
   })
-  assert.deepEqual(fleet.map((entry) => entry.key).sort(), ["machine:server.local", "machine:workstation.local"])
+  assert.deepEqual(fleet.map((entry) => entry.machineId).sort(), ["machine:server.local", "machine:workstation.local"])
+  assert.deepEqual(fleet.map((entry) => entry.key).sort(), ["http://server.local:4097", "http://workstation.local:4097"])
   assert.ok(fleet.every((entry) => entry.state === "online"))
-  assert.ok(fleet.every((entry) => entry.projects[0].machineId === entry.key))
+  assert.ok(fleet.every((entry) => entry.projects[0].machineId === entry.machineId))
 })
 
 test("overlapping local task and run ids remain unambiguous across machines", async () => {
@@ -115,8 +116,36 @@ test("one unreachable machine does not hide reachable machines", async () => {
   })
   assert.equal(fleet.length, 2)
   assert.equal(fleet[0].state, "online")
-  assert.equal(fleet[0].key, "machine:workstation")
+  assert.equal(fleet[0].machineId, "machine:workstation")
+  // The endpoint keys the row so it survives going offline; the id is only known once it answers.
+  assert.equal(fleet[0].key, "http://workstation.local:4097")
+  assert.equal(fleet[1].machineId, null)
   assert.equal(fleet[1].state, "unreachable")
   assert.equal(fleet[1].tasks.length, 0)
   assert.match(fleet[1].error, /offline/)
+})
+
+// A laptop is `localhost` to itself and a LAN address to the phone, so endpoint grouping alone
+// reports it twice. Only the daemon can say they are the same machine, and it does — once it
+// answers, the rows fold into one carrying both saved profiles.
+test("one daemon reached by two addresses is one machine", async () => {
+  const profiles = [
+    profile("local", "Local", { host: "localhost" }),
+    profile("lan", "LAN", { host: "192.168.1.64" })
+  ]
+  const fleet = await discoverFleet(profiles, async () => observation("machine:workstation", "Workstation"))
+  assert.equal(fleet.length, 1, "the same daemon must not appear as two machines")
+  assert.equal(new Set(fleet.map((entry) => entry.key)).size, fleet.length, "rows must not share a key")
+  assert.deepEqual(fleet[0].profileIds.sort(), ["lan", "local"], "both saved profiles must stay attached to the machine")
+  assert.equal(fleet[0].machineId, "machine:workstation")
+})
+
+test("machines that never answered stay separate rows", async () => {
+  const profiles = [
+    profile("local", "Local", { host: "localhost" }),
+    profile("lan", "LAN", { host: "192.168.1.64" })
+  ]
+  const fleet = await discoverFleet(profiles, async () => { throw new Error("offline") })
+  assert.equal(fleet.length, 2, "without an identity there is nothing to fold on")
+  assert.ok(fleet.every((entry) => entry.machineId === null))
 })
