@@ -2,12 +2,14 @@ import { useEffect, useMemo, useState } from "react"
 import { CloseIcon, FolderIcon, LoadingIcon, PlusIcon, ServerIcon } from "../Icons"
 import { discoverMachine, selectableMachineAgents } from "../machineClient"
 import { loadActiveServerProfile, loadServerProfiles } from "../serverProfiles"
+import { taskCopy } from "../taskCopy"
 import { taskClient, type MachineProject } from "../taskClient"
 import type { Translator } from "../i18n"
 import type { MachineSnapshot, ServerConfig } from "../types"
 
-export function TaskLaunchDialog({ t, onClose, onLaunched }: {
+export function TaskLaunchDialog({ t, language, onClose, onLaunched }: {
   t: Translator
+  language: string
   onClose: () => void
   onLaunched: () => void
 }) {
@@ -25,8 +27,6 @@ export function TaskLaunchDialog({ t, onClose, onLaunched }: {
 
   const selectedProject = projects.find((project) => project.id === projectId)
   const availableAgents = machine ? selectableMachineAgents(machine) : []
-  // The current sessions surface is scoped to the active saved profile. New machine profiles carry
-  // agentId; migrated legacy profiles do not, so fall back to the profile backend in that case.
   const profileAgent = availableAgents.find((agent) => config.agentId ? agent.id === config.agentId : agent.backend === config.backend)
   const agents = profileAgent ? [profileAgent] : []
   const canStart = Boolean(projectId && agentId && prompt.trim()) && !starting
@@ -38,14 +38,14 @@ export function TaskLaunchDialog({ t, onClose, onLaunched }: {
       setError(null)
       try {
         const discovered = await discoverMachine(config)
-        if (!discovered) throw new Error("Task launch requires a Harness machine daemon.")
+        if (!discovered) throw new Error(taskCopy(language, "requiresDaemon"))
         const knownProjects = await taskClient.listProjects(config)
         if (cancelled) return
         const selectable = selectableMachineAgents(discovered)
         const activeAgent = selectable.find((agent) => config.agentId ? agent.id === config.agentId : agent.backend === config.backend)
         if (!activeAgent) {
           const label = config.agentId ?? config.backend
-          throw new Error(`The active agent ${label} is unavailable on this machine.`)
+          throw new Error(taskCopy(language, "agentUnavailable", { agent: label }))
         }
         setMachine(discovered)
         setProjects(knownProjects)
@@ -58,7 +58,7 @@ export function TaskLaunchDialog({ t, onClose, onLaunched }: {
       }
     })()
     return () => { cancelled = true }
-  }, [config])
+  }, [config, language])
 
   async function start() {
     if (!canStart) return
@@ -77,63 +77,68 @@ export function TaskLaunchDialog({ t, onClose, onLaunched }: {
     }
   }
 
+  const machineName = machine?.machine.name ?? profile.name
+
   return (
     <div className="modal-backdrop" role="presentation" onClick={onClose}>
       <section className="modal-card wizard fade-in" role="dialog" aria-modal="true" aria-labelledby="new-task-title" onClick={(event) => event.stopPropagation()}>
         <div className="wizard-header">
           <div className="wizard-header-text">
-            <h2 id="new-task-title">New Task</h2>
-            <p className="subtle">Start isolated agent work on {machine?.machine.name ?? profile.name}.</p>
+            <h2 id="new-task-title">{taskCopy(language, "newTask")}</h2>
+            <p className="subtle">{taskCopy(language, "subtitle", { machine: machineName })}</p>
           </div>
           <button type="button" className="btn-icon btn-ghost" onClick={onClose} aria-label={t('session.cancel')}><CloseIcon size={16} /></button>
         </div>
 
         <div className="wizard-body">
           {loading ? (
-            <div className="empty-state compact"><LoadingIcon size={26} /><p>Loading machine projects and agents…</p></div>
+            <div className="empty-state compact"><LoadingIcon size={26} /><p>{taskCopy(language, "loading")}</p></div>
+          ) : error ? (
+            <div className="error fade-in">✗ {error}</div>
+          ) : projects.length === 0 ? (
+            <div className="empty-state compact"><FolderIcon size={30} /><p>{taskCopy(language, "noProjects")}</p></div>
           ) : (
             <>
+              <div className="folder-picker-current">
+                <span className="eyebrow">{taskCopy(language, "machine")}</span>
+                <strong><ServerIcon size={15} /> {machineName}</strong>
+              </div>
+
               <label className="field">
-                <span>Project</span>
-                <select value={projectId} onChange={(event) => setProjectId(event.target.value)} disabled={projects.length === 0}>
+                <span>{taskCopy(language, "project")}</span>
+                <select value={projectId} onChange={(event) => setProjectId(event.target.value)}>
                   {projects.map((project) => <option key={project.id} value={project.id}>{project.name} — {project.path}</option>)}
                 </select>
               </label>
 
               <label className="field">
-                <span>Task</span>
-                <textarea value={prompt} onChange={(event) => setPrompt(event.target.value)} placeholder="Describe the work the agent should complete…" rows={5} autoFocus />
-              </label>
-
-              <label className="field">
-                <span>Agent</span>
+                <span>{taskCopy(language, "agent")}</span>
                 <select value={agentId} onChange={(event) => setAgentId(event.target.value)} disabled={agents.length === 0}>
                   {agents.map((agent) => <option key={agent.id} value={agent.id}>{agent.label}</option>)}
                 </select>
               </label>
-              {availableAgents.length > 1 && <p className="subtle">This task stays on the active agent profile so its launched session opens in the existing session workflow. Cross-agent placement arrives with Fleet.</p>}
+              {availableAgents.length > 1 && <p className="subtle">{taskCopy(language, "activeAgent")}</p>}
 
-              <div className="folder-picker-current">
-                <span className="eyebrow">Machine</span>
-                <strong><ServerIcon size={15} /> {machine?.machine.name ?? "Harness daemon"}</strong>
-              </div>
+              <label className="field">
+                <span>{taskCopy(language, "task")}</span>
+                <textarea value={prompt} onChange={(event) => setPrompt(event.target.value)} placeholder={taskCopy(language, "promptPlaceholder")} rows={5} autoFocus />
+              </label>
 
               <label className="field" style={{ flexDirection: "row", alignItems: "center", gap: "0.65rem" }}>
                 <input type="checkbox" checked={isolated} onChange={(event) => setIsolated(event.target.checked)} disabled={selectedProject?.kind !== "git"} />
-                <span><FolderIcon size={14} /> Use a new isolated Git worktree</span>
+                <span><FolderIcon size={14} /> {taskCopy(language, "isolatedWorktree")}</span>
               </label>
-              {selectedProject?.kind !== "git" && <p className="subtle">This project is not a Git repository, so the task will run in the project directory.</p>}
+              {selectedProject?.kind !== "git" && <p className="subtle">{taskCopy(language, "nonGit")}</p>}
             </>
           )}
-          {error && <div className="error fade-in">✗ {error}</div>}
         </div>
 
         <div className="wizard-footer">
           <span className="spacer" />
           <button type="button" className="btn-secondary" onClick={onClose}>{t('session.cancel')}</button>
-          <button type="button" className="btn-primary" disabled={!canStart || loading} onClick={() => void start()}>
+          <button type="button" className="btn-primary" disabled={!canStart || loading || Boolean(error) || projects.length === 0} onClick={() => void start()}>
             {starting ? <LoadingIcon size={15} /> : <PlusIcon size={15} />}
-            {starting ? "Starting…" : "Start Task"}
+            {starting ? taskCopy(language, "starting") : taskCopy(language, "startTask")}
           </button>
         </div>
       </section>
