@@ -1,4 +1,4 @@
-import { useState, type PointerEvent as ReactPointerEvent, type RefObject, type ReactNode } from "react"
+import { useEffect, useMemo, useState, type PointerEvent as ReactPointerEvent, type RefObject, type ReactNode } from "react"
 import {
   CloseIcon,
   FolderIcon,
@@ -6,6 +6,7 @@ import {
   LoadingIcon,
   OfflineIcon,
   PencilIcon,
+  PlayIcon,
   PlusIcon,
   RefreshIcon,
   SaveIcon,
@@ -14,6 +15,9 @@ import {
   TrashIcon
 } from "../Icons"
 import type { Translator } from "../i18n"
+import { discoverMachine } from "../machineClient"
+import { loadActiveServerProfile, loadServerProfiles } from "../serverProfiles"
+import { taskCopy } from "../taskCopy"
 import type { HarnessCapabilities, SessionView } from "../types"
 import { TaskLaunchDialog } from "./task-launch-dialog"
 
@@ -45,6 +49,22 @@ export function formatRelativeTime(epoch: number, locale: string): string {
     if (Math.abs(deltaSeconds) >= secondsInUnit) return formatter.format(Math.round(deltaSeconds / secondsInUnit), unit)
   }
   return formatter.format(deltaSeconds, "second")
+}
+
+function useTaskLaunchAvailability(offline: boolean) {
+  const profile = useMemo(() => loadActiveServerProfile(loadServerProfiles()), [])
+  const [state, setState] = useState<"checking" | "available" | "legacy">("checking")
+  useEffect(() => {
+    if (offline) return
+    let cancelled = false
+    void discoverMachine(profile.config).then((machine) => {
+      if (!cancelled) setState(machine ? "available" : "legacy")
+    }).catch(() => {
+      if (!cancelled) setState("legacy")
+    })
+    return () => { cancelled = true }
+  }, [offline, profile])
+  return state
 }
 
 export type SessionRenameState = {
@@ -204,6 +224,9 @@ export function SessionSidebar({
   sessionCardProps: SessionCardProps
 }) {
   const [showTaskLaunch, setShowTaskLaunch] = useState(false)
+  const taskAvailability = useTaskLaunchAvailability(offline)
+  const taskEnabled = !offline && taskAvailability === "available"
+  const taskTitle = offline ? t('sessions.offlineHint') : taskEnabled ? taskCopy(sessionCardProps.language, "newTask") : taskCopy(sessionCardProps.language, "requiresDaemon")
   return (
     <>
       <aside className="desktop-sidebar fade-in" style={{ width, flex: `0 0 ${width}px` }}>
@@ -213,10 +236,10 @@ export function SessionSidebar({
           <button onClick={onRefresh} className="btn-secondary" disabled={refreshing} aria-label={t('sessions.refresh')} title={t('sessions.refresh')}>
             {refreshing ? <LoadingIcon size={16} /> : <RefreshIcon size={16} />}
           </button>
-          <button onClick={() => setShowTaskLaunch(true)} className="btn-primary" disabled={offline} aria-label="New task" title={offline ? t('sessions.offlineHint') : "New task"}>
-            <PlusIcon size={16} /><span className="sidebar-footer-label">Task</span>
+          <button onClick={() => setShowTaskLaunch(true)} className={taskEnabled ? "btn-primary" : "btn-secondary"} disabled={!taskEnabled} aria-label={taskCopy(sessionCardProps.language, "newTask")} title={taskTitle}>
+            <PlayIcon size={16} />
           </button>
-          <button onClick={onNewSession} className="btn-secondary" disabled={creating || offline} aria-label={t('sessions.new')} title={offline ? t('sessions.offlineHint') : t('sessions.new')}>
+          <button onClick={onNewSession} className={taskEnabled ? "btn-secondary" : "btn-primary"} disabled={creating || offline} aria-label={t('sessions.new')} title={offline ? t('sessions.offlineHint') : t('sessions.new')}>
             {creating ? <LoadingIcon size={16} /> : <PlusIcon size={16} />}
           </button>
         </div>
@@ -234,7 +257,7 @@ export function SessionSidebar({
           <button type="button" className="btn-secondary" onClick={onShowSettings} title={t('nav.settings')}><SettingsIcon size={18} /><span className="sidebar-footer-label">{t('nav.settings')}</span></button>
         </div>
       </aside>
-      {showTaskLaunch && <TaskLaunchDialog t={t} onClose={() => setShowTaskLaunch(false)} onLaunched={onRefresh} />}
+      {showTaskLaunch && <TaskLaunchDialog t={t} language={sessionCardProps.language} onClose={() => setShowTaskLaunch(false)} onLaunched={onRefresh} />}
     </>
   )
 }
@@ -283,6 +306,9 @@ export function SessionsPanel({
   sessionCardProps: SessionCardProps
 }) {
   const [showTaskLaunch, setShowTaskLaunch] = useState(false)
+  const taskAvailability = useTaskLaunchAvailability(offline)
+  const taskEnabled = !offline && taskAvailability === "available"
+  const taskTitle = offline ? t('sessions.offlineHint') : taskEnabled ? taskCopy(sessionCardProps.language, "newTask") : taskCopy(sessionCardProps.language, "requiresDaemon")
   return (
     <>
       <section className="panel sessions fade-in">
@@ -297,8 +323,8 @@ export function SessionsPanel({
           </div>
           <div className="inline-actions sessions-header-actions">
             <button onClick={onRefresh} className="btn-secondary" disabled={refreshing}>{refreshing ? <LoadingIcon size={18} /> : <RefreshIcon size={18} />}{t('sessions.refresh')}</button>
-            <button onClick={() => setShowTaskLaunch(true)} className="btn-primary" disabled={offline} title={offline ? t('sessions.offlineHint') : "Start a new task"}><PlusIcon size={18} />New Task</button>
-            <button onClick={onNewSession} className="btn-secondary" disabled={creating || offline} title={offline ? t('sessions.offlineHint') : undefined}>{creating ? <LoadingIcon size={18} /> : <PlusIcon size={18} />}{creating ? t('sessions.creating') : t('sessions.new')}</button>
+            <button onClick={() => setShowTaskLaunch(true)} className={taskEnabled ? "btn-primary" : "btn-secondary"} disabled={!taskEnabled} title={taskTitle}><PlayIcon size={18} />{taskCopy(sessionCardProps.language, "newTask")}</button>
+            <button onClick={onNewSession} className={taskEnabled ? "btn-secondary" : "btn-primary"} disabled={creating || offline} title={offline ? t('sessions.offlineHint') : undefined}>{creating ? <LoadingIcon size={18} /> : <PlusIcon size={18} />}{creating ? t('sessions.creating') : t('sessions.new')}</button>
           </div>
         </div>
         <div className="toolbar"><input placeholder={t('sessions.searchPlaceholder')} value={query} onChange={(event) => onQueryChange(event.target.value)} className="search" /></div>
@@ -311,7 +337,7 @@ export function SessionsPanel({
         {runtimeError && !(offline && filteredSessions.length === 0) && <div className="error fade-in">✗ {runtimeError}</div>}
         {jumpControls}
       </section>
-      {showTaskLaunch && <TaskLaunchDialog t={t} onClose={() => setShowTaskLaunch(false)} onLaunched={onRefresh} />}
+      {showTaskLaunch && <TaskLaunchDialog t={t} language={sessionCardProps.language} onClose={() => setShowTaskLaunch(false)} onLaunched={onRefresh} />}
     </>
   )
 }
