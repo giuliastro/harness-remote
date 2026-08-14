@@ -15,6 +15,7 @@ export const BACKEND_STORAGE_KEYS = {
 
 export const SERVER_PROFILES_STORAGE_KEY = "opencode.remote.serverProfiles"
 export const ACTIVE_PROFILE_STORAGE_KEY = "opencode.remote.activeServerProfile"
+export const SERVER_PROFILES_CHANGED_EVENT = "harness-remote:server-profiles-changed"
 
 export type SavedServerProfile = {
   id: string
@@ -114,6 +115,7 @@ export function loadActiveServerProfile(profiles: SavedServerProfile[]): SavedSe
 export function persistServerProfiles(profiles: SavedServerProfile[], activeProfileID: string): void {
   localStorage.setItem(SERVER_PROFILES_STORAGE_KEY, JSON.stringify(profiles))
   localStorage.setItem(ACTIVE_PROFILE_STORAGE_KEY, activeProfileID)
+  if (typeof window !== "undefined") window.dispatchEvent(new Event(SERVER_PROFILES_CHANGED_EVENT))
 }
 
 export function createServerProfile(name: string, backend: BackendKind): SavedServerProfile {
