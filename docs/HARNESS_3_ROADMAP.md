@@ -1,348 +1,296 @@
 # Harness 3 Product & Architecture Roadmap
 
-> **Status:** product direction, not a promise that every item below will ship exactly as written.
->
-> Execution is tracked in [roadmap issue #133](https://github.com/giuliastro/harness-remote/issues/133). Issues and PRs are canonical for implementation scope; this document is canonical for product direction and sequencing rationale.
+> **Status:** product direction and sequencing. Execution is tracked in [#133](https://github.com/giuliastro/harness-remote/issues/133).
 
 ## 1. Vision
 
-Harness Remote started as a companion for controlling coding agents away from the primary workstation. Remote control remains useful, but it is no longer a sufficient product identity.
+Harness Remote is evolving into a **local-first control plane for running AI coding work across the user's machines**.
 
-Harness should evolve into a **local-first control plane for running AI coding work across the user's machines**.
-
-Codex, Claude Code, OpenCode, OMP, PI and future ACP-compatible agents remain execution engines. Harness owns the workflow above them:
-
-- machines;
-- projects and repositories;
-- available agents and capabilities;
-- tasks, runs and workspaces;
-- human attention;
-- results and Git lifecycle.
-
-The target hierarchy is:
+The target hierarchy remains:
 
 ```text
 fleet → machine → project → task → agent run → backend
 ```
 
-A representative end state is:
+Codex, Claude Code, OpenCode, OMP, PI and future compatible agents are execution engines. Harness owns the layer above them: machine discovery, task placement, run configuration, attention, review and lifecycle.
 
-```text
-3 machines
-5 projects
-8 active agent runs
-2 need attention
-```
-
-## 2. Positioning
-
-Vendor-native products will provide excellent experiences for their own agents. Generic multi-agent orchestration is also an established category.
-
-Therefore neither of these is enough by itself:
-
-> use your coding agent from your phone
-
-> one control plane for all coding agents
-
-The sharper proposition is:
+## 2. Product proposition
 
 > **Run and supervise AI coding work across your machines, from anywhere, while execution and credentials stay on them.**
 
-Remote access becomes a capability of the control plane rather than the category definition.
+Multi-agent support by itself is not enough. The differentiating direction remains multi-machine, vendor-neutral, local-first control, but real-device testing on 2026-08-14 showed that the project advanced too far into task/fleet foundations before the single-machine product contract was reliable.
 
-## 3. Market decision — August 2026
+The roadmap therefore has a new rule:
 
-The August 2026 market review changed the sequencing materially.
+> **Do not add orchestration complexity on top of a connection/task flow that is not boringly reliable.**
 
-Observed category facts:
+## 3. Architecture contract
 
-- leading open orchestrators already provide multi-agent boards, worktree-per-task execution, diffs and PR flows;
-- worktree isolation and parallel task execution are becoming table stakes;
-- mobile orchestration already has entrants;
-- vendor apps increasingly supervise concurrent long-running agents;
-- ACP adoption makes “support many agents” progressively less defensible as proprietary engineering;
-- leading tools reach a useful state from a single command, making setup friction disqualifying rather than cosmetic.
+### Machine is the connection primitive
 
-The strongest currently identified underserved position is **multi-machine, vendor-neutral, local-first fleet management**.
-
-That is a wedge hypothesis, not a permanent moat and not yet a proven demand signal. Before making fleet work the largest investment, Harness should validate that a meaningful number of users actually run coding agents across multiple machines.
-
-The compounding advantage should come from the graph Harness can build above the fleet:
-
-> machines × projects × agents × capabilities × tasks × attention × results
-
-## 4. Defensibility
-
-No individual UI component is a moat. Defensibility should come from several layers compounding together.
-
-### Agent neutrality
-
-One workflow should survive changes in agent or vendor.
-
-### Local-first execution
-
-Credentials, source code and agent runtimes stay on execution machines by default.
-
-### Machine/project/task graph
-
-Harness should know where repositories live, which agents are available, which work is running and where results belong.
-
-### Durable task lifecycle
-
-The unit of value should move beyond a chat session:
+A Harness daemon represents one physical/logical machine:
 
 ```text
-start → work → attention → verify → review → PR → finish
+Machine daemon
+  endpoint + stable credentials
+  ├── PI
+  ├── OpenCode
+  ├── Codex
+  ├── Claude Code
+  └── OMP
 ```
 
-### Universal attention
+The client saves the **machine**, not one duplicated server profile per agent.
 
-Questions, permissions, failures and review-ready work should become normalized operational concepts rather than backend-specific UI details.
+Agents are discovered children of that machine and are selected at use time.
 
-### Open protocol leverage
+### One daemon, stable identity and auth
 
-ACP and generic adapters should make additional agents cheaper to support. Backend compatibility is infrastructure, not the primary growth story.
+Ordinary daemon restart must preserve:
 
-## 5. Architecture direction
+- machine identity;
+- generated client username/password or equivalent credential material;
+- known machine state needed for reconnect.
 
-Evolve the existing `bridge/`; do not casually replace it with a greenfield system.
+Restart is not credential rotation. Explicit user-supplied credentials remain valid overrides, and explicit rotation/reset may exist separately.
 
-The machine primitive is the Universal Daemon:
+### Discovery is authoritative
+
+For daemon-backed connections the client must not ask the user which backend is running before it connects. `/v1/machine` is the source of truth for:
+
+- machine identity;
+- discovered agents;
+- transport/backend metadata;
+- capabilities;
+- `available | starting | unavailable | unauthenticated` state;
+- failure reason;
+- projects/tasks where applicable.
+
+Legacy direct-server connections remain a compatibility mode and may still require explicit backend configuration.
+
+### Slow work is asynchronous
+
+Slow adapter startup, model discovery and task launch must not freeze the UI.
+
+The control plane should return identity/state quickly and let long work continue as explicit `starting` state.
+
+## 4. P0 Stabilization Gate
+
+No Fleet expansion or new orchestration feature outranks this gate.
+
+### P0.1 — Universal daemon reliability
+
+Issues: **#143, #177**
+
+#143 was closed too early and has been reopened.
+
+Required outcomes:
+
+- one public daemon endpoint represents all supported local agents that can be safely discovered;
+- a machine with PI + OpenCode + Codex does not require separate public servers/profiles;
+- no silent default selects OMP or another unavailable backend;
+- slow agent startup reports `starting` and can recover/retry;
+- one failed agent does not make the machine unusable;
+- generated client credentials persist across restart;
+- agent failure reasons are exposed through the machine API;
+- real-device validation covers at least PI plus one second agent on the same daemon.
+
+### P0.2 — Machine-first client and unified setup
+
+Issues: **#178, #180**
+
+There is one onboarding model for First Run, Add Machine and Edit Machine:
 
 ```text
-Harness clients
-      │
-      ▼
-Fleet control
-      │
-      ├── Machine A daemon
-      │     ├ AgentHost[codex]
-      │     ├ AgentHost[claude]
-      │     └ AgentHost[opencode]
-      │
-      ├── Machine B daemon
-      │     ├ AgentHost[codex]
-      │     └ AgentHost[omp]
-      │
-      └── later machines…
+Address
+Username
+Password
+[ Connect ]
 ```
 
-The daemon now provides stable machine identity, multiple agent-host representation, project/task foundations and fleet-safe ownership boundaries. Machine-scoped identifiers should continue to be designed so a second or third machine can be added without redefining the model.
+After connection, the app discovers agents automatically.
 
-## 6. Current implementation status
+Required outcomes:
 
-As of August 13, 2026:
+- no OpenCode-specific first-run wizard;
+- no different PI wizard later;
+- no deleting/recreating a server merely to switch agent;
+- one machine stores endpoint/credentials once;
+- agents appear/disappear automatically under the machine;
+- connection test reports machine reachability **and** agent usability/reasons;
+- existing duplicated daemon-backed profiles migrate safely;
+- legacy direct profiles keep exact compatibility semantics.
 
-- ✅ **#147 — One-command startup** is complete.
-- ✅ **#143 — Universal Daemon** is complete as an implementation milestone. Its architecture and mechanics are well covered by tests, but a real ACP-backed harness still needs to be run end to end before heterogeneous daemon compatibility is described as validated.
-- 🟡 **#145 — Create work** has most backend foundations complete: project discovery, normalized tasks, isolated worktrees, agent launch, persisted task/run linkage, restart reconciliation, safe cleanup, result inspection and explicit finish semantics. The major remaining closure gap is the task-first client UX.
-- ✅ **#163 — Finish-work result and safe finalization primitives** is complete through #164.
-- ⏳ Full review/tests/PR lifecycle remains ahead.
-- ⏳ **#146 — Multi-machine Fleet** remains the next major differentiating product milestone after the task workflow is exposed cleanly to users and fleet demand is validated.
+### P0.3 — Task launch reliability
 
-The important distinction is that task/worktree/finish support now exists as **backend/API capability**, but the product should not claim a complete task-first workflow until the client exposes it end to end.
+Issues: **#145, #173, #174, #175**
 
-## 7. Execution sequencing
+The current draft task path is not ready. Real Android testing found:
 
-The roadmap has two dependency tracks, but **not an assumption of parallel maintainer capacity**. When capacity conflicts, Product/Adoption work wins.
+- model refresh can hang for a long time then timeout;
+- reopening may show cached models with unclear freshness;
+- Start can return to the session list before the task appears;
+- launched sessions may not show their model catalog/current model;
+- task/run configuration is weaker and less reliable than the mature session path.
 
-### Primary track — Product / Adoption
-
-#### Completed foundation — #147 + #143
-
-One-command startup and the Universal Daemon established the adoption/runtime base:
-
-- low-friction startup;
-- stable machine identity;
-- multiple heterogeneous local agent hosts;
-- isolated host health/failure;
-- backward-compatible single-backend paths;
-- fleet-safe machine boundaries.
-
-The architecture/mechanics are implemented, but real heterogeneous multi-host validation still requires at least one reachable ACP-backed harness environment. Test doubles are evidence for the architecture, not proof of real harness compatibility.
-
-#### Current — finish #145 as a product workflow
-
-The backend loop already supports:
+Required task lifecycle:
 
 ```text
-project → task → isolated worktree → agent → run → result → finish
+New Task opens immediately
+  ↓
+metadata/model refresh independently
+  ↓
+user selects agent/model
+  ↓
+Start creates and persists task identity immediately
+  ↓
+client shows task immediately as starting
+  ↓
+worktree + agent/session startup happens asynchronously
+  ↓
+running | failed | interrupted | completed
 ```
 
-The immediate product gap is exposing that loop cleanly in the client:
+Model lifecycle:
 
-- choose a known project;
-- enter a task;
-- choose an agent;
-- prepare/start the isolated task;
-- open the resulting run/session;
-- inspect the result and finish safely.
+```text
+catalog → selection → task persistence → launch validation → session current-model readback
+```
 
-Several tasks should eventually be usable concurrently in separate worktrees. Explicit agent selection is enough initially. `Auto` routing remains later.
+Rules:
 
-#### Finish-work expansion — review / tests / PR
+- short explicit model/catalog timeout;
+- stale cache visibly stale, never silently authoritative;
+- model discovery works with zero user sessions;
+- no visible technical catalog sessions;
+- no silent model fallback;
+- selected model is persisted and observable after launch;
+- task appears immediately before slow startup finishes;
+- failures remain visible/recoverable rather than disappearing.
 
-The first backend finish primitives are complete, but the competitive loop is not:
+**#172 remains draft and `TASK_LAUNCH_ENABLED` remains false in normal builds until this passes real Android testing.**
+
+### P0.4 — Session correctness
+
+Issue: **#181**
+
+The PI `ciao` / `ciai` corruption remains open.
+
+The native PI-history approach attempted in draft #182 widened behavior too much and caused duplicate transcript state during manual testing. It is abandoned.
+
+The replacement must be a minimal fix in ACP replay/reconciliation/message-boundary handling with regression coverage and real-device validation. It must not change unrelated session semantics.
+
+## 5. Definition of Ready
+
+Before moving priority to Fleet or further orchestration, a real Android client against a real daemon must repeatedly pass:
+
+1. start daemon;
+2. restart daemon without changing app credentials;
+3. app reconnects to the same saved machine;
+4. app automatically discovers every usable local agent;
+5. First Run and Add Machine use the same connection flow;
+6. New Task opens immediately;
+7. fresh/known model selection works with zero prior sessions;
+8. Start immediately creates a visible `starting` task;
+9. task transitions without manual refresh/reopen;
+10. opening the run shows the selected/current model;
+11. transcript/session state remains correct across refresh/restart;
+12. one agent failure does not break the machine.
+
+Until this passes, the project is in **stabilization**, even if individual backend components have green unit tests.
+
+## 6. After Stabilization
+
+### P1 — Complete the work lifecycle
+
+Issue: **#169** plus follow-ups.
 
 ```text
 run → diff → tests/checks → review → PR → CI visibility → finish
 ```
 
-Next slices should add these incrementally without coupling the core task model to one forge too early.
+#169 may have implementation in draft work, but it remains open until accepted and merged through the normal review process.
 
-#### Later — Multi-machine Fleet (#146)
+### P2 — Multi-machine Fleet
 
-Before implementation becomes the largest roadmap investment, validate demand cheaply with existing users/contributors:
+Issue: **#146**
 
-- do they run coding agents on more than one machine?
-- which combinations: workstation/laptop/server/VM?
-- would one control surface materially change their workflow?
+Fleet must aggregate **machine objects**, not duplicated legacy per-agent profiles.
 
-If demand is validated, Harness should aggregate multiple machine daemons while keeping code and credentials local.
-
-Initial placement can be explicit:
+Initial placement remains explicit:
 
 ```text
-Task       Fix issue #200
-Machine    Workstation
-Agent      Codex
-Workspace  New worktree
+Task      Fix issue #200
+Machine   Workstation
+Agent     Codex
+Workspace New worktree
 ```
 
-Automatic machine selection comes later.
+Automatic placement comes later.
 
-#### Later — Coordinate
+### P3 — Attention
 
-Only after task/fleet fundamentals are reliable:
-
-- `Auto` agent selection;
-- `Auto` machine selection;
-- availability/capability/cost/rate-limit/workload-aware routing;
-- parallel implementation/review patterns;
-- optional E2E relay/self-hosted relay;
-- later team/RBAC/audit surfaces.
-
-### Secondary track — Attention
-
-Completed foundations:
-
-- #130 — session UI extraction;
-- #131 — normalized `AgentRun`.
-
-Current dependency chain:
+Non-blocking track:
 
 ```text
-#141 Track A mechanics → #142 Attention Plane → #132 Inbox component
-#141 Track B real-harness compatibility → backend-specific ACP permission policy
+#141 → #142 → #132
 ```
 
-#### #141 Track A
+Attention remains important, especially on mobile, but it does not outrank making connection/task fundamentals reliable.
 
-Implement hold/expose/answer mechanics using controlled ACP doubles.
+### P4 — Coordination
 
-The duration contract must remain **parameterized**:
+Only after fundamentals are reliable:
 
-- configurable deadline;
-- pluggable expiry/fallback policy;
-- reconnect behavior;
-- no duplicate/resurrected requests.
+- Auto agent selection;
+- Auto machine selection;
+- workload/capability/cost/rate-limit routing;
+- multi-agent implementation/review patterns;
+- optional relay;
+- team/RBAC/audit.
 
-Track A proves mechanics, not that real agents can wait indefinitely.
+## 7. Engineering rules
 
-#### #141 Track B
+1. **Machine-first, not backend-first.**
+2. **One setup flow.** First-run and later setup must not diverge.
+3. **Restart is not credential rotation.**
+4. **Discovery beats declaration.** Do not ask the user for facts the daemon already knows.
+5. **Identity before slow work.** Create machine/task/run state before expensive startup.
+6. **Explicit async states.** `starting`, `running`, `failed`, `interrupted`, `unavailable` are product states, not hidden implementation detail.
+7. **Caches disclose freshness.** Stale is never silently fresh.
+8. **No silent fallback.** Especially model and agent choices.
+9. **Legacy is compatibility mode.** Do not let old direct-server assumptions shape the new UX.
+10. **Manual Android validation gates product claims.** Unit/integration tests are necessary, not sufficient.
+11. **Prefer smaller fixes over cross-cutting workarounds.** If a fix changes unrelated session/connection behavior, narrow it before shipping.
 
-When real ACP-backed environments are reachable, measure Codex, Claude Code, OMP and PI behavior and produce per-backend GO/PARTIAL/NO-GO results.
-
-#### #142 Attention Plane
-
-Build persistent, event-first, backend-neutral attention state. It may proceed without the full Track B matrix; only backend-specific deferred-permission policy remains gated on real evidence.
-
-#### #132 Agent Inbox
-
-The Inbox can ship as a component after #142 for the active connection. It should not become the main product story merely because it exists.
-
-Once daemon/task/fleet work creates meaningful concurrent activity, the same mobile-friendly ordered list can become a strong fleet-level “Needs You” surface.
-
-## 8. Zero-config principles
-
-Setup is part of the product.
-
-- the shortest path should be obvious and measured;
-- the user should not need to understand one host/port/server process per backend;
-- non-loopback exposure must remain authenticated;
-- agent/provider credentials must never be printed or centralized;
-- unusual environments retain explicit advanced overrides;
-- future pairing should simplify authentication without weakening it.
-
-## 9. Security principles
-
-- credentials remain on execution machines;
-- source code does not need to be centralized;
-- filesystem roots stay explicit;
-- no unauthenticated non-loopback exposure;
-- machine identity/pairing must preserve or strengthen authentication;
-- deferred permissions ship only where real protocol evidence supports them;
-- future relay design should not require plaintext access to source, prompts or output;
-- LAN/VPN/self-hosted paths remain valid.
-
-## 10. What not to optimize for
-
-Do not prioritize:
-
-- raw harness count as a growth metric;
-- another generic kanban board;
-- worktrees marketed as unique differentiation;
-- a polished Inbox built on incomplete attention data;
-- smart routing before reliable task launch;
-- a hosted cloud backend before local value is excellent;
-- a greenfield rewrite without implementation evidence;
-- multi-machine implementation before demand is validated.
-
-## 11. Validation gates
-
-The roadmap should remain falsifiable.
-
-Before the multi-agent daemon is described as validated:
-
-- run at least one real ACP-backed harness end to end against it. Test doubles validate architecture and mechanics; they are not evidence of real harness compatibility.
-
-Before #146 becomes the largest build:
-
-- validate real multi-machine demand.
-
-Before backend-specific deferred permission behavior ships:
-
-- validate deferred approval behavior against real ACP-backed harness environments rather than only test doubles.
-
-Before hosted relay or automatic routing:
-
-- prove that users value the local task/fleet graph enough for routing/connectivity to compound rather than distract.
-
-## 12. Current priority order
-
-Status lives in §6; this section expresses ordering only.
+## 8. Current priority order
 
 ```text
-PRIMARY
-#147  One-command startup
-  ↓
-#143  Universal Daemon
-  ↓
-#145  Expose task launch + worktree + result/finish as an end-to-end client workflow
-  ↓
-       Diff / tests / review / PR / CI lifecycle
-  ↓
-#146  Multi-machine Fleet (after demand validation)
-  ↓
-       Auto machine + agent routing / orchestration
+P0 STABILIZATION
+#143 + #177   daemon/auth/discovery/all-agent reliability
+      ↓
+#178 + #180   machine-first client + unified wizard
+      ↓
+#145 + #173   New Task/model/start lifecycle
+      ↓
+#174 + #175   finish/restart robustness
 
-SECONDARY / NON-BLOCKING
-#141 Track A → #142 → #132
-#141 Track B ─────────→ ACP permission policy
+IN PARALLEL, ISOLATED
+#181          session boundary correctness
+
+THEN
+#169 + tests/review/PR lifecycle
+      ↓
+#146 Fleet
+      ↓
+auto routing/orchestration
+
+ATTENTION remains non-blocking
+#141 → #142 → #132
 ```
 
-## 13. Success test
+## 9. Success test
 
-Harness is succeeding when users describe it as **the place they run and manage agent work**, not merely the app they use to remote into one coding session.
+Harness is succeeding when users describe it as **the place they run and manage agent work**, and the basic workflow feels simpler than running the agents directly.
 
-The strongest product test is not whether Harness supports the most agents. It is whether one workflow remains useful as the user changes agents, projects and machines while local execution stays under their control.
+If adding the daemon causes more profiles, more credentials, more waiting or more ambiguity, the control plane has failed its job regardless of how much architecture exists underneath.
