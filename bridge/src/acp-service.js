@@ -173,6 +173,8 @@ export class AcpService {
   #messages = new Map()
   #todos = new Map()
   #configOptions = new Map()
+  #modelCatalogLoader
+  #modelCatalog
   #commandCatalogs = new Map()
   #commandCatalogWaiters = new Map()
   #actionStates = new Map()
@@ -205,7 +207,8 @@ export class AcpService {
     historyLoader,
     preserveListedTimestamps = false,
     reloadOnHistoryRefresh = true,
-    actionProviders = []
+    actionProviders = [],
+    modelCatalogLoader
   } = {}) {
     this.#acp = acp
     this.#snapshotDirectory = snapshotDirectory
@@ -213,6 +216,7 @@ export class AcpService {
     this.#preserveListedTimestamps = preserveListedTimestamps
     this.#reloadOnHistoryRefresh = reloadOnHistoryRefresh
     this.#actionProviders = actionProviders
+    this.#modelCatalogLoader = modelCatalogLoader
     acp.on("notification", (notification) => this.#handleNotification(notification))
   }
 
@@ -321,7 +325,12 @@ export class AcpService {
       await this.#loadForConfigOptions(sessionID)
       return modelInfoList(this.#configOptions.get(sessionID))
     }
-    return modelInfoList([...this.#configOptions.values()].at(-1))
+    const known = modelInfoList([...this.#configOptions.values()].at(-1))
+    if (known.length || !this.#modelCatalogLoader) return known
+    // Nothing has loaded a session yet, so ask the harness directly. `pi --list-models` answers
+    // without one; a harness that cannot be asked simply leaves the catalog empty.
+    if (!this.#modelCatalog) this.#modelCatalog = this.#modelCatalogLoader().catch(() => [])
+    return (await this.#modelCatalog).map((candidate) => ({ ...candidate, currentValue: false }))
   }
 
   async actions(sessionID) {

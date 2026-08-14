@@ -3,6 +3,7 @@ import path from "node:path"
 import { AcpClient } from "./acp-client.js"
 import { parseConfig, usage as bridgeUsage } from "./config.js"
 import { harnessProfile } from "./harness-profiles.js"
+import { createModelCatalogLoader } from "./harness-models.js"
 import { canListen, resolveLaunchPlan } from "./launcher.js"
 import { loadMachineIdentity } from "./machine-registry.js"
 import { MachineDaemon, createMachineDaemonServer } from "./machine-daemon.js"
@@ -183,6 +184,7 @@ async function main() {
       snapshotDirectory: path.join(config.stateDirectory, profile.id),
       historyLoader: profile.historyLoader,
       preserveListedTimestamps: profile.preserveListedTimestamps,
+      modelCatalogLoader: createModelCatalogLoader(profile),
       reloadOnHistoryRefresh: profile.reloadOnHistoryRefresh
     } : undefined
   })

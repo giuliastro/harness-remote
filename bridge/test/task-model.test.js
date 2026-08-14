@@ -127,3 +127,45 @@ test("an ACP task applies its chosen model to the session it creates", async () 
   await new TaskLauncher({ daemon }).createSession({ ...task, model: null })
   assert.equal(calls.some((call) => call.method === "session/set_config_option"), false)
 })
+
+// A harness knows its own models without being asked through a session: `pi --list-models` prints
+// them. The session-scoped ACP config option is only one way of finding out, and it is the one a
+// task cannot use, because a task has no session until it launches.
+test("a harness model listing is parsed however the CLI prints it", async () => {
+  const { parseModelListing, createModelCatalogLoader } = await import("../src/harness-models.js")
+
+  assert.deepEqual(parseModelListing('["openrouter/deepseek-v4"]'), [
+    { value: "openrouter/deepseek-v4", label: "openrouter/deepseek-v4" }
+  ])
+  assert.deepEqual(parseModelListing('{"models":[{"id":"openrouter/kimi"}]}'), [
+    { value: "openrouter/kimi", label: "openrouter/kimi" }
+  ])
+  assert.deepEqual(parseModelListing("Available models:\n  - openrouter/kimi\n  * openrouter/deepseek-v4\n"), [
+    { value: "openrouter/kimi", label: "openrouter/kimi" },
+    { value: "openrouter/deepseek-v4", label: "openrouter/deepseek-v4" }
+  ])
+  assert.deepEqual(parseModelListing(""), [])
+  assert.deepEqual(parseModelListing("no models are configured"), [], "prose is not a model id")
+
+  assert.equal(createModelCatalogLoader({}), undefined, "a harness with no listing command has no loader")
+
+  // A harness that cannot be asked leaves the catalog empty rather than failing the request.
+  const failing = createModelCatalogLoader({ modelListing: { command: "nope", args: [] } }, {
+    spawnProcess: () => { throw new Error("ENOENT") }
+  })
+  assert.deepEqual(await failing(), [])
+
+  const listing = createModelCatalogLoader({ modelListing: { command: "pi", args: ["--list-models"] } }, {
+    spawnProcess: () => {
+      const handlers = {}
+      return {
+        stdout: { setEncoding() {}, on(_event, handler) { handlers.data = handler } },
+        on(event, handler) { handlers[event] = handler },
+        kill() {}
+      }
+    }
+  })
+  const pending = listing()
+  await new Promise((resolve) => setImmediate(resolve))
+  assert.ok(pending instanceof Promise)
+})
