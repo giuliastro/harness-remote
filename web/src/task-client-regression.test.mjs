@@ -45,15 +45,18 @@ assert.equal(
   'both creation actions need a short label; the compact action drops its label entirely'
 )
 
-// Model choice is machine/agent-level state. Opening New Task must ask the daemon for a refreshed
-// catalog even when the harness has zero user sessions, and launch must be the second validation
-// point so a model removed while the dialog is open cannot silently fall back to another one.
+// Model choice is machine/agent-level state. Machine/project discovery renders the usable dialog
+// first; model refresh runs separately with a hard client deadline so a slow adapter cannot freeze
+// New Task. Launch remains the second validation boundary.
 assert.ok(dialog.includes("t('task.model')"), 'the task dialog must offer a model')
-assert.ok(dialog.includes('models.length > 0 &&'), 'the model field must be absent when the agent has no models to list')
-assert.ok(dialog.includes("t('task.modelDefault')"), 'leaving the agent default must stay an explicit choice')
-assert.ok(dialog.includes('taskClient.listAgentModels(connection.config, active.id)'), 'New Task must refresh the agent-level model catalog')
-assert.ok(dialog.includes('modelStale'), 'a cached fallback must be visibly distinguishable from a fresh catalog')
+assert.ok(dialog.includes('type ModelState = "idle" | "loading" | "fresh" | "stale" | "unavailable"'), 'model freshness must be explicit')
+assert.ok(dialog.includes('setTaskConfig(connection.config)'), 'the form must become usable after machine/project discovery')
+assert.ok(dialog.indexOf('setTaskConfig(connection.config)') < dialog.indexOf('await refreshModels(connection.config, active.id'), 'model refresh must happen after the base form is populated')
+assert.ok(dialog.includes('taskClient.listAgentModels(targetConfig, agentId)'), 'New Task must refresh the agent-level model catalog')
+assert.ok(dialog.includes('modelState === "stale"'), 'a cached fallback must be visibly distinguishable from a fresh catalog')
+assert.ok(dialog.includes('modelState === "unavailable"'), 'model failure must be visible without replacing the whole dialog')
 assert.ok(dialog.includes('await taskClient.launch(taskConfig, task.id)'), 'launch remains the final model validation boundary')
+assert.ok(client.includes('MODEL_REFRESH_TIMEOUT_MS = 5_000'), 'model refresh must use a short explicit client deadline')
 assert.ok(client.includes('/models`'), 'the task client must expose the agent model endpoint')
 assert.ok(client.includes('model?: ModelSelection'), 'the task client must carry the selection to the daemon')
 
@@ -72,5 +75,6 @@ assert.equal(client.includes('await response.json() as T'), false, 'the browser 
 
 assert.ok(dialog.includes('<div className="wizard-footer">'), 'Task actions should use the same shared wizard footer as New Session')
 assert.equal(/style=\{\{/.test(dialog), false, 'the dialog must not override the design system with inline styles')
+assert.ok(dialog.includes('onClick={starting ? undefined : onClose}'), 'the dialog must not disappear while launch is still working')
 
 console.log('task client regression tests passed')
