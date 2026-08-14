@@ -1,3 +1,58 @@
+.task-launch-form {
+  display: grid;
+  gap: var(--space-4);
+}
+
+.task-launch-form .folder-picker-current {
+  margin: 0;
+}
+
+.task-launch-form .folder-picker-current strong,
+.task-launch-check span {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.task-launch-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-3);
+}
+
+.task-launch-grid .field {
+  min-width: 0;
+}
+
+.task-launch-agent-note {
+  margin-top: calc(var(--space-2) * -1);
+}
+
+.task-launch-form textarea {
+  resize: vertical;
+  min-height: 8rem;
+}
+
+.task-launch-worktree {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.task-launch-check {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--surface-subtle);
+}
+
+.task-launch-check:has(input:not(:disabled)) {
+  cursor: pointer;
+}
+
 @media (max-width: 640px) {
   .sessions-header-actions {
     flex-wrap: nowrap;
@@ -7,10 +62,9 @@
 
   .sessions-header-actions > button {
     min-width: 0;
-    flex: 1 1 0;
   }
 
-  .sessions-header-actions > button:nth-child(2) {
+  .sessions-header-actions > button:first-child {
     flex: 0 0 var(--control-h-lg);
     width: var(--control-h-lg);
     padding-inline: 0;
@@ -18,8 +72,12 @@
     gap: 0;
   }
 
-  .sessions-header-actions > button:nth-child(2) svg {
-    width: 18px;
-    height: 18px;
+  .sessions-header-actions > button:nth-child(2),
+  .sessions-header-actions > button:nth-child(3) {
+    flex: 1 1 0;
+  }
+
+  .task-launch-grid {
+    grid-template-columns: 1fr;
   }
 }
