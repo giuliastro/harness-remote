@@ -16,7 +16,7 @@ import {
 } from "../Icons"
 import type { Translator } from "../i18n"
 import { discoverMachine } from "../machineClient"
-import { loadActiveServerProfile, loadServerProfiles } from "../serverProfiles"
+import { loadActiveServerProfile, loadServerProfiles, SERVER_PROFILES_CHANGED_EVENT } from "../serverProfiles"
 import { taskCopy } from "../taskCopy"
 import type { HarnessCapabilities, SessionView } from "../types"
 import { TaskLaunchDialog } from "./task-launch-dialog"
@@ -52,11 +52,21 @@ export function formatRelativeTime(epoch: number, locale: string): string {
 }
 
 function useTaskLaunchAvailability(offline: boolean) {
-  const profile = useMemo(() => loadActiveServerProfile(loadServerProfiles()), [])
+  const [profileRevision, setProfileRevision] = useState(0)
+  useEffect(() => {
+    const refreshProfile = () => setProfileRevision((value) => value + 1)
+    window.addEventListener(SERVER_PROFILES_CHANGED_EVENT, refreshProfile)
+    return () => window.removeEventListener(SERVER_PROFILES_CHANGED_EVENT, refreshProfile)
+  }, [])
+  const profile = useMemo(() => loadActiveServerProfile(loadServerProfiles()), [profileRevision])
   const [state, setState] = useState<"checking" | "available" | "legacy">("checking")
   useEffect(() => {
-    if (offline) return
+    if (offline) {
+      setState("checking")
+      return
+    }
     let cancelled = false
+    setState("checking")
     void discoverMachine(profile.config).then((machine) => {
       if (!cancelled) setState(machine ? "available" : "legacy")
     }).catch(() => {
