@@ -1,4 +1,5 @@
 import { taskLaunchError } from "./task-errors.js"
+import { promptModelBody, sessionModelBody } from "./task-model.js"
 
 function basicAuthorization(username, password) {
   if (!username && !password) return undefined
@@ -60,7 +61,7 @@ export class TaskLauncher {
           "Content-Type": "application/json",
           ...(authorization ? { Authorization: authorization } : {})
         },
-        body: JSON.stringify({ title: `Task ${task.id.slice(0, 8)}` })
+        body: JSON.stringify({ title: `Task ${task.id.slice(0, 8)}`, model: sessionModelBody(task.model) })
       })
       const session = await responseJSON(response, `Creating ${task.agentId} session`)
       if (!session?.id) throw new Error(`Agent ${task.agentId} did not return a session id`)
@@ -96,7 +97,11 @@ export class TaskLauncher {
           // Authorization belongs to the ephemeral createSession() result only.
           ...(run.authorization ? { Authorization: run.authorization } : {})
         },
-        body: JSON.stringify({ parts: [{ type: "text", text: task.prompt }] })
+        body: JSON.stringify({
+          parts: [{ type: "text", text: task.prompt }],
+          model: promptModelBody(task.model),
+          variant: task.model?.variant || undefined
+        })
       })
       if (!response.ok) throw new Error(`Starting ${task.agentId} task failed with HTTP ${response.status}`)
     }

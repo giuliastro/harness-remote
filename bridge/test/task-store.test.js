@@ -23,6 +23,8 @@ test("persists machine-scoped draft tasks with project, agent and workspace iden
       project: { name: "repo", path: "/work/repo", kind: "git" },
       agentId: "codex",
       prompt: "Fix issue #145",
+      // Explicitly null: launching on the agent default is a recorded choice, not a missing field.
+      model: null,
       status: "draft",
       workspace: { mode: "project", path: "/work/repo" },
       run: null,

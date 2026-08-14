@@ -2,7 +2,7 @@ import { Capacitor, CapacitorHttp } from "@capacitor/core"
 import { desktopRequestResult, isDesktopPlatform } from "./desktopBridge"
 import { unwrapPayload } from "./machinePayload"
 import { authHeader, hasCredentials, machineBaseUrl } from "./serverConfig"
-import type { ServerConfig } from "./types"
+import type { ModelSelection, ServerConfig } from "./types"
 
 export type MachineProject = {
   id: string
@@ -149,7 +149,7 @@ export const taskClient = {
     return requireArray<MachineTask>(payload, "tasks", "/v1/tasks")
   },
 
-  async createTask(config: ServerConfig, input: { projectId: string; agentId: string; prompt: string }): Promise<MachineTask> {
+  async createTask(config: ServerConfig, input: { projectId: string; agentId: string; prompt: string; model?: ModelSelection }): Promise<MachineTask> {
     return machineRequest<MachineTask>(config, "/v1/tasks", { method: "POST", body: input })
   },
 

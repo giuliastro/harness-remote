@@ -64,7 +64,7 @@ export class TaskStore {
     return task ? structuredClone(task) : undefined
   }
 
-  async create({ project, agentId, prompt }) {
+  async create({ project, agentId, prompt, model = null }) {
     await this.load()
     const text = typeof prompt === "string" ? prompt.trim() : ""
     if (!text) throw new Error("A task prompt is required")
@@ -76,6 +76,9 @@ export class TaskStore {
       project: { name: project.name, path: project.path, kind: project.kind },
       agentId,
       prompt: text,
+      // Null rather than absent: a task that was launched on the agent's default is a different
+      // fact from a task saved before models could be chosen, and a relaunch must reproduce it.
+      model,
       status: "draft",
       workspace: { mode: "project", path: project.path },
       run: null,

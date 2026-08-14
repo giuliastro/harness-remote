@@ -236,6 +236,8 @@ type TranslationKey =
   | 'task.starting'
   | 'task.subtitle'
   | 'task.project'
+  | 'task.model'
+  | 'task.modelDefault'
   | 'task.label'
   | 'task.agent'
   | 'task.machine'
@@ -323,6 +325,8 @@ const translations: Record<LanguageCode, Partial<Record<TranslationKey, string>>
     'task.starting': 'Starting…',
     'task.subtitle': 'Start agent work on {machine}.',
     'task.project': 'Project',
+    'task.model': 'Model',
+    'task.modelDefault': 'Agent default',
     'task.label': 'Task',
     'task.agent': 'Agent',
     'task.machine': 'Machine',
@@ -637,6 +641,8 @@ const translations: Record<LanguageCode, Partial<Record<TranslationKey, string>>
     'task.starting': 'Avvio…',
     'task.subtitle': 'Avvia un lavoro con un agente su {machine}.',
     'task.project': 'Progetto',
+    'task.model': 'Modello',
+    'task.modelDefault': 'Predefinito dell’agente',
     'task.label': 'Task',
     'task.agent': 'Agente',
     'task.machine': 'Macchina',
@@ -951,6 +957,8 @@ const translations: Record<LanguageCode, Partial<Record<TranslationKey, string>>
     'task.starting': '正在啟動…',
     'task.subtitle': '在 {machine} 上開始代理工作。',
     'task.project': '專案',
+    'task.model': '模型',
+    'task.modelDefault': '代理預設',
     'task.label': '任務',
     'task.agent': '代理',
     'task.machine': '機器',
@@ -1217,6 +1225,8 @@ const translations: Record<LanguageCode, Partial<Record<TranslationKey, string>>
     'task.starting': '正在启动…',
     'task.subtitle': '在 {machine} 上启动代理工作。',
     'task.project': '项目',
+    'task.model': '模型',
+    'task.modelDefault': '代理默认',
     'task.label': '任务',
     'task.agent': '代理',
     'task.machine': '机器',
