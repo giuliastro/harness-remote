@@ -121,10 +121,12 @@ async function hasDaemonProjectsRoute(config: ServerConfig): Promise<boolean> {
 }
 
 /**
- * Best-effort daemon discovery. New daemons expose /v1/machine and /global/machine. OpenCode-only
- * daemons can also be positively identified by the machine-level /v1/projects route, which gives
- * the Android client a safe fallback if a native HTTP layer mangles the machine snapshot payload.
- * A direct/legacy OpenCode server does not expose that route, so it still returns null here.
+ * Best-effort daemon discovery. New daemons expose /v1/machine and /global/machine. OpenCode is
+ * special in the client: if the normal OpenCode API is already connected, task launch must never be
+ * disabled just because a native HTTP layer mangles the machine-discovery response. We still probe
+ * /v1/projects so a real daemon is identified when possible, but ultimately return a synthetic
+ * OpenCode host snapshot and let TaskLaunchDialog validate the task endpoints themselves. This keeps
+ * the top-level action usable and moves errors to the place where they can be explained accurately.
  */
 export async function discoverMachine(config: ServerConfig): Promise<MachineSnapshot | null> {
   let lastError: Error | null = null
@@ -143,6 +145,7 @@ export async function discoverMachine(config: ServerConfig): Promise<MachineSnap
     } catch (error) {
       lastError = error instanceof Error ? error : new Error(String(error))
     }
+    return fallbackOpenCodeSnapshot(config)
   }
 
   if (lastError && !/HTTP (404|503)/.test(lastError.message)) throw lastError
