@@ -1,6 +1,10 @@
 import type { SavedServerProfile } from "./serverProfiles"
 import type { MachineSnapshot, ServerConfig } from "./types"
-import type { MachineProject } from "./taskClient"
+import type { MachineProject, MachineTask } from "./taskClient"
+
+export type FleetTask = MachineTask & {
+  fleetId: string
+}
 
 export type FleetMachine = {
   key: string
@@ -11,12 +15,14 @@ export type FleetMachine = {
   machine: MachineSnapshot["machine"] | null
   agents: MachineSnapshot["agents"]
   projects: MachineProject[]
+  tasks: FleetTask[]
   error?: string
 }
 
 export type FleetObservation = {
   machine: MachineSnapshot
   projects: MachineProject[]
+  tasks: MachineTask[]
 }
 
 export type FleetDiscover = (config: ServerConfig) => Promise<FleetObservation>
@@ -41,6 +47,10 @@ export function groupProfilesByMachineEndpoint(profiles: SavedServerProfile[]): 
   return groups
 }
 
+export function fleetTaskID(machineID: string, taskID: string): string {
+  return `${encodeURIComponent(machineID)}:${encodeURIComponent(taskID)}`
+}
+
 /**
  * Discover every configured daemon independently. One dead laptop must produce one unreachable
  * fleet row, never reject the whole fleet load. Successful daemon identity replaces the endpoint
@@ -52,15 +62,17 @@ export async function discoverFleet(profiles: SavedServerProfile[], discover: Fl
     const representative = machineProfiles[0]
     try {
       const observation = await discover(representative.config)
+      const machineID = observation.machine.machine.id
       return {
-        key: observation.machine.machine.id,
+        key: machineID,
         profileIds: machineProfiles.map((profile) => profile.id),
         profileNames: machineProfiles.map((profile) => profile.name),
         config: representative.config,
         state: "online",
         machine: observation.machine.machine,
         agents: observation.machine.agents,
-        projects: observation.projects
+        projects: observation.projects,
+        tasks: observation.tasks.map((task) => ({ ...task, fleetId: fleetTaskID(machineID, task.id) }))
       }
     } catch (cause) {
       return {
@@ -72,6 +84,7 @@ export async function discoverFleet(profiles: SavedServerProfile[], discover: Fl
         machine: null,
         agents: [],
         projects: [],
+        tasks: [],
         error: cause instanceof Error ? cause.message : String(cause)
       }
     }
