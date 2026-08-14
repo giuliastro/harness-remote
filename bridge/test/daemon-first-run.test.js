@@ -35,3 +35,30 @@ test("the managed OpenCode readiness timeout can be raised", () => {
   assert.equal(parseDaemonOptions([], { HARNESS_REMOTE_OPENCODE_TIMEOUT: "45000" }, detect()).openCodeTimeout, 45000)
   assert.throws(() => parseDaemonOptions(["--opencode-timeout", "5"], {}, detect()), /at least 1000/)
 })
+
+// The harness and its ACP adapter are two separate installations. PI's own installer puts `pi` on
+// PATH and no adapter with it, so detecting the harness and assuming npx can fetch an adapter is
+// how a machine with PI installed ends up unable to run PI.
+test("an ACP adapter already on PATH is preferred over fetching one", async () => {
+  const { harnessProfile, resolveAcpLaunch } = await import("../src/harness-profiles.js")
+
+  const installed = resolveAcpLaunch(harnessProfile("pi"), { find: (name) => name === "pi-acp" ? "/usr/bin/pi-acp" : null })
+  assert.deepEqual(installed, { command: "/usr/bin/pi-acp", args: [], source: "path" })
+
+  const fetched = resolveAcpLaunch(harnessProfile("pi"), { find: () => null })
+  assert.equal(fetched.source, "npx")
+  assert.ok(fetched.args.includes("@automatalabs/pi-acp@0.2.5"))
+
+  // OMP speaks ACP itself, so there is no adapter to look for and nothing to prefer.
+  assert.deepEqual(resolveAcpLaunch(harnessProfile("omp"), { find: () => "/never/used" }), {
+    command: "omp",
+    args: ["acp"],
+    source: "harness"
+  })
+
+  for (const backend of ["claude", "codex"]) {
+    const profile = harnessProfile(backend)
+    assert.ok(profile.adapterCommand, `${backend} must name the adapter binary it would install`)
+    assert.equal(resolveAcpLaunch(profile, { find: () => `/usr/bin/${profile.adapterCommand}` }).source, "path")
+  }
+})

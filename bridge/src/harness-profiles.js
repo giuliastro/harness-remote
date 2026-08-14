@@ -1,3 +1,4 @@
+import { findExecutable } from "./launcher.js"
 import { createCodexHistoryLoader } from "./codex-session-history.js"
 import { createOmpHistoryLoader } from "./omp-session-history.js"
 import { OMP_EXTENSION_ACTION_PROVIDERS } from "./extension-actions.js"
@@ -44,6 +45,7 @@ export const HARNESS_PROFILES = {
     // default failed with `notarget` when a release outran its own tarball in the registry.
     command: process.platform === "win32" ? "npx.cmd" : "npx",
     args: ["-y", "@automatalabs/pi-acp@0.2.5"],
+    adapterCommand: "pi-acp",
     permissionMode: "allow",
     preserveListedTimestamps: true,
     reloadOnHistoryRefresh: false,
@@ -68,6 +70,7 @@ export const HARNESS_PROFILES = {
     // Pinned to avoid the `notarget` scenario that PI hit: an unpinned default failed when a
     // release appeared in the registry index before its tarball could be fetched.
     args: ["-y", "@agentclientprotocol/claude-agent-acp@0.63.0"],
+    adapterCommand: "claude-agent-acp",
     permissionMode: "allow",
     preserveListedTimestamps: true,
     reloadOnHistoryRefresh: false,
@@ -94,6 +97,7 @@ export const HARNESS_PROFILES = {
     // Pinned to avoid the `notarget` scenario that PI hit: an unpinned default failed when a
     // release appeared in the registry index before its tarball could be fetched.
     args: ["-y", "@agentclientprotocol/codex-acp@1.1.14"],
+    adapterCommand: "codex-acp",
     permissionMode: "allow",
     // The adapter offers `api-key` before `chat-gpt`; the former demands CODEX_API_KEY or
     // OPENAI_API_KEY, while a `codex login` leaves ChatGPT credentials the `chat-gpt` method
@@ -127,4 +131,20 @@ export function harnessProfile(id) {
   const profile = HARNESS_PROFILES[id]
   if (!profile) throw new Error(`Unsupported backend: ${id}`)
   return profile
+}
+
+/**
+ * The harness and its ACP adapter are two different installations. `pi` from the project's own
+ * installer puts the harness on PATH and no adapter with it, so detecting the harness and then
+ * assuming `npx` can fetch an adapter is how a machine with PI installed ends up unable to run PI.
+ *
+ * An adapter already on PATH is preferred over fetching one: it is what the user installed, it
+ * starts without a network round trip, and it sidesteps environments where `npx` cannot link a
+ * binary — which is exactly what happens under proot on Android.
+ */
+export function resolveAcpLaunch(profile, { find = findExecutable } = {}) {
+  if (!profile.adapterCommand) return { command: profile.command, args: [...profile.args], source: "harness" }
+  const installed = find(profile.adapterCommand)
+  if (installed) return { command: installed, args: [], source: "path" }
+  return { command: profile.command, args: [...profile.args], source: "npx" }
 }

@@ -162,6 +162,9 @@ async function main() {
     process.stdout.write(`Harness daemon listening on http://${config.host}:${config.port}\n`)
     process.stdout.write(`Machine: ${identity.name} (${identity.id})\n`)
     if (openCode) process.stdout.write(`Managed OpenCode: http://${openCodeHost}:${openCodePort} (internal — reach it through the daemon port)\n`)
+    // Which adapter an ACP agent is about to run is the single most useful line when it fails to
+    // start: it separates "the adapter you installed is broken" from "we tried to fetch one".
+    process.stdout.write(`Primary agent: ${config.backend} (adapter: ${[config.acpCommand, ...config.acpArgs].join(" ")})\n`)
     for (const host of daemon.snapshot().agents) {
       process.stdout.write(`${host.state === "available" ? "✓" : "•"} ${host.label} [${host.transport}] ${host.state}\n`)
     }
