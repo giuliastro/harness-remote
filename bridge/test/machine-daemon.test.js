@@ -118,7 +118,7 @@ test("failed eager startup is isolated and reported in the machine snapshot", as
   assert.equal(daemon.snapshot().agents.find((host) => host.id === "codex").state, "configured")
 })
 
-test("machine server wires the shared registry, agent router, task launch, and finish wrappers", () => {
+test("machine server wires the shared registry, agent router, task launch, model validation, and finish wrappers", () => {
   const daemon = new MachineDaemon({ id: "machine_test", name: "workstation" })
   const acp = new FakeAcp()
   const openCode = new FakeHttpHost()
@@ -128,10 +128,12 @@ test("machine server wires the shared registry, agent router, task launch, and f
   let bridgeOptions
   let routerOptions
   let launchOptions
+  let modelOptions
   let finishOptions
   const bridgeServer = { marker: "bridge" }
   const routedServer = { marker: "router" }
   const launchServer = { marker: "launch" }
+  const modelServer = { marker: "models" }
   const finishServer = { marker: "finish" }
   const value = createMachineDaemonServer({
     daemon,
@@ -142,6 +144,7 @@ test("machine server wires the shared registry, agent router, task launch, and f
     createServer: (options) => { bridgeOptions = options; return bridgeServer },
     createRouter: (options) => { routerOptions = options; return routedServer },
     createLaunchServer: (options) => { launchOptions = options; return launchServer },
+    createModelServer: (options) => { modelOptions = options; return modelServer },
     createFinishServer: (options) => { finishOptions = options; return finishServer }
   })
 
@@ -153,7 +156,10 @@ test("machine server wires the shared registry, agent router, task launch, and f
   assert.equal(routerOptions.primaryAgentID, "pi")
   assert.equal(launchOptions.innerServer, routedServer)
   assert.equal(typeof launchOptions.taskRunController.launch, "function")
-  assert.equal(finishOptions.innerServer, launchServer)
+  assert.equal(modelOptions.innerServer, launchServer)
+  assert.equal(modelOptions.daemon, daemon)
+  assert.equal(modelOptions.taskStore, routerOptions.taskStore)
+  assert.equal(finishOptions.innerServer, modelServer)
   assert.equal(finishOptions.taskStore, routerOptions.taskStore)
   assert.equal(finishOptions.worktreeManager, routerOptions.worktreeManager)
   assert.deepEqual(bridgeOptions.machineRegistry.snapshot().agents.map((host) => host.id), ["pi", "opencode"])
