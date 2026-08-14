@@ -29,7 +29,7 @@ export type FleetDiscover = (config: ServerConfig) => Promise<FleetObservation>
 
 /**
  * Profiles for different agents on the same daemon share one machine endpoint. Fleet discovery must
- * contact that endpoint once, not turn five saved agent profiles into five fake machines.
+ * contact that endpoint once logically, not turn five saved agent profiles into five fake machines.
  */
 export function machineEndpointKey(config: ServerConfig): string {
   const raw = config.host.trim().replace(/\/+$/, "")
@@ -51,23 +51,39 @@ export function fleetTaskID(machineID: string, taskID: string): string {
   return `${encodeURIComponent(machineID)}:${encodeURIComponent(taskID)}`
 }
 
+async function discoverThroughProfiles(machineProfiles: SavedServerProfile[], discover: FleetDiscover): Promise<{
+  profile: SavedServerProfile
+  observation: FleetObservation
+}> {
+  let lastError: unknown
+  for (const profile of machineProfiles) {
+    try {
+      return { profile, observation: await discover(profile.config) }
+    } catch (cause) {
+      lastError = cause
+    }
+  }
+  throw lastError ?? new Error("No usable profile is configured for this machine")
+}
+
 /**
  * Discover every configured daemon independently. One dead laptop must produce one unreachable
- * fleet row, never reject the whole fleet load. Successful daemon identity replaces the endpoint
- * key as the durable identity users see; the endpoint key remains useful while a machine is down.
+ * fleet row, never reject the whole fleet load. Several saved agent profiles may point at the same
+ * daemon; if one profile carries stale credentials, alternate profiles for that endpoint are tried
+ * before the physical machine is declared unreachable.
  */
 export async function discoverFleet(profiles: SavedServerProfile[], discover: FleetDiscover): Promise<FleetMachine[]> {
   const groups = [...groupProfilesByMachineEndpoint(profiles).entries()]
   const machines = await Promise.all(groups.map(async ([endpoint, machineProfiles]): Promise<FleetMachine> => {
     const representative = machineProfiles[0]
     try {
-      const observation = await discover(representative.config)
+      const { profile, observation } = await discoverThroughProfiles(machineProfiles, discover)
       const machineID = observation.machine.machine.id
       return {
         key: machineID,
-        profileIds: machineProfiles.map((profile) => profile.id),
-        profileNames: machineProfiles.map((profile) => profile.name),
-        config: representative.config,
+        profileIds: machineProfiles.map((candidate) => candidate.id),
+        profileNames: machineProfiles.map((candidate) => candidate.name),
+        config: profile.config,
         state: "online",
         machine: observation.machine.machine,
         agents: observation.machine.agents,
