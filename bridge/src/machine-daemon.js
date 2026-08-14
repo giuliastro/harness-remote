@@ -1,4 +1,4 @@
-import { createAgentRoutingServer } from "./agent-router.js"
+import { createAgentRoutingServer, createManagedHttpBridgeServer } from "./agent-router.js"
 import { MachineRegistry, trackAgentHostLifecycle } from "./machine-registry.js"
 import { trackManagedHostLifecycle } from "./opencode-host.js"
 import { discoverProjects } from "./project-catalog.js"
@@ -57,6 +57,7 @@ export function createMachineDaemonServer({
   primaryAgentID = config.backend,
   serviceOptions,
   createServer = createBridgeServer,
+  createHttpBridge = createManagedHttpBridgeServer,
   createRouter = createAgentRoutingServer,
   createLaunchServer = createTaskLaunchServer,
   createFinishServer = createTaskFinishServer,
@@ -66,7 +67,16 @@ export function createMachineDaemonServer({
   taskLauncher,
   taskRunController
 }) {
-  const bridgeServer = createServer({ config, acp: primaryAcp, machineRegistry: daemon.registry, serviceOptions })
+  const primaryEntry = daemon.hostEntry(primaryAgentID)
+  let bridgeServer
+  if (primaryAcp) {
+    bridgeServer = createServer({ config, acp: primaryAcp, machineRegistry: daemon.registry, serviceOptions })
+  } else if (primaryEntry?.kind === "http") {
+    bridgeServer = createHttpBridge({ host: primaryEntry.host, config })
+  } else {
+    throw new Error(`Primary agent ${primaryAgentID} is not registered or cannot serve the daemon API`)
+  }
+
   const machineID = daemon.snapshot().machine.id
   const roots = config.roots?.length ? config.roots : [process.cwd()]
   const stateDirectory = config.stateDirectory ?? process.cwd()
