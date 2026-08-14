@@ -1,4 +1,5 @@
 import { createAgentRoutingServer, createManagedHttpBridgeServer } from "./agent-router.js"
+import { createAgentModelServer } from "./agent-model-server.js"
 import { MachineRegistry, trackAgentHostLifecycle } from "./machine-registry.js"
 import { trackManagedHostLifecycle } from "./opencode-host.js"
 import { discoverProjects } from "./project-catalog.js"
@@ -16,21 +17,40 @@ export class MachineDaemon {
     this.hosts = new Map()
   }
 
-  registerAcpHost({ id, label, backend = id, capabilities = {}, agent, managed = true }) {
+  registerAcpHost({ id, label, backend = id, capabilities = {}, agent, modelCatalog, managed = true }) {
     this.registry.registerHost({ id, label, backend, transport: "acp", managed, state: "configured", capabilities })
     const tracked = trackAgentHostLifecycle(agent, this.registry, id)
-    this.hosts.set(id, { id, kind: "acp", host: tracked, eager: false })
+    this.hosts.set(id, { id, kind: "acp", host: tracked, modelCatalog, eager: false })
     return tracked
   }
 
-  registerManagedHttpHost({ id, label, backend = id, capabilities = {}, host, managed = true }) {
+  registerManagedHttpHost({ id, label, backend = id, capabilities = {}, host, modelCatalog, managed = true }) {
     this.registry.registerHost({ id, label, backend, transport: "http", managed, state: "configured", capabilities })
     const tracked = trackManagedHostLifecycle(host, this.registry, id)
-    this.hosts.set(id, { id, kind: "http", host: tracked, eager: true })
+    this.hosts.set(id, { id, kind: "http", host: tracked, modelCatalog, eager: true })
     return tracked
   }
 
   hostEntry(id) { return this.hosts.get(id) }
+
+  async listModels(id, options) {
+    const entry = this.hostEntry(id)
+    if (!entry) throw new Error(`Unknown agent: ${id}`)
+    if (!entry.modelCatalog) throw new Error(`Agent ${id} does not expose model discovery`)
+    return entry.modelCatalog.list(options)
+  }
+
+  async validateModel(id, model) {
+    if (!model) return
+    const entry = this.hostEntry(id)
+    if (!entry) throw new Error(`Unknown agent: ${id}`)
+    if (!entry.modelCatalog) throw new Error(`Agent ${id} does not expose model discovery`)
+    await entry.modelCatalog.validate(model)
+  }
+
+  hiddenSessionIDs(id) {
+    return this.hostEntry(id)?.modelCatalog?.hiddenSessionIDs ?? new Set()
+  }
 
   async startManagedHosts() {
     const eager = [...this.hosts.values()].filter((entry) => entry.eager)
@@ -44,6 +64,7 @@ export class MachineDaemon {
 
   close() {
     for (const entry of this.hosts.values()) {
+      entry.modelCatalog?.close?.()
       if (entry.kind === "acp") entry.host.close?.()
       else entry.host.stop?.("SIGTERM")
     }
@@ -59,6 +80,7 @@ export function createMachineDaemonServer({
   createServer = createBridgeServer,
   createHttpBridge = createManagedHttpBridgeServer,
   createRouter = createAgentRoutingServer,
+  createModelServer = createAgentModelServer,
   createLaunchServer = createTaskLaunchServer,
   createFinishServer = createTaskFinishServer,
   taskStore,
@@ -87,5 +109,6 @@ export function createMachineDaemonServer({
   const runs = taskRunController ?? new TaskRunController({ taskStore: tasks, taskLauncher: launcher })
   const innerServer = createRouter({ daemon, config, primaryAgentID, bridgeServer, taskStore: tasks, projectCatalog: projects, worktreeManager: worktrees })
   const launchServer = createLaunchServer({ innerServer, config, taskRunController: runs })
-  return createFinishServer({ innerServer: launchServer, config, taskStore: tasks, worktreeManager: worktrees, taskRunController: runs })
+  const modelServer = createModelServer({ innerServer: launchServer, config, daemon, taskStore: tasks })
+  return createFinishServer({ innerServer: modelServer, config, taskStore: tasks, worktreeManager: worktrees, taskRunController: runs })
 }
