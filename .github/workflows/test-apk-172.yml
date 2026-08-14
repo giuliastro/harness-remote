@@ -2,7 +2,8 @@ name: Test APK 172
 
 on:
   push:
-    branches: [test/apk-172-new-task]
+    branches:
+      - 'test/apk-172-new-task'
 
 jobs:
   apk:
@@ -19,16 +20,9 @@ jobs:
           cache: npm
           cache-dependency-path: web/package-lock.json
 
-      - name: Enable New Task only for this disposable APK
-        run: |
-          python3 - <<'PY'
-          from pathlib import Path
-          p = Path('web/src/components/session-list.tsx')
-          s = p.read_text()
-          old = 'const TASK_LAUNCH_ENABLED = false'
-          assert old in s
-          p.write_text(s.replace(old, 'const TASK_LAUNCH_ENABLED = true', 1))
-          PY
+      - name: Enable New Task for this disposable APK
+        shell: bash
+        run: sed -i 's/const TASK_LAUNCH_ENABLED = false/const TASK_LAUNCH_ENABLED = true/' web/src/components/session-list.tsx
 
       - name: Install web dependencies
         run: npm ci
@@ -54,7 +48,10 @@ jobs:
         run: yes | sdkmanager --licenses
 
       - name: Add Capacitor Android platform
-        run: if [ ! -d android ]; then npx cap add android; fi
+        run: |
+          if [ ! -d android ]; then
+            npx cap add android
+          fi
         working-directory: web
 
       - name: Generate Android app icon assets
@@ -77,7 +74,7 @@ jobs:
       - name: Sync Android version metadata
         run: node web/scripts/sync-android-version.mjs "${{ steps.version.outputs.app_version }}" "${{ steps.version.outputs.version_code }}"
 
-      - name: Give debug build its own application id
+      - name: Give the debug build its own application id
         run: node web/scripts/set-debug-app-id.mjs
 
       - name: Build debug APK
@@ -85,7 +82,8 @@ jobs:
         working-directory: web/android
 
       - name: Verify debug APK signature
-        run: "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose web/android/app/build/outputs/apk/debug/app-debug.apk
+        run: |
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose web/android/app/build/outputs/apk/debug/app-debug.apk
 
       - name: Name artifact
         id: build
