@@ -3,6 +3,13 @@ import { desktopRequestResult, isDesktopPlatform } from "./desktopBridge"
 import { authHeader, hasCredentials, machineBaseUrl } from "./serverConfig"
 import type { MachineSnapshot, ServerConfig } from "./types"
 
+const DEFAULT_MACHINE_DAEMON_PORT = 4097
+
+export type MachineConnection = {
+  machine: MachineSnapshot
+  config: ServerConfig
+}
+
 function headers(config: ServerConfig): Record<string, string> {
   const value: Record<string, string> = { Accept: "application/json" }
   if (hasCredentials(config)) value.Authorization = authHeader(config)
@@ -13,19 +20,30 @@ export function noMachineStatus(status: number | undefined): boolean {
   return status === 404 || status === 503
 }
 
-function parseMachineSnapshot(value: unknown): MachineSnapshot {
-  let candidate: unknown = value
-  if (typeof candidate === "string") {
-    try {
-      candidate = JSON.parse(candidate)
-    } catch {
-      throw new Error("The machine daemon returned invalid JSON.")
+function unwrapPayload(value: unknown): unknown {
+  let candidate = value
+  for (let pass = 0; pass < 3; pass += 1) {
+    if (typeof candidate === "string") {
+      const text = candidate.replace(/^\uFEFF/, "").trim()
+      if (!text) return candidate
+      try {
+        candidate = JSON.parse(text)
+        continue
+      } catch {
+        return candidate
+      }
     }
+    if (candidate && typeof candidate === "object" && "data" in candidate) {
+      candidate = (candidate as { data?: unknown }).data
+      continue
+    }
+    break
   }
-  if (candidate && typeof candidate === "object" && "data" in candidate) {
-    const wrapped = (candidate as { data?: unknown }).data
-    if (wrapped && typeof wrapped === "object") candidate = wrapped
-  }
+  return candidate
+}
+
+function parseMachineSnapshot(value: unknown): MachineSnapshot {
+  const candidate = unwrapPayload(value)
   const snapshot = candidate as Partial<MachineSnapshot> | null
   if (!snapshot?.machine || typeof snapshot.machine.id !== "string" || !Array.isArray(snapshot.agents)) {
     throw new Error("The machine daemon returned an incompatible machine snapshot.")
@@ -96,18 +114,15 @@ async function hasDaemonProjectsRoute(config: ServerConfig): Promise<boolean> {
   if (isDesktopPlatform()) {
     const result = await desktopRequestResult(config, { path: "/v1/projects" })
     if (!result.ok) return false
-    const value = result.response.data as { projects?: unknown } | null
+    const value = unwrapPayload(result.response.data) as { projects?: unknown } | null
     return Array.isArray(value?.projects)
   }
 
   if (Capacitor.isNativePlatform()) {
     const response = await nativeGet(config, "/v1/projects")
     if (response.status >= 400) return false
-    let value: unknown = response.data
-    if (typeof value === "string") {
-      try { value = JSON.parse(value) } catch { return false }
-    }
-    return Boolean(value && typeof value === "object" && Array.isArray((value as { projects?: unknown }).projects))
+    const value = unwrapPayload(response.data) as { projects?: unknown } | null
+    return Array.isArray(value?.projects)
   }
 
   const response = await browserGet(config, "/v1/projects")
@@ -120,36 +135,51 @@ async function hasDaemonProjectsRoute(config: ServerConfig): Promise<boolean> {
   }
 }
 
-/**
- * Best-effort daemon discovery. New daemons expose /v1/machine and /global/machine. OpenCode is
- * special in the client: if the normal OpenCode API is already connected, task launch must never be
- * disabled just because a native HTTP layer mangles the machine-discovery response. We still probe
- * /v1/projects so a real daemon is identified when possible, but ultimately return a synthetic
- * OpenCode host snapshot and let TaskLaunchDialog validate the task endpoints themselves. This keeps
- * the top-level action usable and moves errors to the place where they can be explained accurately.
- */
-export async function discoverMachine(config: ServerConfig): Promise<MachineSnapshot | null> {
-  let lastError: Error | null = null
+function machineCandidates(config: ServerConfig): ServerConfig[] {
+  const current = { ...config }
+  if (config.backend !== "opencode" || config.port === DEFAULT_MACHINE_DAEMON_PORT) return [current]
+  return [
+    current,
+    { ...config, port: DEFAULT_MACHINE_DAEMON_PORT, agentId: config.agentId?.trim() || "opencode" }
+  ]
+}
+
+async function discoverAt(config: ServerConfig): Promise<MachineSnapshot | null> {
   for (const path of ["/v1/machine", "/global/machine"]) {
     try {
       const machine = await discoverMachinePath(config, path)
       if (machine) return machine
-    } catch (error) {
-      lastError = error instanceof Error ? error : new Error(String(error))
+    } catch {
+      // A direct OpenCode endpoint can return unrelated payloads for these paths. Keep probing until
+      // we either positively identify a machine daemon or exhaust the candidate endpoint.
     }
   }
 
-  if (config.backend === "opencode") {
-    try {
-      if (await hasDaemonProjectsRoute(config)) return fallbackOpenCodeSnapshot(config)
-    } catch (error) {
-      lastError = error instanceof Error ? error : new Error(String(error))
-    }
+  if (config.backend === "opencode" && await hasDaemonProjectsRoute(config)) {
     return fallbackOpenCodeSnapshot(config)
   }
-
-  if (lastError && !/HTTP (404|503)/.test(lastError.message)) throw lastError
   return null
+}
+
+/**
+ * Resolve the machine-level endpoint separately from the saved agent/session endpoint. An existing
+ * OpenCode profile commonly points at 4096, while the Harness machine daemon defaults to 4097. Task
+ * APIs must use the daemon connection, not whatever endpoint happens to serve OpenCode sessions.
+ */
+export async function discoverMachineConnection(config: ServerConfig): Promise<MachineConnection | null> {
+  for (const candidate of machineCandidates(config)) {
+    try {
+      const machine = await discoverAt(candidate)
+      if (machine) return { machine, config: candidate }
+    } catch {
+      // Try the next candidate. The dialog will report the daemon requirement if none qualify.
+    }
+  }
+  return null
+}
+
+export async function discoverMachine(config: ServerConfig): Promise<MachineSnapshot | null> {
+  return (await discoverMachineConnection(config))?.machine ?? null
 }
 
 export function selectableMachineAgents(machine: MachineSnapshot): MachineSnapshot["agents"] {
