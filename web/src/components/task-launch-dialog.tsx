@@ -98,45 +98,48 @@ export function TaskLaunchDialog({ t, language, onClose, onLaunched }: {
           ) : projects.length === 0 ? (
             <div className="empty-state compact"><FolderIcon size={30} /><p>{taskCopy(language, "noProjects")}</p></div>
           ) : (
-            <>
-              <div className="folder-picker-current">
+            <div style={{ display: "grid", gap: "var(--space-4)" }}>
+              <div className="folder-picker-current" style={{ margin: 0 }}>
                 <span className="eyebrow">{taskCopy(language, "machine")}</span>
-                <strong><ServerIcon size={15} /> {machineName}</strong>
+                <strong style={{ display: "flex", alignItems: "center", gap: "var(--space-2)", minWidth: 0 }}><ServerIcon size={15} /> <span className="truncate">{machineName}</span></strong>
               </div>
 
-              <label className="field">
-                <span>{taskCopy(language, "project")}</span>
-                <select value={projectId} onChange={(event) => setProjectId(event.target.value)}>
-                  {projects.map((project) => <option key={project.id} value={project.id}>{project.name} — {project.path}</option>)}
-                </select>
-              </label>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(13rem, 100%), 1fr))", gap: "var(--space-3)" }}>
+                <label className="field" style={{ minWidth: 0 }}>
+                  <span>{taskCopy(language, "project")}</span>
+                  <select value={projectId} onChange={(event) => setProjectId(event.target.value)}>
+                    {projects.map((project) => <option key={project.id} value={project.id}>{project.name} — {project.path}</option>)}
+                  </select>
+                </label>
 
-              <label className="field">
-                <span>{taskCopy(language, "agent")}</span>
-                <select value={agentId} onChange={(event) => setAgentId(event.target.value)} disabled={agents.length === 0}>
-                  {agents.map((agent) => <option key={agent.id} value={agent.id}>{agent.label}</option>)}
-                </select>
-              </label>
-              {availableAgents.length > 1 && <p className="subtle">{taskCopy(language, "activeAgent")}</p>}
+                <label className="field" style={{ minWidth: 0 }}>
+                  <span>{taskCopy(language, "agent")}</span>
+                  <select value={agentId} onChange={(event) => setAgentId(event.target.value)} disabled={agents.length === 0}>
+                    {agents.map((agent) => <option key={agent.id} value={agent.id}>{agent.label}</option>)}
+                  </select>
+                </label>
+              </div>
+              {availableAgents.length > 1 && <p className="subtle" style={{ marginTop: "calc(var(--space-2) * -1)" }}>{taskCopy(language, "activeAgent")}</p>}
 
               <label className="field">
                 <span>{taskCopy(language, "task")}</span>
-                <textarea value={prompt} onChange={(event) => setPrompt(event.target.value)} placeholder={taskCopy(language, "promptPlaceholder")} rows={5} autoFocus />
+                <textarea value={prompt} onChange={(event) => setPrompt(event.target.value)} placeholder={taskCopy(language, "promptPlaceholder")} rows={6} autoFocus style={{ resize: "vertical", minHeight: "8rem" }} />
               </label>
 
-              <label className="field" style={{ flexDirection: "row", alignItems: "center", gap: "0.65rem" }}>
-                <input type="checkbox" checked={isolated} onChange={(event) => setIsolated(event.target.checked)} disabled={selectedProject?.kind !== "git"} />
-                <span><FolderIcon size={14} /> {taskCopy(language, "isolatedWorktree")}</span>
-              </label>
-              {selectedProject?.kind !== "git" && <p className="subtle">{taskCopy(language, "nonGit")}</p>}
-            </>
+              <div style={{ display: "grid", gap: "var(--space-2)" }}>
+                <label style={{ display: "flex", alignItems: "center", gap: "var(--space-3)", padding: "var(--space-3) var(--space-4)", border: "1px solid var(--border)", borderRadius: "var(--radius-lg)", background: "var(--surface-subtle)", cursor: selectedProject?.kind === "git" ? "pointer" : "default" }}>
+                  <input type="checkbox" checked={isolated} onChange={(event) => setIsolated(event.target.checked)} disabled={selectedProject?.kind !== "git"} />
+                  <span style={{ display: "flex", alignItems: "center", gap: "var(--space-2)", minWidth: 0 }}><FolderIcon size={15} /> {taskCopy(language, "isolatedWorktree")}</span>
+                </label>
+                {selectedProject?.kind !== "git" && <p className="subtle">{taskCopy(language, "nonGit")}</p>}
+              </div>
+            </div>
           )}
         </div>
 
-        <div className="wizard-footer">
-          <span className="spacer" />
-          <button type="button" className="btn-secondary" onClick={onClose}>{t('session.cancel')}</button>
-          <button type="button" className="btn-primary" disabled={!canStart || loading || Boolean(error) || projects.length === 0} onClick={() => void start()}>
+        <div className="wizard-footer" style={{ justifyContent: "flex-end" }}>
+          <button type="button" className="btn-secondary" onClick={onClose} style={{ flex: "0 0 auto", minWidth: "6.5rem" }}>{t('session.cancel')}</button>
+          <button type="button" className="btn-primary" disabled={!canStart || loading || Boolean(error) || projects.length === 0} onClick={() => void start()} style={{ flex: "0 0 auto", minWidth: "8rem" }}>
             {starting ? <LoadingIcon size={15} /> : <PlusIcon size={15} />}
             {starting ? taskCopy(language, "starting") : taskCopy(language, "startTask")}
           </button>
