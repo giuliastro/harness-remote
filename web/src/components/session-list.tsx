@@ -1,4 +1,4 @@
-import type { PointerEvent as ReactPointerEvent, RefObject, ReactNode } from "react"
+import { useState, type PointerEvent as ReactPointerEvent, type RefObject, type ReactNode } from "react"
 import {
   CloseIcon,
   FolderIcon,
@@ -15,6 +15,7 @@ import {
 } from "../Icons"
 import type { Translator } from "../i18n"
 import type { HarnessCapabilities, SessionView } from "../types"
+import { TaskLaunchDialog } from "./task-launch-dialog"
 
 export function shortDirectory(directory: string): string {
   const segments = directory.split(/[\\/]+/).filter(Boolean)
@@ -202,32 +203,39 @@ export function SessionSidebar({
   jumpControls: ReactNode
   sessionCardProps: SessionCardProps
 }) {
+  const [showTaskLaunch, setShowTaskLaunch] = useState(false)
   return (
-    <aside className="desktop-sidebar fade-in" style={{ width, flex: `0 0 ${width}px` }}>
-      <div className="resize-handle resize-handle--end" onPointerDown={onResize} role="separator" aria-orientation="vertical" aria-label="Resize panels" />
-      <div className="sidebar-toolbar">
-        <div className="search-field"><SearchIcon size={14} /><input ref={searchInputRef} placeholder={t('sessions.searchPlaceholder')} value={query} onChange={(event) => onQueryChange(event.target.value)} className="search" /></div>
-        <button onClick={onRefresh} className="btn-secondary" disabled={refreshing} aria-label={t('sessions.refresh')} title={t('sessions.refresh')}>
-          {refreshing ? <LoadingIcon size={16} /> : <RefreshIcon size={16} />}
-        </button>
-        <button onClick={onNewSession} className="btn-primary" disabled={creating || offline} aria-label={t('sessions.new')} title={offline ? t('sessions.offlineHint') : t('sessions.new')}>
-          {creating ? <LoadingIcon size={16} /> : <PlusIcon size={16} />}
-        </button>
-      </div>
-      <div className="sidebar-sessions" ref={sidebarSessionsRef} onScroll={onScroll}>
-        {groups.length === 0 ? <p className="subtle sidebar-empty">{offline ? t('sessions.offlineHint') : t('sessions.emptyTitle')}</p> : groups.map((group) => (
-          <section key={group.directory} className="sidebar-group">
-            <div className="sidebar-group-label" title={group.directory}><FolderIcon size={12} /><span>{projectLabel(group.directory)}</span><span className="sidebar-group-count">{group.sessions.length}</span></div>
-            {group.sessions.map((session) => <SessionCard key={session.id} session={session} {...sessionCardProps} />)}
-          </section>
-        ))}
-      </div>
-      {jumpControls}
-      <div className="sidebar-footer">
-        <button type="button" className="btn-secondary" onClick={onShowHelp} title={t('nav.help')}><HelpIcon size={18} /><span className="sidebar-footer-label">{t('nav.help')}</span></button>
-        <button type="button" className="btn-secondary" onClick={onShowSettings} title={t('nav.settings')}><SettingsIcon size={18} /><span className="sidebar-footer-label">{t('nav.settings')}</span></button>
-      </div>
-    </aside>
+    <>
+      <aside className="desktop-sidebar fade-in" style={{ width, flex: `0 0 ${width}px` }}>
+        <div className="resize-handle resize-handle--end" onPointerDown={onResize} role="separator" aria-orientation="vertical" aria-label="Resize panels" />
+        <div className="sidebar-toolbar">
+          <div className="search-field"><SearchIcon size={14} /><input ref={searchInputRef} placeholder={t('sessions.searchPlaceholder')} value={query} onChange={(event) => onQueryChange(event.target.value)} className="search" /></div>
+          <button onClick={onRefresh} className="btn-secondary" disabled={refreshing} aria-label={t('sessions.refresh')} title={t('sessions.refresh')}>
+            {refreshing ? <LoadingIcon size={16} /> : <RefreshIcon size={16} />}
+          </button>
+          <button onClick={() => setShowTaskLaunch(true)} className="btn-primary" disabled={offline} aria-label="New task" title={offline ? t('sessions.offlineHint') : "New task"}>
+            <PlusIcon size={16} /><span className="sidebar-footer-label">Task</span>
+          </button>
+          <button onClick={onNewSession} className="btn-secondary" disabled={creating || offline} aria-label={t('sessions.new')} title={offline ? t('sessions.offlineHint') : t('sessions.new')}>
+            {creating ? <LoadingIcon size={16} /> : <PlusIcon size={16} />}
+          </button>
+        </div>
+        <div className="sidebar-sessions" ref={sidebarSessionsRef} onScroll={onScroll}>
+          {groups.length === 0 ? <p className="subtle sidebar-empty">{offline ? t('sessions.offlineHint') : t('sessions.emptyTitle')}</p> : groups.map((group) => (
+            <section key={group.directory} className="sidebar-group">
+              <div className="sidebar-group-label" title={group.directory}><FolderIcon size={12} /><span>{projectLabel(group.directory)}</span><span className="sidebar-group-count">{group.sessions.length}</span></div>
+              {group.sessions.map((session) => <SessionCard key={session.id} session={session} {...sessionCardProps} />)}
+            </section>
+          ))}
+        </div>
+        {jumpControls}
+        <div className="sidebar-footer">
+          <button type="button" className="btn-secondary" onClick={onShowHelp} title={t('nav.help')}><HelpIcon size={18} /><span className="sidebar-footer-label">{t('nav.help')}</span></button>
+          <button type="button" className="btn-secondary" onClick={onShowSettings} title={t('nav.settings')}><SettingsIcon size={18} /><span className="sidebar-footer-label">{t('nav.settings')}</span></button>
+        </div>
+      </aside>
+      {showTaskLaunch && <TaskLaunchDialog t={t} onClose={() => setShowTaskLaunch(false)} onLaunched={onRefresh} />}
+    </>
   )
 }
 
@@ -274,31 +282,36 @@ export function SessionsPanel({
   jumpControls: ReactNode
   sessionCardProps: SessionCardProps
 }) {
+  const [showTaskLaunch, setShowTaskLaunch] = useState(false)
   return (
-    <section className="panel sessions fade-in">
-      <div className="section-heading">
-        <div>
-          <h2>{t('sessions.title')}</h2>
-          <p className="subtle">{t('sessions.summary', { total: sessions.length, active: activeSessions, changed: changedSessions })}</p>
-          {(connectionStatusText || eventStreamText) && <div className="connection-status-row">
-            {connectionStatusText && <p className={`connection-status ${connectionState}`}>{['connecting', 'reconnecting'].includes(connectionState) && <LoadingIcon size={14} />}{connectionStatusText}</p>}
-            {eventStreamText && <p className={`connection-status event-stream ${eventStreamState}`}>{['connecting', 'reconnecting'].includes(eventStreamState) && <LoadingIcon size={14} />}{eventStreamText}</p>}
-          </div>}
+    <>
+      <section className="panel sessions fade-in">
+        <div className="section-heading">
+          <div>
+            <h2>{t('sessions.title')}</h2>
+            <p className="subtle">{t('sessions.summary', { total: sessions.length, active: activeSessions, changed: changedSessions })}</p>
+            {(connectionStatusText || eventStreamText) && <div className="connection-status-row">
+              {connectionStatusText && <p className={`connection-status ${connectionState}`}>{['connecting', 'reconnecting'].includes(connectionState) && <LoadingIcon size={14} />}{connectionStatusText}</p>}
+              {eventStreamText && <p className={`connection-status event-stream ${eventStreamState}`}>{['connecting', 'reconnecting'].includes(eventStreamState) && <LoadingIcon size={14} />}{eventStreamText}</p>}
+            </div>}
+          </div>
+          <div className="inline-actions sessions-header-actions">
+            <button onClick={onRefresh} className="btn-secondary" disabled={refreshing}>{refreshing ? <LoadingIcon size={18} /> : <RefreshIcon size={18} />}{t('sessions.refresh')}</button>
+            <button onClick={() => setShowTaskLaunch(true)} className="btn-primary" disabled={offline} title={offline ? t('sessions.offlineHint') : "Start a new task"}><PlusIcon size={18} />New Task</button>
+            <button onClick={onNewSession} className="btn-secondary" disabled={creating || offline} title={offline ? t('sessions.offlineHint') : undefined}>{creating ? <LoadingIcon size={18} /> : <PlusIcon size={18} />}{creating ? t('sessions.creating') : t('sessions.new')}</button>
+          </div>
         </div>
-        <div className="inline-actions sessions-header-actions">
-          <button onClick={onRefresh} className="btn-secondary" disabled={refreshing}>{refreshing ? <LoadingIcon size={18} /> : <RefreshIcon size={18} />}{t('sessions.refresh')}</button>
-          <button onClick={onNewSession} className="btn-primary" disabled={creating || offline} title={offline ? t('sessions.offlineHint') : undefined}>{creating ? <LoadingIcon size={18} /> : <PlusIcon size={18} />}{creating ? t('sessions.creating') : t('sessions.new')}</button>
+        <div className="toolbar"><input placeholder={t('sessions.searchPlaceholder')} value={query} onChange={(event) => onQueryChange(event.target.value)} className="search" /></div>
+        <div className="session-list">
+          {filteredSessions.length === 0 && offline ? <div className="empty-state"><OfflineIcon size={44} className="icon-empty-state" /><p>{t('sessions.offlineHint')}</p><div className="empty-state-actions"><button type="button" className="btn-primary" onClick={onRefresh} disabled={refreshing}>{refreshing ? <LoadingIcon size={18} /> : <RefreshIcon size={18} />}{t('sessions.retry')}</button><button type="button" className="btn-secondary" onClick={onShowSettings}><SettingsIcon size={18} />{t('nav.settings')}</button></div></div>
+            : filteredSessions.length === 0 && ['connecting', 'reconnecting'].includes(connectionState) ? <div className="empty-state connection-pending"><LoadingIcon size={40} className="icon-empty-state" /><p>{t('sessions.loadingTitle')}</p><p className="subtle">{t('sessions.loadingHint')}</p></div>
+            : filteredSessions.length === 0 ? <div className="empty-state"><FolderIcon size={48} className="icon-empty-state" /><p>{t('sessions.emptyTitle')}</p><p className="subtle">{t('sessions.emptyHint')}</p></div>
+            : filteredSessions.map((session) => <SessionCard key={session.id} session={session} {...sessionCardProps} />)}
         </div>
-      </div>
-      <div className="toolbar"><input placeholder={t('sessions.searchPlaceholder')} value={query} onChange={(event) => onQueryChange(event.target.value)} className="search" /></div>
-      <div className="session-list">
-        {filteredSessions.length === 0 && offline ? <div className="empty-state"><OfflineIcon size={44} className="icon-empty-state" /><p>{t('sessions.offlineHint')}</p><div className="empty-state-actions"><button type="button" className="btn-primary" onClick={onRefresh} disabled={refreshing}>{refreshing ? <LoadingIcon size={18} /> : <RefreshIcon size={18} />}{t('sessions.retry')}</button><button type="button" className="btn-secondary" onClick={onShowSettings}><SettingsIcon size={18} />{t('nav.settings')}</button></div></div>
-          : filteredSessions.length === 0 && ['connecting', 'reconnecting'].includes(connectionState) ? <div className="empty-state connection-pending"><LoadingIcon size={40} className="icon-empty-state" /><p>{t('sessions.loadingTitle')}</p><p className="subtle">{t('sessions.loadingHint')}</p></div>
-          : filteredSessions.length === 0 ? <div className="empty-state"><FolderIcon size={48} className="icon-empty-state" /><p>{t('sessions.emptyTitle')}</p><p className="subtle">{t('sessions.emptyHint')}</p></div>
-          : filteredSessions.map((session) => <SessionCard key={session.id} session={session} {...sessionCardProps} />)}
-      </div>
-      {runtimeError && !(offline && filteredSessions.length === 0) && <div className="error fade-in">✗ {runtimeError}</div>}
-      {jumpControls}
-    </section>
+        {runtimeError && !(offline && filteredSessions.length === 0) && <div className="error fade-in">✗ {runtimeError}</div>}
+        {jumpControls}
+      </section>
+      {showTaskLaunch && <TaskLaunchDialog t={t} onClose={() => setShowTaskLaunch(false)} onLaunched={onRefresh} />}
+    </>
   )
 }
