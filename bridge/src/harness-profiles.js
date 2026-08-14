@@ -46,8 +46,6 @@ export const HARNESS_PROFILES = {
     command: process.platform === "win32" ? "npx.cmd" : "npx",
     args: ["-y", "@automatalabs/pi-acp@0.2.5"],
     adapterCommand: "pi-acp",
-    // PI answers this without a session, which is what lets a task offer a model before one exists.
-    modelListing: { command: "pi", args: ["--list-models"] },
     permissionMode: "allow",
     preserveListedTimestamps: true,
     reloadOnHistoryRefresh: false,
