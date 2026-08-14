@@ -20,7 +20,21 @@ function parsePort(value, option) {
   return port
 }
 
+function requestedBackend(args, environment) {
+  for (let index = 0; index < args.length; index += 1) {
+    if (args[index] === "--backend") return requireValue(args, index, "--backend")
+  }
+  return environment.HARNESS_REMOTE_BACKEND ?? environment.OMP_BRIDGE_BACKEND ?? "omp"
+}
+
+/**
+ * The standalone bridge is ACP-only, so parseConfig deliberately rejects OpenCode. The machine
+ * daemon is broader: OpenCode is a managed HTTP agent and can be the only/primary agent on a
+ * machine. Reuse the mature common option parser by substituting an ACP profile only while parsing
+ * generic host/auth/root/state options, then restore the requested daemon backend.
+ */
 export function parseDaemonOptions(args, environment = process.env) {
+  const daemonBackend = requestedBackend(args, environment)
   const bridgeArgs = []
   const options = {
     openCode: true,
@@ -50,18 +64,32 @@ export function parseDaemonOptions(args, environment = process.env) {
       index += 1
       continue
     }
+    if (option === "--backend") {
+      const value = requireValue(args, index, option)
+      bridgeArgs.push(option, value === "opencode" ? "omp" : value)
+      index += 1
+      continue
+    }
     bridgeArgs.push(option)
-    if (["--backend", "--host", "--port", "--username", "--password", "--acp-command", "--acp-arg", "--root", "--cors", "--state-dir"].includes(option)) {
+    if (["--host", "--port", "--username", "--password", "--acp-command", "--acp-arg", "--root", "--cors", "--state-dir"].includes(option)) {
       bridgeArgs.push(requireValue(args, index, option))
       index += 1
     }
   }
 
-  return { config: parseConfig(bridgeArgs, environment), ...options }
+  const parseEnvironment = daemonBackend === "opencode"
+    ? { ...environment, HARNESS_REMOTE_BACKEND: "omp", OMP_BRIDGE_BACKEND: "omp" }
+    : environment
+  const config = parseConfig(bridgeArgs, parseEnvironment)
+  if (daemonBackend === "opencode") config.backend = "opencode"
+  if (config.backend === "opencode" && !options.openCode) {
+    throw new Error("--backend opencode cannot be combined with --no-opencode")
+  }
+  return { config, ...options }
 }
 
 export function daemonUsage() {
-  return `${bridgeUsage()}\n\nMulti-host daemon options:\n  --opencode-command <path>  OpenCode executable (default: opencode)\n  --opencode-host <host>     Managed OpenCode bind host (default: 127.0.0.1)\n  --opencode-port <port>     Managed OpenCode port (default: 4096)\n  --no-opencode              Start only the primary ACP host`
+  return `${bridgeUsage()}\n\nMachine daemon backends:\n  --backend opencode       Run OpenCode as the primary managed agent (no ACP agent required)\n\nMulti-host daemon options:\n  --opencode-command <path>  OpenCode executable (default: opencode)\n  --opencode-host <host>     Internal managed OpenCode bind host (default: 127.0.0.1)\n  --opencode-port <port>     Internal managed OpenCode port (default: 4096)\n  --no-opencode              Start only the primary ACP host`
 }
 
 export async function ensureOpenCodePortAvailable({ port, host, canListenImpl = canListen }) {
@@ -92,21 +120,24 @@ async function main() {
 
   const identity = await loadMachineIdentity(config.stateDirectory)
   const daemon = new MachineDaemon(identity)
-  const profile = harnessProfile(config.backend)
-  const acp = new AcpClient({
+  const openCodeOnly = config.backend === "opencode"
+  const profile = openCodeOnly ? undefined : harnessProfile(config.backend)
+  const acp = profile ? new AcpClient({
     command: config.acpCommand,
     args: config.acpArgs,
     permissionMode: profile.permissionMode,
     preferredAuthMethod: profile.authMethod
-  })
+  }) : undefined
 
-  daemon.registerAcpHost({
-    id: profile.id,
-    label: profile.label,
-    backend: profile.id,
-    capabilities: profile.capabilities,
-    agent: acp
-  })
+  if (profile && acp) {
+    daemon.registerAcpHost({
+      id: profile.id,
+      label: profile.label,
+      backend: profile.id,
+      capabilities: profile.capabilities,
+      agent: acp
+    })
+  }
 
   if (openCode) {
     const managedOpenCode = new ManagedOpenCodeHost({
@@ -120,30 +151,35 @@ async function main() {
       id: "opencode",
       label: "OpenCode",
       backend: "opencode",
-      capabilities: { sessions: true },
+      capabilities: { sessions: true, prompt: true, abort: true, streaming: true, diff: true, filesystemBrowser: true },
       host: managedOpenCode
     })
   }
 
+  const primaryAgentID = openCodeOnly ? "opencode" : profile.id
   const server = createMachineDaemonServer({
     daemon,
     config,
     primaryAcp: acp,
-    serviceOptions: {
+    primaryAgentID,
+    serviceOptions: profile ? {
       snapshotDirectory: path.join(config.stateDirectory, profile.id),
       historyLoader: profile.historyLoader,
       preserveListedTimestamps: profile.preserveListedTimestamps,
       reloadOnHistoryRefresh: profile.reloadOnHistoryRefresh
-    }
+    } : undefined
   })
 
-  acp.on("stderr", (line) => process.stderr.write(`[${profile.id}] ${line}`))
-  acp.on("exit", (error) => process.stderr.write(`[${profile.id}] ${error.message}\n`))
+  if (profile && acp) {
+    acp.on("stderr", (line) => process.stderr.write(`[${profile.id}] ${line}`))
+    acp.on("exit", (error) => process.stderr.write(`[${profile.id}] ${error.message}\n`))
+  }
 
   server.listen(config.port, config.host, () => {
     process.stdout.write(`Harness daemon listening on http://${config.host}:${config.port}\n`)
     process.stdout.write(`Machine: ${identity.name} (${identity.id})\n`)
-    if (openCode) process.stdout.write(`Managed OpenCode endpoint: http://${openCodeHost}:${openCodePort}\n`)
+    if (openCode) process.stdout.write(`Managed OpenCode internal endpoint: http://${openCodeHost}:${openCodePort}\n`)
+    process.stdout.write(`Primary agent: ${primaryAgentID}\n`)
     for (const host of daemon.snapshot().agents) {
       process.stdout.write(`${host.state === "available" ? "✓" : "•"} ${host.label} [${host.transport}] ${host.state}\n`)
     }
