@@ -44,7 +44,12 @@ export type AgentModelCatalog = {
 type TaskRequestOptions = {
   method?: "GET" | "POST"
   body?: unknown
+  timeoutMs?: number
 }
+
+const DEFAULT_CONNECT_TIMEOUT_MS = 12_000
+const DEFAULT_READ_TIMEOUT_MS = 30_000
+export const MODEL_REFRESH_TIMEOUT_MS = 5_000
 
 function requestHeaders(config: ServerConfig, body: boolean): Record<string, string> {
   const headers: Record<string, string> = { Accept: "application/json" }
@@ -80,10 +85,21 @@ function unauthorizedDetail(config: ServerConfig): string {
     : "HTTP 401: this server requires a username and password, and none were sent."
 }
 
+function timeoutError(path: string, timeoutMs: number) {
+  return new Error(`${path} timed out after ${Math.ceil(timeoutMs / 1000)} seconds.`)
+}
+
 async function machineRequest<T>(config: ServerConfig, path: string, options: TaskRequestOptions = {}): Promise<T> {
   const method = options.method ?? "GET"
+  const timeoutMs = options.timeoutMs
   if (isDesktopPlatform()) {
-    const result = await desktopRequestResult(config, { path, method, body: options.body })
+    const request = desktopRequestResult(config, { path, method, body: options.body })
+    const result = timeoutMs
+      ? await Promise.race([
+        request,
+        new Promise<never>((_, reject) => setTimeout(() => reject(timeoutError(path, timeoutMs)), timeoutMs))
+      ])
+      : await request
     if (!result.ok) {
       if (result.error.code === "http" && result.error.status === 401) throw new Error(unauthorizedDetail(config))
       throw new Error(result.error.message)
@@ -101,10 +117,11 @@ async function machineRequest<T>(config: ServerConfig, path: string, options: Ta
         method,
         headers,
         data: options.body,
-        connectTimeout: 12_000,
-        readTimeout: 30_000
+        connectTimeout: timeoutMs ?? DEFAULT_CONNECT_TIMEOUT_MS,
+        readTimeout: timeoutMs ?? DEFAULT_READ_TIMEOUT_MS
       })
     } catch (error) {
+      if (timeoutMs) throw timeoutError(path, timeoutMs)
       const detail = error instanceof Error && error.message ? ` ${error.message}` : ""
       throw new Error(`Cannot reach ${config.host}:${config.port}.${detail}`)
     }
@@ -113,15 +130,21 @@ async function machineRequest<T>(config: ServerConfig, path: string, options: Ta
     return parseTaskPayload<T>(response.data, path)
   }
 
+  const controller = timeoutMs ? new AbortController() : undefined
+  const timer = timeoutMs ? setTimeout(() => controller?.abort(), timeoutMs) : undefined
   let response: Response
   try {
     response = await fetch(target, {
       method,
       headers,
-      body: options.body === undefined ? undefined : JSON.stringify(options.body)
+      body: options.body === undefined ? undefined : JSON.stringify(options.body),
+      signal: controller?.signal
     })
   } catch {
+    if (timeoutMs && controller?.signal.aborted) throw timeoutError(path, timeoutMs)
     throw new Error(`Cannot reach ${config.host}:${config.port}.`)
+  } finally {
+    if (timer) clearTimeout(timer)
   }
   if (response.status === 401) throw new Error(unauthorizedDetail(config))
   if (!response.ok) {
@@ -165,7 +188,7 @@ export const taskClient = {
 
   async listAgentModels(config: ServerConfig, agentId: string): Promise<AgentModelCatalog> {
     const path = `/v1/agents/${encodeURIComponent(agentId)}/models`
-    return requireModelCatalog(await machineRequest<unknown>(config, path), path)
+    return requireModelCatalog(await machineRequest<unknown>(config, path, { timeoutMs: MODEL_REFRESH_TIMEOUT_MS }), path)
   },
 
   async createTask(config: ServerConfig, input: { projectId: string; agentId: string; prompt: string; model?: ModelSelection }): Promise<MachineTask> {
