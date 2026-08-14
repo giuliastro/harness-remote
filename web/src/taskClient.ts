@@ -58,13 +58,25 @@ function responseDetail(value: unknown, fallback: string): string {
   return fallback
 }
 
-function parsePayload<T>(value: unknown, label: string): T {
-  if (typeof value !== "string") return value as T
-  try {
-    return JSON.parse(value) as T
-  } catch {
-    throw new Error(`${label} returned invalid JSON.`)
+export function parseTaskPayload<T>(value: unknown, label: string): T {
+  let candidate = value
+  for (let pass = 0; pass < 4; pass += 1) {
+    if (typeof candidate === "string") {
+      const text = candidate.replace(/^\uFEFF/, "").trim()
+      try {
+        candidate = JSON.parse(text)
+        continue
+      } catch {
+        throw new Error(`${label} returned an incompatible response. Make sure this profile can reach the Harness machine daemon.`)
+      }
+    }
+    if (candidate && typeof candidate === "object" && "data" in candidate) {
+      candidate = (candidate as { data?: unknown }).data
+      continue
+    }
+    break
   }
+  return candidate as T
 }
 
 async function machineRequest<T>(config: ServerConfig, path: string, options: TaskRequestOptions = {}): Promise<T> {
@@ -72,7 +84,7 @@ async function machineRequest<T>(config: ServerConfig, path: string, options: Ta
   if (isDesktopPlatform()) {
     const result = await desktopRequestResult(config, { path, method, body: options.body })
     if (!result.ok) throw new Error(result.error.message)
-    return parsePayload<T>(result.response.data, path)
+    return parseTaskPayload<T>(result.response.data, path)
   }
 
   const target = `${machineBaseUrl(config)}${path}`
@@ -93,7 +105,7 @@ async function machineRequest<T>(config: ServerConfig, path: string, options: Ta
       throw new Error(`Cannot reach ${config.host}:${config.port}.${detail}`)
     }
     if (response.status >= 400) throw new Error(responseDetail(response.data, `HTTP ${response.status}`))
-    return parsePayload<T>(response.data, path)
+    return parseTaskPayload<T>(response.data, path)
   }
 
   let response: Response
