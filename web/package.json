@@ -31,6 +31,7 @@
     "test:model": "node src/model-regression.test.mjs",
     "test:events": "node --experimental-strip-types src/opencode-events.test.mjs",
     "test:profiles": "node --experimental-strip-types src/server-profiles.test.mjs && node --experimental-strip-types src/fleet-model.test.mjs",
+    "test:tasks": "node src/machine-client-regression.test.mjs && node src/task-client-regression.test.mjs",
     "test:markdown": "node --experimental-strip-types src/markdown-directives.test.mjs",
     "test:config": "node --experimental-strip-types src/server-config.test.mjs",
     "test:attachments": "node --experimental-strip-types src/attachments.test.mjs",
@@ -83,14 +84,8 @@
     },
     "linux": {
       "target": [
-        {
-          "target": "AppImage",
-          "arch": ["x64"]
-        },
-        {
-          "target": "deb",
-          "arch": ["x64"]
-        }
+        "AppImage",
+        "deb"
       ],
       "icon": "public/app-icon.png",
       "category": "Development",
