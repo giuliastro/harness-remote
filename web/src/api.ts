@@ -1,5 +1,6 @@
 import { Capacitor, CapacitorHttp } from "@capacitor/core"
 import { desktopRequest, isDesktopPlatform } from "./desktopBridge"
+import { opencode2Api } from "./opencode2-client.js"
 import { streamURL } from "./opencode-events"
 import { authHeader, baseUrl, hasCredentials, isValidServerConfig } from "./serverConfig"
 import type { AttachmentPart } from "./attachments"
@@ -227,7 +228,7 @@ function modelWireName(model?: ModelSelection) {
   return `${model.providerID}/${model.modelID}`
 }
 
-export const api = {
+const apiV1 = {
   eventStream(config: ServerConfig) {
     const headers: Record<string, string> = {}
     if (hasCredentials(config)) headers.Authorization = authHeader(config)
@@ -430,3 +431,23 @@ export const api = {
     })
   },
 }
+
+/**
+ * OpenCode 2 speaks a different HTTP API than every other backend: `/api/*`, `{ data }` envelopes,
+ * and forms instead of questions. Every method in this object starts with `config`, so one dispatcher
+ * can route the whole surface: v1 clients keep their existing implementation untouched, and an
+ * `opencode2` profile talks to the v2 server through opencode2-client.ts.
+ */
+export const api: typeof apiV1 = new Proxy(apiV1, {
+  get(target, property) {
+    if (typeof property !== "string") return Reflect.get(target, property)
+    const v1Method = (target as Record<string, unknown>)[property]
+    if (typeof v1Method !== "function") return v1Method
+    const v2Method = (opencode2Api as Record<string, unknown>)[property]
+    if (typeof v2Method !== "function") return v1Method
+    return function (this: unknown, config: ServerConfig, ...args: unknown[]) {
+      const client = config?.backend === "opencode2" ? v2Method : v1Method
+      return (client as (...callArgs: unknown[]) => unknown).call(this, config, ...args)
+    }
+  }
+})

@@ -212,6 +212,7 @@ type TranslationKey =
   | 'connect.step.address'
   | 'connect.step.credentials'
   | 'connect.harness.opencode'
+  | 'connect.harness.opencode2'
   | 'connect.harness.omp'
   | 'connect.harness.pi'
   | 'connect.harness.claude'
@@ -574,6 +575,7 @@ const translations: Record<LanguageCode, Partial<Record<TranslationKey, string>>
     'connect.step.address': 'Address',
     'connect.step.credentials': 'Credentials',
     'connect.harness.opencode': 'Connect directly to an OpenCode server.',
+    'connect.harness.opencode2': 'Connect directly to an OpenCode 2 server.',
     'connect.harness.omp': 'Connect through the bundled Oh My Pi bridge.',
     'connect.harness.pi': 'Connect to PI through the ACP bridge.',
     'connect.harness.claude': 'Connect to Claude Code through the ACP bridge.',
@@ -869,6 +871,7 @@ const translations: Record<LanguageCode, Partial<Record<TranslationKey, string>>
     'connect.step.address': 'Indirizzo',
     'connect.step.credentials': 'Credenziali',
     'connect.harness.opencode': 'Connessione diretta a un server OpenCode.',
+    'connect.harness.opencode2': 'Connessione diretta a un server OpenCode 2.',
     'connect.harness.omp': 'Connessione tramite il bridge incluso per Oh My Pi.',
     'connect.harness.pi': 'Connessione a PI tramite bridge ACP.',
     'connect.harness.claude': 'Connessione a Claude Code tramite bridge ACP.',
@@ -1342,6 +1345,7 @@ const translations: Record<LanguageCode, Partial<Record<TranslationKey, string>>
     'connect.step.address': '地址',
     'connect.step.credentials': '凭据',
     'connect.harness.opencode': '直接连接到 OpenCode 服务器。',
+    'connect.harness.opencode2': '直接连接到 OpenCode 2 服务器。',
     'connect.harness.omp': '通过附带的 Oh My Pi 桥接器连接。',
     'connect.harness.pi': '通过 ACP 桥接器连接到 PI。',
     'connect.harness.claude': '通过 ACP 桥接器连接到 Claude Code。',

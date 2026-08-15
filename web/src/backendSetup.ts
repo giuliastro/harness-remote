@@ -2,9 +2,10 @@ import type { BackendKind } from "./types"
 
 /** Declaration order everywhere a harness has to be listed, so the Settings picker, the connect
  *  wizard and the docs links can never drift out of sync with each other. */
-export const BACKEND_KINDS: BackendKind[] = ["opencode", "omp", "pi", "claude", "codex"]
+export const BACKEND_KINDS: BackendKind[] = ["opencode", "opencode2", "omp", "pi", "claude", "codex"]
 
 export function backendDisplayName(backend: BackendKind): string {
+  if (backend === "opencode2") return "OpenCode 2"
   if (backend === "omp") return "Oh My Pi"
   if (backend === "pi") return "PI"
   if (backend === "claude") return "Claude Code"
@@ -19,14 +20,15 @@ export function isBridgeBackend(backend: BackendKind): boolean {
 }
 
 export function backendDefaultPort(backend: BackendKind): number {
-  return backend === "opencode" ? 4096 : 4097
+  return backend === "opencode" || backend === "opencode2" ? 4096 : 4097
 }
 
 export function backendDefaultUsername(backend: BackendKind): string {
-  return backend === "opencode" ? "opencode" : backend
+  return backend === "opencode" || backend === "opencode2" ? "opencode" : backend
 }
 
 export function backendDocsAnchor(backend: BackendKind): string {
+  if (backend === "opencode2") return "opencode-2-server-setup"
   if (backend === "pi") return "pi-bridge-setup"
   if (backend === "claude") return "claude-code-bridge-setup"
   if (backend === "codex") return "codex-bridge-setup"
@@ -53,6 +55,12 @@ export function backendSetupCommand(
       `OPENCODE_SERVER_USERNAME=${username} \\`,
       `OPENCODE_SERVER_PASSWORD=${password} \\`,
       `npx -y opencode-ai serve --hostname 0.0.0.0 --port ${port}`
+    ].join("\n")
+  }
+  if (backend === "opencode2") {
+    return [
+      `OPENCODE_PASSWORD=${password} \\`,
+      `opencode2 serve --hostname 0.0.0.0 --port ${port}`
     ].join("\n")
   }
   return [

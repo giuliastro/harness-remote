@@ -4,7 +4,7 @@ import { baseUrl } from "../src/serverConfig.js"
 import type { BackendKind } from "../src/types.js"
 import type { DesktopProfile } from "./ipc-contract.js"
 
-const BACKENDS: readonly BackendKind[] = ["opencode", "omp", "pi", "claude", "codex"]
+const BACKENDS: readonly BackendKind[] = ["opencode", "opencode2", "omp", "pi", "claude", "codex"]
 const MAX_PROFILE_COUNT = 100
 const MAX_PROFILE_ID_LENGTH = 128
 const MAX_HOST_LENGTH = 2048

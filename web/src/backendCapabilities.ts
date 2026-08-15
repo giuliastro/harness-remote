@@ -20,6 +20,25 @@ export const DEFAULT_HARNESS_CAPABILITIES: Record<BackendKind, HarnessCapabiliti
     // Attachments reach the harness through the bridge; the OpenCode transport has no such path yet.
     attachments: false
   },
+  opencode2: {
+    sessions: true,
+    prompt: true,
+    abort: true,
+    streaming: true,
+    models: true,
+    agents: true,
+    todos: false,
+    diff: true,
+    filesystemBrowser: true,
+    questions: true,
+    permissions: true,
+    commands: true,
+    actions: false,
+    sessionRename: true,
+    sessionDelete: true,
+    // The v2 prompt accepts `files` attachments (base64 data URLs).
+    attachments: true
+  },
   omp: {
     sessions: true,
     prompt: true,
