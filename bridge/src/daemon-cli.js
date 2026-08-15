@@ -4,7 +4,7 @@ import { AcpClient } from "./acp-client.js"
 import { AcpAgentModelCatalog, HttpAgentModelCatalog, PiRpcModelCatalog } from "./agent-model-catalog.js"
 import { parseConfig, usage as bridgeUsage } from "./config.js"
 import { harnessProfile } from "./harness-profiles.js"
-import { canListen, resolveLaunchPlan } from "./launcher.js"
+import { canListen, findExecutable, resolveLaunchPlan } from "./launcher.js"
 import { loadMachineIdentity } from "./machine-registry.js"
 import { MachineDaemon, createMachineDaemonServer } from "./machine-daemon.js"
 import { ManagedOpenCodeHost } from "./opencode-host.js"
@@ -147,12 +147,8 @@ async function main() {
   let primaryModelCatalog
 
   if (profile && acp) {
-    // PI has an official session-less RPC model registry (`get_available_models`). Use that for the
-    // pre-task picker and leave PI's ordinary ACP session/configOptions behavior completely alone.
-    // Other ACP backends keep the reusable technical-session fallback until they gain a native
-    // catalog path of their own.
     primaryModelCatalog = profile.id === "pi"
-      ? new PiRpcModelCatalog({ command: "pi", cwd: config.roots?.[0] ?? process.cwd() })
+      ? new PiRpcModelCatalog({ command: findExecutable("pi") ?? "pi", cwd: config.roots?.[0] ?? process.cwd() })
       : new AcpAgentModelCatalog({
         agent: acp,
         agentID: profile.id,
@@ -221,9 +217,6 @@ async function main() {
       process.stdout.write(`${host.state === "available" ? "✓" : "•"} ${host.label} [${host.transport}] ${host.state}\n`)
     }
 
-    // Warm the model catalog after the listener is live. For PI this starts a short-lived native RPC
-    // query, not ACP and not a session, so New Task usually reads a hot cache without touching the
-    // user's session process at all.
     if (primaryModelCatalog) {
       void warmCatalog(primaryModelCatalog, {
         onError: (error) => process.stderr.write(`[${primaryAgentID}] model warmup failed: ${error.message}\n`)
