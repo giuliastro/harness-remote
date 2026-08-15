@@ -8,47 +8,69 @@ Harness Remote is a **local-first control plane for AI coding agents**. Connect 
 
 > Harness Remote is not another coding agent. It is the control plane above them.
 
-```text
-                         Harness Remote
-                    phone · web · desktop
-                              │
-                     ┌────────┴────────┐
-                     │  Machine Daemon │
-                     └────────┬────────┘
-                 ┌────────────┼────────────┐
-              Codex        Claude       OpenCode
-               OMP            PI            ...
-```
-
 Execution stays on your machines. Repositories stay on your machines. Agent credentials and model access stay on your machines. Harness Remote coordinates and supervises the work remotely.
 
 ## Quick start
 
-On the machine where your coding agents are installed:
+There are currently two supported server paths. **The per-harness bridge is the stable compatibility path used by the current release.** The machine daemon is the newer path and is still being expanded.
+
+### Stable per-harness bridge
+
+Use this when you want the same connection model as the current stable clients: one configured server per harness.
+
+From a checkout of this repository:
+
+```bash
+# Oh My Pi / OMP
+node bridge/src/cli.js \
+  --backend omp \
+  --host 0.0.0.0 \
+  --port 4097 \
+  --username harness \
+  --password "use-a-long-unique-password" \
+  --root "$HOME/Software"
+```
+
+```bash
+# PI
+node bridge/src/cli.js \
+  --backend pi \
+  --host 0.0.0.0 \
+  --port 4097 \
+  --username harness \
+  --password "use-a-long-unique-password" \
+  --root "$HOME/Software"
+```
+
+The PI bridge uses `@automatalabs/pi-acp@0.2.5` by default. Claude Code and Codex CLI use the same bridge with `--backend claude` and `--backend codex` respectively. OpenCode continues to support its direct HTTP server path.
+
+Then install a client from [GitHub Releases](https://github.com/giuliastro/harness-remote/releases/latest) and configure the matching harness with that host, port and credentials.
+
+### Experimental machine daemon / one-command launcher
 
 ```bash
 npx github:giuliastro/harness-remote
 ```
 
-It detects the supported agents on your `PATH`, picks a free port, generates credentials and prints the address to enter in the client. OpenCode is started and supervised directly; ACP-backed agents run through the local bridge or daemon.
+The launcher detects supported CLIs on `PATH`, chooses a primary ACP backend, can start OpenCode as a managed internal host, picks a free public port and prints credentials.
 
-Then install a client from [GitHub Releases](https://github.com/giuliastro/harness-remote/releases/latest), or open the [web app](https://giuliastro.github.io/harness-remote/) and enter the address it printed.
+**Current limitation:** one launcher connection does **not yet serve every detected ACP backend simultaneously**. Today the daemon serves the selected primary ACP backend plus managed OpenCode when available. Other ACP CLIs may be detected and printed but are not yet independently routable through that same daemon connection. Use the stable per-harness bridge above for PI, OMP, Claude or Codex when you need deterministic compatibility with the current release.
 
 ## What works today
 
 Harness Remote already gives you a common remote UI for five coding-agent harnesses:
 
-| Harness | Support |
+| Harness | Stable connection |
 |---|---|
-| [OpenCode](https://github.com/sst/opencode) | direct HTTP + managed daemon host |
-| [Claude Code](https://code.claude.com/) | ACP bridge |
-| [Codex CLI](https://github.com/openai/codex) | ACP bridge |
-| [Oh My Pi (OMP)](https://omp.sh/) | ACP bridge |
-| [PI](https://pi.dev/) | ACP bridge |
+| [OpenCode](https://github.com/sst/opencode) | direct HTTP server |
+| [Claude Code](https://code.claude.com/) | per-harness ACP bridge |
+| [Codex CLI](https://github.com/openai/codex) | per-harness ACP bridge |
+| [Oh My Pi (OMP)](https://omp.sh/) | per-harness ACP bridge |
+| [PI](https://pi.dev/) | per-harness ACP bridge via `@automatalabs/pi-acp` |
 
 From Android, the web/PWA or the desktop app you can monitor sessions, read streamed progress, send prompts, stop work, select models where supported, inspect agent questions/todos and use the capabilities each harness exposes.
 
-The machine daemon can represent multiple agent hosts under one stable machine identity and route requests through a single machine connection. Legacy per-harness connections remain supported while the client UI moves to machine-first agent discovery and selection.
+The machine-daemon work adds a stable machine identity and a foundation for routing multiple agent hosts through one connection, but the fully universal multi-ACP path is still in progress. Legacy per-harness connections remain supported and are the compatibility baseline while that migration continues.
 
 The backend task foundation is also in place: the daemon can discover known projects, persist normalized tasks, prepare isolated Git worktrees, launch supported agents inside those workspaces, reconcile run state after daemon restarts, inspect Git results and explicitly release finished worktrees without silently deleting dirty or unmerged work.
 
@@ -104,7 +126,7 @@ Other useful docs:
 
 ## Project status
 
-Harness Remote is evolving from a multi-harness remote client into a local-first control plane. One-command startup and the universal machine daemon are shipped; the normalized task/worktree/run/finish backend exists; the next product step is exposing that task model in the client and then extending it across multiple machines.
+Harness Remote is evolving from a multi-harness remote client into a local-first control plane. The current stable release continues to use the proven per-harness connection model. The one-command launcher, machine daemon and normalized task/worktree/run/finish backend are the migration path toward a unified machine-level control plane, and are still being stabilized before replacing the compatibility path.
 
 The repository deliberately keeps backward compatibility while that transition lands in small, reviewable slices.
 
