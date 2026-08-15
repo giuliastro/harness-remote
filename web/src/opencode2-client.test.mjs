@@ -4,8 +4,10 @@ import {
   toCommandOption,
   toDiffFile,
   toFileEntry,
+  toFormAnswer,
   toMessageEnvelope,
   toModelOption,
+  toQuestionRequest,
   toSession,
   toToolState
 } from './opencode2-mappers.ts'
@@ -179,5 +181,59 @@ assert.deepEqual(toFileEntry({ path: 'README.md', type: 'file' }, '/home/eric'),
 assert.deepEqual(toDiffFile({ file: 'web/src/api.ts', patch: '@@ -1,1 +1,1 @@', additions: 1, deletions: 1, status: 'modified' }), {
   file: 'web/src/api.ts', patch: '@@ -1,1 +1,1 @@', additions: 1, deletions: 1, status: 'modified'
 })
+
+// A v2 /api/model entry that carries only `id` (no `modelID`) must still be flagged as the default.
+const idOnlyModel = toModelOption({ id: 'deepseek-v4-flash', providerID: 'opencode-go', name: 'DeepSeek V4 Flash' }, 'deepseek-v4-flash')
+assert.equal(idOnlyModel[0].isDefault, true)
+const nonDefault = toModelOption({ id: 'other', providerID: 'opencode-go', name: 'Other' }, 'deepseek-v4-flash')
+assert.equal(nonDefault[0].isDefault, false)
+
+// Forms: one question per field, options surfaced by label for the UI.
+const liveForm = {
+  id: 'frm_1',
+  sessionID: 'ses_x',
+  title: 'Choose',
+  fields: [
+    {
+      key: 'framework',
+      title: 'Which framework?',
+      type: 'select',
+      options: [
+        { value: 'react', label: 'React' },
+        { value: 'vue', label: 'Vue' }
+      ]
+    },
+    {
+      key: 'features',
+      title: 'Which features?',
+      type: 'multiselect',
+      options: [
+        { value: 'ts', label: 'TypeScript' },
+        { value: 'ssr', label: 'SSR' }
+      ]
+    },
+    { key: 'name', title: 'Project name?', type: 'text', custom: true }
+  ]
+}
+
+const question = toQuestionRequest(liveForm)
+assert.equal(question.id, 'frm_1')
+assert.equal(question.sessionID, 'ses_x')
+assert.equal(question.questions.length, 3)
+assert.equal(question.questions[0].question, 'Which framework?')
+assert.equal(question.questions[0].multiple, false)
+assert.equal(question.questions[1].multiple, true)
+assert.deepEqual(question.questions[0].options, [
+  { label: 'React', description: '' },
+  { label: 'Vue', description: '' }
+])
+
+// Replies must be keyed by field.key and carry option.value (not the display label), typed per field.
+const answer = toFormAnswer(liveForm, [['React'], ['TypeScript', 'SSR'], ['my-app']])
+assert.deepEqual(answer, { framework: 'react', features: ['ts', 'ssr'], name: 'my-app' })
+
+// Free-text answers with no matching option pass through unchanged.
+const customAnswer = toFormAnswer(liveForm, [['React'], [], ['custom-name']])
+assert.deepEqual(customAnswer, { framework: 'react', features: [], name: 'custom-name' })
 
 console.log('OpenCode 2 client mapping tests passed')

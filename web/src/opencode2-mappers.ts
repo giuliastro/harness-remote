@@ -6,6 +6,7 @@ import type {
   MessageEnvelope,
   MessagePart,
   ModelOption,
+  QuestionRequest,
   Session,
   ToolState
 } from "./types"
@@ -188,7 +189,9 @@ export function toModelOption(model: {
     outputLimit: model.limit?.output,
     tools: Boolean(model.capabilities?.tools),
     attachments: Boolean(model.capabilities?.input?.includes("image") || model.capabilities?.input?.includes("video")),
-    isDefault: model.modelID === defaultModelID
+    // v2 model entries commonly carry only `id`; compare against the same id we resolved above so the
+    // default flag survives when `modelID` is absent.
+    isDefault: Boolean(modelID) && modelID === defaultModelID
   }
   const variants = (model.variants ?? []).map((variant) => variant.id).filter(Boolean) as string[]
   return [base, ...variants.map((variant) => ({ ...base, variant, isDefault: false }))]
@@ -222,4 +225,66 @@ export function toDiffFile(file: { file: string; patch?: string; additions?: num
     patch: file.patch,
     status: file.status as DiffFile["status"]
   }
+}
+
+export type V2FormOption = { value: string; label: string; description?: string }
+export type V2FormField = {
+  key: string
+  title?: string
+  description?: string
+  type?: string
+  options?: V2FormOption[]
+  custom?: boolean
+  required?: boolean
+}
+export type V2Form = { id: string; sessionID: string; title?: string; fields: V2FormField[] }
+
+/**
+ * v2 "forms" replace the v1 question flow. The app UI only understands the flat `QuestionInfo`
+ * shape and selects options by their display label, so we surface one question per field and keep
+ * the protocol's `key`/`value`/`type` metadata for the reply step (see {@link toFormAnswer}).
+ */
+export function toQuestionRequest(form: V2Form): QuestionRequest {
+  return {
+    id: form.id,
+    sessionID: form.sessionID,
+    questions: (form.fields ?? []).map((field) => ({
+      question: field.title ?? field.key,
+      header: form.title ?? field.title ?? field.key,
+      options: (field.options ?? []).map((option) => ({ label: option.label, description: option.description ?? "" })),
+      multiple: field.type === "multiselect",
+      custom: field.custom ?? false
+    }))
+  }
+}
+
+/** Shape one field's selected values by the field's declared type (v2 accepts string | number | boolean | string[]). */
+function shapeFieldValue(field: V2FormField, values: string[]): unknown {
+  if (field.type === "multiselect") return values
+  const first = values[0] ?? ""
+  if (field.type === "number") {
+    const parsed = Number(first)
+    return Number.isFinite(parsed) ? parsed : first
+  }
+  if (field.type === "boolean" || field.type === "confirm") return first === "true" || first === "yes"
+  return first
+}
+
+/**
+ * Translate the app's per-question answers (arrays of the selected option *labels*, indexed to match
+ * `form.fields`) back into v2's answer object: keyed by `field.key`, submitting each option's `value`
+ * rather than its label, and typed per field. Free-text/custom answers with no matching option pass
+ * through unchanged.
+ */
+export function toFormAnswer(form: V2Form, answersByIndex: string[][]): Record<string, unknown> {
+  const answer: Record<string, unknown> = {}
+  ;(form.fields ?? []).forEach((field, index) => {
+    const labels = answersByIndex[index] ?? []
+    const values = labels.map((label) => {
+      const option = (field.options ?? []).find((candidate) => candidate.label === label)
+      return option ? option.value : label
+    })
+    answer[field.key] = shapeFieldValue(field, values)
+  })
+  return answer
 }

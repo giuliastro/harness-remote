@@ -12,7 +12,6 @@ import type {
   PathInfo,
   PermissionRequest,
   ProjectCurrent,
-  QuestionRequest,
   SessionStatus,
   TodoItem,
   VcsStatus
@@ -22,9 +21,12 @@ import {
   toCommandOption,
   toDiffFile,
   toFileEntry,
+  toFormAnswer,
   toMessageEnvelope,
   toModelOption,
+  toQuestionRequest,
   toSession,
+  type V2Form,
   type V2Message,
   type V2Session
 } from "./opencode2-mappers"
@@ -73,8 +75,20 @@ type RequestOptions = {
   readTimeout?: number
 }
 
-/** One v2 request: builds the `/api/*` path, sends Basic Auth, unwraps `{ data }`, treats 204 as success. */
-async function v2Request<T>(config: ServerConfig, path: string, options: RequestOptions = {}): Promise<T> {
+/** Append a v2 `location[directory]` query param so a request targets the selected session's project. */
+function withLocation(path: string, directory?: string): string {
+  if (!directory) return path
+  const separator = path.includes("?") ? "&" : "?"
+  return `${path}${separator}location%5Bdirectory%5D=${encodeURIComponent(directory)}`
+}
+
+/**
+ * One v2 HTTP round-trip. Returns the raw `{ status, body }` so the two wrappers below can share a
+ * single transport (and a single error contract) across web, Capacitor and Electron desktop. The
+ * desktop bridge already parses the JSON body; web/Capacitor parse it here. `body` is the full
+ * `{ data, location?, cursor? }` envelope — callers never touch it directly.
+ */
+async function v2Raw(config: ServerConfig, path: string, options: RequestOptions = {}): Promise<{ status: number; body: unknown }> {
   const method = options.method ?? "GET"
   if (isDesktopPlatform()) {
     const response = await desktopRequest(config, {
@@ -83,8 +97,7 @@ async function v2Request<T>(config: ServerConfig, path: string, options: Request
       body: options.body,
       readTimeout: options.readTimeout
     })
-    if (response.status === 204) return true as T
-    return response.data as T
+    return { status: response.status, body: response.data }
   }
 
   const target = `${baseUrl(config)}${path}`
@@ -110,8 +123,7 @@ async function v2Request<T>(config: ServerConfig, path: string, options: Request
       if (response.status === 401) throw new Error(responseDetail(response.data) || unauthorizedDetail(config))
       throw new Error(responseDetail(response.data) || `HTTP ${response.status}`)
     }
-    if (response.status === 204) return true as T
-    return (response.data as V2Response<T>).data
+    return { status: response.status, body: response.data }
   }
 
   let response: Response
@@ -135,9 +147,24 @@ async function v2Request<T>(config: ServerConfig, path: string, options: Request
     }
     throw new Error(detail)
   }
-  if (response.status === 204) return true as T
-  const body = await response.json() as V2Response<T>
-  return body.data
+  if (response.status === 204) return { status: 204, body: undefined }
+  return { status: response.status, body: await response.json() }
+}
+
+/**
+ * The single response contract for every caller and platform: unwrap the envelope's `.data`. A 204
+ * (or empty body) resolves to `true` so mutations can `await` a bare acknowledgement.
+ */
+async function v2Request<T>(config: ServerConfig, path: string, options: RequestOptions = {}): Promise<T> {
+  const { status, body } = await v2Raw(config, path, options)
+  if (status === 204 || body === undefined) return true as T
+  return (body as V2Response<T>).data
+}
+
+/** Same round-trip, but keeps the envelope for the few callers that need `location` or `cursor`. */
+async function v2RequestEnvelope<T>(config: ServerConfig, path: string, options: RequestOptions = {}): Promise<V2Response<T>> {
+  const { body } = await v2Raw(config, path, options)
+  return (body ?? { data: undefined }) as V2Response<T>
 }
 
 /** Cursor pagination: v2 carries `cursor.next` in the body rather than a response header. */
@@ -146,13 +173,18 @@ async function v2ListAll<T>(config: ServerConfig, path: string, options: Request
   let cursor: string | undefined
   do {
     const cursorPath = cursor ? `${path}${path.includes("?") ? "&" : "?"}cursor=${encodeURIComponent(cursor)}` : path
-    const response = await v2Request<V2Response<T[]>>(config, cursorPath, options)
-    items.push(...response.data)
+    const response = await v2RequestEnvelope<T[]>(config, cursorPath, options)
+    items.push(...(response.data ?? []))
     cursor = response.cursor?.next
   } while (cursor)
   return items
 }
 
+
+/** Pending v2 forms in their raw wire shape, kept so replies can key answers by `field.key`. */
+function fetchForms(config: ServerConfig, directory?: string): Promise<V2Form[]> {
+  return v2Request<V2Form[]>(config, withLocation("/api/form/request", directory)).then((forms) => forms ?? [])
+}
 
 export const opencode2Api = {
   eventStream(config: ServerConfig) {
@@ -195,33 +227,34 @@ export const opencode2Api = {
   },
 
   async listFiles(config: ServerConfig, path: string, directory?: string) {
-    const response = await v2Request<{
-      location?: { directory?: string }
-      data: Array<{ path: string; type: "file" | "directory" }>
-    }>(config, `/api/fs/list?path=${encodeURIComponent(path)}`)
+    // `location` rides on the envelope here, so read it rather than the unwrapped `.data`.
+    const response = await v2RequestEnvelope<Array<{ path: string; type: "file" | "directory" }>>(
+      config,
+      withLocation(`/api/fs/list?path=${encodeURIComponent(path)}`, directory)
+    )
     const root = response.location?.directory ?? directory ?? ""
     return (response.data ?? []).map((entry) => toFileEntry(entry, root))
   },
 
   async listCommands(config: ServerConfig) {
-    const response = await v2Request<{ data: Array<{ name: string; description?: string }> }>(config, "/api/command")
-    return (response.data ?? []).map(toCommandOption)
+    const commands = await v2Request<Array<{ name: string; description?: string }>>(config, "/api/command")
+    return (commands ?? []).map(toCommandOption)
   },
 
-  async listAgents(config: ServerConfig, _directory?: string) {
-    const response = await v2Request<{ data: Array<{ id: string; name?: string; description?: string; mode?: string; hidden?: boolean }> }>(config, "/api/agent")
-    return (response.data ?? []).map(toAgentOption).filter((agent) => agent.id && !agent.hidden)
+  async listAgents(config: ServerConfig, directory?: string) {
+    const agents = await v2Request<Array<{ id: string; name?: string; description?: string; mode?: string; hidden?: boolean }>>(config, withLocation("/api/agent", directory))
+    return (agents ?? []).map(toAgentOption).filter((agent) => agent.id && !agent.hidden)
   },
 
-  async listModels(config: ServerConfig, _directory?: string, _sessionID?: string) {
-    const [response, defaultResponse] = await Promise.all([
-      v2Request<{ data: Array<Record<string, unknown>> }>(config, "/api/model"),
-      v2Request<{ data?: Record<string, unknown> | null }>(config, "/api/model/default").catch(() => ({ data: null }))
+  async listModels(config: ServerConfig, directory?: string, _sessionID?: string) {
+    const [models, defaultModel] = await Promise.all([
+      v2Request<Array<Record<string, unknown>>>(config, withLocation("/api/model", directory)),
+      v2Request<Record<string, unknown> | null>(config, "/api/model/default").catch(() => null)
     ])
-    const defaultModelID = defaultResponse?.data && typeof defaultResponse.data === "object"
-      ? ((defaultResponse.data as { modelID?: string }).modelID ?? (defaultResponse.data as { id?: string }).id)
+    const defaultModelID = defaultModel && typeof defaultModel === "object"
+      ? ((defaultModel as { modelID?: string }).modelID ?? (defaultModel as { id?: string }).id)
       : undefined
-    return (response.data ?? []).flatMap((model) => toModelOption(model as Parameters<typeof toModelOption>[0], defaultModelID))
+    return (models ?? []).flatMap((model) => toModelOption(model as Parameters<typeof toModelOption>[0], defaultModelID))
   },
 
   async createSession(config: ServerConfig, title?: string, model?: ModelSelection, directory?: string) {
@@ -246,15 +279,16 @@ export const opencode2Api = {
     return true
   },
 
-  async loadMessages(config: ServerConfig, sessionID: string, _directory?: string, _refreshHistory = false) {
-    // `order=asc` makes the server return oldest-first, matching how the app renders transcripts.
-    const response = await v2Request<{ data: V2Message[] }>(config, `/api/session/${encodeURIComponent(sessionID)}/message?limit=100&order=asc`)
-    return (response.data ?? []).map((message) => toMessageEnvelope(message, sessionID))
+  async loadMessages(config: ServerConfig, sessionID: string, directory?: string, _refreshHistory = false) {
+    // `order=asc` returns oldest-first (how the app renders); follow `cursor.next` so transcripts
+    // longer than one page keep their newest turns instead of being truncated at the first 100.
+    const messages = await v2ListAll<V2Message>(config, withLocation(`/api/session/${encodeURIComponent(sessionID)}/message?limit=100&order=asc`, directory))
+    return messages.map((message) => toMessageEnvelope(message, sessionID))
   },
 
-  async loadLatestMessage(config: ServerConfig, sessionID: string, _directory?: string) {
-    const response = await v2Request<{ data: V2Message[] }>(config, `/api/session/${encodeURIComponent(sessionID)}/message?limit=1&order=desc`)
-    return (response.data ?? []).map((message) => toMessageEnvelope(message, sessionID))
+  async loadLatestMessage(config: ServerConfig, sessionID: string, directory?: string) {
+    const messages = await v2Request<V2Message[]>(config, withLocation(`/api/session/${encodeURIComponent(sessionID)}/message?limit=1&order=desc`, directory))
+    return (messages ?? []).map((message) => toMessageEnvelope(message, sessionID))
   },
 
   async loadTodo(_config: ServerConfig, _sessionID: string, _directory?: string): Promise<TodoItem[]> {
@@ -262,8 +296,8 @@ export const opencode2Api = {
   },
 
   async loadDiff(config: ServerConfig, _sessionID: string, directory?: string) {
-    const response = await v2Request<{ data: Array<{ file: string; patch?: string; additions?: number; deletions?: number; status?: string }> }>(config, `/api/vcs/diff?mode=working${directory ? `&location%5Bdirectory%5D=${encodeURIComponent(directory)}` : ""}`)
-    return (response.data ?? []).map(toDiffFile)
+    const files = await v2Request<Array<{ file: string; patch?: string; additions?: number; deletions?: number; status?: string }>>(config, withLocation("/api/vcs/diff?mode=working", directory))
+    return (files ?? []).map(toDiffFile)
   },
 
   async loadMessageDiff(_config: ServerConfig, _sessionID: string, _messageID: string, _directory?: string): Promise<DiffFile[]> {
@@ -271,19 +305,20 @@ export const opencode2Api = {
     return []
   },
 
-  async loadProjectCurrent(config: ServerConfig, _directory?: string) {
-    return v2Request<ProjectCurrent>(config, "/api/project/current")
+  async loadProjectCurrent(config: ServerConfig, directory?: string) {
+    return v2Request<ProjectCurrent>(config, withLocation("/api/project/current", directory))
   },
 
-  async loadVcs(config: ServerConfig, _directory?: string) {
-    const response = await v2Request<{ data?: { branch?: Record<string, unknown> } }>(config, "/api/vcs")
-    const branch = response?.data?.branch
-    return { branch: branch && typeof branch === "object" ? JSON.stringify(branch) : undefined } as VcsStatus
+  async loadVcs(config: ServerConfig, directory?: string) {
+    const vcs = await v2Request<{ branch?: { current?: string; default?: string } | string }>(config, withLocation("/api/vcs", directory))
+    const branch = vcs?.branch
+    const current = typeof branch === "string" ? branch : branch?.current
+    return { branch: current || undefined } as VcsStatus
   },
 
-  async loadFileStatus(config: ServerConfig, _directory?: string) {
-    const response = await v2Request<{ data: Array<{ file: string; status?: string; additions?: number; deletions?: number }> }>(config, "/api/vcs/status")
-    return (response.data ?? []).map((entry) => ({ path: entry.file, file: entry.file, status: entry.status })) as FileStatusEntry[]
+  async loadFileStatus(config: ServerConfig, directory?: string) {
+    const entries = await v2Request<Array<{ file: string; status?: string; additions?: number; deletions?: number }>>(config, withLocation("/api/vcs/status", directory))
+    return (entries ?? []).map((entry) => ({ path: entry.file, file: entry.file, status: entry.status })) as FileStatusEntry[]
   },
 
   listActions() {
@@ -360,45 +395,17 @@ export const opencode2Api = {
     return true
   },
 
-  async loadQuestions(config: ServerConfig, _directory?: string) {
-    const response = await v2Request<{ data: Array<{
-      id: string
-      sessionID: string
-      title?: string
-      fields: Array<{
-        key: string
-        title?: string
-        description?: string
-        type?: string
-        options?: Array<{ value: string; label: string; description?: string }>
-        custom?: boolean
-      }>
-    }> }>(config, "/api/form/request")
-    return (response.data ?? []).map((form): QuestionRequest => ({
-      id: form.id,
-      sessionID: form.sessionID,
-      questions: form.fields.map((field) => {
-        const isMulti = field.type === "multiselect"
-        return {
-          question: field.title ?? field.key,
-          header: form.title ?? field.title ?? field.key,
-          options: (field.options ?? []).map((option) => ({ label: option.label, description: option.description ?? "" })),
-          multiple: isMulti,
-          custom: field.custom ?? false
-        }
-      })
-    }))
+  async loadQuestions(config: ServerConfig, directory?: string) {
+    const forms = await fetchForms(config, directory)
+    return forms.map(toQuestionRequest)
   },
 
   async replyQuestion(config: ServerConfig, requestID: string, answers: string[][], directory?: string) {
-    const forms = await opencode2Api.loadQuestions(config, directory)
+    const forms = await fetchForms(config, directory)
     const form = forms.find((candidate) => candidate.id === requestID)
     if (!form) throw new Error("Question form is no longer pending")
-    const answer: Record<string, string | string[]> = {}
-    form.questions.forEach((question, index) => {
-      const key = form.questions.length === 1 ? form.questions[0]!.question : question.question
-      answer[key] = (answers[index] ?? []).length > 1 ? answers[index]! : (answers[index] ?? [])[0] ?? ""
-    })
+    // Build the v2 answer from the raw form so we submit `field.key`/`option.value`, not display labels.
+    const answer = toFormAnswer(form, answers)
     await v2Request<boolean>(config, `/api/session/${encodeURIComponent(form.sessionID)}/form/${encodeURIComponent(requestID)}/reply`, {
       method: "POST",
       body: { answer }
@@ -407,7 +414,7 @@ export const opencode2Api = {
   },
 
   async rejectQuestion(config: ServerConfig, requestID: string, directory?: string) {
-    const forms = await opencode2Api.loadQuestions(config, directory)
+    const forms = await fetchForms(config, directory)
     const form = forms.find((candidate) => candidate.id === requestID)
     if (form) {
       await v2Request<boolean>(config, `/api/session/${encodeURIComponent(form.sessionID)}/form/${encodeURIComponent(requestID)}/cancel`, { method: "POST" })
@@ -415,8 +422,8 @@ export const opencode2Api = {
     return true
   },
 
-  async loadPermissions(config: ServerConfig, _directory?: string) {
-    const response = await v2Request<{ data: Array<{
+  async loadPermissions(config: ServerConfig, directory?: string) {
+    const requests = await v2Request<Array<{
       id: string
       sessionID: string
       action: string
@@ -424,8 +431,8 @@ export const opencode2Api = {
       save?: string[]
       metadata?: Record<string, unknown>
       source?: { type?: string; messageID?: string; id?: string }
-    }> }>(config, "/api/permission/request")
-    return (response.data ?? []).map((request): PermissionRequest => ({
+    }>>(config, withLocation("/api/permission/request", directory))
+    return (requests ?? []).map((request): PermissionRequest => ({
       id: request.id,
       sessionID: request.sessionID,
       permission: request.action,
