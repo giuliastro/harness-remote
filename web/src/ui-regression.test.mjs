@@ -183,7 +183,7 @@ assert.ok(app.includes("api.createSession(config, t('sessions.remoteSessionTitle
 assert.ok(app.includes("t('sessions.projectDirectoryInvalid'"), 'picked folders should be validated before creating unusable global sessions')
 assert.ok(app.includes('if (!isProjectDirectory(pathInfo))'), 'new session creation should reject folders that OpenCode resolves to the global project')
 assert.ok(app.includes('if (current.some((session) => session.id === created.id)) return current'), 'newly created sessions should be inserted before any refresh')
-assert.ok(app.includes('async function refreshSessions(silent = false, preserveSession?: SessionView)'), 'session refresh should accept a newly created session to preserve across stale React state')
+assert.ok(app.includes('async function refreshSessions(silent = false, preserveSession?: SessionView, suppressError = false)'), 'session refresh should accept a newly created session to preserve across stale React state')
 assert.ok(app.includes('const toPreserve = preserveSession ?? selected'), 'session refresh should preserve an explicit created session, not only the previous selectedID')
 assert.ok(app.includes('await refreshSessions(false, createdView)'), 'new-session flow must preserve the created session during the immediate post-create refresh')
 assert.ok(api.includes('createSession(config: ServerConfig, title?: string, model?: ModelSelection, directory?: string)'), 'createSession API should accept a directory')

@@ -258,16 +258,52 @@ export function toSkillActivationBody(skill: string): { skill: string; resume: b
 }
 
 /**
- * Combine the command and skill catalogs into one slash-name catalog without duplicate user-facing
- * names. Server commands win a name collision (skills have lower priority, matching OpenCode's own
- * slash handling), and the merged order preserves commands-then-skills.
+ * Whether a v2 fetch failure is a confirmed route absence rather than a real server fault. The v2
+ * router answers unknown paths with an empty 404, and the shared error contract surfaces that as the
+ * literal message "HTTP 404" (the `HTTP {status}` fallback used when the body carries no detail) on
+ * every transport — web fetch, Capacitor and the desktop bridge. A 404 carrying a parseable body, or
+ * any other status, is not treated as route absence.
+ */
+export function isV2RouteAbsent(error: unknown): boolean {
+  return (error instanceof Error ? error.message : String(error)) === "HTTP 404"
+}
+
+/**
+ * Fetch the v2 skill catalog, degrading to an empty list only when the `/api/skill` route is
+ * confirmed absent (see {@link isV2RouteAbsent}). Any other failure — a 4xx/5xx carrying a body, an
+ * auth rejection, a network error — is a real fault and is rethrown so callers surface it instead
+ * of silently presenting an empty skills list.
+ */
+export async function fetchSkillCatalog(fetchSkills: () => Promise<V2Skill[]>): Promise<V2Skill[]> {
+  try {
+    return await fetchSkills()
+  } catch (error) {
+    if (isV2RouteAbsent(error)) return []
+    throw error
+  }
+}
+
+/**
+ * Combine the command and skill catalogs into one slash-name catalog. Both classifications are kept
+ * even when a server command and a skill share a display name: the skill's entry stays classified as
+ * a skill (with its stable `id`) so the UI's skill filter still shows it and activation still works.
+ * Commands are listed first, so a slash-name lookup (the app resolves a typed `/name` with `find`)
+ * lands on the server command — OpenCode's own slash precedence — while the colliding skill remains
+ * reachable through its activate action, which uses the stable `id`. Duplicates are dropped only
+ * *within* one source, where two entries with the same name would be ambiguous.
  */
 export function mergeCommandCatalog(commands: CommandInfo[], skills: CommandInfo[]): CommandInfo[] {
-  const seen = new Set<string>()
   const merged: CommandInfo[] = []
-  for (const entry of [...commands, ...skills]) {
-    if (!entry.name || seen.has(entry.name)) continue
-    seen.add(entry.name)
+  const seenCommands = new Set<string>()
+  for (const entry of commands) {
+    if (!entry.name || seenCommands.has(entry.name)) continue
+    seenCommands.add(entry.name)
+    merged.push(entry)
+  }
+  const seenSkills = new Set<string>()
+  for (const entry of skills) {
+    if (!entry.name || seenSkills.has(entry.name)) continue
+    seenSkills.add(entry.name)
     merged.push(entry)
   }
   return merged

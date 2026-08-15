@@ -187,6 +187,7 @@ type TranslationKey =
    | 'help.skillRequiresSession'
    | 'help.skillRequiresOpenCode2'
    | 'help.skillActivationFailed'
+   | 'help.skillRefreshFailed'
   | 'menubar.file'
   | 'menubar.session'
   | 'menubar.view'
@@ -492,6 +493,7 @@ const translations: Record<LanguageCode, Partial<Record<TranslationKey, string>>
    'help.skillRequiresSession': 'Select a session to activate skills.',
    'help.skillRequiresOpenCode2': 'Skill activation is available on OpenCode 2 servers only.',
    'help.skillActivationFailed': 'Could not activate {skill}: {message}',
+    'help.skillRefreshFailed': 'Skill activated, but the session view could not be refreshed. Please refresh to see the latest state.',
     'action.close': 'Close',
     'action.thinking': 'Thinking',
     'action.thoughtFor': 'Thought for {duration}',

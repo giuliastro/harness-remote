@@ -18,6 +18,7 @@ import type {
   VcsStatus
 } from "./types"
 import {
+  fetchSkillCatalog,
   mergeCommandCatalog,
   toAgentOption,
   toCommandOption,
@@ -243,11 +244,13 @@ export const opencode2Api = {
 
   async listCommands(config: ServerConfig) {
     // The v2 slash catalog is two endpoints: server commands plus slash-enabled skills. Skills are a
-    // separate route, so a server without it must not break the command picker — it degrades to
-    // commands-only. Skill activation is a dedicated POST (see `sendSkill`), not a raw prompt.
+    // separate route, so a server without it must not break the command picker — `fetchSkillCatalog`
+    // degrades to commands-only only for a confirmed route absence (the v2 router's empty 404) and
+    // surfaces any real `/api/skill` failure instead of silently emptying the skills list. Skill
+    // activation is a dedicated POST (see `sendSkill`), not a raw prompt.
     const [commands, skills] = await Promise.all([
       v2Request<Array<{ name: string; description?: string }>>(config, "/api/command"),
-      v2Request<V2Skill[]>(config, "/api/skill").catch(() => [])
+      fetchSkillCatalog(() => v2Request<V2Skill[]>(config, "/api/skill"))
     ])
     return mergeCommandCatalog(
       (commands ?? []).map(toCommandOption),
