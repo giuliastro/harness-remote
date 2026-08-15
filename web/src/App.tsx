@@ -10,6 +10,7 @@ import {
   isAndroidPlatform,
   isDesktopPlatform,
   notifyDesktopCompletion,
+  openDesktopExternalUrl,
   desktopUsesNativeMenu,
   setDesktopApplicationMenu,
   subscribeDesktopMenuCommands,
@@ -25,6 +26,7 @@ import {
 } from "./opencode-events"
 import { createTranslator, languageOptions, normalizeLanguage, type LanguageCode } from "./i18n"
 import { stripMarkdownDirectives } from "./markdownDirectives"
+import { isQuestionActive } from "./opencode2-mappers"
 import { DEFAULT_HARNESS_CAPABILITIES } from "./backendCapabilities"
 import { BACKEND_CLIENTS } from "./backendClient"
 import { copyToClipboard } from "./clipboard"
@@ -834,6 +836,11 @@ function QuestionCard({
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
+  const answers = request.questions.map((_, index) => {
+    const customValue = customValues[index].trim()
+    return customValue ? [...selections[index], customValue] : selections[index]
+  })
+
   function toggleOption(questionIndex: number, label: string, multiple: boolean) {
     setSelections((current) => {
       const next = [...current]
@@ -872,18 +879,15 @@ function QuestionCard({
   }
 
   const canSubmit = request.questions.every((question, index) => {
+    if (!isQuestionActive(request, index, answers)) return true
     if (question.optional) return true
-    return selections[index].length > 0 || (question.custom !== false && customValues[index].trim().length > 0)
+    return answers[index].length > 0
   })
 
   async function submit() {
     setSubmitting(true)
     setError(null)
     try {
-      const answers = request.questions.map((_, index) => {
-        const customValue = customValues[index].trim()
-        return customValue ? [...selections[index], customValue] : selections[index]
-      })
       await api.replyQuestion(config, request.id, answers, directory)
       onResolved(request.id)
     } catch (err) {
@@ -906,8 +910,8 @@ function QuestionCard({
 
   return (
     <article className="message assistant question-card fade-in" aria-label={t('question.ariaLabel')}>
-      {request.questions.map((question, index) => (
-        <div key={index} className="question-block">
+      {request.questions.map((question, index) => isQuestionActive(request, index, answers) ? (
+        <div key={question.key ?? index} className="question-block">
           <div className="question-header">{question.header}</div>
           <p className="question-text">{question.question}</p>
           <div className="question-options">
@@ -924,6 +928,30 @@ function QuestionCard({
               </button>
             ))}
           </div>
+          {question.externalUrl && (
+            <div className="question-external">
+              <a
+                href={question.externalUrl}
+                target="_blank"
+                rel="noreferrer"
+                onClick={(event) => {
+                  if (!isDesktopPlatform()) return
+                  event.preventDefault()
+                  openDesktopExternalUrl(question.externalUrl!)
+                }}
+              >
+                {t('question.openExternal')}
+              </a>
+              <button
+                type="button"
+                className={`question-option ${selections[index].includes("true") ? "selected" : ""}`}
+                onClick={() => toggleOption(index, "true", false)}
+                disabled={submitting}
+              >
+                <span className="question-option-label">{t('question.externalComplete')}</span>
+              </button>
+            </div>
+          )}
           {question.custom !== false && (
             <input
               type="text"
@@ -935,7 +963,7 @@ function QuestionCard({
             />
           )}
         </div>
-      ))}
+      ) : null)}
       {error && <p className="question-error">{error}</p>}
       <div className="question-actions">
         <button type="button" className="btn-secondary" onClick={reject} disabled={submitting}>

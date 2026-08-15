@@ -5,6 +5,7 @@ import {
   toDiffFile,
   toFileEntry,
   toFormAnswer,
+  isQuestionActive,
   toMessageEnvelope,
   toModelOption,
   toQuestionRequest,
@@ -224,8 +225,8 @@ assert.equal(question.questions[0].question, 'Which framework?')
 assert.equal(question.questions[0].multiple, false)
 assert.equal(question.questions[1].multiple, true)
 assert.deepEqual(question.questions[0].options, [
-  { label: 'React', description: '' },
-  { label: 'Vue', description: '' }
+  { label: 'React', description: '', value: 'react' },
+  { label: 'Vue', description: '', value: 'vue' }
 ])
 // A plain `string` field has no options, so it must expose the free-text input (custom).
 assert.equal(question.questions[2].custom, true)
@@ -237,19 +238,20 @@ assert.deepEqual(answer, { framework: 'react', features: ['ts', 'ssr'], name: 'm
 
 // Free-text answers with no matching option pass through unchanged.
 const customAnswer = toFormAnswer(liveForm, [['React'], [], ['custom-name']])
-assert.deepEqual(customAnswer, { framework: 'react', features: [], name: 'custom-name' })
+assert.deepEqual(customAnswer, { framework: 'react', name: 'custom-name' })
 
 // Contract field types: string | number | integer | boolean | multiselect | external.
 const typedForm = {
   id: 'frm_2',
   sessionID: 'ses_y',
   fields: [
-    { key: 'name', title: 'Name', type: 'string' },
-    { key: 'count', title: 'Count', type: 'number' },
-    { key: 'retries', title: 'Retries', type: 'integer' },
-    { key: 'enabled', title: 'Enabled', type: 'boolean' },
-    { key: 'nickname', title: 'Nickname', type: 'string', required: false },
-    { key: 'token', title: 'Token', type: 'external' }
+    { key: 'name', title: 'Name', type: 'string', required: true },
+    { key: 'count', title: 'Count', type: 'number', required: true },
+    { key: 'retries', title: 'Retries', type: 'integer', required: true },
+    { key: 'enabled', title: 'Enabled', type: 'boolean', required: true },
+    // `required` is absent deliberately: optional is the v2 default.
+    { key: 'nickname', title: 'Nickname', type: 'string' },
+    { key: 'token', title: 'Token', type: 'external', url: 'https://example.test/authorize' }
   ]
 }
 
@@ -262,24 +264,59 @@ for (const index of [0, 1, 2]) {
 // Boolean renders as Yes/No choices, not an open text box.
 assert.equal(typedQuestions.questions[3].custom, false)
 assert.deepEqual(typedQuestions.questions[3].options, [
-  { label: 'Yes', description: '' },
-  { label: 'No', description: '' }
+  { label: 'Yes', description: '', value: 'true' },
+  { label: 'No', description: '', value: 'false' }
 ])
-// Optional and external fields must not block submission.
+// A missing `required` flag is optional, while external fields require explicit acknowledgement.
 assert.equal(typedQuestions.questions[4].optional, true)
-assert.equal(typedQuestions.questions[5].optional, true)
+assert.equal(typedQuestions.questions[5].optional, false)
+assert.equal(typedQuestions.questions[5].externalUrl, 'https://example.test/authorize')
+assert.equal(toQuestionRequest({
+  id: 'frm_unsafe',
+  sessionID: 'ses_y',
+  fields: [{ key: 'unsafe', type: 'external', url: 'javascript:alert(1)' }]
+}).questions[0].externalUrl, undefined)
 
-// number/integer answers are numeric; boolean maps to a real boolean via the synthesized option.
-const typedAnswer = toFormAnswer(typedForm, [['Ada'], ['3.5'], ['7'], ['Yes'], [], []])
-assert.deepEqual(typedAnswer, { name: 'Ada', count: 3.5, retries: 7, enabled: true })
+// number/integer answers are numeric; boolean and external acknowledgements are real booleans.
+const typedAnswer = toFormAnswer(typedForm, [['Ada'], ['3.5'], ['7'], ['Yes'], [], ['true']])
+assert.deepEqual(typedAnswer, { name: 'Ada', count: 3.5, retries: 7, enabled: true, token: true })
 assert.equal(typeof typedAnswer.count, 'number')
 assert.equal(typeof typedAnswer.retries, 'number')
 assert.equal(typeof typedAnswer.enabled, 'boolean')
-// The blank optional field and the unanswerable external field are omitted, not sent as empty values.
+assert.equal(typeof typedAnswer.token, 'boolean')
+// The blank optional field is omitted rather than submitted as an empty string.
 assert.equal('nickname' in typedAnswer, false)
-assert.equal('token' in typedAnswer, false)
 
 // A boolean answered "No" maps to false.
-assert.equal(toFormAnswer(typedForm, [['Ada'], ['1'], ['1'], ['No'], [], []]).enabled, false)
+assert.equal(toFormAnswer(typedForm, [['Ada'], ['1'], ['1'], ['No'], [], ['true']]).enabled, false)
+
+// Invalid integer text is never truncated into a different valid answer.
+assert.equal(toFormAnswer(typedForm, [['Ada'], ['1'], ['3.5'], ['Yes'], [], ['true']]).retries, '3.5')
+assert.equal(toFormAnswer(typedForm, [['Ada'], ['1'], ['7abc'], ['Yes'], [], ['true']]).retries, '7abc')
+
+const conditionalForm = {
+  id: 'frm_3',
+  sessionID: 'ses_z',
+  fields: [
+    { key: 'enabled', title: 'Use authentication?', type: 'boolean', required: true },
+    {
+      key: 'secret',
+      title: 'Secret',
+      type: 'string',
+      required: true,
+      when: [{ key: 'enabled', op: 'eq', value: true }]
+    }
+  ]
+}
+const conditionalQuestions = toQuestionRequest(conditionalForm)
+assert.equal(isQuestionActive(conditionalQuestions, 1, [[], []]), false)
+assert.equal(isQuestionActive(conditionalQuestions, 1, [['No'], []]), false)
+assert.equal(isQuestionActive(conditionalQuestions, 1, [['Yes'], []]), true)
+// Stale values for inactive fields are omitted; active values are submitted.
+assert.deepEqual(toFormAnswer(conditionalForm, [['No'], ['stale-secret']]), { enabled: false })
+assert.deepEqual(toFormAnswer(conditionalForm, [['Yes'], ['current-secret']]), {
+  enabled: true,
+  secret: 'current-secret'
+})
 
 console.log('OpenCode 2 client mapping tests passed')

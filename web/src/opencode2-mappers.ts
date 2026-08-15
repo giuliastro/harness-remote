@@ -227,7 +227,9 @@ export function toDiffFile(file: { file: string; patch?: string; additions?: num
   }
 }
 
+export type V2FormValue = string | number | boolean | string[]
 export type V2FormOption = { value: string; label: string; description?: string }
+export type V2FormWhen = { key: string; op: "eq" | "neq"; value: string | number | boolean }
 export type V2FormField = {
   key: string
   title?: string
@@ -238,8 +240,8 @@ export type V2FormField = {
   options?: V2FormOption[]
   custom?: boolean
   required?: boolean
-  /** Conditional visibility gate; when present the field only applies for some prior answers. */
-  when?: unknown
+  when?: V2FormWhen[]
+  url?: string
 }
 export type V2Form = { id: string; sessionID: string; title?: string; fields: V2FormField[] }
 
@@ -264,13 +266,20 @@ function isFreeTextField(field: V2FormField): boolean {
   return effectiveOptions(field).length === 0 && field.type !== "external"
 }
 
-/**
- * A field may be left blank without blocking the form: explicitly optional, gated behind a `when`
- * condition we don't evaluate client-side, or `external` (answered out-of-band — the app can't
- * collect it, so it must not force the user to fabricate a value).
- */
 function isOptionalField(field: V2FormField): boolean {
-  return field.required === false || field.when !== undefined || field.type === "external"
+  // `required` is optional in the v2 schema and only the literal value true makes a field required.
+  // External fields are different: the protocol requires an explicit `true` acknowledgement.
+  return field.type !== "external" && field.required !== true
+}
+
+function safeExternalUrl(value: string | undefined): string | undefined {
+  if (!value || value.length > 4096) return undefined
+  try {
+    const url = new URL(value)
+    return url.protocol === "https:" || url.protocol === "http:" ? url.toString() : undefined
+  } catch {
+    return undefined
+  }
 }
 
 /**
@@ -288,19 +297,27 @@ export function toQuestionRequest(form: V2Form): QuestionRequest {
       return {
         question: field.title ?? field.key,
         header: form.title ?? field.title ?? field.key,
-        options: options.map((option) => ({ label: option.label, description: option.description ?? "" })),
+        options: options.map((option) => ({
+          label: option.label,
+          description: option.description ?? "",
+          value: option.value
+        })),
         multiple: field.type === "multiselect",
         // Free-text fields must expose the "other" input — it is their only control; option fields
         // expose it only when the protocol permits a custom value.
         custom: isFreeTextField(field) ? true : (field.custom ?? false),
-        optional: isOptionalField(field)
+        optional: isOptionalField(field),
+        key: field.key,
+        answerType: field.type as "string" | "number" | "integer" | "boolean" | "multiselect" | "external",
+        when: field.when,
+        externalUrl: field.type === "external" ? safeExternalUrl(field.url) : undefined
       }
     })
   }
 }
 
 /** Shape one field's answer by its declared type (v2 accepts string | number | integer | boolean | string[]). */
-function shapeFieldValue(field: V2FormField, values: string[]): unknown {
+function shapeFieldValue(field: V2FormField, values: string[]): V2FormValue {
   if (field.type === "multiselect") return values
   const first = values[0] ?? ""
   if (field.type === "number") {
@@ -308,25 +325,79 @@ function shapeFieldValue(field: V2FormField, values: string[]): unknown {
     return Number.isFinite(parsed) ? parsed : first
   }
   if (field.type === "integer") {
-    const parsed = Number.parseInt(first, 10)
-    return Number.isNaN(parsed) ? first : parsed
+    const parsed = Number(first)
+    return Number.isFinite(parsed) && Number.isInteger(parsed) ? parsed : first
   }
   if (isBooleanField(field)) return first === "true" || first === "yes"
   return first
+}
+
+function isActive(field: V2FormField, answer: Record<string, V2FormValue>): boolean {
+  if (!field.when) return true
+  return field.when.every((condition) => {
+    const value = answer[condition.key]
+    // This matches v2: an unanswered dependency makes both eq and neq conditions false.
+    if (value === undefined) return false
+    const hit = Array.isArray(value)
+      ? value.some((item) => item === condition.value)
+      : value === condition.value
+    return condition.op === "eq" ? hit : !hit
+  })
+}
+
+/** Resolve one mapped question's current value for conditional visibility in the shared UI. */
+function questionValue(question: QuestionRequest["questions"][number], labels: string[]): V2FormValue | undefined {
+  if (labels.length === 0) return undefined
+  const values = labels.map((label) => question.options.find((option) => option.label === label)?.value ?? label)
+  if (question.answerType === "multiselect") return values
+  const first = values[0]
+  if (question.answerType === "number") {
+    const parsed = Number(first)
+    return Number.isFinite(parsed) ? parsed : undefined
+  }
+  if (question.answerType === "integer") {
+    const parsed = Number(first)
+    return Number.isFinite(parsed) && Number.isInteger(parsed) ? parsed : undefined
+  }
+  if (question.answerType === "boolean") return first === "true"
+  if (question.answerType === "external") return true
+  return first
+}
+
+/** Whether a mapped question applies to the answers currently entered for earlier questions. */
+export function isQuestionActive(request: QuestionRequest, index: number, answersByIndex: string[][]): boolean {
+  const question = request.questions[index]
+  if (!question?.when) return true
+  return question.when.every((condition) => {
+    const dependencyIndex = request.questions.findIndex((candidate) => candidate.key === condition.key)
+    if (dependencyIndex < 0) return false
+    const value = questionValue(request.questions[dependencyIndex], answersByIndex[dependencyIndex] ?? [])
+    if (value === undefined) return false
+    const hit = Array.isArray(value)
+      ? value.some((item) => item === condition.value)
+      : value === condition.value
+    return condition.op === "eq" ? hit : !hit
+  })
 }
 
 /**
  * Translate the app's per-question answers (arrays of the selected option *labels*, indexed to match
  * `form.fields`) back into v2's answer object: keyed by `field.key`, submitting each option's `value`
  * rather than its label, and typed per field. Free-text/custom answers with no matching option pass
- * through unchanged. Optional/conditional/external fields left blank are omitted rather than submitted
- * with a fabricated empty value.
+ * through unchanged. Optional or inactive fields left blank are omitted, while an external field is
+ * sent as `true` only after the user explicitly acknowledges its out-of-band step.
  */
-export function toFormAnswer(form: V2Form, answersByIndex: string[][]): Record<string, unknown> {
-  const answer: Record<string, unknown> = {}
+export function toFormAnswer(form: V2Form, answersByIndex: string[][]): Record<string, V2FormValue> {
+  const answer: Record<string, V2FormValue> = {}
   ;(form.fields ?? []).forEach((field, index) => {
     const labels = answersByIndex[index] ?? []
-    if (labels.length === 0 && isOptionalField(field)) return
+    if (field.type === "external") {
+      if (labels.length > 0) answer[field.key] = true
+      return
+    }
+    // Conditions reference earlier fields, so the incrementally built answer is sufficient and
+    // ensures stale UI values from fields that became inactive are never submitted.
+    if (!isActive(field, answer) || labels.length === 0) return
     const options = effectiveOptions(field)
     const values = labels.map((label) => {
       const option = options.find((candidate) => candidate.label === label || candidate.value === label)

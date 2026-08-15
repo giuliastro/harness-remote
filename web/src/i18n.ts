@@ -289,6 +289,8 @@ type TranslationKey =
   | 'action.madeEditMany'
   | 'question.ariaLabel'
   | 'question.otherPlaceholder'
+  | 'question.openExternal'
+  | 'question.externalComplete'
   | 'question.skip'
   | 'question.sendAnswer'
   | 'permission.ariaLabel'
@@ -537,6 +539,8 @@ const translations: Record<LanguageCode, Partial<Record<TranslationKey, string>>
     'action.madeEditMany': 'made {n} edits',
     'question.ariaLabel': 'Question from OpenCode',
     'question.otherPlaceholder': 'Other…',
+    'question.openExternal': 'Open external step',
+    'question.externalComplete': "I've completed this step",
     'question.skip': 'Skip',
     'question.sendAnswer': 'Send answer',
     'permission.ariaLabel': 'Permission request from OpenCode',
@@ -833,6 +837,8 @@ const translations: Record<LanguageCode, Partial<Record<TranslationKey, string>>
     'action.madeEditMany': 'fatte {n} modifiche',
     'question.ariaLabel': 'Domanda da OpenCode',
     'question.otherPlaceholder': 'Altro…',
+    'question.openExternal': 'Apri il passaggio esterno',
+    'question.externalComplete': 'Ho completato questo passaggio',
     'question.skip': 'Salta',
     'question.sendAnswer': 'Invia risposta',
     'permission.ariaLabel': 'Richiesta permesso da OpenCode',
@@ -1129,6 +1135,8 @@ const translations: Record<LanguageCode, Partial<Record<TranslationKey, string>>
     'action.madeEditMany': '進行了 {n} 次編輯',
     'question.ariaLabel': '來自 OpenCode 的問題',
     'question.otherPlaceholder': '其他…',
+    'question.openExternal': '開啟外部步驟',
+    'question.externalComplete': '我已完成此步驟',
     'question.skip': '略過',
     'question.sendAnswer': '傳送回答',
     'permission.ariaLabel': '來自 OpenCode 的權限請求',
@@ -1422,6 +1430,8 @@ const translations: Record<LanguageCode, Partial<Record<TranslationKey, string>>
     'action.madeEditMany': '进行了 {n} 次编辑',
     'question.ariaLabel': '来自 OpenCode 的问题',
     'question.otherPlaceholder': '其他…',
+    'question.openExternal': '打开外部步骤',
+    'question.externalComplete': '我已完成此步骤',
     'question.skip': '跳过',
     'question.sendAnswer': '发送回答',
     'permission.ariaLabel': '来自 OpenCode 的权限请求',
