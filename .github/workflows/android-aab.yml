@@ -89,8 +89,7 @@ jobs:
           echo "version_code=$VERSION_CODE" >> "$GITHUB_OUTPUT"
 
       - name: Sync Android version metadata
-        run: ./node web/scripts/sync-android-version.mjs
-        "version.mjs" "${{ steps.version.outputs.app_version }}" "${{ steps.version.outputs.version_code }}"
+        run: node web/scripts/sync-android-version.mjs "${{ steps.version.outputs.app_version }}" "${{ steps.version.outputs.version_code }}"
 
       - name: Build release AAB (unsigned)
         run: ./gradlew bundleRelease --stacktrace --no-daemon
