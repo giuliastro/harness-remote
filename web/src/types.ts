@@ -176,6 +176,8 @@ export type QuestionInfo = {
   options: QuestionOption[]
   multiple?: boolean
   custom?: boolean
+  /** Optional/conditional fields may be left blank without blocking submission of the rest of the form. */
+  optional?: boolean
 }
 
 export type QuestionRequest = {

@@ -212,7 +212,7 @@ const liveForm = {
         { value: 'ssr', label: 'SSR' }
       ]
     },
-    { key: 'name', title: 'Project name?', type: 'text', custom: true }
+    { key: 'name', title: 'Project name?', type: 'string' }
   ]
 }
 
@@ -227,6 +227,9 @@ assert.deepEqual(question.questions[0].options, [
   { label: 'React', description: '' },
   { label: 'Vue', description: '' }
 ])
+// A plain `string` field has no options, so it must expose the free-text input (custom).
+assert.equal(question.questions[2].custom, true)
+assert.deepEqual(question.questions[2].options, [])
 
 // Replies must be keyed by field.key and carry option.value (not the display label), typed per field.
 const answer = toFormAnswer(liveForm, [['React'], ['TypeScript', 'SSR'], ['my-app']])
@@ -235,5 +238,48 @@ assert.deepEqual(answer, { framework: 'react', features: ['ts', 'ssr'], name: 'm
 // Free-text answers with no matching option pass through unchanged.
 const customAnswer = toFormAnswer(liveForm, [['React'], [], ['custom-name']])
 assert.deepEqual(customAnswer, { framework: 'react', features: [], name: 'custom-name' })
+
+// Contract field types: string | number | integer | boolean | multiselect | external.
+const typedForm = {
+  id: 'frm_2',
+  sessionID: 'ses_y',
+  fields: [
+    { key: 'name', title: 'Name', type: 'string' },
+    { key: 'count', title: 'Count', type: 'number' },
+    { key: 'retries', title: 'Retries', type: 'integer' },
+    { key: 'enabled', title: 'Enabled', type: 'boolean' },
+    { key: 'nickname', title: 'Nickname', type: 'string', required: false },
+    { key: 'token', title: 'Token', type: 'external' }
+  ]
+}
+
+const typedQuestions = toQuestionRequest(typedForm)
+// Plain string/number/integer are answerable via a text input, and required ones block submission.
+for (const index of [0, 1, 2]) {
+  assert.equal(typedQuestions.questions[index].custom, true)
+  assert.equal(typedQuestions.questions[index].optional ?? false, false)
+}
+// Boolean renders as Yes/No choices, not an open text box.
+assert.equal(typedQuestions.questions[3].custom, false)
+assert.deepEqual(typedQuestions.questions[3].options, [
+  { label: 'Yes', description: '' },
+  { label: 'No', description: '' }
+])
+// Optional and external fields must not block submission.
+assert.equal(typedQuestions.questions[4].optional, true)
+assert.equal(typedQuestions.questions[5].optional, true)
+
+// number/integer answers are numeric; boolean maps to a real boolean via the synthesized option.
+const typedAnswer = toFormAnswer(typedForm, [['Ada'], ['3.5'], ['7'], ['Yes'], [], []])
+assert.deepEqual(typedAnswer, { name: 'Ada', count: 3.5, retries: 7, enabled: true })
+assert.equal(typeof typedAnswer.count, 'number')
+assert.equal(typeof typedAnswer.retries, 'number')
+assert.equal(typeof typedAnswer.enabled, 'boolean')
+// The blank optional field and the unanswerable external field are omitted, not sent as empty values.
+assert.equal('nickname' in typedAnswer, false)
+assert.equal('token' in typedAnswer, false)
+
+// A boolean answered "No" maps to false.
+assert.equal(toFormAnswer(typedForm, [['Ada'], ['1'], ['1'], ['No'], [], []]).enabled, false)
 
 console.log('OpenCode 2 client mapping tests passed')

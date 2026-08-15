@@ -872,6 +872,7 @@ function QuestionCard({
   }
 
   const canSubmit = request.questions.every((question, index) => {
+    if (question.optional) return true
     return selections[index].length > 0 || (question.custom !== false && customValues[index].trim().length > 0)
   })
 

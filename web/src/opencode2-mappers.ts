@@ -232,33 +232,74 @@ export type V2FormField = {
   key: string
   title?: string
   description?: string
+  // Documented v2 field types: string | number | integer | boolean | multiselect | external
+  // (plus `select` for single-choice option fields). Unknown types fall back to a plain text input.
   type?: string
   options?: V2FormOption[]
   custom?: boolean
   required?: boolean
+  /** Conditional visibility gate; when present the field only applies for some prior answers. */
+  when?: unknown
 }
 export type V2Form = { id: string; sessionID: string; title?: string; fields: V2FormField[] }
 
+const BOOLEAN_OPTIONS: V2FormOption[] = [
+  { value: "true", label: "Yes" },
+  { value: "false", label: "No" }
+]
+
+function isBooleanField(field: V2FormField): boolean {
+  return field.type === "boolean" || field.type === "confirm"
+}
+
+/** The choices the UI should render: real options, or synthesized Yes/No for a boolean field. */
+function effectiveOptions(field: V2FormField): V2FormOption[] {
+  if (field.options && field.options.length > 0) return field.options
+  if (isBooleanField(field)) return BOOLEAN_OPTIONS
+  return []
+}
+
+/** Plain-input fields (string/number/integer and unknown types) carry no choices and need a text box. */
+function isFreeTextField(field: V2FormField): boolean {
+  return effectiveOptions(field).length === 0 && field.type !== "external"
+}
+
+/**
+ * A field may be left blank without blocking the form: explicitly optional, gated behind a `when`
+ * condition we don't evaluate client-side, or `external` (answered out-of-band — the app can't
+ * collect it, so it must not force the user to fabricate a value).
+ */
+function isOptionalField(field: V2FormField): boolean {
+  return field.required === false || field.when !== undefined || field.type === "external"
+}
+
 /**
  * v2 "forms" replace the v1 question flow. The app UI only understands the flat `QuestionInfo`
- * shape and selects options by their display label, so we surface one question per field and keep
- * the protocol's `key`/`value`/`type` metadata for the reply step (see {@link toFormAnswer}).
+ * shape and selects options by their display label, so we surface one question per field, synthesize
+ * controls for the option-less types (a text box for string/number/integer, Yes/No for boolean), and
+ * keep the protocol's `key`/`value`/`type` metadata for the reply step (see {@link toFormAnswer}).
  */
 export function toQuestionRequest(form: V2Form): QuestionRequest {
   return {
     id: form.id,
     sessionID: form.sessionID,
-    questions: (form.fields ?? []).map((field) => ({
-      question: field.title ?? field.key,
-      header: form.title ?? field.title ?? field.key,
-      options: (field.options ?? []).map((option) => ({ label: option.label, description: option.description ?? "" })),
-      multiple: field.type === "multiselect",
-      custom: field.custom ?? false
-    }))
+    questions: (form.fields ?? []).map((field) => {
+      const options = effectiveOptions(field)
+      return {
+        question: field.title ?? field.key,
+        header: form.title ?? field.title ?? field.key,
+        options: options.map((option) => ({ label: option.label, description: option.description ?? "" })),
+        multiple: field.type === "multiselect",
+        // Free-text fields must expose the "other" input — it is their only control; option fields
+        // expose it only when the protocol permits a custom value.
+        custom: isFreeTextField(field) ? true : (field.custom ?? false),
+        optional: isOptionalField(field)
+      }
+    })
   }
 }
 
-/** Shape one field's selected values by the field's declared type (v2 accepts string | number | boolean | string[]). */
+/** Shape one field's answer by its declared type (v2 accepts string | number | integer | boolean | string[]). */
 function shapeFieldValue(field: V2FormField, values: string[]): unknown {
   if (field.type === "multiselect") return values
   const first = values[0] ?? ""
@@ -266,7 +307,11 @@ function shapeFieldValue(field: V2FormField, values: string[]): unknown {
     const parsed = Number(first)
     return Number.isFinite(parsed) ? parsed : first
   }
-  if (field.type === "boolean" || field.type === "confirm") return first === "true" || first === "yes"
+  if (field.type === "integer") {
+    const parsed = Number.parseInt(first, 10)
+    return Number.isNaN(parsed) ? first : parsed
+  }
+  if (isBooleanField(field)) return first === "true" || first === "yes"
   return first
 }
 
@@ -274,14 +319,17 @@ function shapeFieldValue(field: V2FormField, values: string[]): unknown {
  * Translate the app's per-question answers (arrays of the selected option *labels*, indexed to match
  * `form.fields`) back into v2's answer object: keyed by `field.key`, submitting each option's `value`
  * rather than its label, and typed per field. Free-text/custom answers with no matching option pass
- * through unchanged.
+ * through unchanged. Optional/conditional/external fields left blank are omitted rather than submitted
+ * with a fabricated empty value.
  */
 export function toFormAnswer(form: V2Form, answersByIndex: string[][]): Record<string, unknown> {
   const answer: Record<string, unknown> = {}
   ;(form.fields ?? []).forEach((field, index) => {
     const labels = answersByIndex[index] ?? []
+    if (labels.length === 0 && isOptionalField(field)) return
+    const options = effectiveOptions(field)
     const values = labels.map((label) => {
-      const option = (field.options ?? []).find((candidate) => candidate.label === label)
+      const option = options.find((candidate) => candidate.label === label || candidate.value === label)
       return option ? option.value : label
     })
     answer[field.key] = shapeFieldValue(field, values)
