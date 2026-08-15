@@ -41,7 +41,7 @@ jobs:
         working-directory: web
 
       - name: Type-check
-        run: npx tsc -b
+        run: npm tsc -b
         working-directory: web
 
       # Deploying on every merge only works if a bad merge cannot reach the URL, so this gates on the
