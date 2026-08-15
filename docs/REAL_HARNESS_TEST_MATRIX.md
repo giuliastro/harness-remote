@@ -74,7 +74,7 @@ credentials required by the selected harness. Keep it running in a persistent De
 tmux session only while invoking the workflow; it is not a public service and should not be exposed
 outside the local device.
 
-After the runner appears as **Idle**, open this PR and add the label `real-harness-pi`.\nThat starts the workflow on this PR's exact commit. Once it has completed, add\n`real-harness-omp`. The labels must be created once from **Issues → Labels** (or the PR label menu)\nbefore their first use. Each run:
+After the runner appears as **Idle**, add the label `real-harness-pi` to this PR. The next commit\non the PR starts the PI + OpenCode workflow on that exact revision. To run OMP afterwards, remove\n`real-harness-pi`, add `real-harness-omp`, then push the next commit. The labels must be created\nonce from **Issues → Labels** (or the PR label menu) before their first use. Each run:
 
 - creates a disposable Git fixture under the runner temp directory;
 - starts TaskDesk with the selected ACP primary and managed OpenCode;
