@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import path from "node:path"
 import { AcpClient } from "./acp-client.js"
-import { AcpAgentModelCatalog, HttpAgentModelCatalog } from "./agent-model-catalog.js"
+import { AcpAgentModelCatalog, HttpAgentModelCatalog, PiRpcModelCatalog } from "./agent-model-catalog.js"
 import { parseConfig, usage as bridgeUsage } from "./config.js"
 import { harnessProfile } from "./harness-profiles.js"
 import { canListen, resolveLaunchPlan } from "./launcher.js"
@@ -111,9 +111,9 @@ function acpClientFor(config, profile) {
   })
 }
 
-export function warmAcp(agent, { onError = () => {} } = {}) {
-  if (!agent?.start) return Promise.resolve()
-  return agent.start().catch((error) => {
+export function warmCatalog(catalog, { onError = () => {} } = {}) {
+  if (!catalog?.list) return Promise.resolve()
+  return catalog.list().catch((error) => {
     onError(error)
   })
 }
@@ -147,16 +147,19 @@ async function main() {
   let primaryModelCatalog
 
   if (profile && acp) {
-    // Reuse the exact ACP process that serves ordinary sessions. PI already advertises its model
-    // choices through session configOptions there; a second model-only ACP process made New Task
-    // pay another cold adapter startup and diverged from the session path that already worked.
-    primaryModelCatalog = new AcpAgentModelCatalog({
-      agent: acp,
-      agentID: profile.id,
-      directory: config.roots?.[0] ?? process.cwd(),
-      stateDirectory: config.stateDirectory,
-      ownsAgent: false
-    })
+    // PI has an official session-less RPC model registry (`get_available_models`). Use that for the
+    // pre-task picker and leave PI's ordinary ACP session/configOptions behavior completely alone.
+    // Other ACP backends keep the reusable technical-session fallback until they gain a native
+    // catalog path of their own.
+    primaryModelCatalog = profile.id === "pi"
+      ? new PiRpcModelCatalog({ command: "pi", cwd: config.roots?.[0] ?? process.cwd() })
+      : new AcpAgentModelCatalog({
+        agent: acp,
+        agentID: profile.id,
+        directory: config.roots?.[0] ?? process.cwd(),
+        stateDirectory: config.stateDirectory,
+        ownsAgent: false
+      })
     daemon.registerAcpHost({
       id: profile.id,
       label: profile.label,
@@ -218,11 +221,12 @@ async function main() {
       process.stdout.write(`${host.state === "available" ? "✓" : "•"} ${host.label} [${host.transport}] ${host.state}\n`)
     }
 
-    // Warm the same ACP process ordinary sessions use, but never delay the daemon listener. New
-    // Task can then obtain PI's existing configOptions path without paying a cold-start penalty.
-    if (profile && acp) {
-      void warmAcp(acp, {
-        onError: (error) => process.stderr.write(`[${profile.id}] warmup failed: ${error.message}\n`)
+    // Warm the model catalog after the listener is live. For PI this starts a short-lived native RPC
+    // query, not ACP and not a session, so New Task usually reads a hot cache without touching the
+    // user's session process at all.
+    if (primaryModelCatalog) {
+      void warmCatalog(primaryModelCatalog, {
+        onError: (error) => process.stderr.write(`[${primaryAgentID}] model warmup failed: ${error.message}\n`)
       })
     }
   })
