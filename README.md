@@ -32,6 +32,34 @@ npx github:giuliastro/harness-remote
 
 It detects the supported agents on your `PATH`, picks a free port, generates credentials and prints the address to enter in the client. OpenCode is started and supervised directly; ACP-backed agents run through the local bridge or daemon.
 
+**The one-command launcher is optional.** If auto-detection or the machine daemon does not work in your environment, use the original per-harness ACP bridge directly. This compatibility path remains supported during the transition.
+
+For OMP, from a checkout of this repository:
+
+```bash
+npx --yes ./bridge \
+  --backend omp \
+  --host 0.0.0.0 \
+  --port 4097 \
+  --username omp \
+  --password "use-a-long-unique-password" \
+  --root "$HOME/Software"
+```
+
+For PI:
+
+```bash
+npx --yes ./bridge \
+  --backend pi \
+  --host 0.0.0.0 \
+  --port 4097 \
+  --username pi \
+  --password "use-a-long-unique-password" \
+  --root "$HOME/Software"
+```
+
+Claude Code and Codex CLI use the same command with `--backend claude` or `--backend codex`. See [Direct per-harness ACP bridge quick start](docs/LEGACY_BRIDGE_QUICK_START.md) for all commands and [REFERENCE.md](REFERENCE.md) for the full backend-specific setup.
+
 Then install a client from [GitHub Releases](https://github.com/giuliastro/harness-remote/releases/latest), or open the [web app](https://giuliastro.github.io/harness-remote/) and enter the address it printed.
 
 ## What works today
@@ -98,6 +126,7 @@ The previous full README — including detailed OpenCode, OMP, PI, Claude Code a
 
 Other useful docs:
 
+- [Direct per-harness ACP bridge quick start](docs/LEGACY_BRIDGE_QUICK_START.md)
 - [Harness 3 roadmap](docs/HARNESS_3_ROADMAP.md)
 - [Harness dependency notes](docs/DEPENDENCIES.md)
 - [Contributing](CONTRIBUTING.md)
