@@ -1,9 +1,11 @@
 import assert from "node:assert/strict"
+import { EventEmitter } from "node:events"
+import { PassThrough } from "node:stream"
 import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import path from "node:path"
 import test from "node:test"
-import { AcpAgentModelCatalog, HttpAgentModelCatalog } from "../src/agent-model-catalog.js"
+import { AcpAgentModelCatalog, HttpAgentModelCatalog, PiRpcModelCatalog, modelsFromPiRpc } from "../src/agent-model-catalog.js"
 
 class FakeAcp {
   starts = 0
@@ -40,11 +42,62 @@ class FakeAcp {
   }
 }
 
+test("PI RPC model payload maps directly to task model options", () => {
+  assert.deepEqual(modelsFromPiRpc({ models: [{
+    provider: "openai-codex",
+    id: "gpt-5.4",
+    name: "GPT-5.4",
+    contextWindow: 272000,
+    maxTokens: 128000,
+    input: ["text", "image"]
+  }] }), [{
+    providerID: "openai-codex",
+    providerName: "openai-codex",
+    modelID: "gpt-5.4",
+    modelName: "GPT-5.4",
+    contextLimit: 272000,
+    outputLimit: 128000,
+    attachments: true,
+    isDefault: false
+  }])
+})
+
+test("PI model discovery uses native RPC without creating an ACP session", async () => {
+  let spawnCall
+  const spawnProcess = (command, args, options) => {
+    spawnCall = { command, args, options }
+    const child = new EventEmitter()
+    child.stdin = new PassThrough()
+    child.stdout = new PassThrough()
+    child.stderr = new PassThrough()
+    child.killed = false
+    child.kill = () => { child.killed = true }
+    child.stdin.on("data", (chunk) => {
+      const request = JSON.parse(chunk.toString("utf8").trim())
+      assert.deepEqual(request, { type: "get_available_models" })
+      queueMicrotask(() => child.stdout.write(`${JSON.stringify({
+        type: "response",
+        command: "get_available_models",
+        success: true,
+        data: { models: [{ provider: "anthropic", id: "claude-sonnet", name: "Sonnet" }] }
+      })}\n`))
+    })
+    return child
+  }
+  const catalog = new PiRpcModelCatalog({ command: "/usr/bin/pi", cwd: "/repo", spawnProcess, requestTimeoutMs: 100 })
+  const result = await catalog.list({ allowStale: false })
+  assert.deepEqual(result.models.map((model) => `${model.providerID}/${model.modelID}`), ["anthropic/claude-sonnet"])
+  assert.equal(spawnCall.command, "/usr/bin/pi")
+  assert.deepEqual(spawnCall.args, ["--mode", "rpc", "--no-session"])
+  assert.equal(spawnCall.options.cwd, "/repo")
+  assert.equal(catalog.hiddenSessionIDs.size, 0)
+})
+
 test("ACP model discovery creates one durable catalog session then refreshes it", async () => {
   const stateDirectory = await mkdtemp(path.join(tmpdir(), "harness-model-catalog-"))
   try {
     const agent = new FakeAcp()
-    const catalog = new AcpAgentModelCatalog({ agent, agentID: "pi", directory: "/repo", stateDirectory, requestTimeoutMs: 4321 })
+    const catalog = new AcpAgentModelCatalog({ agent, agentID: "claude", directory: "/repo", stateDirectory, requestTimeoutMs: 4321 })
 
     const first = await catalog.list({ allowStale: false })
     assert.deepEqual(first.models.map((model) => model.modelID), ["one", "two"])
@@ -76,7 +129,7 @@ test("shared ACP model catalog does not close the session bridge ACP process", a
   const stateDirectory = await mkdtemp(path.join(tmpdir(), "harness-model-catalog-shared-"))
   try {
     const agent = new FakeAcp()
-    const catalog = new AcpAgentModelCatalog({ agent, agentID: "pi", directory: "/repo", stateDirectory, ownsAgent: false })
+    const catalog = new AcpAgentModelCatalog({ agent, agentID: "claude", directory: "/repo", stateDirectory, ownsAgent: false })
     await catalog.list({ allowStale: false })
     catalog.close()
     assert.equal(agent.closes, 0)
