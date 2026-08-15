@@ -29,7 +29,7 @@ The remaining work is primarily richer visibility and control. Model execution a
 
 | Phase | Issue | Feature | Status | Depends on |
 |---|---:|---|---|---|
-| 1 | [#3](https://github.com/nitsuga/harness-remote/issues/3) | Classify commands and support explicit skill activation | In progress | - |
+| 1 | [#3](https://github.com/nitsuga/harness-remote/issues/3) | Classify commands and support explicit skill activation | Shipped | - |
 | 1 | [#4](https://github.com/nitsuga/harness-remote/issues/4) | Add compact and fork session actions | Planned | - |
 | 1 | [#5](https://github.com/nitsuga/harness-remote/issues/5) | Support session import and export | Planned | - |
 | 1 | [#6](https://github.com/nitsuga/harness-remote/issues/6) | Show and manage MCP server status | Planned | - |
@@ -42,7 +42,7 @@ The remaining work is primarily richer visibility and control. Model execution a
 | 4 | [#11](https://github.com/nitsuga/harness-remote/issues/11) | Add an authenticated remote PTY terminal | Planned | - |
 | 4 | [#12](https://github.com/nitsuga/harness-remote/issues/12) | Expose task and worktree workflows in the client | Planned | #8, #9 |
 
-Progress: **0 of 12 shipped**.
+Progress: **1 of 12 shipped**.
 
 ## Delivery Phases
 
