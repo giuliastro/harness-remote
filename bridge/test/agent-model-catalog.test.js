@@ -7,13 +7,14 @@ import { AcpAgentModelCatalog, HttpAgentModelCatalog } from "../src/agent-model-
 
 class FakeAcp {
   starts = 0
+  closes = 0
   newCalls = 0
   loadCalls = 0
   models = ["provider/one", "provider/two"]
   requestTimeouts = []
 
   async start() { this.starts += 1 }
-  close() {}
+  close() { this.closes += 1 }
 
   options() {
     return [{
@@ -66,6 +67,19 @@ test("ACP model discovery creates one durable catalog session then refreshes it"
     )
     assert.equal(agent.newCalls, 1)
     assert.equal(agent.loadCalls, 2)
+  } finally {
+    await rm(stateDirectory, { recursive: true, force: true })
+  }
+})
+
+test("shared ACP model catalog does not close the session bridge ACP process", async () => {
+  const stateDirectory = await mkdtemp(path.join(tmpdir(), "harness-model-catalog-shared-"))
+  try {
+    const agent = new FakeAcp()
+    const catalog = new AcpAgentModelCatalog({ agent, agentID: "pi", directory: "/repo", stateDirectory, ownsAgent: false })
+    await catalog.list({ allowStale: false })
+    catalog.close()
+    assert.equal(agent.closes, 0)
   } finally {
     await rm(stateDirectory, { recursive: true, force: true })
   }
