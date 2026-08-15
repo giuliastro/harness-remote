@@ -46,8 +46,8 @@ assert.equal(
 )
 
 // Model choice is machine/agent-level state. Machine/project discovery renders the usable dialog
-// first; model refresh runs separately with a hard client deadline so a slow adapter cannot freeze
-// New Task. Launch remains the second validation boundary.
+// first; model refresh runs separately with a hard client deadline so a slow provider cannot freeze
+// New Task. PI's daemon-side implementation is native RPC and creates no ACP catalog session.
 assert.ok(dialog.includes("t('task.model')"), 'the task dialog must offer a model')
 assert.ok(dialog.includes('type ModelState = "idle" | "loading" | "fresh" | "stale" | "unavailable"'), 'model freshness must be explicit')
 assert.ok(dialog.includes('setTaskConfig(connection.config)'), 'the form must become usable after machine/project discovery')
