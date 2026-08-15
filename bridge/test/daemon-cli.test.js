@@ -1,6 +1,6 @@
 import assert from "node:assert/strict"
 import test from "node:test"
-import { ensureOpenCodePortAvailable, parseDaemonOptions } from "../src/daemon-cli.js"
+import { ensureOpenCodePortAvailable, parseDaemonOptions, warmAcp } from "../src/daemon-cli.js"
 
 const loopbackEnv = {
   HARNESS_REMOTE_HOST: "127.0.0.1",
@@ -68,4 +68,14 @@ test("daemon preflight accepts a free managed OpenCode port", async () => {
     host: "127.0.0.1",
     canListenImpl: async () => true
   })
+})
+
+test("ACP warmup starts the existing session client without making startup fatal", async () => {
+  let starts = 0
+  let failure
+  await warmAcp({ async start() { starts += 1; throw new Error("cold adapter failed") } }, {
+    onError: (error) => { failure = error }
+  })
+  assert.equal(starts, 1)
+  assert.equal(failure?.message, "cold adapter failed")
 })
