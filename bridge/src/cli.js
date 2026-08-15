@@ -8,7 +8,11 @@ import { createBridgeServer } from "./server.js"
 
 let config
 try {
-  config = parseConfig(process.argv.slice(2))
+  // The standalone bridge is the stable compatibility path. Keep its adapter defaults exactly
+  // profile-pinned (for PI, @automatalabs/pi-acp@0.2.5) instead of silently substituting an
+  // unrelated `pi-acp` binary found on PATH. The machine daemon may prefer installed adapters,
+  // but the legacy bridge must remain deterministic like the current stable release.
+  config = parseConfig(process.argv.slice(2), process.env, { preferInstalledAdapters: false })
 } catch (error) {
   process.stderr.write(`${error.message}\n\n${usage()}\n`)
   process.exitCode = 1
