@@ -284,6 +284,10 @@ export type CommandInfo = {
   name: string
   description?: string
   source?: "command" | "mcp" | "skill"
+  /** Stable skill id from the v2 skill catalog (`SkillV2.Info.id`); skills only. */
+  id?: string
+  /** v2 skills the server activates on its own; carried so callers can exclude them from manual invocation. */
+  autoinvoke?: boolean
 }
 
 export type HarnessAction = {

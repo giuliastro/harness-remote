@@ -4,6 +4,7 @@ import { authHeader, baseUrl, hasCredentials } from "./serverConfig"
 import type { AttachmentPart } from "./attachments"
 import type { ServerConfig } from "./types"
 import type {
+  CommandInfo,
   DiffFile,
   FileStatusEntry,
   HealthResponse,
@@ -17,6 +18,7 @@ import type {
   VcsStatus
 } from "./types"
 import {
+  mergeCommandCatalog,
   toAgentOption,
   toCommandOption,
   toDiffFile,
@@ -26,9 +28,12 @@ import {
   toModelOption,
   toQuestionRequest,
   toSession,
+  toSkillActivationBody,
+  toSkillCommand,
   type V2Form,
   type V2Message,
-  type V2Session
+  type V2Session,
+  type V2Skill
 } from "./opencode2-mappers"
 
 /**
@@ -237,8 +242,17 @@ export const opencode2Api = {
   },
 
   async listCommands(config: ServerConfig) {
-    const commands = await v2Request<Array<{ name: string; description?: string }>>(config, "/api/command")
-    return (commands ?? []).map(toCommandOption)
+    // The v2 slash catalog is two endpoints: server commands plus slash-enabled skills. Skills are a
+    // separate route, so a server without it must not break the command picker — it degrades to
+    // commands-only. Skill activation is a dedicated POST (see `sendSkill`), not a raw prompt.
+    const [commands, skills] = await Promise.all([
+      v2Request<Array<{ name: string; description?: string }>>(config, "/api/command"),
+      v2Request<V2Skill[]>(config, "/api/skill").catch(() => [])
+    ])
+    return mergeCommandCatalog(
+      (commands ?? []).map(toCommandOption),
+      (skills ?? []).map(toSkillCommand).filter((entry): entry is CommandInfo => entry !== null)
+    )
   },
 
   async listAgents(config: ServerConfig, directory?: string) {
@@ -377,6 +391,18 @@ export const opencode2Api = {
       readTimeout: 300_000
     })
     return { info: { id: "", role: "user", sessionID, time: { created: Date.now() } }, parts: [] } as MessageEnvelope
+  },
+
+  async sendSkill(config: ServerConfig, sessionID: string, skill: string, _directory?: string) {
+    // `POST /api/session/{id}/skill` (`v2.session.skill`) activates a skill by appending a skill
+    // message and resuming execution. The body is exactly `{ skill, resume: true }` — the endpoint
+    // rejects extra properties — and the server answers 204, which `v2Request` resolves to `true`.
+    await v2Request<boolean>(config, `/api/session/${encodeURIComponent(sessionID)}/skill`, {
+      method: "POST",
+      body: toSkillActivationBody(skill),
+      readTimeout: 300_000
+    })
+    return true
   },
 
   async revertMessage(config: ServerConfig, sessionID: string, messageID: string, _directory?: string) {

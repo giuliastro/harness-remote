@@ -208,7 +208,69 @@ export function toAgentOption(agent: { id: string; name?: string; description?: 
 }
 
 export function toCommandOption(command: { name: string; description?: string }): CommandInfo {
-  return { name: command.name, description: command.description }
+  // v2 `/api/command` entries carry no source of their own, so classify them explicitly — the UI
+  // groups the picker by source and offers a skill-only filter (the OMP bridge does the same).
+  return { name: command.name, description: command.description, source: "command" }
+}
+
+/**
+ * One `GET /api/skill` entry (`SkillV2.Info`). The live contract requires `id`, `name`, `location`
+ * and `content`; `description`, `slash` and `autoinvoke` are optional. `id` is the skill's stable
+ * identity in the catalog (used to activate it), while `name` is its user-facing slash name.
+ */
+export type V2Skill = {
+  id: string
+  name: string
+  location: string
+  content: string
+  description?: string
+  /** `false` hides the skill from the V2 slash-command catalog. */
+  slash?: boolean
+  /** Skills the server activates on its own; not a picker-visibility control (`slash` is). */
+  autoinvoke?: boolean
+}
+
+/**
+ * Map one v2 `/api/skill` entry into the app's command representation. A skill's user-facing slash
+ * name is its `name`; entries with `slash: false` (or no name) are hidden from the slash catalog and
+ * map to `null`. The skill's stable `id` and `autoinvoke` flag ride along on the mapped entry so
+ * activation and filtering stay possible after the merge (see {@link mergeCommandCatalog}).
+ */
+export function toSkillCommand(skill: V2Skill): CommandInfo | null {
+  if (!skill.name || skill.slash === false) return null
+  return {
+    name: skill.name,
+    description: skill.description,
+    source: "skill",
+    id: skill.id,
+    autoinvoke: skill.autoinvoke
+  }
+}
+
+/**
+ * The exact wire body for `POST /api/session/{sessionID}/skill` (`v2.session.skill`): the endpoint
+ * takes `{ skill, resume?, id? }`, forbids extra properties, and answers 204. Activation appends a
+ * skill message and resumes execution, so the client always posts `resume: true` and omits the
+ * optional `id`.
+ */
+export function toSkillActivationBody(skill: string): { skill: string; resume: boolean } {
+  return { skill, resume: true }
+}
+
+/**
+ * Combine the command and skill catalogs into one slash-name catalog without duplicate user-facing
+ * names. Server commands win a name collision (skills have lower priority, matching OpenCode's own
+ * slash handling), and the merged order preserves commands-then-skills.
+ */
+export function mergeCommandCatalog(commands: CommandInfo[], skills: CommandInfo[]): CommandInfo[] {
+  const seen = new Set<string>()
+  const merged: CommandInfo[] = []
+  for (const entry of [...commands, ...skills]) {
+    if (!entry.name || seen.has(entry.name)) continue
+    seen.add(entry.name)
+    merged.push(entry)
+  }
+  return merged
 }
 
 export function toFileEntry(entry: { path: string; type: "file" | "directory" }, root: string): FileEntry {

@@ -179,8 +179,14 @@ type TranslationKey =
   | 'help.overview'
   | 'help.server'
   | 'help.network'
-  | 'help.troubleshooting'
-  | 'help.commands'
+   | 'help.troubleshooting'
+   | 'help.commands'
+   | 'help.skillActivate'
+   | 'help.skillActivating'
+   | 'help.skillActivated'
+   | 'help.skillRequiresSession'
+   | 'help.skillRequiresOpenCode2'
+   | 'help.skillActivationFailed'
   | 'menubar.file'
   | 'menubar.session'
   | 'menubar.view'
@@ -478,8 +484,14 @@ const translations: Record<LanguageCode, Partial<Record<TranslationKey, string>>
     'help.overview': 'Overview',
     'help.server': 'Server',
     'help.network': 'Network',
-    'help.troubleshooting': 'Troubleshooting',
-    'help.commands': 'Commands',
+   'help.troubleshooting': 'Troubleshooting',
+   'help.commands': 'Commands',
+   'help.skillActivate': 'Activate',
+   'help.skillActivating': 'Activating…',
+   'help.skillActivated': 'Skill activated: {skill}',
+   'help.skillRequiresSession': 'Select a session to activate skills.',
+   'help.skillRequiresOpenCode2': 'Skill activation is available on OpenCode 2 servers only.',
+   'help.skillActivationFailed': 'Could not activate {skill}: {message}',
     'action.close': 'Close',
     'action.thinking': 'Thinking',
     'action.thoughtFor': 'Thought for {duration}',

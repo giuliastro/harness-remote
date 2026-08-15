@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import {
+  mergeCommandCatalog,
   toAgentOption,
   toCommandOption,
   toDiffFile,
@@ -10,6 +11,8 @@ import {
   toModelOption,
   toQuestionRequest,
   toSession,
+  toSkillActivationBody,
+  toSkillCommand,
   toToolState
 } from './opencode2-mappers.ts'
 
@@ -169,8 +172,66 @@ assert.deepEqual(toAgentOption({ id: 'build', name: 'Build', description: 'Defau
 })
 
 assert.deepEqual(toCommandOption({ name: 'init', template: 'x', description: 'Docs' }), {
-  name: 'init', description: 'Docs'
+  name: 'init', description: 'Docs', source: 'command'
 })
+
+// Skills: one v2 /api/skill entry (`SkillV2.Info`, live contract) requires
+// `{ id, name, location, content }` and optionally carries `{ description, slash, autoinvoke }`.
+// It maps to a slash command classified as a skill, keeping the skill's stable `id` and its
+// `autoinvoke` flag so activation and filtering stay possible after the catalog merge.
+const liveSkill = {
+  id: 'skill_01JHXQ5R7B2ZP9Y4K3M8N6T2W',
+  name: 'git-release',
+  description: 'Create a git release',
+  slash: true,
+  autoinvoke: false,
+  location: '/home/eric/.config/opencode/skills/git-release/SKILL.md',
+  content: 'Release steps...'
+}
+assert.deepEqual(toSkillCommand(liveSkill), {
+  name: 'git-release',
+  description: 'Create a git release',
+  source: 'skill',
+  id: 'skill_01JHXQ5R7B2ZP9Y4K3M8N6T2W',
+  autoinvoke: false
+})
+// A contract-minimal entry (required fields only) maps with safe defaults for the optional ones.
+assert.deepEqual(toSkillCommand({ id: 'skill_mem', name: 'memory', location: '/x/SKILL.md', content: 'c' }), {
+  name: 'memory', description: undefined, source: 'skill', id: 'skill_mem', autoinvoke: undefined
+})
+// `autoinvoke` marks skills the server fires on its own; it is carried on the mapped entry (callers
+// may filter it) but does not hide the skill — `slash: false` is the catalog-visibility control.
+assert.deepEqual(toSkillCommand({
+  id: 'skill_auto', name: 'observe', location: '/x/SKILL.md', content: 'c', autoinvoke: true
+}).autoinvoke, true)
+// slash: false hides the skill from the slash catalog; a missing name does too.
+assert.equal(toSkillCommand({ id: 'skill_g', name: 'guide', slash: false, location: '/x', content: 'c' }), null)
+assert.equal(toSkillCommand({ id: 'skill_e', name: '', location: '/x', content: 'c' }), null)
+
+// Activation wire body: `POST /api/session/{sessionID}/skill` (`v2.session.skill`) accepts exactly
+// `{ skill, resume?, id? }`, forbids extra properties, and answers 204 — so the client posts
+// precisely `{ skill, resume: true }`, with no extra keys.
+assert.deepEqual(toSkillActivationBody('git-release'), { skill: 'git-release', resume: true })
+assert.deepEqual(Object.keys(toSkillActivationBody('git-release')).sort(), ['resume', 'skill'])
+assert.equal(toSkillActivationBody('git-release').resume, true)
+
+// The merged catalog classifies commands and skills and never duplicates a user-facing slash name:
+// the server command wins a collision, exactly like OpenCode's own slash handling. The surviving
+// skill entry keeps its `id`/`autoinvoke` metadata.
+assert.deepEqual(mergeCommandCatalog(
+  [
+    toCommandOption({ name: 'init', description: 'Init' }),
+    toCommandOption({ name: 'build', description: 'Build' })
+  ],
+  [
+    toSkillCommand({ id: 'skill_b', name: 'build', description: 'Build skill', location: '/x', content: 'c' }),
+    toSkillCommand({ id: 'skill_l', name: 'lint', description: 'Lint', location: '/x', content: 'c' })
+  ]
+), [
+  { name: 'init', description: 'Init', source: 'command' },
+  { name: 'build', description: 'Build', source: 'command' },
+  { name: 'lint', description: 'Lint', source: 'skill', id: 'skill_l', autoinvoke: undefined }
+])
 
 assert.deepEqual(toFileEntry({ path: 'workspaces/harness-remote/', type: 'directory' }, '/home/eric'), {
   name: 'harness-remote', path: '/home/eric/workspaces/harness-remote/', absolute: '/home/eric/workspaces/harness-remote/', type: 'directory'

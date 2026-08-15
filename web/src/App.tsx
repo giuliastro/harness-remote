@@ -3152,6 +3152,47 @@ function App() {
     }
   }
 
+  async function activateSkill(skill: CommandInfo, input = `/${skill.name}`) {
+    if (!selectedSession) {
+      setRuntimeError(t('help.skillRequiresSession'))
+      return
+    }
+    if (config.backend !== "opencode2") {
+      setRuntimeError(t('help.skillRequiresOpenCode2'))
+      return
+    }
+    const skillName = skill.id ?? skill.name
+    const session = selectedSession
+    setComposer("")
+    setActionNotice(t('help.skillActivating'))
+    setRuntimeError(null)
+    const optimisticMessage = createOptimisticUserMessage(session.id, input)
+    setOptimisticUserMessages((current) => [...current, optimisticMessage])
+    awaitingAssistantBaselineRef.current = assistantResponseSignature
+    completionShouldPlayRef.current = true
+    setAwaitingAssistantReply(true)
+    setBusySending(true)
+    scrollMessagesToBottom("smooth")
+    try {
+      // The v1 compatibility surface deliberately rejects this method, but shares the v2 signature;
+      // the proxy routes the same call to the live v2 client for OpenCode 2.
+      await api.sendSkill(config, session.id, skillName, session.directory)
+      await loadSelected(session.id, session.directory)
+      setOptimisticUserMessages((current) => current.filter((message) => message.info.id !== optimisticMessage.info.id))
+      await refreshSessions()
+      setActionNotice(t('help.skillActivated', { skill: skill.name }))
+    } catch (err) {
+      completionShouldPlayRef.current = false
+      setAwaitingAssistantReply(false)
+      setOptimisticUserMessages((current) => current.filter((message) => message.info.id !== optimisticMessage.info.id))
+      setComposer((current) => current || input)
+      setActionNotice(null)
+      setRuntimeError(t('help.skillActivationFailed', { skill: skill.name, message: (err as Error).message }))
+    } finally {
+      setBusySending(false)
+    }
+  }
+
   async function send() {
     if (!selectedSession) return
     const text = composer.trim()
@@ -3207,9 +3248,15 @@ function App() {
         }
       }
 
-      if (!availableCommands.some((item) => item.name === command)) {
+      const matchingCommand = availableCommands.find((item) => item.name === command)
+      if (!matchingCommand) {
         const available = availableCommands.map((item) => `/${item.name}`).join(", ")
         setRuntimeError(`Command not found: "/${command}". Available commands: ${available}`)
+        return
+      }
+
+      if (matchingCommand.source === "skill") {
+        await activateSkill(matchingCommand, text)
         return
       }
 
@@ -5174,27 +5221,52 @@ http://YOUR_PC_IP:4096/global/health</pre>
                 </button>
               </div>
                
-              {displayedCommands.length === 0 ? (
+               {displayedCommands.length === 0 ? (
                 <div className="no-commands">
                   <HelpIcon size={48} className="icon-empty-state" />
                   <p className="subtle">No {commandFilter === "skill" ? "skills" : "server commands"} available</p>
                   <p className="subtle">Connect to a server to see available commands and skills</p>
                 </div>
               ) : (
-                <div className="commands-grid">
-                  {displayedCommands.map((cmd) => (
-                    <div key={cmd.name} className="command-card">
-                      <code className="command-name">/{cmd.name}</code>
-                      {cmd.description && (
-                        <p className="command-description">{cmd.description}</p>
-                      )}
-                      {cmd.source && <p className="subtle">{cmd.source}</p>}
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
+                 <div className="commands-grid">
+                   {displayedCommands.map((cmd) => (
+                     <div key={cmd.name} className="command-card">
+                       <div className="command-card-header">
+                         <code className="command-name">/{cmd.name}</code>
+                         {cmd.source === "skill" && (
+                           <button
+                             type="button"
+                             className="btn-secondary"
+                             disabled={!selectedSession || config.backend !== "opencode2" || busySending}
+                             onClick={() => void activateSkill(cmd)}
+                             title={!selectedSession
+                               ? t('help.skillRequiresSession')
+                               : config.backend !== "opencode2"
+                                 ? t('help.skillRequiresOpenCode2')
+                                 : undefined}
+                           >
+                             {busySending && actionNotice === t('help.skillActivating')
+                               ? t('help.skillActivating')
+                               : t('help.skillActivate')}
+                           </button>
+                         )}
+                       </div>
+                       {cmd.description && (
+                         <p className="command-description">{cmd.description}</p>
+                       )}
+                       {cmd.source && <p className="subtle">{cmd.source}</p>}
+                     </div>
+                   ))}
+                 </div>
+               )}
+               {commandFilter === "skill" && displayedCommands.length > 0 && (!selectedSession || config.backend !== "opencode2") && (
+                 <p className="subtle">
+                   {!selectedSession ? t('help.skillRequiresSession') : t('help.skillRequiresOpenCode2')}
+                 </p>
+               )}
+               {commandFilter === "skill" && actionNotice && <div className="notice info fade-in">ℹ {actionNotice}</div>}
+             </div>
+           )}
           {runtimeError && <p className="error">{runtimeError}</p>}
         </section>
         </ConditionalWrapper>
