@@ -1,3 +1,4 @@
+import { spawn } from "node:child_process"
 import { mkdir, readFile, writeFile } from "node:fs/promises"
 import path from "node:path"
 
@@ -52,6 +53,25 @@ export function modelsFromProvidersResponse(payload) {
       const variants = model.variants && typeof model.variants === "object" ? Object.keys(model.variants) : []
       return [base, ...variants.map((variant) => ({ ...base, variant, isDefault: false }))]
     })
+  })
+}
+
+export function modelsFromPiRpc(payload) {
+  const models = Array.isArray(payload?.models) ? payload.models : []
+  return models.flatMap((model) => {
+    const providerID = typeof model?.provider === "string" ? model.provider : ""
+    const modelID = typeof model?.id === "string" ? model.id : ""
+    if (!providerID || !modelID) return []
+    return [{
+      providerID,
+      providerName: providerID,
+      modelID,
+      modelName: typeof model.name === "string" && model.name ? model.name : modelID,
+      contextLimit: Number.isFinite(model.contextWindow) ? model.contextWindow : undefined,
+      outputLimit: Number.isFinite(model.maxTokens) ? model.maxTokens : undefined,
+      attachments: Array.isArray(model.input) ? model.input.includes("image") : false,
+      isDefault: false
+    }]
   })
 }
 
@@ -112,6 +132,98 @@ class CachedCatalog {
     }
     return result
   }
+}
+
+/**
+ * PI already exposes a session-less native RPC command for its configured model registry. Use it
+ * directly instead of manufacturing an ACP session merely to read configOptions. This keeps the
+ * ordinary ACP session/model path untouched and makes zero-session New Task a first-class case.
+ */
+export class PiRpcModelCatalog extends CachedCatalog {
+  constructor({ command = "pi", cwd = process.cwd(), spawnProcess = spawn, requestTimeoutMs = MODEL_CATALOG_TIMEOUT_MS }) {
+    super()
+    this.command = command
+    this.cwd = cwd
+    this.spawnProcess = spawnProcess
+    this.requestTimeoutMs = requestTimeoutMs
+    this.hiddenSessionIDs = new Set()
+  }
+
+  async #refresh() {
+    return new Promise((resolve, reject) => {
+      const child = this.spawnProcess(this.command, ["--mode", "rpc", "--no-session"], {
+        cwd: this.cwd,
+        stdio: ["pipe", "pipe", "pipe"],
+        windowsHide: true,
+        env: {
+          ...process.env,
+          PI_SKIP_VERSION_CHECK: process.env.PI_SKIP_VERSION_CHECK ?? "1"
+        }
+      })
+      let buffer = ""
+      let stderr = ""
+      let settled = false
+      const finish = (error, value) => {
+        if (settled) return
+        settled = true
+        clearTimeout(timer)
+        if (!child.killed) child.kill()
+        if (error) reject(error)
+        else resolve(value)
+      }
+      const timer = setTimeout(() => finish(new Error(`Refreshing PI models timed out after ${Math.ceil(this.requestTimeoutMs / 1000)} seconds`)), this.requestTimeoutMs)
+
+      child.stdout.setEncoding("utf8")
+      child.stderr.setEncoding("utf8")
+      child.stderr.on("data", (chunk) => { stderr = `${stderr}${chunk}`.slice(-800) })
+      child.on("error", (error) => finish(error))
+      child.on("exit", (code, signal) => {
+        if (settled) return
+        const detail = stderr.trim()
+        finish(new Error(`PI model RPC exited before replying (${code ?? "unknown"}${signal ? `, ${signal}` : ""})${detail ? `: ${detail}` : ""}`))
+      })
+      child.stdout.on("data", (chunk) => {
+        buffer += chunk
+        let boundary = buffer.indexOf("\n")
+        while (boundary !== -1) {
+          const line = buffer.slice(0, boundary).trim()
+          buffer = buffer.slice(boundary + 1)
+          boundary = buffer.indexOf("\n")
+          if (!line) continue
+          let message
+          try { message = JSON.parse(line) } catch { continue }
+          if (message?.type !== "response" || message.command !== "get_available_models") continue
+          if (!message.success) {
+            finish(new Error(message.error ?? "PI model RPC failed"))
+            return
+          }
+          const models = modelsFromPiRpc(message.data)
+          if (!models.length) {
+            finish(new Error("PI did not advertise any models"))
+            return
+          }
+          finish(undefined, models)
+          return
+        }
+      })
+      child.stdin.write(`${JSON.stringify({ type: "get_available_models" })}\n`)
+    })
+  }
+
+  async list({ allowStale = true } = {}) {
+    try {
+      return this.remember(await this.#refresh())
+    } catch (error) {
+      if (allowStale) return this.stale(error)
+      throw error
+    }
+  }
+
+  async validate(model) {
+    return this.validateResult(await this.list({ allowStale: false }), model)
+  }
+
+  close() {}
 }
 
 export class AcpAgentModelCatalog extends CachedCatalog {
