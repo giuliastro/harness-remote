@@ -30,6 +30,7 @@
     "test:settings": "node src/settings-regression.test.mjs",
     "test:model": "node src/model-regression.test.mjs",
     "test:events": "node --experimental-strip-types src/opencode-events.test.mjs",
+    "test:opencode2": "node --experimental-strip-types src/opencode2-client.test.mjs",
     "test:profiles": "node --experimental-strip-types src/server-profiles.test.mjs",
     "test:markdown": "node --experimental-strip-types src/markdown-directives.test.mjs",
     "test:config": "node --experimental-strip-types src/server-config.test.mjs",

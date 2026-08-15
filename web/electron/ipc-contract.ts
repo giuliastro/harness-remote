@@ -6,10 +6,21 @@ export const IPC_CHANNELS = Object.freeze({
   subscribeEvents: "desktop:events:subscribe",
   unsubscribeEvents: "desktop:events:unsubscribe",
   notifyCompletion: "desktop:completion:notify",
+  openExternal: "desktop:external:open",
   event: "desktop:events:event",
   menuCommand: "desktop:menu:command",
   setMenu: "desktop:menu:set"
 })
+
+export function parseDesktopExternalUrl(value: unknown): string | null {
+  if (typeof value !== "string" || value.length > 4096) return null
+  try {
+    const url = new URL(value)
+    return url.protocol === "https:" || url.protocol === "http:" ? url.toString() : null
+  } catch {
+    return null
+  }
+}
 
 export type DesktopProfileSyncResult = {
   revision: number

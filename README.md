@@ -39,8 +39,9 @@ Then install a client from [GitHub Releases](https://github.com/giuliastro/harne
 Harness Remote already gives you a common remote UI for five coding-agent harnesses:
 
 | Harness | Support |
-|---|---|
+|---|---|---|
 | [OpenCode](https://github.com/sst/opencode) | direct HTTP + managed daemon host |
+| [OpenCode 2](https://opencode.ai/v2/docs) (beta) | direct HTTP (`/api/*`) |
 | [Claude Code](https://code.claude.com/) | ACP bridge |
 | [Codex CLI](https://github.com/openai/codex) | ACP bridge |
 | [Oh My Pi (OMP)](https://omp.sh/) | ACP bridge |

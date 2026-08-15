@@ -1,10 +1,10 @@
-import { app, BrowserWindow, Menu, Notification, nativeImage, screen, session, ipcMain, type IpcMainInvokeEvent } from "electron"
+import { app, BrowserWindow, Menu, Notification, nativeImage, screen, session, shell, ipcMain, type IpcMainInvokeEvent } from "electron"
 import { readFileSync, writeFileSync } from "node:fs"
 import { dirname, join } from "node:path"
 import { fileURLToPath, pathToFileURL } from "node:url"
 import { buildApplicationMenu } from "./app-menu.js"
 import { DesktopEventTransport } from "./event-transport.js"
-import { IPC_CHANNELS, parseDesktopMenuTemplate } from "./ipc-contract.js"
+import { IPC_CHANNELS, parseDesktopExternalUrl, parseDesktopMenuTemplate } from "./ipc-contract.js"
 import { DesktopProfileError, ProfileRegistry } from "./profile-registry.js"
 import { executeDesktopRequest } from "./request-transport.js"
 import type { DesktopCompletionNotification, DesktopEventSubscriptionOptions, DesktopMenuCommand, DesktopRequest } from "./ipc-contract.js"
@@ -244,6 +244,13 @@ function installIPC(): void {
       throw new Error("Notification payload is invalid")
     }
     notifyCompletion(candidate as DesktopCompletionNotification)
+  })
+  ipcMain.handle(IPC_CHANNELS.openExternal, async (event, value: unknown) => {
+    ensureTrustedSender(event)
+    const url = parseDesktopExternalUrl(value)
+    if (!url) throw new Error("External URL is invalid")
+    await shell.openExternal(url)
+    return true
   })
 }
 

@@ -10,6 +10,7 @@ The app is backend-agnostic: you pick the harness in **Settings** and each one k
 | Harness | Status | How it connects |
 |---|---|---|
 | [OpenCode](https://github.com/sst/opencode) | supported | directly to the OpenCode HTTP server |
+| [OpenCode 2](https://opencode.ai/v2/docs) (beta) | supported | directly to the OpenCode 2 HTTP server (`/api/*`) |
 | [Oh My Pi (OMP)](https://omp.sh/) | supported | through the local bridge included in this repository |
 | [PI](https://pi.dev/) | supported | through the local ACP bridge and the [`@automatalabs/pi-acp`](https://www.npmjs.com/package/@automatalabs/pi-acp) adapter |
 | [Claude Code](https://code.claude.com/) | supported | through the local ACP bridge and the [`@agentclientprotocol/claude-agent-acp`](https://www.npmjs.com/package/@agentclientprotocol/claude-agent-acp) adapter |
@@ -245,6 +246,18 @@ npx -y opencode-ai serve --hostname 0.0.0.0 --port 4096 --cors http://localhost 
 ```
 
 If remote/mobile cannot connect, open TCP 4096 in your OS firewall and network firewall/NAT.
+
+### OpenCode 2 Server Setup
+
+The OpenCode 2.0 beta runs as a separate `opencode2` binary (`@opencode-ai/cli@next`) and exposes a rewritten HTTP API under `/api/*`. Harness Remote connects to it directly, the same way it connects to OpenCode 1.
+
+```bash
+OPENCODE_PASSWORD=your-password opencode2 serve --hostname 0.0.0.0 --port 4096
+```
+
+The v2 server uses a single `OPENCODE_PASSWORD` (the legacy `OPENCODE_SERVER_PASSWORD` name is still honored). Enter `opencode` (or any username) and that password in the app. Sessions, messages, models, agents, commands, forms (the v2 replacement for questions), permission requests and the working-copy diff are all mapped onto the app's existing UI; todos and session actions are not exposed by the v2 API.
+
+As the beta evolves the API may change — treat a working v1 server as your fallback while testing the v2 path.
 
 ### Oh My Pi Bridge Setup
 

@@ -79,7 +79,7 @@ assert.ok(
 const defaults = readFileSync(new URL('./backendCapabilities.ts', import.meta.url), 'utf8')
 assert.equal(
   (defaults.match(/attachments:/g) ?? []).length,
-  5,
+  6,
   'every backend default must state its attachment support, so a failed capability fetch cannot enable the control by omission'
 )
 

@@ -461,8 +461,8 @@ assert.match(app, /supported\.has\("undo"\)/, 'Undo must appear only when the co
 assert.match(app, /supported\.has\("redo"\)/, 'Redo must appear only when the connected harness exposes the command')
 assert.match(app, /api\.revertMessage\(config, selectedSession\.id, messageID/, 'OpenCode message actions must use its targeted revert endpoint')
 assert.match(app, /message\.info\.id < revertMessageID/, 'a staged OpenCode revert must hide messages from its boundary onward')
-assert.match(app, /const hasRedo = config\.backend === "opencode" \? !!revertMessageID : redoAction \? redoAction\.enabled : true/, 'OpenCode Redo must only appear while a revert is staged and extension Redo must follow session state')
-assert.match(app, /const supportsRedo = config\.backend === "opencode" \|\| !!redoAction \|\| supported\.has\("redo"\)/, 'OpenCode native history actions must not depend on the server command list')
+assert.match(app, /const hasRedo = config\.backend === "opencode" \|\| config\.backend === "opencode2" \? !!revertMessageID : redoAction \? redoAction\.enabled : true/, 'OpenCode Redo must only appear while a revert is staged and extension Redo must follow session state')
+assert.match(app, /const supportsRedo = config\.backend === "opencode" \|\| config\.backend === "opencode2" \|\| !!redoAction \|\| supported\.has\("redo"\)/, 'OpenCode native history actions must not depend on the server command list')
 assert.match(app, /message-context-menu__separator/, 'harness actions must be visually separated from copy actions')
 assert.match(styles, /\.message-context-menu button\s*\{[\s\S]*?justify-content:\s*flex-start[\s\S]*?text-align:\s*left/, 'message action labels must align to the menu edge')
 // The rule was written for a field that no longer exists, but the class outlived it: dropping the
@@ -525,7 +525,7 @@ assert.match(app, /aria-expanded=\{open\}/, 'the session actions toggle should r
 assert.ok(app.includes('detail.sessionActions'), 'the session actions toggle should have a translated accessible label')
 assert.match(
   app,
-  /const hasRedo = config\.backend === "opencode" \? !!revertMessageID : redoAction \? redoAction\.enabled : supported\.has\("redo"\)/,
+  /const hasRedo = config\.backend === "opencode" \|\| config\.backend === "opencode2" \? !!revertMessageID : redoAction \? redoAction\.enabled : supported\.has\("redo"\)/,
   'the header menu must follow harness/extension availability instead of gating Redo on transcript contents'
 )
 assert.match(app, /session-actions-menu/, 'the header actions menu should have its own styles')

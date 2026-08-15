@@ -20,6 +20,7 @@ const IPC_CHANNELS = Object.freeze({
   subscribeEvents: "desktop:events:subscribe",
   unsubscribeEvents: "desktop:events:unsubscribe",
   notifyCompletion: "desktop:completion:notify",
+  openExternal: "desktop:external:open",
   event: "desktop:events:event",
   menuCommand: "desktop:menu:command",
   setMenu: "desktop:menu:set"
@@ -70,6 +71,9 @@ const harnessDesktop = Object.freeze({
   },
   notifyCompletion(notification: DesktopCompletionNotification): Promise<void> {
     return ipcRenderer.invoke(IPC_CHANNELS.notifyCompletion, notification)
+  },
+  openExternal(url: string): Promise<boolean> {
+    return ipcRenderer.invoke(IPC_CHANNELS.openExternal, url)
   },
   onMenuCommand(callback: (command: DesktopMenuCommand) => void): () => void {
     menuCallbacks.add(callback)

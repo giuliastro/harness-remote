@@ -39,7 +39,12 @@ function authHeader(profile: DesktopProfile): string | undefined {
 }
 
 function streamURL(profile: DesktopProfile, options: DesktopEventSubscriptionOptions): URL {
-  const url = new URL(options.scope === "global" ? "/global/event" : "/event", baseUrl(profile))
+  const url = new URL(
+    profile.backend === "opencode2"
+      ? "/api/event"
+      : options.scope === "global" ? "/global/event" : "/event",
+    baseUrl(profile)
+  )
   if (options.scope === "project" && options.directory) url.searchParams.set("directory", options.directory)
   return url
 }

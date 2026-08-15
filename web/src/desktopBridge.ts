@@ -28,6 +28,7 @@ export type DesktopBridgeAPI = {
   ): Promise<string>
   unsubscribeEvents(subscriptionId: string): Promise<void>
   notifyCompletion(notification: DesktopCompletionNotification): Promise<void>
+  openExternal(url: string): Promise<boolean>
   onMenuCommand(callback: (command: DesktopMenuCommand) => void): () => void
   setApplicationMenu(template: DesktopMenuTemplate): Promise<boolean>
 }
@@ -159,6 +160,10 @@ export function desktopProfileID(config: ServerConfig): string | null {
 
 export function notifyDesktopCompletion(notification: DesktopCompletionNotification): void {
   void bridge()?.notifyCompletion(notification).catch(() => undefined)
+}
+
+export function openDesktopExternalUrl(url: string): void {
+  void bridge()?.openExternal(url).catch(() => undefined)
 }
 
 export function subscribeDesktopMenuCommands(callback: (command: DesktopMenuCommand) => void): () => void {

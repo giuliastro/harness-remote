@@ -10,6 +10,7 @@ import {
   isAndroidPlatform,
   isDesktopPlatform,
   notifyDesktopCompletion,
+  openDesktopExternalUrl,
   desktopUsesNativeMenu,
   setDesktopApplicationMenu,
   subscribeDesktopMenuCommands,
@@ -25,6 +26,7 @@ import {
 } from "./opencode-events"
 import { createTranslator, languageOptions, normalizeLanguage, type LanguageCode } from "./i18n"
 import { stripMarkdownDirectives } from "./markdownDirectives"
+import { isQuestionActive } from "./opencode2-mappers"
 import { DEFAULT_HARNESS_CAPABILITIES } from "./backendCapabilities"
 import { BACKEND_CLIENTS } from "./backendClient"
 import { copyToClipboard } from "./clipboard"
@@ -834,6 +836,11 @@ function QuestionCard({
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
+  const answers = request.questions.map((_, index) => {
+    const customValue = customValues[index].trim()
+    return customValue ? [...selections[index], customValue] : selections[index]
+  })
+
   function toggleOption(questionIndex: number, label: string, multiple: boolean) {
     setSelections((current) => {
       const next = [...current]
@@ -872,17 +879,15 @@ function QuestionCard({
   }
 
   const canSubmit = request.questions.every((question, index) => {
-    return selections[index].length > 0 || (question.custom !== false && customValues[index].trim().length > 0)
+    if (!isQuestionActive(request, index, answers)) return true
+    if (question.optional) return true
+    return answers[index].length > 0
   })
 
   async function submit() {
     setSubmitting(true)
     setError(null)
     try {
-      const answers = request.questions.map((_, index) => {
-        const customValue = customValues[index].trim()
-        return customValue ? [...selections[index], customValue] : selections[index]
-      })
       await api.replyQuestion(config, request.id, answers, directory)
       onResolved(request.id)
     } catch (err) {
@@ -905,8 +910,8 @@ function QuestionCard({
 
   return (
     <article className="message assistant question-card fade-in" aria-label={t('question.ariaLabel')}>
-      {request.questions.map((question, index) => (
-        <div key={index} className="question-block">
+      {request.questions.map((question, index) => isQuestionActive(request, index, answers) ? (
+        <div key={question.key ?? index} className="question-block">
           <div className="question-header">{question.header}</div>
           <p className="question-text">{question.question}</p>
           <div className="question-options">
@@ -923,6 +928,30 @@ function QuestionCard({
               </button>
             ))}
           </div>
+          {question.externalUrl && (
+            <div className="question-external">
+              <a
+                href={question.externalUrl}
+                target="_blank"
+                rel="noreferrer"
+                onClick={(event) => {
+                  if (!isDesktopPlatform()) return
+                  event.preventDefault()
+                  openDesktopExternalUrl(question.externalUrl!)
+                }}
+              >
+                {t('question.openExternal')}
+              </a>
+              <button
+                type="button"
+                className={`question-option ${selections[index].includes("true") ? "selected" : ""}`}
+                onClick={() => toggleOption(index, "true", false)}
+                disabled={submitting}
+              >
+                <span className="question-option-label">{t('question.externalComplete')}</span>
+              </button>
+            </div>
+          )}
           {question.custom !== false && (
             <input
               type="text"
@@ -934,7 +963,7 @@ function QuestionCard({
             />
           )}
         </div>
-      ))}
+      ) : null)}
       {error && <p className="question-error">{error}</p>}
       <div className="question-actions">
         <button type="button" className="btn-secondary" onClick={reject} disabled={submitting}>
@@ -1825,7 +1854,7 @@ function ConversationRunView({
       text={runText}
       className="message assistant fade-in"
       t={t}
-      actions={fallback ? [...actions, ...(config.backend === "opencode" ? [{ id: "revert", label: t('detail.revertToMessage'), onSelect: () => onRevertMessage(fallback.info.id) }] : [])] : actions}
+      actions={fallback ? [...actions, ...(config.backend === "opencode" || config.backend === "opencode2" ? [{ id: "revert", label: t('detail.revertToMessage'), onSelect: () => onRevertMessage(fallback.info.id) }] : [])] : actions}
     >
       {items.map((item) =>
         item.kind === "action-group" ? (
@@ -1877,7 +1906,7 @@ const MessageArticle = memo(function MessageArticle({
       text={message.text}
       className={`message ${message.info.role} fade-in`}
       t={t}
-      actions={[...actions, ...(config.backend === "opencode" ? [{ id: "revert", label: t('detail.revertToMessage'), onSelect: () => onRevertMessage(message.info.id) }] : [])]}
+      actions={[...actions, ...(config.backend === "opencode" || config.backend === "opencode2" ? [{ id: "revert", label: t('detail.revertToMessage'), onSelect: () => onRevertMessage(message.info.id) }] : [])]}
     >
       {buildMessageTimeline(message.parts).map((item) =>
         item.kind === "action-group" ? (
@@ -2346,12 +2375,12 @@ function App() {
     const revertMessageID = selectedSession?.revertMessageID
     const undoAction = extensionActions.find((action) => action.id === "undo")
     const redoAction = extensionActions.find((action) => action.id === "redo")
-    const hasUndo = config.backend === "opencode"
+    const hasUndo = config.backend === "opencode" || config.backend === "opencode2"
       ? messages.some((message) => message.info.role === "user" && (!revertMessageID || message.info.id < revertMessageID))
       : undoAction ? undoAction.enabled && messages.some((message) => message.info.role === "user") : true
-    const hasRedo = config.backend === "opencode" ? !!revertMessageID : redoAction ? redoAction.enabled : true
-    const supportsUndo = config.backend === "opencode" || !!undoAction || supported.has("undo")
-    const supportsRedo = config.backend === "opencode" || !!redoAction || supported.has("redo")
+    const hasRedo = config.backend === "opencode" || config.backend === "opencode2" ? !!revertMessageID : redoAction ? redoAction.enabled : true
+    const supportsUndo = config.backend === "opencode" || config.backend === "opencode2" || !!undoAction || supported.has("undo")
+    const supportsRedo = config.backend === "opencode" || config.backend === "opencode2" || !!redoAction || supported.has("redo")
     if (supportsUndo && hasUndo) actions.push({ id: "undo", label: t('detail.undo'), onSelect: () => void runNativeHistoryCommand("undo") })
     if (supportsRedo && hasRedo) actions.push({ id: "redo", label: t('detail.redo'), onSelect: () => void runNativeHistoryCommand("redo") })
     return actions
@@ -2366,10 +2395,10 @@ function App() {
     const revertMessageID = selectedSession?.revertMessageID
     const undoAction = extensionActions.find((action) => action.id === "undo")
     const redoAction = extensionActions.find((action) => action.id === "redo")
-    const hasUndo = config.backend === "opencode"
+    const hasUndo = config.backend === "opencode" || config.backend === "opencode2"
       ? messages.some((message) => message.info.role === "user" && (!revertMessageID || message.info.id < revertMessageID))
       : undoAction ? undoAction.enabled : supported.has("undo")
-    const hasRedo = config.backend === "opencode" ? !!revertMessageID : redoAction ? redoAction.enabled : supported.has("redo")
+    const hasRedo = config.backend === "opencode" || config.backend === "opencode2" ? !!revertMessageID : redoAction ? redoAction.enabled : supported.has("redo")
     if (hasUndo) actions.push({ id: "undo", label: t('detail.undo'), onSelect: () => void runNativeHistoryCommand("undo") })
     if (hasRedo) actions.push({ id: "redo", label: t('detail.redo'), onSelect: () => void runNativeHistoryCommand("redo") })
     return actions
@@ -2377,7 +2406,7 @@ function App() {
   const selectedNewSessionDirectory = normalizeDirectory(newSessionDirectory)
 
   const renderedMessages = useMemo(() => {
-    const revertMessageID = config.backend === "opencode" ? selectedSession?.revertMessageID : undefined
+    const revertMessageID = config.backend === "opencode" || config.backend === "opencode2" ? selectedSession?.revertMessageID : undefined
     return [...messages, ...optimisticUserMessages]
       .filter((message) => !revertMessageID || message.info.id < revertMessageID)
       .map(toRenderedMessage)
@@ -2829,7 +2858,7 @@ function App() {
     setActionNotice(null)
     try {
       let revertedSession: Session | undefined
-      if (config.backend === "opencode") {
+      if (config.backend === "opencode" || config.backend === "opencode2") {
         const revertMessageID = selectedSession.revertMessageID
         const userMessages = messages.filter((message) => message.info.role === "user")
         if (command === "undo") {
@@ -2853,7 +2882,7 @@ function App() {
         await api.sendCommand(config, selectedSession.id, command, "", selectedSession.directory, activeModel, activeAgentID)
         await loadSelected(selectedSession.id, selectedSession.directory, true)
       }
-      if (config.backend === "opencode") await loadSelected(selectedSession.id, selectedSession.directory, true)
+      if (config.backend === "opencode" || config.backend === "opencode2") await loadSelected(selectedSession.id, selectedSession.directory, true)
       await refreshSessions(true)
       if (revertedSession) {
         setSessions((current) => current.map((item) => item.id === revertedSession.id ? { ...item, revertMessageID: revertedSession.revert?.messageID } : item))
@@ -2866,7 +2895,7 @@ function App() {
   }
 
   async function revertToMessage(messageID: string) {
-    if (!selectedSession || busySending || config.backend !== "opencode") return
+    if (!selectedSession || busySending || (config.backend !== "opencode" && config.backend !== "opencode2")) return
     if (!window.confirm(t('detail.revertConfirm'))) return
 
     setBusySending(true)
@@ -3443,7 +3472,7 @@ function App() {
     // images at all: dropping it here keeps the chips from outliving the control that made them.
     setAttachments([])
     setCapabilities(fallback)
-    if (config.backend === "opencode" || !isValidServerConfig(config)) return
+    if (config.backend === "opencode" || config.backend === "opencode2" || !isValidServerConfig(config)) return
     api.capabilities(config).then(setCapabilities).catch(() => setCapabilities(fallback))
   }, [config.backend, config.host, config.port, config.username, config.password])
 
@@ -3500,6 +3529,24 @@ function App() {
         setAwaitingAssistantReply(false)
         setBusySending(false)
         setRuntimeError(body.message ?? "The agent stopped with an error")
+      }
+      if (type === "session.execution.failed" && body?.sessionID === selectedSessionRef.current?.id) {
+        completionShouldPlayRef.current = false
+        setAwaitingAssistantReply(false)
+        setBusySending(false)
+        const error = body as { sessionID?: string; error?: { message?: string } }
+        setRuntimeError(error.error?.message ?? "The agent stopped with an error")
+      }
+      if (type === "session.execution.started" && body?.sessionID) {
+        const sessionID = body.sessionID
+        if (sessionID === selectedSessionRef.current?.id) setAwaitingAssistantReply(true)
+      }
+      if (type === "session.execution.succeeded" && body?.sessionID) {
+        const sessionID = body.sessionID
+        if (sessionID === selectedSessionRef.current?.id) {
+          setAwaitingAssistantReply(false)
+          setBusySending(false)
+        }
       }
       if (type === "message.part.updated" && body?.sessionID && body.part) {
         setMessages((current) => applyStreamedPartUpdate(current, body.sessionID!, body.part!))
@@ -4296,6 +4343,7 @@ function App() {
               }}
             >
               <option value="opencode">OpenCode</option>
+              <option value="opencode2">OpenCode 2</option>
               <option value="omp">Oh My Pi (bridge)</option>
               <option value="pi">PI (ACP bridge)</option>
               <option value="claude">Claude Code (ACP bridge)</option>
@@ -5017,7 +5065,7 @@ function App() {
               </div>
               <p>
                 <a
-                  href={`https://github.com/giuliastro/harness-remote#${config.backend === "opencode" ? "opencode-server-setup" : config.backend === "pi" ? "pi-bridge-setup" : config.backend === "claude" ? "claude-code-bridge-setup" : config.backend === "codex" ? "codex-bridge-setup" : "oh-my-pi-bridge-setup"}`}
+                  href={`https://github.com/giuliastro/harness-remote#${config.backend === "opencode" ? "opencode-server-setup" : config.backend === "opencode2" ? "opencode-2-server-setup" : config.backend === "pi" ? "pi-bridge-setup" : config.backend === "claude" ? "claude-code-bridge-setup" : config.backend === "codex" ? "codex-bridge-setup" : "oh-my-pi-bridge-setup"}`}
                   target="_blank"
                   rel="noreferrer"
                 >

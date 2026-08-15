@@ -10,6 +10,10 @@ export const BACKEND_CLIENTS: Record<BackendKind, BackendClient> = {
     modelSelectionRequiresSession: false,
     messageRefreshSupported: false
   },
+  opencode2: {
+    modelSelectionRequiresSession: false,
+    messageRefreshSupported: false
+  },
   omp: {
     modelSelectionRequiresSession: true,
     messageRefreshSupported: true

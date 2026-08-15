@@ -1,4 +1,4 @@
-export type BackendKind = "opencode" | "omp" | "pi" | "claude" | "codex"
+export type BackendKind = "opencode" | "opencode2" | "omp" | "pi" | "claude" | "codex"
 
 export type ServerConfig = {
   backend: BackendKind
@@ -168,6 +168,14 @@ export type TodoItem = {
 export type QuestionOption = {
   label: string
   description: string
+  /** Backend value represented by the display label; absent for legacy question backends. */
+  value?: string
+}
+
+export type QuestionCondition = {
+  key: string
+  op: "eq" | "neq"
+  value: string | number | boolean
 }
 
 export type QuestionInfo = {
@@ -176,6 +184,13 @@ export type QuestionInfo = {
   options: QuestionOption[]
   multiple?: boolean
   custom?: boolean
+  /** Optional fields may be left blank without blocking submission of the rest of the form. */
+  optional?: boolean
+  /** OpenCode 2 metadata used to evaluate conditional visibility against earlier answers. */
+  key?: string
+  answerType?: "string" | "number" | "integer" | "boolean" | "multiselect" | "external"
+  when?: QuestionCondition[]
+  externalUrl?: string
 }
 
 export type QuestionRequest = {

@@ -7,6 +7,7 @@ export const LEGACY_STORAGE_KEY = "opencode.remote.server"
 export const ACTIVE_BACKEND_STORAGE_KEY = "opencode.remote.backend"
 export const BACKEND_STORAGE_KEYS = {
   opencode: "opencode.remote.server.opencode",
+  opencode2: "opencode.remote.server.opencode2",
   omp: "opencode.remote.server.omp",
   pi: "opencode.remote.server.pi",
   claude: "opencode.remote.server.claude",
@@ -22,20 +23,20 @@ export type SavedServerProfile = {
   config: ServerConfig
 }
 
-const BACKENDS: BackendKind[] = ["opencode", "omp", "pi", "claude", "codex"]
+const BACKENDS: BackendKind[] = ["opencode", "opencode2", "omp", "pi", "claude", "codex"]
 
 function defaultConfig(backend: BackendKind): ServerConfig {
   return {
     backend,
     host: "",
-    port: backend === "opencode" ? 4096 : 4097,
-    username: backend === "opencode" ? "opencode" : backend,
+    port: backend === "opencode" || backend === "opencode2" ? 4096 : 4097,
+    username: backend === "opencode" || backend === "opencode2" ? "opencode" : backend,
     password: ""
   }
 }
 
 function isBackend(value: unknown): value is BackendKind {
-  return value === "opencode" || value === "omp" || value === "pi" || value === "claude" || value === "codex"
+  return value === "opencode" || value === "opencode2" || value === "omp" || value === "pi" || value === "claude" || value === "codex"
 }
 
 function parseConfig(value: unknown, fallbackBackend: BackendKind): ServerConfig | null {
@@ -52,7 +53,7 @@ function profileID(): string {
 }
 
 function profileName(backend: BackendKind, position: number): string {
-  const label = backend === "omp" ? "Oh My Pi" : backend === "pi" ? "PI" : backend === "claude" ? "Claude Code" : backend === "codex" ? "Codex CLI" : "OpenCode"
+  const label = backend === "opencode2" ? "OpenCode 2" : backend === "omp" ? "Oh My Pi" : backend === "pi" ? "PI" : backend === "claude" ? "Claude Code" : backend === "codex" ? "Codex CLI" : "OpenCode"
   return position === 0 ? `${label} server` : `${label} server ${position + 1}`
 }
 

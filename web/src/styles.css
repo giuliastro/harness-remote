@@ -2425,6 +2425,18 @@ a:focus-visible,
   font-size: var(--font-sm);
 }
 
+.question-external {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.question-external > a {
+  color: var(--primary);
+  font-size: var(--font-sm);
+  font-weight: 600;
+}
+
 .question-error {
   color: var(--danger);
   font-size: var(--font-sm);
