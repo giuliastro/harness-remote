@@ -36,16 +36,19 @@ function parseBackend(value) {
   return harnessProfile(value).id
 }
 
-
 function environmentValue(environment, name) {
   return environment[`HARNESS_REMOTE_${name}`] ?? environment[`OMP_BRIDGE_${name}`]
 }
 
+function profileLaunch(profile) {
+  return { command: profile.command, args: [...profile.args] }
+}
 
-export function parseConfig(args, environment = process.env) {
+export function parseConfig(args, environment = process.env, { preferInstalledAdapters = true } = {}) {
   const backend = parseBackend(environmentValue(environment, "BACKEND") ?? "omp")
   const profile = harnessProfile(backend)
-  const launch = resolveAcpLaunch(profile)
+  const launchFor = preferInstalledAdapters ? resolveAcpLaunch : profileLaunch
+  const launch = launchFor(profile)
   const acpCommand = environmentValue(environment, "ACP_COMMAND")
   const acpArgs = environmentValue(environment, "ACP_ARGS")
   const root = environmentValue(environment, "ROOT")
@@ -72,7 +75,7 @@ export function parseConfig(args, environment = process.env) {
       case "--backend":
         config.backend = parseBackend(requireValue(args, index, option))
         {
-          const selected = resolveAcpLaunch(harnessProfile(config.backend))
+          const selected = launchFor(harnessProfile(config.backend))
           if (!acpCommandOverridden) config.acpCommand = selected.command
           if (!acpArgsOverridden) config.acpArgs = [...selected.args]
         }
