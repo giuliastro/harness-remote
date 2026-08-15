@@ -15,8 +15,10 @@ const STDERR_KEPT_CHARS = 600
  */
 function acpErrorMessage(error) {
   const message = error?.message ?? "ACP adapter request failed"
-  const details = error?.data?.details ?? error?.data?.message
-  return typeof details === "string" && details && !message.includes(details) ? `${message}: ${details}` : message
+  const details = [error?.data?.details, error?.data?.message].find(
+    (value) => typeof value === "string" && value
+  )
+  return details && !message.includes(details) ? `${message}: ${details}` : message
 }
 
 export class AcpClient extends EventEmitter {
