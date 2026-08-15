@@ -114,14 +114,8 @@ class CachedCatalog {
   }
 }
 
-/**
- * ACP exposes model selection as a session config option. When an adapter has no session-less model
- * endpoint, this catalog owns one durable, prompt-less session solely for configuration discovery.
- * The session id is persisted and reused across daemon restarts: opening New Task refreshes that
- * same session's config options instead of creating/destroying a probe session for every task.
- */
 export class AcpAgentModelCatalog extends CachedCatalog {
-  constructor({ agent, agentID, directory, stateDirectory, requestTimeoutMs = MODEL_CATALOG_TIMEOUT_MS }) {
+  constructor({ agent, agentID, directory, stateDirectory, requestTimeoutMs = MODEL_CATALOG_TIMEOUT_MS, ownsAgent = true }) {
     super()
     this.agent = agent
     this.agentID = agentID
@@ -131,6 +125,7 @@ export class AcpAgentModelCatalog extends CachedCatalog {
     this.stateLoaded = false
     this.hiddenSessionIDs = new Set()
     this.requestTimeoutMs = requestTimeoutMs
+    this.ownsAgent = ownsAgent
   }
 
   async #loadState() {
@@ -192,7 +187,7 @@ export class AcpAgentModelCatalog extends CachedCatalog {
   }
 
   close() {
-    this.agent.close?.()
+    if (this.ownsAgent) this.agent.close?.()
   }
 }
 
