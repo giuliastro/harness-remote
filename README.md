@@ -100,6 +100,7 @@ The previous full README — including detailed OpenCode, OMP, PI, Claude Code a
 Other useful docs:
 
 - [Harness 3 roadmap](docs/HARNESS_3_ROADMAP.md)
+- [OpenCode 2 client feature roadmap](docs/OPENCODE2_CLIENT_ROADMAP.md)
 - [Harness dependency notes](docs/DEPENDENCIES.md)
 - [Contributing](CONTRIBUTING.md)
 
