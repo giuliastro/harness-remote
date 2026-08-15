@@ -442,6 +442,10 @@ export class AcpService {
   async setModel(sessionID, model) {
     await this.#loadForConfigOptions(sessionID)
     const option = this.#configOptions.get(sessionID)?.find((item) => item.id === "model")
+    // The app addresses models as `provider/model` because that is what OpenCode's API does, but a
+    // harness whose ids carry no provider — Claude Code's `sonnet`, `opus[1m]` — is shown under the
+    // backend's name to keep it consistent. Resolve against what the agent actually offered rather
+    // than trusting either spelling: exact first, then the part after the synthesised provider.
     const value = option?.options?.some((candidate) => candidate.value === model)
       ? model
       : option?.options?.find((candidate) => candidate.value === model.slice(model.indexOf("/") + 1))?.value
@@ -450,6 +454,11 @@ export class AcpService {
     option.currentValue = value
   }
 
+  /**
+   * ACP accepts one turn per session at a time, so a prompt sent while the agent is
+   * still working is queued rather than rejected. It is recorded straight away, which
+   * is what makes it visible in the conversation while it waits.
+   */
   async prompt(sessionID, text, model) {
     if (this.#historyLoader && !this.#ownedSessions.has(sessionID)) {
       this.#ownedSessions.add(sessionID)
@@ -507,6 +516,8 @@ export class AcpService {
     if (!queue?.length) return
     const next = queue.shift()
     if (!queue.length) this.#queues.delete(sessionID)
+    // The model is applied on dequeue: doing it on enqueue would switch the model
+    // underneath the turn that was still running.
     if (next.model) {
       try {
         await this.setModel(sessionID, next.model)
@@ -517,6 +528,7 @@ export class AcpService {
     this.#startTurn(sessionID, next.text, true)
   }
 
+  /** Cancelling drops anything still queued, including the messages recorded for it. */
   abort(sessionID) {
     if (this.#historyLoader && !this.#ownedSessions.has(sessionID)) {
       throw new Error("This session is not active in the app")
@@ -597,10 +609,17 @@ export class AcpService {
     this.#snapshotWrites.set(sessionID, writing)
   }
 
+  /** A queued prompt is still outstanding work, so the session must not read as idle between turns. */
   #isBusy(sessionID) {
     return this.#active.has(sessionID) || Boolean(this.#queues.get(sessionID)?.length)
   }
 
+  /**
+   * Displaying an external session deliberately skips the ACP load, but config options only
+   * arrive with it, so a session this process did not create reported no models at all — and
+   * model switching failed too, since it validates against that list. Pay for the load only
+   * when the options are genuinely missing, which keeps opening a session cheap.
+   */
   async #loadForConfigOptions(sessionID) {
     await this.#load(sessionID)
     if (this.#configOptions.has(sessionID)) return
@@ -621,6 +640,13 @@ export class AcpService {
     const session = this.#sessions.get(sessionID)
     if (!session) throw new Error("Harness session not found")
     if (!force && this.#loaded.has(sessionID)) return
+    // Config options only arrive with a real ACP session/load, which a harness may refuse —
+    // Codex does for any conversation another client holds open. Sharing one in-flight load
+    // between callers that need those options and callers that only want the transcript meant
+    // the refusal failed `messages` too, so opening such a session broke whenever the app asked
+    // for both at once, which it does on every open. Each kind of load is tracked separately,
+    // and a caller that never needed the options retries on its own rather than inheriting a
+    // failure that does not apply to it.
     const inFlight = this.#loads.get(sessionID)
     if (inFlight && (inFlight.requireConfigOptions || !requireConfigOptions)) {
       try {
@@ -737,6 +763,7 @@ export class AcpService {
     return messageID
   }
 
+  /** ACP session listings may carry no title, so keep the creation title or derive one from the first prompt. */
   #titleFor(sessionID) {
     const known = this.#titles.get(sessionID)
     if (known) return known
@@ -837,6 +864,7 @@ export class AcpService {
     if (update.content?.type !== "text" || !update.content.text) return
     const role = update.sessionUpdate === "user_message_chunk" ? "user" : "assistant"
     const partType = thought ? "reasoning" : "text"
+    // Acknowledgements only suppress a live echo of the prompt we just recorded;
     if (role === "assistant" && !replaying && this.#cancelledSessions.has(sessionId)) return
     if (role === "assistant" && !replaying && !this.#active.has(sessionId) && !this.#promptedSessions.has(sessionId)) return
     if (role === "user" && !replaying && this.#isAcknowledgedPromptChunk(sessionId, update.content.text)) return
