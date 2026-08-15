@@ -1,34 +1,29 @@
 name: Real Android harness matrix
 
 # GitHub-hosted runners cannot exercise the user's local credentials, Termux networking or real
-# agents. This workflow is intentionally manual and targets the ARM64 Debian runner on Android.
-# It is evidence, not a synthetic replacement for the Android client acceptance pass.
+# agents. This workflow runs only after an explicit label is added to a same-repository pull request.
+# That keeps the test on the PR's exact commit without putting a manual workflow on main.
 "on":
-  workflow_dispatch:
-    inputs:
-      primary_backend:
-        description: "ACP agent managed by TaskDesk; OpenCode is always tested through the same daemon."
-        required: true
-        type: choice
-        options:
-          - pi
-          - omp
+  pull_request:
+    types: [labeled]
 
 permissions:
   contents: read
 
 concurrency:
-  group: real-harness-android-${{ inputs.primary_backend }}
+  group: real-harness-android-${{ github.event.label.name }}
   cancel-in-progress: false
 
 jobs:
   real-harness:
-    name: Android Debian (${{ inputs.primary_backend }} + OpenCode)
+    if: github.event.label.name == 'real-harness-pi' || github.event.label.name == 'real-harness-omp'
+    name: Android Debian (${{ github.event.label.name }} + OpenCode)
     # Install the official runner in Debian with the custom label documented in
     # docs/REAL_HARNESS_TEST_MATRIX.md. The default labels also identify Linux ARM64.
     runs-on: [self-hosted, Linux, ARM64, harness-remote-android]
     timeout-minutes: 35
     env:
+      MATRIX_BACKEND: ${{ github.event.label.name == 'real-harness-pi' && 'pi' || 'omp' }}
       MATRIX_ROOT: ${{ runner.temp }}/harness-remote-real
       MATRIX_PORT: "4597"
       MATRIX_OPENCODE_PORT: "4596"
@@ -43,7 +38,7 @@ jobs:
           node --version
           node -e 'const major = Number(process.versions.node.split(".")[0]); if (major < 20) process.exit(1)'
           command -v opencode
-          command -v "${{ inputs.primary_backend }}"
+          command -v "$MATRIX_BACKEND"
           git --version
 
       - name: Run deterministic bridge regression suite
@@ -64,7 +59,7 @@ jobs:
       - name: Start TaskDesk daemon
         run: |
           node bridge/src/daemon-cli.js \
-            --backend "${{ inputs.primary_backend }}" \
+            --backend "$MATRIX_BACKEND" \
             --host 127.0.0.1 \
             --port "$MATRIX_PORT" \
             --opencode-port "$MATRIX_OPENCODE_PORT" \
@@ -79,11 +74,11 @@ jobs:
         run: |
           node bridge/scripts/real-harness-smoke.mjs \
             --base-url "http://127.0.0.1:$MATRIX_PORT" \
-            --agent "${{ inputs.primary_backend }}" \
+            --agent "$MATRIX_BACKEND" \
             --username "$MATRIX_USERNAME" \
             --password "$MATRIX_PASSWORD" \
             --workspace "$MATRIX_ROOT/workspace" \
-            --report "$MATRIX_ROOT/reports/${{ inputs.primary_backend }}.json"
+            --report "$MATRIX_ROOT/reports/$MATRIX_BACKEND.json"
 
       - name: Exercise real managed OpenCode
         run: |
@@ -107,7 +102,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: real-harness-${{ inputs.primary_backend }}-opencode-${{ github.run_id }}
+          name: real-harness-${{ github.event.label.name }}-${{ github.run_id }}
           path: ${{ runner.temp }}/harness-remote-real
           if-no-files-found: warn
           retention-days: 30
