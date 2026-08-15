@@ -1,29 +1,29 @@
 name: Real Android harness matrix
 
 # GitHub-hosted runners cannot exercise the user's local credentials, Termux networking or real
-# agents. This workflow runs only after an explicit label is added to a same-repository pull request.
+# agents. This workflow runs after a labelled same-repository pull request is updated.
 # That keeps the test on the PR's exact commit without putting a manual workflow on main.
 "on":
   pull_request:
-    types: [labeled]
+    types: [opened, synchronize, reopened, labeled]
 
 permissions:
   contents: read
 
 concurrency:
-  group: real-harness-android-${{ github.event.label.name }}
+  group: real-harness-android-pr-${{ github.event.pull_request.number }}
   cancel-in-progress: false
 
 jobs:
   real-harness:
-    if: github.event.label.name == 'real-harness-pi' || github.event.label.name == 'real-harness-omp'
-    name: Android Debian (${{ github.event.label.name }} + OpenCode)
+    if: contains(github.event.pull_request.labels.*.name, 'real-harness-pi') || contains(github.event.pull_request.labels.*.name, 'real-harness-omp')
+    name: Android Debian (primary ACP + OpenCode)
     # Install the official runner in Debian with the custom label documented in
     # docs/REAL_HARNESS_TEST_MATRIX.md. The default labels also identify Linux ARM64.
     runs-on: [self-hosted, Linux, ARM64, harness-remote-android]
     timeout-minutes: 35
     env:
-      MATRIX_BACKEND: ${{ github.event.label.name == 'real-harness-pi' && 'pi' || 'omp' }}
+      MATRIX_BACKEND: ${{ contains(github.event.pull_request.labels.*.name, 'real-harness-pi') && 'pi' || 'omp' }}
       MATRIX_ROOT: ${{ runner.temp }}/harness-remote-real
       MATRIX_PORT: "4597"
       MATRIX_OPENCODE_PORT: "4596"
@@ -102,7 +102,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: real-harness-${{ github.event.label.name }}-${{ github.run_id }}
+          name: real-harness-${{ env.MATRIX_BACKEND }}-${{ github.run_id }}
           path: ${{ runner.temp }}/harness-remote-real
           if-no-files-found: warn
           retention-days: 30
