@@ -1,6 +1,6 @@
 import { homedir } from "node:os"
 import path from "node:path"
-import { harnessProfile, resolveAcpLaunch } from "./harness-profiles.js"
+import { harnessProfile } from "./harness-profiles.js"
 
 const LOOPBACK_HOSTS = new Set(["127.0.0.1", "::1", "localhost"])
 
@@ -45,7 +45,6 @@ function environmentValue(environment, name) {
 export function parseConfig(args, environment = process.env) {
   const backend = parseBackend(environmentValue(environment, "BACKEND") ?? "omp")
   const profile = harnessProfile(backend)
-  const launch = resolveAcpLaunch(profile)
   const acpCommand = environmentValue(environment, "ACP_COMMAND")
   const acpArgs = environmentValue(environment, "ACP_ARGS")
   const root = environmentValue(environment, "ROOT")
@@ -56,8 +55,8 @@ export function parseConfig(args, environment = process.env) {
     port: parsePort(environmentValue(environment, "PORT") ?? "4097"),
     username: environmentValue(environment, "USERNAME") ?? "",
     password: environmentValue(environment, "PASSWORD") ?? "",
-    acpCommand: acpCommand ?? launch.command,
-    acpArgs: parseArgumentList(acpArgs, launch.args),
+    acpCommand: acpCommand ?? profile.command,
+    acpArgs: parseArgumentList(acpArgs, profile.args),
     roots: root ? [root] : [],
     corsOrigins: cors ? [cors] : [],
     logRequests: environmentValue(environment, "LOG_REQUESTS") === "1",
@@ -71,11 +70,8 @@ export function parseConfig(args, environment = process.env) {
     switch (option) {
       case "--backend":
         config.backend = parseBackend(requireValue(args, index, option))
-        {
-          const selected = resolveAcpLaunch(harnessProfile(config.backend))
-          if (!acpCommandOverridden) config.acpCommand = selected.command
-          if (!acpArgsOverridden) config.acpArgs = [...selected.args]
-        }
+        if (!acpCommandOverridden) config.acpCommand = harnessProfile(config.backend).command
+        if (!acpArgsOverridden) config.acpArgs = [...harnessProfile(config.backend).args]
         index += 1
         break
       case "--host":

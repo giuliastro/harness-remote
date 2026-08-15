@@ -34,18 +34,6 @@ First-party command, no third party in the path. The bridge uses `session/new`, 
 | The agent approves its own tool calls and never sends `session/request_permission` | the permission path would start being exercised |
 | `available_commands_update` is emitted after extension initialization and contains registered command names | optional extension actions are not discovered |
 
-**Also assumed, observed on OMP 17.2.10 while adding image attachments:**
-
-| Assumption | What breaks if it changes |
-|---|---|
-| `initialize` advertises `agentCapabilities.promptCapabilities.image` | the composer hides its attachment picker and the bridge refuses attachments; a harness that dropped the flag would lose the feature rather than fail a prompt |
-| A prompt may carry `{type:"image", mimeType, data}` blocks alongside text, and an image with no text is accepted | sending a bare screenshot would need a synthetic caption |
-| No `audio` prompt capability is advertised | voice would have to be transcribed before it reaches a prompt |
-| `session/load` replays a stored image as `user_message_chunk` with `content: {type:"image", data, mimeType}`, sharing the `messageId` of the text chunk in that turn | the thumbnail stops reappearing when a session is reopened, or lands in a message of its own |
-| Images are re-encoded on the way in: a PNG upload replays and persists as `image/webp` | a mime taken from the upload rather than from the record would mislabel the part |
-| The persisted transcript stores no filename for an image | the app labels a replayed thumbnail generically instead of by name |
-| `session/load` mints a fresh `messageId` on every load | ids cannot be used to recognise the same message across two loads, which is why history dedup elsewhere falls back to text and timestamps |
-
 **Watch:** any of the above and new `sessionUpdate` kinds; unknown updates are ignored by design.
 
 #### Optional OMP extension actions
@@ -139,36 +127,6 @@ credentials, which it reads from disk. Two consequences:
 (`packages/coding-agent/docs/rpc.md` in the PI repo) is the first-party alternative. It means
 writing a transport in the bridge rather than reusing the ACP client, but it removes the third
 party entirely.
-
-### Claude Code — ACP over stdio, via the official adapter
-
-- **Adapter:** [`@agentclientprotocol/claude-agent-acp`](https://www.npmjs.com/package/@agentclientprotocol/claude-agent-acp),
-  which wraps the Claude Agent SDK and speaks ACP over stdio. **Pinned to `0.63.0`** in
-  `bridge/src/harness-profiles.js`.
-- **Authentication:** the host must already have `claude login` credentials or
-  `ANTHROPIC_API_KEY` available to the adapter. The bridge does not manage Claude credentials.
-- **Runtime:** Node.js 22 or newer. The first start downloads the pinned adapter through `npx`.
-
-**Assumed:**
-
-| Assumption | What breaks if it changes |
-|---|---|
-| The adapter is an `npx`-installable ACP process and accepts the standard ACP handshake | the default command in `harness-profiles.js` no longer starts or authenticates |
-| `session/list`, `session/load`, `session/prompt` and `session/cancel` expose the session surface used by the generic bridge | session browsing, history replay, prompting or cancellation stops working |
-| The `model` config option uses bare ids such as `sonnet` and `opus[1m]` | the model picker can no longer map the adapter's values back to the bridge |
-| Plan/todo updates arrive through the ACP notifications already handled by `AcpService` | the Claude Code todo panel stops updating |
-| Tool permission requests accept the bridge's automatic `allow` response | tool calls can hang or be refused; the bridge deliberately runs Claude unattended |
-| The adapter does not advertise image prompt support | the app hides attachments and refuses image parts for this backend |
-
-**Session scope and security.** Claude Code sessions are enumerated by the adapter independently of
-the bridge's `--root` directories. The bridge can therefore expose sessions from repositories outside
-the configured browsing roots to anyone who has the bridge credentials. Treat those credentials as
-full access to the Claude Code account on that host, and use a trusted LAN, VPN or TLS-terminating
-proxy rather than exposing the bridge directly to the Internet.
-
-**Watch:** the pinned adapter version, bare model ids, ACP session update and permission-request
-shapes, and whether session visibility or image capability changes. The app intentionally does not
-expose agent selection, server slash commands or VCS/diff for this backend.
 
 ### Codex CLI — ACP over stdio, via the official adapter
 

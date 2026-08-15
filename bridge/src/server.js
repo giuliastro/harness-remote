@@ -1,54 +1,57 @@
 import http from "node:http"
+import { timingSafeEqual } from "node:crypto"
 import { readdir, realpath } from "node:fs/promises"
 import path from "node:path"
 import { AcpService } from "./acp-service.js"
 import { harnessProfile } from "./harness-profiles.js"
-import { allowedOrigin, applyCorsHeaders, matchesCredentials, writeJSON } from "./http-policy.js"
 
-const ATTACHMENT_MIME_TYPES = new Set(["image/png", "image/jpeg", "image/webp", "image/gif"])
-const MAX_ATTACHMENTS = 8
-const MAX_ATTACHMENT_BYTES = 5 * 1024 * 1024
-const MAX_ATTACHMENT_TOTAL_BYTES = 15 * 1024 * 1024
 
-/** base64 carries 3 bytes per 4 characters, so measure it rather than decoding megabytes to count them. */
-function base64ByteLength(value) {
-  const padding = value.endsWith("==") ? 2 : value.endsWith("=") ? 1 : 0
-  return Math.floor(value.length / 4) * 3 - padding
+function writeJSON(response, status, body) {
+  response.writeHead(status, { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store" })
+  response.end(JSON.stringify(body))
 }
 
-function attachmentPayload(url) {
-  const match = typeof url === "string" ? /^data:[^;,]+;base64,(.+)$/s.exec(url) : null
-  if (!match) throw new Error("An attachment must be a base64 data URL")
-  return match[1]
+/** Returns the request origin when it is explicitly allowed by --cors. */
+function allowedOrigin(request, config) {
+  const origin = request.headers.origin
+  if (!origin || !config.corsOrigins?.length) return undefined
+  return config.corsOrigins.includes(origin) ? origin : undefined
 }
 
 /**
- * Attachments are validated before the prompt reaches the agent: a mime type the harness
- * cannot read, or a payload large enough to stall the turn, is a client mistake worth
- * naming rather than a failure to discover mid-stream.
+ * Credentialed CORS forbids a wildcard origin, so each allowed origin is echoed
+ * back individually and responses are marked as origin-dependent for caches.
  */
-function parseAttachments(parts) {
-  const files = (Array.isArray(parts) ? parts : []).filter((part) => part?.type === "file")
-  if (files.length > MAX_ATTACHMENTS) throw new Error(`At most ${MAX_ATTACHMENTS} attachments per prompt`)
-  let total = 0
-  return files.map((file) => {
-    const mime = typeof file.mime === "string" ? file.mime.toLowerCase() : ""
-    if (!ATTACHMENT_MIME_TYPES.has(mime)) {
-      throw new Error(`Unsupported attachment type ${mime || "unknown"}: accepted types are image/png, image/jpeg, image/webp and image/gif`)
-    }
-    const data = attachmentPayload(file.url)
-    if (base64ByteLength(data) > MAX_ATTACHMENT_BYTES) throw new Error("Each attachment must stay under 5MB")
-    total += base64ByteLength(data)
-    if (total > MAX_ATTACHMENT_TOTAL_BYTES) throw new Error("Attachments must stay under 15MB in total")
-    return { mime, filename: typeof file.filename === "string" ? file.filename : "attachment", data }
-  })
+function applyCorsHeaders(request, response, config) {
+  if (!config.corsOrigins?.length) return
+  response.setHeader("Vary", "Origin")
+  const origin = allowedOrigin(request, config)
+  if (!origin) return
+  response.setHeader("Access-Control-Allow-Origin", origin)
+  response.setHeader("Access-Control-Allow-Credentials", "true")
+  response.setHeader("Access-Control-Allow-Headers", "authorization, content-type")
+  response.setHeader("Access-Control-Allow-Methods", "GET, POST, PATCH, DELETE, OPTIONS")
+  // Chromium's Private Network Access preflight is sent when this public PWA
+  // connects to a local bridge (for example github.io -> localhost).
+  if (request.headers["access-control-request-private-network"] === "true") {
+    response.setHeader("Access-Control-Allow-Private-Network", "true")
+  }
+}
+
+function matchesCredentials(request, config) {
+  if (!config.username) return true
+  const header = request.headers.authorization
+  if (!header?.startsWith("Basic ")) return false
+  const expected = Buffer.from(`${config.username}:${config.password}`)
+  const received = Buffer.from(header.slice("Basic ".length), "base64")
+  return received.length === expected.length && timingSafeEqual(received, expected)
 }
 
 async function readBody(request) {
   let body = ""
   for await (const chunk of request) {
     body += chunk
-    if (body.length > 25_000_000) throw new Error("Request body is too large")
+    if (body.length > 1_000_000) throw new Error("Request body is too large")
   }
   return body ? JSON.parse(body) : {}
 }
@@ -94,6 +97,7 @@ function providersResponse(models, fallbackProviderID) {
     provider.models[modelID] = {
       id: modelID,
       name: option.name ?? modelID,
+      // Where the harness puts the version: "Sonnet 5 · Efficient for routine tasks".
       description: option.description || undefined,
       status: "active"
     }
@@ -103,12 +107,13 @@ function providersResponse(models, fallbackProviderID) {
   return { providers: [...providers.values()], default: defaults }
 }
 
-export function createBridgeServer({ config, acp, serviceOptions, machineRegistry }) {
+export function createBridgeServer({ config, acp, serviceOptions }) {
   const backend = config.backend ?? "omp"
   const profile = harnessProfile(backend)
   const service = new AcpService(acp, { ...serviceOptions, actionProviders: profile.actionProviders })
   return http.createServer(async (request, response) => {
     applyCorsHeaders(request, response, config)
+    // Browsers omit credentials on the preflight, so it must be answered before auth.
     if (request.method === "OPTIONS") {
       response.writeHead(allowedOrigin(request, config) ? 204 : 403)
       response.end()
@@ -122,24 +127,17 @@ export function createBridgeServer({ config, acp, serviceOptions, machineRegistr
 
     const url = new URL(request.url ?? "/", `http://${request.headers.host ?? "localhost"}`)
     const directory = url.searchParams.get("directory") || undefined
-    if (config.logRequests && url.pathname === "/config/providers") process.stderr.write(`[bridge] ${request.method} ${url.pathname}${url.search}\n`)
+    if (config.logRequests && url.pathname === "/config/providers") {
+      process.stderr.write(`[bridge] ${request.method} ${url.pathname}${url.search}\n`)
+    }
     try {
-      if (request.method === "GET" && (url.pathname === "/v1/machine" || url.pathname === "/global/machine")) {
-        if (!machineRegistry) {
-          writeJSON(response, 503, { error: "Machine registry is not configured" })
-          return
-        }
-        writeJSON(response, 200, machineRegistry.snapshot())
-        return
-      }
       if (request.method === "GET" && (url.pathname === "/v1/health" || url.pathname === "/global/health")) {
         await acp.start()
         writeJSON(response, 200, { healthy: true, backend, version: acp.agentInfo?.version ?? "unknown" })
         return
       }
       if (request.method === "GET" && url.pathname === "/v1/capabilities") {
-        await acp.start()
-        writeJSON(response, 200, { ...profile.capabilities, attachments: Boolean(acp.promptCapabilities?.image) })
+        writeJSON(response, 200, profile.capabilities)
         return
       }
       if (request.method === "GET" && (url.pathname === "/v1/events" || url.pathname === "/global/event")) {
@@ -150,6 +148,9 @@ export function createBridgeServer({ config, acp, serviceOptions, machineRegistr
         })
         response.write(": connected\n\n")
         const unsubscribe = service.subscribe((event) => writeSSE(response, event.type, event))
+        // Clients treat a long silence as a dead connection, because a TCP stream can die
+        // without ever delivering an error. OpenCode beats every 10s; without matching it an
+        // idle session looks broken and the client reconnects on a loop.
         const heartbeat = setInterval(() => response.write(": ping\n\n"), config.heartbeatMs ?? 10_000)
         heartbeat.unref?.()
         request.on("close", () => {
@@ -227,13 +228,15 @@ export function createBridgeServer({ config, acp, serviceOptions, machineRegistr
         }
         if (request.method === "POST" && operation === "prompt_async") {
           const body = await readBody(request)
-          const text = body.parts?.find((part) => part.type === "text")?.text ?? ""
-          const attachments = parseAttachments(body.parts)
-          if (!text && !attachments.length) throw new Error("A text prompt is required")
-          await service.prompt(sessionID, text, modelWireName(body.model), attachments)
+          const text = body.parts?.find((part) => part.type === "text")?.text
+          if (!text) throw new Error("A text prompt is required")
+          await service.prompt(sessionID, text, modelWireName(body.model))
           writeJSON(response, 200, true)
           return
         }
+        // ACP has no command channel: a harness command is prompt text beginning
+        // with a slash, which is exactly what the app's composer would have sent
+        // had the picker never existed.
         if (request.method === "POST" && operation === "command") {
           const body = await readBody(request)
           if (typeof body.command !== "string" || !body.command) throw new Error("A command name is required")

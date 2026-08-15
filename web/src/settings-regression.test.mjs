@@ -5,7 +5,6 @@ const app = readFileSync(new URL('./App.tsx', import.meta.url), 'utf8')
 const i18n = readFileSync(new URL('./i18n.ts', import.meta.url), 'utf8')
 const styles = readFileSync(new URL('./styles.css', import.meta.url), 'utf8')
 const shell = readFileSync(new URL('./components/shell.tsx', import.meta.url), 'utf8')
-const panels = readFileSync(new URL('./components/panels.tsx', import.meta.url), 'utf8')
 
 const testConnection = app.match(/async function testConnection[\s\S]*?async function refreshSessions/)
 assert.ok(testConnection, 'testConnection function should be present')
@@ -32,18 +31,6 @@ assert.ok(app.includes('<option value="codex">Codex CLI (ACP bridge)</option>'),
 assert.ok(app.includes('health.backend && health.backend !== configToTest.backend'), 'Connection tests should reject a bridge for the wrong backend')
 assert.ok(app.includes('https://github.com/giuliastro/harness-remote#'), 'Help should link to the canonical repository')
 assert.equal(app.includes('https://github.com/gervaso-assistant/opencode-remote-android#'), false, 'Help must not link to the obsolete repository owner')
-
-// A daemon-backed connection discovers the machine before falling back to the backend-specific
-// health check. Legacy servers return null from discovery and therefore keep the existing save flow.
-assert.ok(panels.includes('await import("../machineClient")'), 'the connection wizard should discover a machine without requiring App-level wiring')
-assert.ok(panels.includes('discoverMachine(candidate)'), 'the wizard should call machine discovery when testing the connection')
-assert.ok(panels.includes('agentId: agentId || undefined'), 'the selected machine agent should be persisted in the saved server config')
-assert.ok(panels.includes("t('detail.agentTitle')"), 'the discovered-agent picker label should use translated UI copy')
-assert.ok(panels.includes("t('detail.unavailable')"), 'unavailable machine hosts should use translated UI copy')
-assert.equal(panels.includes('Agent on '), false, 'the machine picker must not introduce hardcoded English labels')
-assert.equal(panels.includes('agents discovered'), false, 'machine discovery feedback must not introduce hardcoded English copy')
-assert.equal(panels.includes('{agent.label} · {agent.state}'), false, 'protocol host states must not be rendered verbatim')
-assert.ok(panels.includes('agent.state !== "available" && agent.state !== "configured"'), 'unavailable machine agents must not be selectable')
 
 // The server picker used to caption itself with a visually-hidden span, but no rule ever hid it: the
 // caption rendered as stray text above the header. Every class the picker and its actions rely on has

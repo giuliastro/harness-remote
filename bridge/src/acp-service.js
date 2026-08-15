@@ -59,19 +59,13 @@ function semanticMessagePart(part) {
   return semantic
 }
 
-function semanticMessageSignature(message) {
-  return JSON.stringify({
-    role: message?.info?.role,
-    parts: (message?.parts ?? []).map(semanticMessagePart)
-  })
-}
-
 function semanticHistorySignature(messages) {
   return JSON.stringify(messages.map((message) => ({
     role: message?.info?.role,
     parts: (message?.parts ?? []).map(semanticMessagePart)
   })))
 }
+
 
 function mergeReplay(previous, replayed) {
   if (previous.length === 0) return replayed
@@ -106,20 +100,19 @@ function mergeReplay(previous, replayed) {
   return [...merged, ...previous.slice(leftIndex), ...replayed.slice(rightIndex)]
 }
 
-export function mergeExternalHistory(persisted, cached) {
+function mergeExternalHistory(persisted, cached) {
   const persistedIDs = new Set(persisted.map((message) => message.info.id))
-  const remainingBySignature = new Map()
+  const persistedBySignature = new Map()
   for (const message of persisted) {
-    const signature = semanticMessageSignature(message)
-    remainingBySignature.set(signature, (remainingBySignature.get(signature) ?? 0) + 1)
+    const signature = messageSignature(message)
+    const times = persistedBySignature.get(signature) ?? []
+    times.push(message.info.time.created)
+    persistedBySignature.set(signature, times)
   }
   const cachedOnly = cached.filter((message) => {
     if (persistedIDs.has(message.info.id)) return false
-    const signature = semanticMessageSignature(message)
-    const remaining = remainingBySignature.get(signature) ?? 0
-    if (remaining === 0) return true
-    remainingBySignature.set(signature, remaining - 1)
-    return false
+    const duplicateTimes = persistedBySignature.get(messageSignature(message)) ?? []
+    return !duplicateTimes.some((created) => Math.abs(created - message.info.time.created) < 30_000)
   })
   return [...persisted, ...cachedOnly].sort((left, right) => left.info.time.created - right.info.time.created)
 }
@@ -210,6 +203,7 @@ export class AcpService {
     this.#actionProviders = actionProviders
     acp.on("notification", (notification) => this.#handleNotification(notification))
   }
+
 
   subscribe(listener) {
     this.#listeners.add(listener)
@@ -465,13 +459,7 @@ export class AcpService {
    * still working is queued rather than rejected. It is recorded straight away, which
    * is what makes it visible in the conversation while it waits.
    */
-  async prompt(sessionID, text, model, attachments = []) {
-    // Refuse before touching the session: an agent that never advertised image support
-    // would reject the block mid-turn, which reads as a failed prompt rather than a
-    // rejected attachment.
-    if (attachments.length && !this.#acp.promptCapabilities?.image) {
-      throw new Error("This harness does not accept images")
-    }
+  async prompt(sessionID, text, model) {
     if (this.#historyLoader && !this.#ownedSessions.has(sessionID)) {
       this.#ownedSessions.add(sessionID)
       this.#loaded.delete(sessionID)
@@ -486,32 +474,29 @@ export class AcpService {
     }
     this.#resetActionsForSessionChange(sessionID)
     if (this.#active.has(sessionID)) {
-      const messageID = this.#recordPrompt(sessionID, text, attachments)
+      const messageID = this.#recordPrompt(sessionID, text)
       const queue = this.#queues.get(sessionID) ?? []
-      queue.push({ text, model, messageID, attachments })
+      queue.push({ text, model, messageID })
       this.#queues.set(sessionID, queue)
       this.#emit("session.updated", sessionID)
       return
     }
     if (model) await this.setModel(sessionID, model)
-    this.#startTurn(sessionID, text, false, attachments)
+    this.#startTurn(sessionID, text)
   }
 
-  #startTurn(sessionID, text, recorded = false, attachments = []) {
+  #startTurn(sessionID, text, recorded = false) {
     const generation = (this.#turnGenerations.get(sessionID) ?? 0) + 1
     this.#turnGenerations.set(sessionID, generation)
     this.#cancelledSessions.delete(sessionID)
     this.#promptedSessions.add(sessionID)
-    if (!recorded) this.#recordPrompt(sessionID, text, attachments)
+    if (!recorded) this.#recordPrompt(sessionID, text)
     this.#active.add(sessionID)
     this.#chunkMessageIDs.delete(`${sessionID}:assistant`)
     this.#emit("session.updated", sessionID)
     void this.#acp.request("session/prompt", {
       sessionId: sessionID,
-      prompt: [
-        ...(text ? [{ type: "text", text }] : []),
-        ...attachments.map((attachment) => ({ type: "image", mimeType: attachment.mime, data: attachment.data }))
-      ]
+      prompt: [{ type: "text", text }]
     }, 300_000).catch((error) => {
       if (this.#turnGenerations.get(sessionID) === generation) {
         this.#emit("session.error", sessionID, { message: error.message })
@@ -540,7 +525,7 @@ export class AcpService {
         this.#emit("session.error", sessionID, { message: error.message })
       }
     }
-    this.#startTurn(sessionID, next.text, true, next.attachments ?? [])
+    this.#startTurn(sessionID, next.text, true)
   }
 
   /** Cancelling drops anything still queued, including the messages recorded for it. */
@@ -764,22 +749,13 @@ export class AcpService {
     if (Array.isArray(configOptions)) this.#configOptions.set(sessionID, configOptions)
   }
 
-  #recordPrompt(sessionID, text, attachments = []) {
+  #recordPrompt(sessionID, text) {
     const messageID = randomUUID()
     const messages = this.#messages.get(sessionID) ?? []
     this.#messages.set(sessionID, messages)
     messages.push({
       info: { id: messageID, role: "user", sessionID, time: { created: Date.now() } },
-      parts: [
-        { id: `${messageID}:text`, type: "text", text },
-        ...attachments.map((attachment, index) => ({
-          id: `${messageID}:file:${index}`,
-          type: "file",
-          mime: attachment.mime,
-          filename: attachment.filename,
-          url: `data:${attachment.mime};base64,${attachment.data}`
-        }))
-      ]
+      parts: [{ id: `${messageID}:text`, type: "text", text }]
     })
     this.#promptAcknowledgements.set(sessionID, { text, received: "" })
     this.#emit("message.updated", sessionID)
@@ -885,28 +861,14 @@ export class AcpService {
     const thought = update.sessionUpdate === "agent_thought_chunk"
     const messageChunk = update.sessionUpdate === "user_message_chunk" || update.sessionUpdate === "agent_message_chunk"
     if (!thought && !messageChunk) return
-    // A replayed image becomes a file part, so reopening a session still shows what was attached.
-    // Replay only: a live turn already recorded its own attachment in #recordPrompt, so accepting an
-    // image chunk there would draw the same thumbnail twice. OMP is not observed to echo a live
-    // prompt back (see docs/DEPENDENCIES.md), which makes this a guard rather than a workaround.
-    const image = replaying
-      && messageChunk
-      && update.content?.type === "image"
-      && typeof update.content.data === "string"
-      && update.content.data
-      ? {
-        mime: typeof update.content.mimeType === "string" && update.content.mimeType ? update.content.mimeType : "image/png",
-        data: update.content.data
-      }
-      : undefined
-    if (!image && (update.content?.type !== "text" || !update.content.text)) return
+    if (update.content?.type !== "text" || !update.content.text) return
     const role = update.sessionUpdate === "user_message_chunk" ? "user" : "assistant"
-    const partType = thought ? "reasoning" : image ? "file" : "text"
+    const partType = thought ? "reasoning" : "text"
     // Acknowledgements only suppress a live echo of the prompt we just recorded;
     if (role === "assistant" && !replaying && this.#cancelledSessions.has(sessionId)) return
     if (role === "assistant" && !replaying && !this.#active.has(sessionId) && !this.#promptedSessions.has(sessionId)) return
     if (role === "user" && !replaying && this.#isAcknowledgedPromptChunk(sessionId, update.content.text)) return
-    if (role === "user" && !image && isHarnessInjectedText(update.content.text)) return
+    if (role === "user" && isHarnessInjectedText(update.content.text)) return
     if (!replaying && session) session.updatedAt = new Date().toISOString()
     const counterpartKey = `${sessionId}:${role === "user" ? "assistant" : "user"}`
     this.#chunkMessageIDs.delete(counterpartKey)
@@ -928,15 +890,7 @@ export class AcpService {
     if (previous?.type === "reasoning" && partType !== "reasoning" && previous.time && !previous.time.end) {
       previous.time.end = now
     }
-    if (image) {
-      message.parts.push({
-        id: `${messageID}:file:${message.parts.length}`,
-        messageID,
-        type: "file",
-        mime: image.mime,
-        url: `data:${image.mime};base64,${image.data}`
-      })
-    } else if (previous?.type === partType) {
+    if (previous?.type === partType) {
       previous.text += update.content.text
     } else {
       message.parts.push({

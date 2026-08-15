@@ -1,8 +1,7 @@
 import { Capacitor, CapacitorHttp } from "@capacitor/core"
 import { desktopRequest, isDesktopPlatform } from "./desktopBridge"
 import { streamURL } from "./opencode-events"
-import { authHeader, baseUrl, hasCredentials, isValidServerConfig } from "./serverConfig"
-import type { AttachmentPart } from "./attachments"
+import { baseUrl, isValidServerConfig } from "./serverConfig"
 import type {
   AgentOption,
   CommandInfo,
@@ -27,17 +26,11 @@ import type {
   VcsStatus
 } from "./types"
 
-export { baseUrl, isValidServerConfig }
-
-// A 401 says the server wants credentials, not that the ones given are wrong — and the app can tell
-// the two apart, because it knows whether it sent any. The connection test enables itself without a
-// password, so the common case is a server with Basic Auth and an empty password field, which read
-// as "wrong password" and sent people back to re-check credentials that were correct.
-function unauthorizedDetail(config: ServerConfig): string {
-  return hasCredentials(config)
-    ? "HTTP 401: the server rejected these credentials."
-    : "HTTP 401: this server requires a username and password, and none were sent."
+function authHeader(config: ServerConfig): string {
+  return `Basic ${btoa(`${config.username}:${config.password}`)}`
 }
+
+export { baseUrl, isValidServerConfig }
 
 function withDirectory(path: string, directory?: string): string {
   if (!directory) return path
@@ -131,7 +124,7 @@ async function requestWithHeaders<T>(config: ServerConfig, path: string, options
   const headers: Record<string, string> = {
     Accept: "application/json"
   }
-  if (hasCredentials(config)) {
+  if (config.username && config.password) {
     headers.Authorization = authHeader(config)
   }
   if (options.body !== undefined) {
@@ -154,7 +147,6 @@ async function requestWithHeaders<T>(config: ServerConfig, path: string, options
     }
 
     if (response.status >= 400) {
-      if (response.status === 401) throw new Error(responseDetail(response.data) || unauthorizedDetail(config))
       throw new Error(responseDetail(response.data) || `HTTP ${response.status}`)
     }
 
@@ -173,14 +165,14 @@ async function requestWithHeaders<T>(config: ServerConfig, path: string, options
   } catch {
     // Kept short: this text reaches a phone screen. The CORS note only means something in a
     // browser, where it is the usual cause, and nothing at all inside the app.
-    const corsHint = hasCredentials(config)
+    const corsHint = config.username && config.password
       ? " In a browser, Basic Auth also needs the bridge started with --cors for this origin."
       : ""
     throw new Error(`Cannot reach ${config.host}:${config.port}.${corsHint}`)
   }
 
   if (!response.ok) {
-    let detail = response.status === 401 ? unauthorizedDetail(config) : `HTTP ${response.status}`
+    let detail = `HTTP ${response.status}`
     try {
       // A Response body is a one-shot stream. Read it once and let responseDetail
       // parse JSON when applicable, so a plain-text server error remains useful.
@@ -230,7 +222,7 @@ function modelWireName(model?: ModelSelection) {
 export const api = {
   eventStream(config: ServerConfig) {
     const headers: Record<string, string> = {}
-    if (hasCredentials(config)) headers.Authorization = authHeader(config)
+    if (config.username && config.password) headers.Authorization = authHeader(config)
     return { url: streamURL(baseUrl(config), "global"), headers }
   },
 
@@ -365,10 +357,10 @@ export const api = {
     })
   },
 
-  sendPrompt(config: ServerConfig, sessionID: string, text: string, directory?: string, model?: ModelSelection, agentID?: string, attachments: AttachmentPart[] = []) {
+  sendPrompt(config: ServerConfig, sessionID: string, text: string, directory?: string, model?: ModelSelection, agentID?: string) {
     return request<boolean>(config, withDirectory(`/session/${sessionID}/prompt_async`, directory), {
       method: "POST",
-      body: { parts: [{ type: "text", text }, ...attachments], model: toModelBody(model), agent: agentID, variant: model?.variant || undefined }
+      body: { parts: [{ type: "text", text }], model: toModelBody(model), agent: agentID, variant: model?.variant || undefined }
     })
   },
 

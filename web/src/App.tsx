@@ -29,11 +29,8 @@ import { DEFAULT_HARNESS_CAPABILITIES } from "./backendCapabilities"
 import { BACKEND_CLIENTS } from "./backendClient"
 import { copyToClipboard } from "./clipboard"
 import { backendDisplayName, isBridgeBackend } from "./backendSetup"
-import { type AttachmentPart } from "./attachments"
 import { CommandPalette, MenuBar, ServerSwitcher, type MenuDefinition, type MenuEntry, type PaletteCommand } from "./components/shell"
 import { ConnectServerWizard, NewSessionDialog } from "./components/panels"
-import { SessionComposer } from "./components/session-composer"
-import { SessionSidebar, SessionsPanel, formatTime, projectLabel, shortDirectory, type SessionRenameState } from "./components/session-list"
 import { createServerProfile, loadActiveServerProfile, loadServerProfiles, persistServerProfiles, type SavedServerProfile } from "./serverProfiles"
 import type { DesktopMenuCommand, DesktopMenuTemplate } from "../electron/ipc-contract"
 import type { AgentOption, CommandInfo, DiffFile, FileEntry, FileStatusEntry, HarnessAction, HarnessCapabilities, MessageEnvelope, MessagePart, ModelOption, ModelSelection, PathInfo, PermissionRequest, ProjectDashboard, QuestionInfo, QuestionRequest, ServerConfig, Session, SessionStatus, SessionView, TodoItem } from "./types"
@@ -52,10 +49,12 @@ import {
   ServerIcon,
   TrashIcon,
   StopCircleIcon,
+  SendIcon,
   SaveIcon,
   TestIcon,
   LoadingIcon,
   RefreshIcon,
+  OfflineIcon,
   PencilIcon,
   CloseIcon,
   MoreVerticalIcon
@@ -123,15 +122,6 @@ function defaultSidebarWidth(): number {
 /** "Ctrl" everywhere except macOS, which reads ⌘ — the palette hint and every menu accelerator has
  *  to say the one the user's keyboard actually has. */
 const IS_APPLE = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent)
-
-/** Touch-primary devices have no Shift key on the soft keyboard, so the composer's
- *  "Enter sends, Shift+Enter for a new line" model must flip there: Enter inserts a new line,
- *  Ctrl/Cmd+Enter sends, and the send button covers soft-keyboard-only devices. Desktop and
- *  any device with a fine pointer (including hybrid laptops whose primary pointer is a mouse)
- *  keep the physical-keyboard behaviour untouched. */
-const SOFT_KEYBOARD_DEVICE =
-  isAndroidPlatform(Capacitor.getPlatform()) ||
-  (typeof window !== "undefined" && window.matchMedia("(pointer: coarse)").matches)
 
 function shortcut(key: string): string {
   return IS_APPLE ? `⌘${key}` : `Ctrl+${key}`
@@ -222,6 +212,52 @@ function useHorizontalDrag(onDeltaX: (deltaX: number) => void): (event: React.Po
 
 function isSessionWorking(status: string): boolean {
   return status === "busy" || status === "retry" || status === "waiting"
+}
+
+/**
+ * A session card showed the whole absolute path, which on a phone wrapped to three lines and
+ * took a third of the card. The last segments are what identifies a project; the full path stays
+ * in the title attribute and in the session detail.
+ */
+function shortDirectory(directory: string): string {
+  const segments = directory.split(/[\\/]+/).filter(Boolean)
+  if (segments.length <= 2) return directory
+  return `…/${segments.slice(-2).join("/")}`
+}
+
+/** The last path segment, which is what a developer calls the project — the sidebar groups rows by
+ *  it rather than by the full absolute path nobody reads. */
+function projectLabel(directory: string): string {
+  const segments = directory.split(/[\\/]+/).filter(Boolean)
+  return segments[segments.length - 1] || directory
+}
+
+function formatTime(epoch: number): string {
+  if (!epoch) return "-"
+  return new Date(epoch).toLocaleString()
+}
+
+const RELATIVE_TIME_UNITS: Array<[Intl.RelativeTimeFormatUnit, number]> = [
+  ["year", 60 * 60 * 24 * 365],
+  ["month", 60 * 60 * 24 * 30],
+  ["week", 60 * 60 * 24 * 7],
+  ["day", 60 * 60 * 24],
+  ["hour", 60 * 60],
+  ["minute", 60]
+]
+
+/** Compact, locale-translated "13 min ago" / "13 minuti fa" style string — falls back to
+ *  "just now" (via the 0-second `second` bucket) rather than "-1 minutes ago" for very recent times. */
+function formatRelativeTime(epoch: number, locale: LanguageCode): string {
+  if (!epoch) return "-"
+  const deltaSeconds = Math.round((epoch - Date.now()) / 1000)
+  const formatter = new Intl.RelativeTimeFormat(locale, { numeric: "auto", style: "short" })
+  for (const [unit, secondsInUnit] of RELATIVE_TIME_UNITS) {
+    if (Math.abs(deltaSeconds) >= secondsInUnit) {
+      return formatter.format(Math.round(deltaSeconds / secondsInUnit), unit)
+    }
+  }
+  return formatter.format(deltaSeconds, "second")
 }
 
 function extractText(msg: MessageEnvelope): string {
@@ -1114,15 +1150,6 @@ function MessagePartView({
     return (
       <div className="message-content">
         <ReactMarkdown remarkPlugins={REMARK_PLUGINS}>{normalizeMessageMarkdown(part.text)}</ReactMarkdown>
-      </div>
-    )
-  }
-
-  if (part.type === "file") {
-    if (!part.url) return null
-    return (
-      <div className="message-content">
-        <img className="message-attachment" src={part.url} alt={part.filename || t('detail.attachedImage')} />
       </div>
     )
   }
@@ -2200,8 +2227,6 @@ function App() {
   const [todosExpanded, setTodosExpanded] = useState(false)
   const [query, setQuery] = useState("")
   const [composer, setComposer] = useState("")
-  const [attachments, setAttachments] = useState<AttachmentPart[]>([])
-  const attachmentInputRef = useRef<HTMLInputElement | null>(null)
   const [busySending, setBusySending] = useState(false)
   const [loadingSessionID, setLoadingSessionID] = useState<string | null>(null)
   /** The empty transcript state is only meaningful after this session's first history snapshot succeeds. */
@@ -2428,7 +2453,7 @@ function App() {
   const isSessionRunning = Boolean(selectedSession && isSessionWorking(selectedSession.status))
   const isWaitingForOpenCodeReply = awaitingAssistantReply || busySending || isSessionRunning
   const isWorking = isWaitingForOpenCodeReply
-  const showStopAction = isWorking && !composer.trim() && attachments.length === 0
+  const showStopAction = isWorking && !composer.trim()
   const showTypingBubble = Boolean(selectedSession) && isWaitingForOpenCodeReply
   const activeSessions = sessions.filter((session) => isSessionWorking(session.status)).length
   const changedSessions = sessions.filter(
@@ -3126,8 +3151,7 @@ function App() {
   async function send() {
     if (!selectedSession) return
     const text = composer.trim()
-    // An image with no caption is a complete prompt, so emptiness is about both.
-    if (!text && attachments.length === 0) return
+    if (!text) return
     setActionNotice(null)
 
     if (text.startsWith("/")) {
@@ -3212,7 +3236,6 @@ function App() {
     }
 
     setComposer("")
-    setAttachments([])
     const optimisticMessage = createOptimisticUserMessage(selectedSession.id, text)
     setOptimisticUserMessages((current) => [...current, optimisticMessage])
     awaitingAssistantBaselineRef.current = assistantResponseSignature
@@ -3223,7 +3246,7 @@ function App() {
     setBusySending(true)
     setRuntimeError(null)
     try {
-      await api.sendPrompt(config, selectedSession.id, text, selectedSession.directory, activeModel, activeAgentID, attachments)
+      await api.sendPrompt(config, selectedSession.id, text, selectedSession.directory, activeModel, activeAgentID)
       await loadSelected(selectedSession.id, selectedSession.directory)
       await refreshSessions()
     } catch (err) {
@@ -3231,8 +3254,6 @@ function App() {
       setAwaitingAssistantReply(false)
       setOptimisticUserMessages((current) => current.filter((message) => message.info.id !== optimisticMessage.info.id))
       setComposer((current) => current || text)
-      // Losing a staged image to a failed send would mean picking it out of the gallery again.
-      setAttachments((current) => current.length ? current : attachments)
       setRuntimeError((err as Error).message)
     } finally {
       setBusySending(false)
@@ -3439,9 +3460,6 @@ function App() {
 
   useEffect(() => {
     const fallback = DEFAULT_HARNESS_CAPABILITIES[config.backend]
-    // A staged image belongs to the connection it was staged on, and the next server may not accept
-    // images at all: dropping it here keeps the chips from outliving the control that made them.
-    setAttachments([])
     setCapabilities(fallback)
     if (config.backend === "opencode" || !isValidServerConfig(config)) return
     api.capabilities(config).then(setCapabilities).catch(() => setCapabilities(fallback))
@@ -3684,6 +3702,133 @@ function App() {
     }
     wasRunningRef.current = isSessionWorking(selectedSession.status)
   }, [selectedSession?.id, selectedSession?.status])
+
+  // Shared between the mobile sessions panel and the desktop sidebar so both list sessions
+  // identically instead of maintaining two copies of this markup.
+  const renderSessionCard = (session: SessionView) => (
+    <article
+      key={session.id}
+      className={`session-card ${session.status} ${selectedID === session.id ? "active" : ""} ${renamingSessionID === session.id && renameSource === "list" ? "renaming" : ""} fade-in`}
+      onClick={() => openSession(session.id, session.directory).catch(() => undefined)}
+      role="button"
+      tabIndex={0}
+      onKeyDown={(event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault()
+          openSession(session.id, session.directory).catch(() => undefined)
+        }
+      }}
+    >
+      <div className="session-card-main">
+        <div>
+          {renamingSessionID === session.id && renameSource === "list" ? (
+            <div
+              className="rename-inline"
+              onClick={(event) => event.stopPropagation()}
+              onMouseDown={(event) => event.stopPropagation()}
+            >
+              <input
+                ref={renameInputRef}
+                value={renameValue}
+                onChange={(event) => setRenameValue(event.target.value)}
+                onKeyDown={(event) => {
+                  event.stopPropagation()
+                  if (event.key === "Enter") {
+                    event.preventDefault()
+                    renameSession(session.id, renameValue, session.directory).catch(() => undefined)
+                  } else if (event.key === "Escape") {
+                    cancelRename()
+                  }
+                }}
+                onBlur={() => {
+                  // Only cancel if not clicked on save button
+                  if (renameValue === session.title || !renameValue.trim()) {
+                    cancelRename()
+                  }
+                }}
+                placeholder={t('session.renamePlaceholder')}
+                enterKeyHint="done"
+                autoCorrect="off"
+                spellCheck={false}
+                className="rename-input"
+                autoComplete="off"
+              />
+              <button
+                className="btn-primary compact"
+                onClick={(event) => {
+                  event.stopPropagation()
+                  renameSession(session.id, renameValue, session.directory).catch(() => undefined)
+                }}
+                onMouseDown={(event) => event.preventDefault()}
+                title={t('session.renameConfirm')}
+              >
+                <SaveIcon size={16} />
+              </button>
+              <button
+                className="btn-secondary compact"
+                onClick={(event) => {
+                  event.stopPropagation()
+                  cancelRename()
+                }}
+                title={t('session.cancel')}
+              >
+                <CloseIcon size={16} />
+              </button>
+            </div>
+          ) : (
+            <h3 title={session.title}>{session.title}</h3>
+          )}
+          <p title={session.directory}>{shortDirectory(session.directory)}</p>
+        </div>
+      </div>
+      <div className="session-stats">
+        {/* "No file changes" is said by its absence: one line fewer on a phone. */}
+        {(session.files > 0 || session.additions > 0 || session.deletions > 0) && (
+          <span className="change-summary">
+            <strong>{session.files}</strong> files
+            <strong className="positive">+{session.additions}</strong>
+            <strong className="negative">-{session.deletions}</strong>
+          </span>
+        )}
+        <span className="subtle session-meta-line">
+          <span className="session-directory-compact" title={session.directory}>{shortDirectory(session.directory)}</span>
+          <span title={formatTime(session.updated)}>
+            {t('sessions.updated', { time: formatRelativeTime(session.updated, language) })}
+          </span>
+        </span>
+        <span className={`pill ${session.status}`}>{session.status}</span>
+      </div>
+      <div className="inline-actions">
+        {capabilities.sessionRename && capabilities.sessionDelete && (
+          <>
+            <button
+              className="btn-secondary"
+              onClick={(event) => {
+                event.stopPropagation()
+                startRename(session)
+              }}
+              title={t('session.renameTitle')}
+              aria-label={t('session.renameTitle')}
+            >
+              <PencilIcon size={16} />
+              {t('session.renameConfirm')}
+            </button>
+            <button
+              className="btn-danger"
+              onClick={(event) => {
+                event.stopPropagation()
+                setSessionToDelete(session)
+              }}
+              title={t('sessions.delete')}
+            >
+              <TrashIcon size={16} />
+              {t('sessions.delete')}
+            </button>
+          </>
+        )}
+      </div>
+    </article>
+  )
 
   const navItems = [
     { view: "sessions" as const, label: t('nav.sessions'), icon: <FolderIcon size={19} />, disabled: !hasConfiguredServer },
@@ -4089,26 +4234,6 @@ function App() {
     return groups
   }, [])
 
-  const sessionRenameState: SessionRenameState = {
-    sessionID: renamingSessionID,
-    source: renameSource,
-    value: renameValue
-  }
-  const sessionCardProps = {
-    selectedID,
-    rename: sessionRenameState,
-    renameInputRef,
-    capabilities,
-    language,
-    t,
-    onOpen: (session: SessionView) => void openSession(session.id, session.directory).catch(() => undefined),
-    onRenameValueChange: setRenameValue,
-    onRename: (session: SessionView) => void renameSession(session.id, renameValue, session.directory).catch(() => undefined),
-    onCancelRename: cancelRename,
-    onStartRename: (session: SessionView) => startRename(session),
-    onDelete: setSessionToDelete
-  }
-
   return (
     <div className={`app-shell${isDesktop ? " app-shell-desktop" : ""}`}>
       {isDesktop ? (
@@ -4170,26 +4295,77 @@ function App() {
       <div className="app-body">
 
       {isDesktop && (
-        <SessionSidebar
-          groups={sidebarGroups}
-          query={query}
-          searchInputRef={searchInputRef}
-          sidebarSessionsRef={sidebarSessionsRef}
-          refreshing={refreshingSessions}
-          creating={creatingSession}
-          offline={isOffline}
-          width={viewportSidebarWidth}
-          t={t}
-          onQueryChange={setQuery}
-          onRefresh={() => void refreshSessionsWithIndicator().catch(() => undefined)}
-          onNewSession={() => void openNewSessionPicker()}
-          onShowHelp={() => setView("help")}
-          onShowSettings={() => setView("settings")}
-          onResize={dragPanelDivider}
-          onScroll={refreshSidebarJumps}
-          jumpControls={<JumpControls affordances={sidebarJumpAffordances} onJumpToTop={handleSidebarJumpToTop} onJumpToBottom={handleSidebarJumpToBottom} variant="sidebar" t={t} />}
-          sessionCardProps={sessionCardProps}
-        />
+        <aside className="desktop-sidebar fade-in" style={{ width: viewportSidebarWidth, flex: `0 0 ${viewportSidebarWidth}px` }}>
+          <div className="resize-handle resize-handle--end" onPointerDown={dragPanelDivider} role="separator" aria-orientation="vertical" aria-label="Resize panels" />
+          <div className="sidebar-toolbar">
+            <div className="search-field">
+              <SearchIcon size={14} />
+              <input
+                ref={searchInputRef}
+                placeholder={t('sessions.searchPlaceholder')}
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+                className="search"
+              />
+            </div>
+            <button
+              onClick={refreshSessionsWithIndicator}
+              className="btn-secondary"
+              disabled={refreshingSessions}
+              aria-label={t('sessions.refresh')}
+              title={t('sessions.refresh')}
+            >
+              {refreshingSessions ? <LoadingIcon size={16} /> : <RefreshIcon size={16} />}
+            </button>
+            <button
+              onClick={openNewSessionPicker}
+              className="btn-primary"
+              disabled={creatingSession || isOffline}
+              aria-label={t('sessions.new')}
+              title={isOffline ? t('sessions.offlineHint') : t('sessions.new')}
+            >
+              {creatingSession ? <LoadingIcon size={16} /> : <PlusIcon size={16} />}
+            </button>
+          </div>
+
+          <div className="sidebar-sessions" ref={sidebarSessionsRef} onScroll={refreshSidebarJumps}>
+            {filteredSessions.length === 0 ? (
+              <p className="subtle sidebar-empty">
+                {isOffline ? t('sessions.offlineHint') : t('sessions.emptyTitle')}
+              </p>
+            ) : (
+              sidebarGroups.map((group) => (
+                <section key={group.directory} className="sidebar-group">
+                  <div className="sidebar-group-label" title={group.directory}>
+                    <FolderIcon size={12} />
+                    <span>{projectLabel(group.directory)}</span>
+                    <span className="sidebar-group-count">{group.sessions.length}</span>
+                  </div>
+                  {group.sessions.map(renderSessionCard)}
+                </section>
+              ))
+            )}
+          </div>
+
+          <JumpControls
+            affordances={sidebarJumpAffordances}
+            onJumpToTop={handleSidebarJumpToTop}
+            onJumpToBottom={handleSidebarJumpToBottom}
+            variant="sidebar"
+            t={t}
+          />
+
+          <div className="sidebar-footer">
+            <button type="button" className="btn-secondary" onClick={() => setView("help")} title={t('nav.help')}>
+              <HelpIcon size={18} />
+              <span className="sidebar-footer-label">{t('nav.help')}</span>
+            </button>
+            <button type="button" className="btn-secondary" onClick={() => setView("settings")} title={t('nav.settings')}>
+              <SettingsIcon size={18} />
+              <span className="sidebar-footer-label">{t('nav.settings')}</span>
+            </button>
+          </div>
+        </aside>
       )}
 
       <div
@@ -4410,28 +4586,110 @@ function App() {
       )}
 
       {mainView === "sessions" && (
-        <SessionsPanel
-          sessions={sessions}
-          filteredSessions={filteredSessions}
-          activeSessions={activeSessions}
-          changedSessions={changedSessions}
-          query={query}
-          refreshing={refreshingSessions}
-          creating={creatingSession}
-          offline={isOffline}
-          connectionState={connectionState}
-          connectionStatusText={connectionStatusText}
-          eventStreamState={eventStreamState}
-          eventStreamText={eventStreamText}
-          runtimeError={runtimeError}
-          t={t}
-          onQueryChange={setQuery}
-          onRefresh={() => void refreshSessionsWithIndicator().catch(() => undefined)}
-          onNewSession={() => void openNewSessionPicker()}
-          onShowSettings={() => setView("settings")}
-          jumpControls={<JumpControls affordances={sessionJumpAffordances} onJumpToTop={handleSessionsJumpToTop} onJumpToBottom={handleSessionsJumpToBottom} variant="page" t={t} />}
-          sessionCardProps={sessionCardProps}
-        />
+        <section className="panel sessions fade-in">
+          <div className="section-heading">
+            <div>
+              <h2>{t('sessions.title')}</h2>
+              <p className="subtle">
+                {t('sessions.summary', { total: sessions.length, active: activeSessions, changed: changedSessions })}
+              </p>
+              {(connectionStatusText || eventStreamText) && (
+                <div className="connection-status-row">
+                  {connectionStatusText && (
+                    <p className={`connection-status ${connectionState}`}>
+                      {['connecting', 'reconnecting'].includes(connectionState) && <LoadingIcon size={14} />}
+                      {connectionStatusText}
+                    </p>
+                  )}
+                  {eventStreamText && (
+                    <p className={`connection-status event-stream ${eventStreamState}`}>
+                      {['connecting', 'reconnecting'].includes(eventStreamState) && <LoadingIcon size={14} />}
+                      {eventStreamText}
+                    </p>
+                  )}
+                </div>
+              )}
+            </div>
+            <div className="inline-actions sessions-header-actions">
+              <button onClick={refreshSessionsWithIndicator} className="btn-secondary" disabled={refreshingSessions}>
+                {refreshingSessions ? <LoadingIcon size={18} /> : <RefreshIcon size={18} />}
+                {t('sessions.refresh')}
+              </button>
+              <button
+                onClick={openNewSessionPicker}
+                className="btn-primary"
+                disabled={creatingSession || isOffline}
+                title={isOffline ? t('sessions.offlineHint') : undefined}
+              >
+                {creatingSession ? <LoadingIcon size={18} /> : <PlusIcon size={18} />}
+                {creatingSession ? t('sessions.creating') : t('sessions.new')}
+              </button>
+            </div>
+          </div>
+          
+          <div className="toolbar">
+            <input
+              placeholder={t('sessions.searchPlaceholder')}
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              className="search"
+            />
+          </div>
+          
+          <div className="session-list">
+            {/* An empty list while the server is unreachable is not "still loading". Saying so,
+                and offering the two things worth doing, beats a spinner that never resolves. */}
+            {filteredSessions.length === 0 && isOffline ? (
+              <div className="empty-state">
+                <OfflineIcon size={44} className="icon-empty-state" />
+                <p>{t('sessions.offlineHint')}</p>
+                <div className="empty-state-actions">
+                  <button
+                    type="button"
+                    className="btn-primary"
+                    onClick={() => refreshSessionsWithIndicator().catch(() => undefined)}
+                    disabled={refreshingSessions}
+                  >
+                    {refreshingSessions ? <LoadingIcon size={18} /> : <RefreshIcon size={18} />}
+                    {t('sessions.retry')}
+                  </button>
+                  <button type="button" className="btn-secondary" onClick={() => setView("settings")}>
+                    <SettingsIcon size={18} />
+                    {t('nav.settings')}
+                  </button>
+                </div>
+              </div>
+            ) : filteredSessions.length === 0 && ['connecting', 'reconnecting'].includes(connectionState) ? (
+              <div className="empty-state connection-pending">
+                <LoadingIcon size={40} className="icon-empty-state" />
+                <p>{t('sessions.loadingTitle')}</p>
+                <p className="subtle">{t('sessions.loadingHint')}</p>
+              </div>
+            ) : filteredSessions.length === 0 ? (
+              <div className="empty-state">
+                <FolderIcon size={48} className="icon-empty-state" />
+                <p>{t('sessions.emptyTitle')}</p>
+                <p className="subtle">{t('sessions.emptyHint')}</p>
+              </div>
+            ) : (
+              filteredSessions.map(renderSessionCard)
+            )}
+          </div>
+
+          {/* The offline empty state already explains this and offers the two useful actions;
+              repeating the raw transport error underneath is the second voice again. */}
+          {runtimeError && !(isOffline && filteredSessions.length === 0) && (
+            <div className="error fade-in">✗ {runtimeError}</div>
+          )}
+
+          <JumpControls
+            affordances={sessionJumpAffordances}
+            onJumpToTop={handleSessionsJumpToTop}
+            onJumpToBottom={handleSessionsJumpToBottom}
+            variant="page"
+            t={t}
+          />
+        </section>
       )}
 
       {showNewSessionPicker && (
@@ -4621,32 +4879,49 @@ function App() {
             onQuestionResolved={handleQuestionResolved}
             onPermissionResolved={handlePermissionResolved}
           />
-          <SessionComposer
-            selected={Boolean(selectedSession)}
-            value={composer}
-            attachments={attachments}
-            supportsAttachments={capabilities.attachments}
-            showStopAction={showStopAction}
-            softKeyboard={SOFT_KEYBOARD_DEVICE}
-            t={t}
-            composerRef={composerRef}
-            inputRef={composerInputRef}
-            attachmentInputRef={attachmentInputRef}
-            onValueChange={setComposer}
-            onAttachmentsChange={setAttachments}
-            onAttachmentError={(message) => setRuntimeError(message)}
-            onFocus={() => {
-              syncChatBottomClearance()
-              setTimeout(() => scrollMessagesToBottom("smooth"), 400)
-              const onResize = () => {
-                scrollMessagesToBottom("smooth")
-                window.removeEventListener("resize", onResize)
-              }
-              window.addEventListener("resize", onResize, { once: true })
-            }}
-            onSend={() => void send().catch(() => undefined)}
-            onAbort={() => void abortSession()}
-          />
+
+
+
+          <div className="composer" ref={composerRef}>
+            <textarea
+              ref={composerInputRef}
+              value={composer}
+              onChange={(event) => setComposer(event.target.value)}
+              placeholder={t('detail.composerPlaceholder')}
+              enterKeyHint="send"
+              autoCapitalize="sentences"
+              autoCorrect="on"
+              onFocus={() => {
+                syncChatBottomClearance()
+                setTimeout(() => scrollMessagesToBottom("smooth"), 400)
+                const onResize = () => {
+                  scrollMessagesToBottom("smooth")
+                  window.removeEventListener("resize", onResize)
+                }
+                window.addEventListener("resize", onResize, { once: true })
+              }}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" && !event.shiftKey) {
+                  event.preventDefault()
+                  send().catch(() => undefined)
+                }
+              }}
+              disabled={!selectedSession}
+            />
+            {/* While the agent works the same button stops it, but starts sending again as
+                soon as there is something to send, so a follow-up can be queued. */}
+            <button
+              onClick={showStopAction ? abortSession : send}
+              disabled={!selectedSession}
+              className={showStopAction ? "btn-danger" : "btn-primary"}
+            >
+              {showStopAction ? (
+                <StopCircleIcon size={18} />
+              ) : (
+                <SendIcon size={18} />
+              )}
+            </button>
+          </div>
 
           {runtimeError && <div className="error fade-in">✗ {runtimeError}</div>}
           {actionNotice && <div className="notice info fade-in">ℹ {actionNotice}</div>}
@@ -4944,9 +5219,7 @@ function App() {
                 <li><strong>Interact:</strong> {isDesktop
                   ? "Read and reply in the conversation beside it"
                   : "Open a session and chat in the Detail view"}</li>
-                <li><strong>Quick Input:</strong> {SOFT_KEYBOARD_DEVICE
-                  ? `Enter for new lines, ${shortcut("Enter")} to send`
-                  : "Press Enter to send, Shift+Enter for new lines"}</li>
+                <li><strong>Quick Input:</strong> Press Enter to send, Shift+Enter for new lines</li>
                 <li><strong>Slash Commands:</strong> Text starting with <code>/</code> is sent as a command</li>
               </ul>
 

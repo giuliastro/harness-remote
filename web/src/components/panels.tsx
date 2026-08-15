@@ -19,7 +19,7 @@ import {
   backendSetupCommand
 } from "../backendSetup"
 import type { Translator } from "../i18n"
-import type { BackendKind, FileEntry, MachineSnapshot, ServerConfig } from "../types"
+import type { BackendKind, FileEntry, ServerConfig } from "../types"
 
 /** Breadcrumb pieces for an absolute path, POSIX or Windows, each carrying the path to browse to.
  *  Typing or pasting a deep path and then wanting to step back up one level is the common case, and
@@ -243,15 +243,13 @@ export function ConnectServerWizard({
   initialName,
   onCancel,
   onSave,
-  onTest,
-  onDiscover
+  onTest
 }: {
   t: Translator
   initialName: string
   onCancel: () => void
   onSave: (name: string, config: ServerConfig) => void
   onTest: (config: ServerConfig) => Promise<{ ok: boolean; message: string }>
-  onDiscover?: (config: ServerConfig) => Promise<MachineSnapshot | null>
 }) {
   const [step, setStep] = useState<WizardStep>("harness")
   const [backend, setBackend] = useState<BackendKind>("opencode")
@@ -262,26 +260,12 @@ export function ConnectServerWizard({
   const [password, setPassword] = useState("")
   const [testing, setTesting] = useState(false)
   const [testResult, setTestResult] = useState<{ ok: boolean; message: string } | null>(null)
-  const [machine, setMachine] = useState<MachineSnapshot | null>(null)
-  const [agentId, setAgentId] = useState("")
 
-  const selectedAgent = machine?.agents.find((agent) => agent.id === agentId)
-  const selectedBackend = selectedAgent && BACKEND_KINDS.includes(selectedAgent.backend as BackendKind)
-    ? selectedAgent.backend as BackendKind
-    : backend
-  const config: ServerConfig = {
-    backend: selectedBackend,
-    host: host.trim(),
-    port,
-    username: username.trim(),
-    password,
-    agentId: agentId || undefined
-  }
-  const discoveryConfig: ServerConfig = { backend, host: host.trim(), port, username: username.trim(), password }
+  const config: ServerConfig = { backend, host: host.trim(), port, username: username.trim(), password }
   const command = backendSetupCommand(backend, { port, username, password })
   const stepIndex = WIZARD_STEPS.indexOf(step)
   const canLeaveAddress = Boolean(host.trim()) && port > 0
-  const canSave = canLeaveAddress && Boolean(username.trim()) && (!machine || Boolean(agentId))
+  const canSave = canLeaveAddress && Boolean(username.trim())
 
   function chooseBackend(next: BackendKind) {
     setBackend(next)
@@ -289,46 +273,14 @@ export function ConnectServerWizard({
     setUsername(backendDefaultUsername(next))
     setName(`${backendDisplayName(next)} server`)
     setTestResult(null)
-    setMachine(null)
-    setAgentId("")
     setStep("address")
   }
 
   async function test() {
     setTesting(true)
     setTestResult(null)
-    setMachine(null)
-    setAgentId("")
     try {
-      const discover = onDiscover ?? (async (candidate: ServerConfig) => {
-        const { discoverMachine } = await import("../machineClient")
-        return discoverMachine(candidate)
-      })
-
-      let discovered: MachineSnapshot | null = null
-      try {
-        discovered = await discover(discoveryConfig)
-      } catch {
-        // A daemon with bad credentials and an unreachable host will be explained by the ordinary
-        // backend health test below. Legacy servers intentionally return null from discovery.
-      }
-
-      if (discovered) {
-        const available = discovered.agents.filter((agent) => agent.state === "available" || agent.state === "configured")
-        const preferred = available.find((agent) => agent.backend === backend) ?? available[0]
-        setMachine(discovered)
-        setAgentId(preferred?.id ?? "")
-        if (preferred) setName(`${discovered.machine.name} · ${preferred.label}`)
-        setTestResult({
-          ok: available.length > 0,
-          message: available.length > 0
-            ? `${t('connection.connected')} · ${discovered.machine.name}`
-            : `${discovered.machine.name} · ${t('detail.unavailable')}`
-        })
-        return
-      }
-
-      setTestResult(await onTest(discoveryConfig))
+      setTestResult(await onTest(config))
     } finally {
       setTesting(false)
     }
@@ -453,8 +405,6 @@ export function ConnectServerWizard({
                     onChange={(event) => {
                       setUsername(event.target.value)
                       setTestResult(null)
-                      setMachine(null)
-                      setAgentId("")
                     }}
                     autoCapitalize="none"
                     autoCorrect="off"
@@ -470,8 +420,6 @@ export function ConnectServerWizard({
                     onChange={(event) => {
                       setPassword(event.target.value)
                       setTestResult(null)
-                      setMachine(null)
-                      setAgentId("")
                     }}
                     placeholder={t('settings.passwordPlaceholder')}
                     autoComplete="current-password"
@@ -479,31 +427,6 @@ export function ConnectServerWizard({
                 </label>
               </div>
               <p className="field-hint">{t('connect.credentialsHint')}</p>
-
-              {machine && (
-                <label className="field fade-in">
-                  <span>{t('detail.agentTitle')} · {machine.machine.name}</span>
-                  <select
-                    value={agentId}
-                    onChange={(event) => {
-                      const nextID = event.target.value
-                      setAgentId(nextID)
-                      const next = machine.agents.find((agent) => agent.id === nextID)
-                      if (next) setName(`${machine.machine.name} · ${next.label}`)
-                    }}
-                  >
-                    {machine.agents.map((agent) => (
-                      <option
-                        key={agent.id}
-                        value={agent.id}
-                        disabled={agent.state !== "available" && agent.state !== "configured"}
-                      >
-                        {agent.label}{agent.state === "unavailable" ? ` · ${t('detail.unavailable')}` : ""}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-              )}
             </>
           )}
         </div>
@@ -514,7 +437,7 @@ export function ConnectServerWizard({
             save button, which is the one press you do not want to hit by accident. */}
         {step === "credentials" && (
           <div className="wizard-test">
-            <button type="button" className="btn-secondary" onClick={() => void test()} disabled={testing || !canLeaveAddress || !username.trim()}>
+            <button type="button" className="btn-secondary" onClick={() => void test()} disabled={testing || !canSave}>
               {testing ? <LoadingIcon size={15} /> : <TestIcon size={15} />}
               {testing ? t('settings.testing') : t('settings.test')}
             </button>

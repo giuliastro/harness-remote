@@ -32,7 +32,6 @@ export type DesktopProfile = {
   port: number
   username: string
   password: string
-  agentId?: string
 }
 
 export type DesktopRequestMethod = "GET" | "POST" | "PATCH" | "DELETE"
@@ -63,7 +62,6 @@ export type DesktopTransportError = {
     | "http"
     | "internal"
   message: string
-  status?: number
 }
 
 export type DesktopRequestResult =

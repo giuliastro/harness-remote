@@ -32,9 +32,7 @@ export class AcpClient extends EventEmitter {
   #pending = new Map()
   #starting
   #agentInfo
-  #promptCapabilities = {}
   #stderr = ""
-  #stderrPartial = ""
 
   constructor({ command = "omp", args = ["acp"], permissionMode = "deny", preferredAuthMethod, spawnProcess = spawn } = {}) {
     super()
@@ -47,14 +45,6 @@ export class AcpClient extends EventEmitter {
 
   get agentInfo() {
     return this.#agentInfo
-  }
-
-  /**
-   * What the agent says it accepts in a prompt. The bridge refuses an attachment the
-   * agent never advertised rather than sending a block it would reject mid-turn.
-   */
-  get promptCapabilities() {
-    return this.#promptCapabilities
   }
 
   /** PID identifies extension runtime state published by this exact ACP process. */
@@ -85,27 +75,15 @@ export class AcpClient extends EventEmitter {
       windowsHide: true
     })
     this.#child = child
-    // Each attempt reports its own stderr. Carrying the buffer across restarts made every exit
-    // message repeat the previous ones, so a single "pi-acp: not found" arrived three times over.
-    this.#stderr = ""
-    this.#stderrPartial = ""
     child.stdout.setEncoding("utf8")
     child.stderr.setEncoding("utf8")
     child.stdout.on("data", (chunk) => this.#consume(chunk))
     child.stderr.on("data", (chunk) => {
       this.#stderr = `${this.#stderr}${chunk}`.slice(-STDERR_KEPT_CHARS)
-      // Emit whole lines. A chunk boundary falls wherever the pipe happens to flush, so a listener
-      // that prefixes what it receives would otherwise print `[pi] sh: 1: [pi] pi-acp: not found`.
-      const pending = `${this.#stderrPartial}${chunk}`.split(/\r?\n/)
-      this.#stderrPartial = pending.pop() ?? ""
-      for (const line of pending) this.emit("stderr", line)
+      this.emit("stderr", chunk)
     })
     child.on("error", (error) => this.#handleExit(error))
     child.on("exit", (code, signal) => {
-      if (this.#stderrPartial) {
-        this.emit("stderr", this.#stderrPartial)
-        this.#stderrPartial = ""
-      }
       const reason = this.#stderrSummary()
       this.#handleExit(new Error(
         `ACP adapter exited (${code ?? "unknown"}${signal ? `, ${signal}` : ""})${reason ? `: ${reason}` : ""}`
@@ -119,7 +97,6 @@ export class AcpClient extends EventEmitter {
         clientInfo: { name: "harness-remote-bridge", version: "0.1.7" }
       }, START_TIMEOUT_MS)
       this.#agentInfo = initialized.agentInfo
-      this.#promptCapabilities = initialized.agentCapabilities?.promptCapabilities ?? {}
       // The bridge always runs beside a harness the user already configured, so prefer a method
       // that uses those credentials. PI's adapter offers `anthropic-api-key` first and
       // `pi-stored-credentials` last: picking the first would claim an API key from an

@@ -1,4 +1,4 @@
-import { agentScopedPath, machineBaseUrl } from "../src/serverConfig.js"
+import { baseUrl } from "../src/serverConfig.js"
 import type { DesktopProfile, DesktopRequest, DesktopRequestResult } from "./ipc-contract.js"
 
 export const MAX_RESPONSE_BYTES = 8 * 1024 * 1024
@@ -8,8 +8,8 @@ const METHODS = new Set(["GET", "POST", "PATCH", "DELETE"])
 const MAX_PATH_LENGTH = 8192
 const MAX_REQUEST_BODY_BYTES = 2 * 1024 * 1024
 
-function transportError(code: Exclude<DesktopRequestResult, { ok: true }>["error"]["code"], message: string, status?: number): DesktopRequestResult {
-  return { ok: false, error: { code, message, status } }
+function transportError(code: Exclude<DesktopRequestResult, { ok: true }>['error']['code'], message: string): DesktopRequestResult {
+  return { ok: false, error: { code, message } }
 }
 
 function normalizeHeaders(headers: Headers): Record<string, string> {
@@ -71,24 +71,16 @@ function validPath(path: unknown): path is string {
 
 function targetURL(profile: DesktopProfile, path: string): URL | null {
   if (!validPath(path)) return null
+  let target: URL
   let approved: URL
   try {
-    approved = new URL(machineBaseUrl(profile))
+    target = new URL(path, baseUrl(profile))
+    approved = new URL(baseUrl(profile))
   } catch {
     return null
   }
-  const machineScoped = path === "/v1/machine" || path === "/global/machine"
-  const scopedPath = machineScoped ? path : agentScopedPath(profile, path)
-  let target: URL
-  try {
-    target = new URL(scopedPath, approved.origin)
-  } catch {
-    return null
-  }
-  target.hash = ""
   return target.origin === approved.origin ? target : null
 }
-
 function timeoutFor(value: number | undefined): number {
   if (value === undefined) return DEFAULT_TIMEOUT_MS
   if (!Number.isFinite(value) || value <= 0 || value > MAX_TIMEOUT_MS) return 0
@@ -140,18 +132,18 @@ export async function executeDesktopRequest(profile: DesktopProfile, request: De
       redirect: "manual",
       signal: controller.signal
     })
-    if (response.status >= 300 && response.status < 400) return transportError("redirect", "Server redirect was rejected", response.status)
+    if (response.status >= 300 && response.status < 400) return transportError("redirect", "Server redirect was rejected")
     const body = await readBoundedBody(response, (reader) => { activeReader = reader })
     if (timedOut) return transportError("timeout", "Request timed out")
     if (body === null) return transportError("response-too-large", "Server response is too large")
     const headersOut = normalizeHeaders(response.headers)
-    if (!response.ok) return transportError("http", responseDetail(body) || `HTTP ${response.status}`, response.status)
+    if (!response.ok) return transportError("http", responseDetail(body) || `HTTP ${response.status}`)
     if (response.status === 204) return { ok: true, response: { status: response.status, data: true, headers: headersOut } }
     if (!body) return { ok: true, response: { status: response.status, data: true, headers: headersOut } }
     try {
       return { ok: true, response: { status: response.status, data: JSON.parse(body) as unknown, headers: headersOut } }
     } catch {
-      return transportError("http", "Server returned invalid JSON", response.status)
+      return transportError("http", "Server returned invalid JSON")
     }
   } catch (error) {
     if (timedOut || (error instanceof DOMException && error.name === "AbortError")) {

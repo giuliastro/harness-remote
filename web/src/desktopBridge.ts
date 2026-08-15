@@ -67,7 +67,6 @@ function sameProfile(left: DesktopProfile, right: DesktopProfile): boolean {
     && left.port === right.port
     && left.username === right.username
     && left.password === right.password
-    && left.agentId === right.agentId
 }
 
 function sameSnapshot(left: DesktopProfile[], right: DesktopProfile[]): boolean {
@@ -152,7 +151,6 @@ export function desktopProfileID(config: ServerConfig): string | null {
       && candidate.port === config.port
       && candidate.username === config.username
       && candidate.password === config.password
-      && candidate.agentId === config.agentId
   })
   return profile?.id ?? null
 }
@@ -175,21 +173,17 @@ export function setDesktopApplicationMenu(template: DesktopMenuTemplate): void {
   void bridge()?.setApplicationMenu(template).catch(() => undefined)
 }
 
-export async function desktopRequestResult(config: ServerConfig, request: DesktopRequest): Promise<DesktopRequestResult> {
+export async function desktopRequest(config: ServerConfig, request: DesktopRequest): Promise<DesktopResponse> {
   const api = bridge()
-  if (!api) return { ok: false, error: { code: "connection", message: "Desktop transport is unavailable" } }
+  if (!api) throw new Error("Desktop transport is unavailable")
   try {
     await awaitDesktopProfileSync()
   } catch {
-    return { ok: false, error: { code: "internal", message: "Desktop profile synchronization failed" } }
+    throw new Error("Desktop profile synchronization failed")
   }
   const profileId = desktopProfileID(config)
-  if (!profileId) return { ok: false, error: { code: "unknown-profile", message: "Unknown desktop server profile" } }
-  return await api.request(profileId, request)
-}
-
-export async function desktopRequest(config: ServerConfig, request: DesktopRequest): Promise<DesktopResponse> {
-  const result = await desktopRequestResult(config, request)
+  if (!profileId) throw new Error("Unknown desktop server profile")
+  const result = await api.request(profileId, request)
   if (!result.ok) throw new Error(result.error.message)
   return result.response
 }
