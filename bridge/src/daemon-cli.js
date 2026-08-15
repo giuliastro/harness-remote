@@ -21,12 +21,6 @@ function parsePort(value, option) {
   return port
 }
 
-/**
- * No constant default. A daemon started without `--backend` used to select `omp` whether or not it
- * was installed, so a machine with PI and OpenCode on it announced `omp` as its primary and then
- * failed with `spawn omp ENOENT`. Resolve from PATH the way the launcher does — it owns the ACP
- * preference order — and let its message explain a machine with nothing installed.
- */
 function requestedBackend(args, environment, detect) {
   for (let index = 0; index < args.length; index += 1) {
     if (args[index] === "--backend") return requireValue(args, index, "--backend")
@@ -36,12 +30,6 @@ function requestedBackend(args, environment, detect) {
   return detect(args).backend
 }
 
-/**
- * The standalone bridge is ACP-only, so parseConfig deliberately rejects OpenCode. The machine
- * daemon is broader: OpenCode is a managed HTTP agent and can be the only/primary agent on a
- * machine. Reuse the mature common option parser by substituting an ACP profile only while parsing
- * generic host/auth/root/state options, then restore the requested daemon backend.
- */
 export function parseDaemonOptions(args, environment = process.env, detect = resolveLaunchPlan) {
   const daemonBackend = requestedBackend(args, environment, detect)
   const bridgeArgs = []
@@ -123,6 +111,13 @@ function acpClientFor(config, profile) {
   })
 }
 
+export function warmAcp(agent, { onError = () => {} } = {}) {
+  if (!agent?.start) return Promise.resolve()
+  return agent.start().catch((error) => {
+    onError(error)
+  })
+}
+
 async function main() {
   let parsed
   try {
@@ -152,15 +147,15 @@ async function main() {
   let primaryModelCatalog
 
   if (profile && acp) {
-    // Model discovery has its own ACP connection so refreshing a config catalog can never replay
-    // history into the user-facing bridge. It owns one durable prompt-less catalog session and
-    // reuses it; there is no create/destroy cycle on each New Task.
-    const modelAcp = acpClientFor(config, profile)
+    // Reuse the exact ACP process that serves ordinary sessions. PI already advertises its model
+    // choices through session configOptions there; a second model-only ACP process made New Task
+    // pay another cold adapter startup and diverged from the session path that already worked.
     primaryModelCatalog = new AcpAgentModelCatalog({
-      agent: modelAcp,
+      agent: acp,
       agentID: profile.id,
       directory: config.roots?.[0] ?? process.cwd(),
-      stateDirectory: config.stateDirectory
+      stateDirectory: config.stateDirectory,
+      ownsAgent: false
     })
     daemon.registerAcpHost({
       id: profile.id,
@@ -221,6 +216,14 @@ async function main() {
       : `Primary agent: ${primaryAgentID}\n`)
     for (const host of daemon.snapshot().agents) {
       process.stdout.write(`${host.state === "available" ? "✓" : "•"} ${host.label} [${host.transport}] ${host.state}\n`)
+    }
+
+    // Warm the same ACP process ordinary sessions use, but never delay the daemon listener. New
+    // Task can then obtain PI's existing configOptions path without paying a cold-start penalty.
+    if (profile && acp) {
+      void warmAcp(acp, {
+        onError: (error) => process.stderr.write(`[${profile.id}] warmup failed: ${error.message}\n`)
+      })
     }
   })
 
