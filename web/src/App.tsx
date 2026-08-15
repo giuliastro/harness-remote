@@ -2232,6 +2232,7 @@ function App() {
   const [attachments, setAttachments] = useState<AttachmentPart[]>([])
   const attachmentInputRef = useRef<HTMLInputElement | null>(null)
   const [busySending, setBusySending] = useState(false)
+  const [activatingSkill, setActivatingSkill] = useState<string | null>(null)
   const [loadingSessionID, setLoadingSessionID] = useState<string | null>(null)
   /** The empty transcript state is only meaningful after this session's first history snapshot succeeds. */
   const [loadedSessionID, setLoadedSessionID] = useState<string | null>(null)
@@ -2609,8 +2610,8 @@ function App() {
     }
   }
 
-  async function refreshSessions(silent = false, preserveSession?: SessionView) {
-    if (!isValidServerConfig(config)) return
+  async function refreshSessions(silent = false, preserveSession?: SessionView, suppressError = false): Promise<boolean> {
+    if (!isValidServerConfig(config)) return true
     if (!silent) {
       setRuntimeError(null)
       setConnectionState(sessions.length === 0 ? "connecting" : "reconnecting")
@@ -2665,13 +2666,15 @@ function App() {
       setConnectionState("connected")
       setConnectionMessage(t('connection.connected'))
       setRuntimeError(null)
+      return true
     } catch (err) {
       const message = (err as Error).message
+      if (suppressError) return false
       if (!silent) {
         setConnectionState("offline")
         setConnectionMessage(t('connection.offline'))
         setRuntimeError(message)
-        return
+        return false
       }
 
       backgroundFailureCountRef.current += 1
@@ -2681,13 +2684,14 @@ function App() {
         const isInitialLoad = initialSessionLoadRef.current && sessions.length === 0
         setConnectionState(isInitialLoad ? "connecting" : "reconnecting")
         setConnectionMessage(isInitialLoad ? t('connection.loadingSessions') : t('connection.reconnecting'))
-        return
+        return false
       }
 
       setConnectionState("offline")
       setConnectionMessage(t('connection.offline'))
       setRuntimeError(message)
       initialSessionLoadRef.current = false
+      return false
     }
   }
 
@@ -3152,6 +3156,57 @@ function App() {
     }
   }
 
+  async function activateSkill(skill: CommandInfo, input = `/${skill.name}`) {
+    if (!selectedSession) {
+      setRuntimeError(t('help.skillRequiresSession'))
+      return
+    }
+    if (config.backend !== "opencode2") {
+      setRuntimeError(t('help.skillRequiresOpenCode2'))
+      return
+    }
+    const skillName = skill.id ?? skill.name
+    const session = selectedSession
+    setComposer("")
+    setActivatingSkill(skillName)
+    setActionNotice(t('help.skillActivating'))
+    setRuntimeError(null)
+    const optimisticMessage = createOptimisticUserMessage(session.id, input)
+    setOptimisticUserMessages((current) => [...current, optimisticMessage])
+    awaitingAssistantBaselineRef.current = assistantResponseSignature
+    completionShouldPlayRef.current = true
+    setAwaitingAssistantReply(true)
+    setBusySending(true)
+    scrollMessagesToBottom("smooth")
+    try {
+      // The v1 compatibility surface deliberately rejects this method, but shares the v2 signature;
+      // the proxy routes the same call to the live v2 client for OpenCode 2.
+      await api.sendSkill(config, session.id, skillName, session.directory)
+      // A successful 204 is the commit point. Refreshes are best-effort and must not turn a
+      // completed activation into a failed command or put the slash text back in the composer.
+      setOptimisticUserMessages((current) => current.filter((message) => message.info.id !== optimisticMessage.info.id))
+      setActionNotice(t('help.skillActivated', { skill: skill.name }))
+      let refreshFailed = false
+      try {
+        await loadSelected(session.id, session.directory)
+      } catch {
+        refreshFailed = true
+      }
+      if (!(await refreshSessions(false, undefined, true))) refreshFailed = true
+      if (refreshFailed) setActionNotice(t('help.skillRefreshFailed'))
+    } catch (err) {
+      completionShouldPlayRef.current = false
+      setAwaitingAssistantReply(false)
+      setOptimisticUserMessages((current) => current.filter((message) => message.info.id !== optimisticMessage.info.id))
+      setComposer((current) => current || input)
+      setActionNotice(null)
+      setRuntimeError(t('help.skillActivationFailed', { skill: skill.name, message: (err as Error).message }))
+    } finally {
+      setBusySending(false)
+      setActivatingSkill(null)
+    }
+  }
+
   async function send() {
     if (!selectedSession) return
     const text = composer.trim()
@@ -3207,9 +3262,15 @@ function App() {
         }
       }
 
-      if (!availableCommands.some((item) => item.name === command)) {
+      const matchingCommand = availableCommands.find((item) => item.name === command)
+      if (!matchingCommand) {
         const available = availableCommands.map((item) => `/${item.name}`).join(", ")
         setRuntimeError(`Command not found: "/${command}". Available commands: ${available}`)
+        return
+      }
+
+      if (matchingCommand.source === "skill") {
+        await activateSkill(matchingCommand, text)
         return
       }
 
@@ -5174,27 +5235,57 @@ http://YOUR_PC_IP:4096/global/health</pre>
                 </button>
               </div>
                
-              {displayedCommands.length === 0 ? (
+               {displayedCommands.length === 0 ? (
                 <div className="no-commands">
                   <HelpIcon size={48} className="icon-empty-state" />
                   <p className="subtle">No {commandFilter === "skill" ? "skills" : "server commands"} available</p>
                   <p className="subtle">Connect to a server to see available commands and skills</p>
                 </div>
               ) : (
-                <div className="commands-grid">
-                  {displayedCommands.map((cmd) => (
-                    <div key={cmd.name} className="command-card">
-                      <code className="command-name">/{cmd.name}</code>
-                      {cmd.description && (
-                        <p className="command-description">{cmd.description}</p>
-                      )}
-                      {cmd.source && <p className="subtle">{cmd.source}</p>}
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
+                 <div className="commands-grid">
+                   {displayedCommands.map((cmd) => (
+                      <div key={`${cmd.source ?? "command"}:${cmd.id ?? cmd.name}`} className="command-card">
+                       <div className="command-card-header">
+                         <code className="command-name">/{cmd.name}</code>
+                         {cmd.source === "skill" && (
+                           <button
+                             type="button"
+                             className="btn-secondary"
+                             disabled={!selectedSession || config.backend !== "opencode2" || busySending}
+                             onClick={() => void activateSkill(cmd)}
+                             title={!selectedSession
+                               ? t('help.skillRequiresSession')
+                               : config.backend !== "opencode2"
+                                 ? t('help.skillRequiresOpenCode2')
+                                 : undefined}
+                           >
+                             {activatingSkill === (cmd.id ?? cmd.name)
+                               ? t('help.skillActivating')
+                               : t('help.skillActivate')}
+                           </button>
+                         )}
+                       </div>
+                       {cmd.description && (
+                         <p className="command-description">{cmd.description}</p>
+                       )}
+                       {cmd.source && <p className="subtle">{cmd.source}</p>}
+                     </div>
+                   ))}
+                 </div>
+               )}
+               {commandFilter === "all" && displayedCommands.some((cmd) => cmd.source === "skill") && (!selectedSession || config.backend !== "opencode2") && (
+                 <p className="subtle">
+                   {!selectedSession ? t('help.skillRequiresSession') : t('help.skillRequiresOpenCode2')}
+                 </p>
+               )}
+               {commandFilter === "skill" && displayedCommands.length > 0 && (!selectedSession || config.backend !== "opencode2") && (
+                 <p className="subtle">
+                   {!selectedSession ? t('help.skillRequiresSession') : t('help.skillRequiresOpenCode2')}
+                 </p>
+               )}
+               {actionNotice && <div className="notice info fade-in">ℹ {actionNotice}</div>}
+             </div>
+           )}
           {runtimeError && <p className="error">{runtimeError}</p>}
         </section>
         </ConditionalWrapper>

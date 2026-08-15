@@ -208,7 +208,105 @@ export function toAgentOption(agent: { id: string; name?: string; description?: 
 }
 
 export function toCommandOption(command: { name: string; description?: string }): CommandInfo {
-  return { name: command.name, description: command.description }
+  // v2 `/api/command` entries carry no source of their own, so classify them explicitly — the UI
+  // groups the picker by source and offers a skill-only filter (the OMP bridge does the same).
+  return { name: command.name, description: command.description, source: "command" }
+}
+
+/**
+ * One `GET /api/skill` entry (`SkillV2.Info`). The live contract requires `id`, `name`, `location`
+ * and `content`; `description`, `slash` and `autoinvoke` are optional. `id` is the skill's stable
+ * identity in the catalog (used to activate it), while `name` is its user-facing slash name.
+ */
+export type V2Skill = {
+  id: string
+  name: string
+  location: string
+  content: string
+  description?: string
+  /** `false` hides the skill from the V2 slash-command catalog. */
+  slash?: boolean
+  /** Skills the server activates on its own; not a picker-visibility control (`slash` is). */
+  autoinvoke?: boolean
+}
+
+/**
+ * Map one v2 `/api/skill` entry into the app's command representation. A skill's user-facing slash
+ * name is its `name`; entries with `slash: false` (or no name) are hidden from the slash catalog and
+ * map to `null`. The skill's stable `id` and `autoinvoke` flag ride along on the mapped entry so
+ * activation and filtering stay possible after the merge (see {@link mergeCommandCatalog}).
+ */
+export function toSkillCommand(skill: V2Skill): CommandInfo | null {
+  if (!skill.name || skill.slash === false) return null
+  return {
+    name: skill.name,
+    description: skill.description,
+    source: "skill",
+    id: skill.id,
+    autoinvoke: skill.autoinvoke
+  }
+}
+
+/**
+ * The exact wire body for `POST /api/session/{sessionID}/skill` (`v2.session.skill`): the endpoint
+ * takes `{ skill, resume?, id? }`, forbids extra properties, and answers 204. Activation appends a
+ * skill message and resumes execution, so the client always posts `resume: true` and omits the
+ * optional `id`.
+ */
+export function toSkillActivationBody(skill: string): { skill: string; resume: boolean } {
+  return { skill, resume: true }
+}
+
+/**
+ * Whether a v2 fetch failure is a confirmed route absence rather than a real server fault. The v2
+ * router answers unknown paths with an empty 404, and the shared error contract surfaces that as the
+ * literal message "HTTP 404" (the `HTTP {status}` fallback used when the body carries no detail) on
+ * every transport — web fetch, Capacitor and the desktop bridge. A 404 carrying a parseable body, or
+ * any other status, is not treated as route absence.
+ */
+export function isV2RouteAbsent(error: unknown): boolean {
+  return (error instanceof Error ? error.message : String(error)) === "HTTP 404"
+}
+
+/**
+ * Fetch the v2 skill catalog, degrading to an empty list only when the `/api/skill` route is
+ * confirmed absent (see {@link isV2RouteAbsent}). Any other failure — a 4xx/5xx carrying a body, an
+ * auth rejection, a network error — is a real fault and is rethrown so callers surface it instead
+ * of silently presenting an empty skills list.
+ */
+export async function fetchSkillCatalog(fetchSkills: () => Promise<V2Skill[]>): Promise<V2Skill[]> {
+  try {
+    return await fetchSkills()
+  } catch (error) {
+    if (isV2RouteAbsent(error)) return []
+    throw error
+  }
+}
+
+/**
+ * Combine the command and skill catalogs into one slash-name catalog. Both classifications are kept
+ * even when a server command and a skill share a display name: the skill's entry stays classified as
+ * a skill (with its stable `id`) so the UI's skill filter still shows it and activation still works.
+ * Commands are listed first, so a slash-name lookup (the app resolves a typed `/name` with `find`)
+ * lands on the server command — OpenCode's own slash precedence — while the colliding skill remains
+ * reachable through its activate action, which uses the stable `id`. Duplicates are dropped only
+ * *within* one source, where two entries with the same name would be ambiguous.
+ */
+export function mergeCommandCatalog(commands: CommandInfo[], skills: CommandInfo[]): CommandInfo[] {
+  const merged: CommandInfo[] = []
+  const seenCommands = new Set<string>()
+  for (const entry of commands) {
+    if (!entry.name || seenCommands.has(entry.name)) continue
+    seenCommands.add(entry.name)
+    merged.push(entry)
+  }
+  const seenSkills = new Set<string>()
+  for (const entry of skills) {
+    if (!entry.name || seenSkills.has(entry.name)) continue
+    seenSkills.add(entry.name)
+    merged.push(entry)
+  }
+  return merged
 }
 
 export function toFileEntry(entry: { path: string; type: "file" | "directory" }, root: string): FileEntry {

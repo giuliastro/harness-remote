@@ -29,7 +29,7 @@ The remaining work is primarily richer visibility and control. Model execution a
 
 | Phase | Issue | Feature | Status | Depends on |
 |---|---:|---|---|---|
-| 1 | [#3](https://github.com/nitsuga/harness-remote/issues/3) | Classify commands and support explicit skill activation | Planned | - |
+| 1 | [#3](https://github.com/nitsuga/harness-remote/issues/3) | Classify commands and support explicit skill activation | In progress | - |
 | 1 | [#4](https://github.com/nitsuga/harness-remote/issues/4) | Add compact and fork session actions | Planned | - |
 | 1 | [#5](https://github.com/nitsuga/harness-remote/issues/5) | Support session import and export | Planned | - |
 | 1 | [#6](https://github.com/nitsuga/harness-remote/issues/6) | Show and manage MCP server status | Planned | - |

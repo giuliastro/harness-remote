@@ -1,5 +1,8 @@
 import assert from 'node:assert/strict'
 import {
+  fetchSkillCatalog,
+  isV2RouteAbsent,
+  mergeCommandCatalog,
   toAgentOption,
   toCommandOption,
   toDiffFile,
@@ -10,6 +13,8 @@ import {
   toModelOption,
   toQuestionRequest,
   toSession,
+  toSkillActivationBody,
+  toSkillCommand,
   toToolState
 } from './opencode2-mappers.ts'
 
@@ -169,8 +174,99 @@ assert.deepEqual(toAgentOption({ id: 'build', name: 'Build', description: 'Defau
 })
 
 assert.deepEqual(toCommandOption({ name: 'init', template: 'x', description: 'Docs' }), {
-  name: 'init', description: 'Docs'
+  name: 'init', description: 'Docs', source: 'command'
 })
+
+// Skills: one v2 /api/skill entry (`SkillV2.Info`, live contract) requires
+// `{ id, name, location, content }` and optionally carries `{ description, slash, autoinvoke }`.
+// It maps to a slash command classified as a skill, keeping the skill's stable `id` and its
+// `autoinvoke` flag so activation and filtering stay possible after the catalog merge.
+const liveSkill = {
+  id: 'skill_01JHXQ5R7B2ZP9Y4K3M8N6T2W',
+  name: 'git-release',
+  description: 'Create a git release',
+  slash: true,
+  autoinvoke: false,
+  location: '/home/eric/.config/opencode/skills/git-release/SKILL.md',
+  content: 'Release steps...'
+}
+assert.deepEqual(toSkillCommand(liveSkill), {
+  name: 'git-release',
+  description: 'Create a git release',
+  source: 'skill',
+  id: 'skill_01JHXQ5R7B2ZP9Y4K3M8N6T2W',
+  autoinvoke: false
+})
+// A contract-minimal entry (required fields only) maps with safe defaults for the optional ones.
+assert.deepEqual(toSkillCommand({ id: 'skill_mem', name: 'memory', location: '/x/SKILL.md', content: 'c' }), {
+  name: 'memory', description: undefined, source: 'skill', id: 'skill_mem', autoinvoke: undefined
+})
+// `autoinvoke` marks skills the server fires on its own; it is carried on the mapped entry (callers
+// may filter it) but does not hide the skill — `slash: false` is the catalog-visibility control.
+assert.deepEqual(toSkillCommand({
+  id: 'skill_auto', name: 'observe', location: '/x/SKILL.md', content: 'c', autoinvoke: true
+}).autoinvoke, true)
+// slash: false hides the skill from the slash catalog; a missing name does too.
+assert.equal(toSkillCommand({ id: 'skill_g', name: 'guide', slash: false, location: '/x', content: 'c' }), null)
+assert.equal(toSkillCommand({ id: 'skill_e', name: '', location: '/x', content: 'c' }), null)
+
+// Activation wire body: `POST /api/session/{sessionID}/skill` (`v2.session.skill`) accepts exactly
+// `{ skill, resume?, id? }`, forbids extra properties, and answers 204 — so the client posts
+// precisely `{ skill, resume: true }`, with no extra keys.
+assert.deepEqual(toSkillActivationBody('git-release'), { skill: 'git-release', resume: true })
+assert.deepEqual(Object.keys(toSkillActivationBody('git-release')).sort(), ['resume', 'skill'])
+assert.equal(toSkillActivationBody('git-release').resume, true)
+
+// The merged catalog keeps both classifications when a server command and a skill share a display
+// name: the skill stays visible to the skill filter (UI: `source === "skill"`) with its stable `id`,
+// while commands stay first so a slash-name lookup resolves to the server command — OpenCode's own
+// precedence — leaving invocation unambiguous. Duplicates are dropped only within one source.
+const merged = mergeCommandCatalog(
+  [
+    toCommandOption({ name: 'init', description: 'Init' }),
+    toCommandOption({ name: 'build', description: 'Build' }),
+    toCommandOption({ name: 'build', description: 'Build duplicate' })
+  ],
+  [
+    toSkillCommand({ id: 'skill_b', name: 'build', description: 'Build skill', location: '/x', content: 'c' }),
+    toSkillCommand({ id: 'skill_l', name: 'lint', description: 'Lint', location: '/x', content: 'c' }),
+    toSkillCommand({ id: 'skill_l2', name: 'lint', description: 'Lint duplicate', location: '/x', content: 'c' })
+  ]
+)
+assert.deepEqual(merged, [
+  { name: 'init', description: 'Init', source: 'command' },
+  { name: 'build', description: 'Build', source: 'command' },
+  { name: 'build', description: 'Build skill', source: 'skill', id: 'skill_b', autoinvoke: undefined },
+  { name: 'lint', description: 'Lint', source: 'skill', id: 'skill_l', autoinvoke: undefined }
+])
+// The colliding skill is NOT hidden from the skill classification, so the Skills filter shows it.
+assert.deepEqual(merged.filter((entry) => entry.source === 'skill').map((entry) => entry.name), ['build', 'lint'])
+assert.deepEqual(merged.filter((entry) => entry.source === 'skill' && entry.name === 'build'), [
+  { name: 'build', description: 'Build skill', source: 'skill', id: 'skill_b', autoinvoke: undefined }
+])
+// Invocation by slash name resolves to the server command first — no duplicate ambiguity.
+assert.equal(merged.find((entry) => entry.name === 'build').source, 'command')
+// A skill-only name still resolves to the skill.
+assert.equal(merged.find((entry) => entry.name === 'lint').source, 'skill')
+
+// `listCommands` degrades to commands-only only for a confirmed route absence (the v2 router's
+// empty 404, surfaced by the shared error contract as "HTTP 404"). Any other `/api/skill` failure is
+// rethrown unchanged so the UI can display it instead of silently showing an empty skills list.
+assert.deepEqual(await fetchSkillCatalog(() => Promise.resolve([liveSkill])), [liveSkill])
+assert.deepEqual(await fetchSkillCatalog(() => Promise.reject(new Error('HTTP 404'))), [])
+assert.equal(isV2RouteAbsent(new Error('HTTP 404')), true)
+for (const realFailure of [
+  new Error('HTTP 500'),
+  new Error('HTTP 401: the server rejected these credentials.'),
+  new Error('Cannot reach 127.0.0.1:4097.'),
+  new Error('Request timed out'),
+  new Error('Something went wrong')
+]) {
+  assert.equal(isV2RouteAbsent(realFailure), false, realFailure.message)
+  let rethrown
+  await fetchSkillCatalog(() => Promise.reject(realFailure)).catch((error) => { rethrown = error })
+  assert.equal(rethrown, realFailure, realFailure.message)
+}
 
 assert.deepEqual(toFileEntry({ path: 'workspaces/harness-remote/', type: 'directory' }, '/home/eric'), {
   name: 'harness-remote', path: '/home/eric/workspaces/harness-remote/', absolute: '/home/eric/workspaces/harness-remote/', type: 'directory'

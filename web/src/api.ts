@@ -381,6 +381,12 @@ const apiV1 = {
     })
   },
 
+  sendSkill(_config: ServerConfig, _sessionID: string, _skill: string, _directory?: string) {
+    // OpenCode 1 (and the other v1-shaped backends) expose no skill endpoint — reject honestly
+    // rather than pretending skills exist here. Only the opencode2 client implements sendSkill.
+    return Promise.reject(new Error("Skills are only supported on OpenCode 2 servers"))
+  },
+
   revertMessage(config: ServerConfig, sessionID: string, messageID: string, directory?: string) {
     return request<Session>(config, withDirectory(`/session/${sessionID}/revert`, directory), {
       method: "POST",
