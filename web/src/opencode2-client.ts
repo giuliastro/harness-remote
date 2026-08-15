@@ -280,10 +280,12 @@ export const opencode2Api = {
   },
 
   async loadMessages(config: ServerConfig, sessionID: string, directory?: string, _refreshHistory = false) {
-    // `order=asc` returns oldest-first (how the app renders); follow `cursor.next` so transcripts
-    // longer than one page keep their newest turns instead of being truncated at the first 100.
-    const messages = await v2ListAll<V2Message>(config, withLocation(`/api/session/${encodeURIComponent(sessionID)}/message?limit=100&order=asc`, directory))
-    return messages.map((message) => toMessageEnvelope(message, sessionID))
+    // The server's default order is newest-first, and it rejects a `cursor` combined with an explicit
+    // `order` (`InvalidCursorError`). Paginate in default order — which keeps transcripts past one
+    // page from being truncated at the newest 100 — then reverse to the oldest-first order the app
+    // renders.
+    const messages = await v2ListAll<V2Message>(config, withLocation(`/api/session/${encodeURIComponent(sessionID)}/message?limit=100`, directory))
+    return [...messages].reverse().map((message) => toMessageEnvelope(message, sessionID))
   },
 
   async loadLatestMessage(config: ServerConfig, sessionID: string, directory?: string) {
