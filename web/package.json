@@ -1,7 +1,7 @@
 {
   "name": "harness-remote-web",
   "private": true,
-  "version": "2.10.3",
+  "version": "2.11.0",
   "description": "Companion app for controlling coding-agent harnesses from phone or desktop",
   "homepage": "https://github.com/giuliastro/harness-remote",
   "author": {
