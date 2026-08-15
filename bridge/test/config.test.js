@@ -48,6 +48,12 @@ test("selects PI defaults for the ACP backend", () => {
   assert.match(parseConfig(["--backend", "pi"], {}).acpArgs[1], /@\d+\.\d+\.\d+$/, "the adapter version must stay pinned")
 })
 
+test("legacy bridge mode never substitutes a PATH adapter for pinned PI", () => {
+  const config = parseConfig(["--backend", "pi"], {}, { preferInstalledAdapters: false })
+  assert.equal(config.acpCommand, process.platform === "win32" ? "npx.cmd" : "npx")
+  assert.deepEqual(config.acpArgs, ["-y", "@automatalabs/pi-acp@0.2.5"])
+})
+
 test("selects Codex defaults for the ACP backend", () => {
   assert.deepEqual(parseConfig(["--backend", "codex"], {}).backend, "codex")
   assert.equal(parseConfig(["--backend", "codex"], {}).acpCommand, process.platform === "win32" ? "npx.cmd" : "npx")
