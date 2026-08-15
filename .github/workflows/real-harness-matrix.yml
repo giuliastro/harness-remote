@@ -4,6 +4,10 @@ name: Real Android harness matrix
 # agents. This workflow runs after a labelled same-repository pull request is updated.
 # That keeps the test on the PR's exact commit without putting a manual workflow on main.
 "on":
+  # One-time bootstrap for this PR: `pull_request` workflows need to exist on the
+  # base branch before GitHub can evaluate them. Future PRs use the labelled trigger below.
+  push:
+    branches: [test/real-harness-matrix]
   pull_request:
     types: [opened, synchronize, reopened, labeled]
 
@@ -16,14 +20,14 @@ concurrency:
 
 jobs:
   real-harness:
-    if: contains(github.event.pull_request.labels.*.name, 'real-harness-pi') || contains(github.event.pull_request.labels.*.name, 'real-harness-omp')
+    if: github.event_name == 'push' || contains(github.event.pull_request.labels.*.name, 'real-harness-pi') || contains(github.event.pull_request.labels.*.name, 'real-harness-omp')
     name: Android Debian (primary ACP + OpenCode)
     # Install the official runner in Debian with the custom label documented in
     # docs/REAL_HARNESS_TEST_MATRIX.md. The default labels also identify Linux ARM64.
     runs-on: [self-hosted, Linux, ARM64, harness-remote-android]
     timeout-minutes: 35
     env:
-      MATRIX_BACKEND: ${{ contains(github.event.pull_request.labels.*.name, 'real-harness-pi') && 'pi' || 'omp' }}
+      MATRIX_BACKEND: ${{ github.event_name == 'push' && 'pi' || contains(github.event.pull_request.labels.*.name, 'real-harness-pi') && 'pi' || 'omp' }}
       MATRIX_ROOT: ${{ runner.temp }}/harness-remote-real
       MATRIX_PORT: "4597"
       MATRIX_OPENCODE_PORT: "4596"
