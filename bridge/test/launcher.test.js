@@ -9,6 +9,13 @@ test("detects executable agent files on PATH without running them", () => {
   assert.deepEqual(detectBackends({ pathValue, platform: "linux", exists: (candidate) => existing.has(candidate), access: () => {} }), ["codex"])
 })
 
+test("detects curl-installed OMP when its ~/.local/bin directory is inherited on PATH", () => {
+  const localBin = path.join("/root", ".local", "bin")
+  const pathValue = ["/usr/bin", localBin].join(path.delimiter)
+  const candidate = path.join(localBin, "omp")
+  assert.deepEqual(detectBackends({ pathValue, platform: "linux", exists: (value) => value === candidate, access: () => {} }), ["omp"])
+})
+
 test("ignores non-executable PATH entries on Unix", () => {
   const candidate = path.join("/tools", "claude")
   assert.deepEqual(detectBackends({ pathValue: "/tools", platform: "linux", exists: (value) => value === candidate, access: () => { throw new Error("not executable") } }), [])
