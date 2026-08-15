@@ -21,8 +21,8 @@ real device run does not replace normal regression tests.
 | LEGACY-PI | single PI bridge | `npm test` plus direct real-agent smoke where PI is installed | Existing session, model picker, new session, prompt, tool change, reopen | Yes |
 | LEGACY-OMP | single OMP bridge | `npm test` plus direct real-agent smoke where OMP is installed | Existing session, model picker, new session, prompt, tool change, reopen | Yes |
 | LEGACY-OC | direct OpenCode | OpenCode health/session API smoke | Existing session, model picker, new session, prompt, tool change, reopen | Yes |
-| DAEMON-PI-OC | TaskDesk daemon, PI primary + managed OpenCode | Manual `Real Android harness matrix` workflow, input `pi` | Switch PI/OpenCode over one daemon URL; create a task and verify model list appears immediately | Yes for daemon work |
-| DAEMON-OMP-OC | TaskDesk daemon, OMP primary + managed OpenCode | Manual `Real Android harness matrix` workflow, input `omp` | Switch OMP/OpenCode over one daemon URL; create a task and verify model list appears immediately | Yes for daemon work |
+| DAEMON-PI-OC | TaskDesk daemon, PI primary + managed OpenCode | Add the `real-harness-pi` label to this PR | Switch PI/OpenCode over one daemon URL; create a task and verify model list appears immediately | Yes for daemon work |
+| DAEMON-OMP-OC | TaskDesk daemon, OMP primary + managed OpenCode | Add the `real-harness-omp` label to this PR | Switch OMP/OpenCode over one daemon URL; create a task and verify model list appears immediately | Yes for daemon work |
 | TASK-LIFECYCLE | task/project/worktree/launch/finish APIs and UI | route/store/worktree tests; real daemon run above | Create a task, observe it in the list immediately, enter it, select a model, start it, reopen it, inspect result | Yes for task-first UI work |
 
 **A green workflow alone is not a release verdict.** The matching Android client row must be marked
@@ -74,8 +74,7 @@ credentials required by the selected harness. Keep it running in a persistent De
 tmux session only while invoking the workflow; it is not a public service and should not be exposed
 outside the local device.
 
-Then, in **Actions → Real Android harness matrix → Run workflow**, select the branch being tested
-and run `pi`. Repeat for `omp`. Each run:
+After the runner appears as **Idle**, open this PR and add the label `real-harness-pi`.\nThat starts the workflow on this PR's exact commit. Once it has completed, add\n`real-harness-omp`. The labels must be created once from **Issues → Labels** (or the PR label menu)\nbefore their first use. Each run:
 
 - creates a disposable Git fixture under the runner temp directory;
 - starts TaskDesk with the selected ACP primary and managed OpenCode;
