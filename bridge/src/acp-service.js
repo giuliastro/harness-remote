@@ -73,39 +73,61 @@ function semanticHistorySignature(messages) {
   })))
 }
 
-function mergeReplay(previous, replayed) {
+/** Exported for testing only. */
+export function mergeReplay(previous, replayed) {
   if (previous.length === 0) return replayed
   if (replayed.length === 0) return previous
   const left = previous.map(messageSignature)
   const right = replayed.map(messageSignature)
-  const common = Array.from({ length: left.length + 1 }, () => new Uint32Array(right.length + 1))
-  for (let leftIndex = left.length - 1; leftIndex >= 0; leftIndex -= 1) {
-    for (let rightIndex = right.length - 1; rightIndex >= 0; rightIndex -= 1) {
-      common[leftIndex][rightIndex] = left[leftIndex] === right[rightIndex]
+
+  let prefix = 0
+  const maxPrefix = Math.min(previous.length, replayed.length)
+  while (prefix < maxPrefix && left[prefix] === right[prefix]) {
+    prefix += 1
+  }
+
+  if (prefix === previous.length) {
+    return [...previous, ...replayed.slice(prefix)]
+  }
+
+  const midLeft = left.slice(prefix)
+  const midRight = right.slice(prefix)
+
+  const common = Array.from({ length: midLeft.length + 1 }, () => new Uint32Array(midRight.length + 1))
+  for (let leftIndex = midLeft.length - 1; leftIndex >= 0; leftIndex -= 1) {
+    for (let rightIndex = midRight.length - 1; rightIndex >= 0; rightIndex -= 1) {
+      common[leftIndex][rightIndex] = midLeft[leftIndex] === midRight[rightIndex]
         ? common[leftIndex + 1][rightIndex + 1] + 1
         : Math.max(common[leftIndex + 1][rightIndex], common[leftIndex][rightIndex + 1])
     }
   }
-  const merged = []
 
+  const midMerged = []
   let leftIndex = 0
   let rightIndex = 0
-  while (leftIndex < left.length && rightIndex < right.length) {
-    if (left[leftIndex] === right[rightIndex]) {
-      merged.push(previous[leftIndex])
+  const midPrev = previous.slice(prefix)
+  const midRep = replayed.slice(prefix)
+
+  while (leftIndex < midLeft.length && rightIndex < midRight.length) {
+    if (midLeft[leftIndex] === midRight[rightIndex]) {
+      midMerged.push(midPrev[leftIndex])
       leftIndex += 1
       rightIndex += 1
     } else if (common[leftIndex + 1][rightIndex] >= common[leftIndex][rightIndex + 1]) {
-      merged.push(previous[leftIndex])
+      midMerged.push(midPrev[leftIndex])
       leftIndex += 1
     } else {
-      merged.push(replayed[rightIndex])
+      midMerged.push(midRep[rightIndex])
       rightIndex += 1
     }
   }
-  return [...merged, ...previous.slice(leftIndex), ...replayed.slice(rightIndex)]
+  return [
+    ...previous.slice(0, prefix),
+    ...midMerged,
+    ...midPrev.slice(leftIndex),
+    ...midRep.slice(rightIndex)
+  ]
 }
-
 export function mergeExternalHistory(persisted, cached) {
   const persistedIDs = new Set(persisted.map((message) => message.info.id))
   const remainingBySignature = new Map()
