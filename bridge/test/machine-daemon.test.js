@@ -165,6 +165,37 @@ test("machine server wires the shared registry, agent router, task launch, model
   assert.deepEqual(bridgeOptions.machineRegistry.snapshot().agents.map((host) => host.id), ["pi", "opencode"])
 })
 
+test("machine server creates an isolated bridge service for every registered ACP harness", () => {
+  const daemon = new MachineDaemon({ id: "machine_test", name: "workstation" })
+  const codex = new FakeAcp()
+  const pi = new FakeAcp()
+  daemon.registerAcpHost({ id: "codex", agent: codex })
+  daemon.registerAcpHost({ id: "pi", agent: pi, bridgeConfig: { backend: "pi" }, serviceOptions: { marker: "pi" } })
+  const created = []
+  let routerOptions
+  createMachineDaemonServer({
+    daemon,
+    config: { backend: "codex", port: 4097 },
+    primaryAcp: codex,
+    createServer: (options) => {
+      const server = { options, emit() {} }
+      created.push(server)
+      return server
+    },
+    createRouter: (options) => { routerOptions = options; return {} },
+    createLaunchServer: ({ innerServer }) => innerServer,
+    createModelServer: ({ innerServer }) => innerServer,
+    createFinishServer: ({ innerServer }) => innerServer
+  })
+  assert.equal(created.length, 1)
+  const piBridge = routerOptions.acpBridgeServer("pi")
+  assert.equal(created.length, 2)
+  assert.equal(piBridge.options.acp, daemon.hostEntry("pi").host)
+  assert.equal(piBridge.options.config.backend, "pi")
+  assert.equal(piBridge.options.serviceOptions.marker, "pi")
+  assert.equal(routerOptions.acpBridgeServer("pi"), piBridge)
+})
+
 test("daemon exposes registered host entries to its internal router", () => {
   const daemon = new MachineDaemon({ id: "machine_test", name: "workstation" })
   const openCode = new FakeHttpHost()

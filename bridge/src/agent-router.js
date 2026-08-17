@@ -154,6 +154,7 @@ export function createAgentRoutingServer({
   config,
   primaryAgentID,
   bridgeServer,
+  acpBridgeServer,
   taskStore,
   projectCatalog,
   worktreeManager,
@@ -252,12 +253,19 @@ export function createAgentRoutingServer({
       writeJSON(response, 404, { error: `Unknown agent: ${route.agentID}` })
       return
     }
-    if (entry.kind !== "http") {
-      writeJSON(response, 409, { error: `Agent ${route.agentID} is not routable through the managed HTTP proxy` })
+    if (entry.kind === "http" && daemon.registry.host(route.agentID)?.state !== "available") {
+      writeJSON(response, 503, { error: `Agent ${route.agentID} is unavailable` })
       return
     }
-    if (daemon.registry.host(route.agentID)?.state !== "available") {
-      writeJSON(response, 503, { error: `Agent ${route.agentID} is unavailable` })
+
+    if (entry.kind === "acp") {
+      const scopedServer = acpBridgeServer?.(route.agentID)
+      if (!scopedServer) {
+        writeJSON(response, 409, { error: `Agent ${route.agentID} is not routable through the machine daemon` })
+        return
+      }
+      request.url = `${route.path}${route.search}`
+      scopedServer.emit("request", request, response)
       return
     }
 

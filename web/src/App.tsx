@@ -31,6 +31,7 @@ import { copyToClipboard } from "./clipboard"
 import { backendDisplayName, isBridgeBackend } from "./backendSetup"
 import { taskClient } from "./taskClient"
 import { discoverMachineConnection } from "./taskMachineClient"
+import { discoverMachine, selectableMachineAgents } from "./machineClient"
 import { type AttachmentPart } from "./attachments"
 import { CommandPalette, MenuBar, ServerSwitcher, type MenuDefinition, type MenuEntry, type PaletteCommand } from "./components/shell"
 import { ConnectServerWizard, NewSessionDialog } from "./components/panels"
@@ -3493,14 +3494,32 @@ function App() {
       setConnectionMessage("")
       return
     }
-    setConnectionState("connecting")
-    setConnectionMessage(t('connection.connecting'))
-    backgroundFailureCountRef.current = 0
-    initialSessionLoadRef.current = true
-    refreshSessions(true).catch(() => undefined)
-    loadCommands().catch(() => undefined)
-    if (capabilities.agents) loadAgents().catch(() => undefined)
-    if (capabilities.models) loadModels().catch(() => undefined)
+    let cancelled = false
+    const connect = async () => {
+      // Profiles saved before multi-harness routing did not carry agentId. Resolve a matching
+      // daemon host before any session request: otherwise OMP/PI silently read the primary
+      // harness's sessions from the daemon root.
+      if (isBridgeBackend(config.backend)) {
+        const machine = await discoverMachine(config).catch(() => null)
+        const agents = machine ? selectableMachineAgents(machine) : []
+        const agent = agents.find((candidate) => candidate.backend === config.backend)
+        const selected = agents.find((candidate) => candidate.id === config.agentId)
+        if (agent && (!config.agentId || selected?.backend !== config.backend)) {
+          if (!cancelled) applyConfig({ ...config, agentId: agent.id })
+          return
+        }
+      }
+      if (cancelled) return
+      setConnectionState("connecting")
+      setConnectionMessage(t('connection.connecting'))
+      backgroundFailureCountRef.current = 0
+      initialSessionLoadRef.current = true
+      refreshSessions(true).catch(() => undefined)
+      loadCommands().catch(() => undefined)
+      if (capabilities.agents) loadAgents().catch(() => undefined)
+      if (capabilities.models) loadModels().catch(() => undefined)
+    }
+    void connect()
     const timer = setInterval(() => {
       // Live SSE events already keep sessions and the open session's messages/todos/diffs in sync
       // (via applyStreamedPartUpdate/scheduleRefresh), so polling on top of a working stream is a
@@ -3521,8 +3540,11 @@ function App() {
         loadSelected(selectedSession.id, selectedSession.directory).catch(() => undefined)
       }
     }, 3500)
-    return () => clearInterval(timer)
-  }, [capabilities.agents, capabilities.models, config.backend, config.host, config.port, config.username, config.password, selectedSession?.id, selectedNewSessionDirectory])
+    return () => {
+      cancelled = true
+      clearInterval(timer)
+    }
+  }, [capabilities.agents, capabilities.models, config.agentId, config.backend, config.host, config.port, config.username, config.password, selectedSession?.id, selectedNewSessionDirectory])
 
   useEffect(() => {
     const fallback = DEFAULT_HARNESS_CAPABILITIES[config.backend]

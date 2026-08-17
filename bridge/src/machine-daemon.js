@@ -17,10 +17,10 @@ export class MachineDaemon {
     this.hosts = new Map()
   }
 
-  registerAcpHost({ id, label, backend = id, capabilities = {}, agent, modelCatalog, managed = true }) {
+  registerAcpHost({ id, label, backend = id, capabilities = {}, agent, modelCatalog, bridgeConfig, serviceOptions, managed = true }) {
     this.registry.registerHost({ id, label, backend, transport: "acp", managed, state: "configured", capabilities })
     const tracked = trackAgentHostLifecycle(agent, this.registry, id)
-    this.hosts.set(id, { id, kind: "acp", host: tracked, modelCatalog, eager: false })
+    this.hosts.set(id, { id, kind: "acp", host: tracked, modelCatalog, bridgeConfig, serviceOptions, eager: false })
     return tracked
   }
 
@@ -85,6 +85,22 @@ export function createMachineDaemonServer({
   taskRunController
 }) {
   const bridgeServer = createServer({ config, acp: primaryAcp, machineRegistry: daemon.registry, serviceOptions })
+  const scopedAcpServers = new Map()
+  const acpBridgeServer = (agentID) => {
+    if (agentID === primaryAgentID) return bridgeServer
+    const cached = scopedAcpServers.get(agentID)
+    if (cached) return cached
+    const entry = daemon.hostEntry(agentID)
+    if (!entry || entry.kind !== "acp") return undefined
+    const server = createServer({
+      config: entry.bridgeConfig ?? { ...config, backend: agentID },
+      acp: entry.host,
+      machineRegistry: daemon.registry,
+      serviceOptions: entry.serviceOptions
+    })
+    scopedAcpServers.set(agentID, server)
+    return server
+  }
   const machineID = daemon.snapshot().machine.id
   const roots = config.roots?.length ? config.roots : [process.cwd()]
   const stateDirectory = config.stateDirectory ?? process.cwd()
@@ -93,7 +109,7 @@ export function createMachineDaemonServer({
   const worktrees = worktreeManager ?? new WorktreeManager({ stateDirectory })
   const launcher = taskLauncher ?? new TaskLauncher({ daemon })
   const runs = taskRunController ?? new TaskRunController({ taskStore: tasks, taskLauncher: launcher })
-  const innerServer = createRouter({ daemon, config, primaryAgentID, bridgeServer, taskStore: tasks, projectCatalog: projects, worktreeManager: worktrees })
+  const innerServer = createRouter({ daemon, config, primaryAgentID, bridgeServer, acpBridgeServer, taskStore: tasks, projectCatalog: projects, worktreeManager: worktrees })
   const launchServer = createLaunchServer({ innerServer, config, taskRunController: runs })
   const modelServer = createModelServer({ innerServer: launchServer, config, daemon, taskStore: tasks })
   return createFinishServer({ innerServer: modelServer, config, taskStore: tasks, worktreeManager: worktrees, taskRunController: runs })

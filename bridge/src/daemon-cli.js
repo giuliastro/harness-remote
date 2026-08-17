@@ -3,7 +3,7 @@ import path from "node:path"
 import { AcpClient } from "./acp-client.js"
 import { AcpAgentModelCatalog, HttpAgentModelCatalog } from "./agent-model-catalog.js"
 import { parseConfig, usage as bridgeUsage } from "./config.js"
-import { harnessProfile } from "./harness-profiles.js"
+import { harnessProfile, resolveAcpLaunch } from "./harness-profiles.js"
 import { canListen, resolveLaunchPlan } from "./launcher.js"
 import { loadMachineIdentity } from "./machine-registry.js"
 import { MachineDaemon, createMachineDaemonServer } from "./machine-daemon.js"
@@ -110,39 +110,54 @@ async function main() {
 
   const identity = await loadMachineIdentity(config.stateDirectory)
   const daemon = new MachineDaemon(identity)
-  const profile = harnessProfile(config.backend)
-  const acp = new AcpClient({
-    command: config.acpCommand,
-    args: config.acpArgs,
-    permissionMode: profile.permissionMode,
-    preferredAuthMethod: profile.authMethod
-  })
-  // Model discovery owns a separate ACP connection and one durable prompt-less session. That keeps
-  // New Task catalog refreshes from interfering with user-facing ACP session history.
-  const modelAcp = new AcpClient({
-    command: config.acpCommand,
-    args: config.acpArgs,
-    permissionMode: profile.permissionMode,
-    preferredAuthMethod: profile.authMethod
-  })
-  const primaryModelCatalog = new AcpAgentModelCatalog({
-    agent: modelAcp,
-    agentID: profile.id,
-    directory: config.roots?.[0] ?? process.cwd(),
-    stateDirectory: config.stateDirectory
-  })
-  // Load the persisted catalog session id before the HTTP server starts so a daemon restart never
-  // briefly exposes the prompt-less technical session in the public session list.
-  await primaryModelCatalog.preloadState()
-
-  daemon.registerAcpHost({
-    id: profile.id,
-    label: profile.label,
-    backend: profile.id,
-    capabilities: profile.capabilities,
-    agent: acp,
-    modelCatalog: primaryModelCatalog
-  })
+  const plan = resolveLaunchPlan(process.argv.slice(2))
+  const acpBackends = [...new Set([...plan.detected.filter((backend) => backend !== "opencode"), config.backend])]
+  const primaryProfile = harnessProfile(config.backend)
+  const acpHosts = new Map()
+  for (const backend of acpBackends) {
+    const profile = harnessProfile(backend)
+    const launch = backend === config.backend
+      ? { command: config.acpCommand, args: config.acpArgs }
+      : resolveAcpLaunch(profile)
+    const agentConfig = { ...config, backend: profile.id, acpCommand: launch.command, acpArgs: launch.args }
+    const acp = new AcpClient({
+      command: launch.command,
+      args: launch.args,
+      permissionMode: profile.permissionMode,
+      preferredAuthMethod: profile.authMethod
+    })
+    // Model discovery owns a separate ACP connection and one durable prompt-less session. That keeps
+    // New Task catalog refreshes from interfering with user-facing ACP session history.
+    const modelCatalog = new AcpAgentModelCatalog({
+      agent: new AcpClient({ command: launch.command, args: launch.args, permissionMode: profile.permissionMode, preferredAuthMethod: profile.authMethod }),
+      agentID: profile.id,
+      directory: config.roots?.[0] ?? process.cwd(),
+      stateDirectory: config.stateDirectory
+    })
+    // Load persisted technical-session ids before the server starts, so they never leak into lists.
+    await modelCatalog.preloadState()
+    daemon.registerAcpHost({
+      id: profile.id,
+      label: profile.label,
+      backend: profile.id,
+      capabilities: profile.capabilities,
+      agent: acp,
+      modelCatalog,
+      bridgeConfig: agentConfig,
+      serviceOptions: {
+        snapshotDirectory: path.join(config.stateDirectory, profile.id),
+        historyLoader: profile.historyLoader,
+        preserveListedTimestamps: profile.preserveListedTimestamps,
+        hiddenSessionIDs: modelCatalog.hiddenSessionIDs,
+        reloadOnHistoryRefresh: profile.reloadOnHistoryRefresh
+      }
+    })
+    acpHosts.set(profile.id, acp)
+    acp.on("stderr", (line) => process.stderr.write(`[${profile.id}] ${line}\n`))
+    acp.on("exit", (error) => process.stderr.write(`[${profile.id}] ${error.message}\n`))
+  }
+  const acp = acpHosts.get(primaryProfile.id)
+  if (!acp) throw new Error(`Primary harness ${primaryProfile.id} was not detected`)
 
   if (openCode) {
     const managedOpenCode = new ManagedOpenCodeHost({
@@ -169,16 +184,13 @@ async function main() {
     config,
     primaryAcp: acp,
     serviceOptions: {
-      snapshotDirectory: path.join(config.stateDirectory, profile.id),
-      historyLoader: profile.historyLoader,
-      preserveListedTimestamps: profile.preserveListedTimestamps,
-      hiddenSessionIDs: primaryModelCatalog.hiddenSessionIDs,
-      reloadOnHistoryRefresh: profile.reloadOnHistoryRefresh
+      snapshotDirectory: path.join(config.stateDirectory, primaryProfile.id),
+      historyLoader: primaryProfile.historyLoader,
+      preserveListedTimestamps: primaryProfile.preserveListedTimestamps,
+      hiddenSessionIDs: daemon.hostEntry(primaryProfile.id).modelCatalog.hiddenSessionIDs,
+      reloadOnHistoryRefresh: primaryProfile.reloadOnHistoryRefresh
     }
   })
-
-  acp.on("stderr", (line) => process.stderr.write(`[${profile.id}] ${line}\n`))
-  acp.on("exit", (error) => process.stderr.write(`[${profile.id}] ${error.message}\n`))
 
   await new Promise((resolve, reject) => {
     const onError = (error) => reject(error)
@@ -194,7 +206,7 @@ async function main() {
   process.stdout.write(`Machine: ${identity.name} (${identity.id})\n`)
   process.stdout.write("Active agents:\n")
   for (const host of daemon.snapshot().agents) {
-    if (host.id === profile.id) {
+    if (host.id === primaryProfile.id) {
       process.stdout.write(`  • ${host.label} — primary (${host.transport.toUpperCase()})\n`)
       continue
     }

@@ -63,6 +63,31 @@ test("primary ACP agent prefix reuses the normalized bridge routes", async () =>
   }
 })
 
+test("a non-primary ACP agent is dispatched to its own bridge instead of the primary sessions", async () => {
+  const primary = new BridgeServer()
+  primary.on("request", (request, response) => response.end("primary"))
+  const pi = new BridgeServer()
+  pi.on("request", (request, response) => {
+    response.writeHead(200, { "Content-Type": "application/json" })
+    response.end(JSON.stringify({ agent: "pi", url: request.url }))
+  })
+  const server = createAgentRoutingServer({
+    daemon: daemonWith({ pi: { id: "pi", kind: "acp" } }, { pi: "configured" }),
+    config: { username: "", password: "", corsOrigins: [] },
+    primaryAgentID: "codex",
+    bridgeServer: primary,
+    acpBridgeServer: (agentID) => agentID === "pi" ? pi : undefined
+  })
+  const port = await listen(server)
+  try {
+    const response = await fetch(`http://127.0.0.1:${port}/v1/agents/pi/session?directory=%2Fwork`)
+    assert.equal(response.status, 200)
+    assert.deepEqual(await response.json(), { agent: "pi", url: "/session?directory=%2Fwork" })
+  } finally {
+    await close(server)
+  }
+})
+
 test("managed HTTP routing replaces client credentials with host credentials", async () => {
   let upstreamRequest
   const upstream = http.createServer((request, response) => {
