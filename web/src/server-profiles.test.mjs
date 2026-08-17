@@ -59,6 +59,15 @@ malformed[0].config.agentId = { invalid: true }
 storage.set(SERVER_PROFILES_STORAGE_KEY, JSON.stringify(malformed))
 assert.equal(loadServerProfiles()[0].config.agentId, undefined, 'malformed agent ids must not leak from persisted data')
 
+storage.set(SERVER_PROFILES_STORAGE_KEY, JSON.stringify([{
+  id: 'old-pi-wizard-profile',
+  name: 'PI test machine',
+  config: { backend: 'codex', host: 'workstation.local', port: 4097, username: 'harness', password: 'secret', agentId: 'codex' }
+}]))
+const repaired = loadServerProfiles()[0]
+assert.equal(repaired.config.backend, 'pi', 'an unmistakably named PI profile saved by the old fallback must recover PI')
+assert.equal(repaired.config.agentId, 'pi', 'the repaired PI profile must target the PI daemon route')
+
 const storageKeys = readFileSync(new URL('./storageKeys.ts', import.meta.url), 'utf8')
 assert.match(storageKeys, /SERVER_PROFILES_STORAGE_KEY/, 'the crash-recovery reset must clear saved servers')
 assert.match(storageKeys, /ACTIVE_PROFILE_STORAGE_KEY/, 'the crash-recovery reset must clear the selected server')

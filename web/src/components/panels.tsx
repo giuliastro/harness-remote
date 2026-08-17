@@ -265,12 +265,8 @@ export function ConnectServerWizard({
   const [machine, setMachine] = useState<MachineSnapshot | null>(null)
   const [agentId, setAgentId] = useState("")
 
-  const selectedAgent = machine?.agents.find((agent) => agent.id === agentId)
-  const selectedBackend = selectedAgent && BACKEND_KINDS.includes(selectedAgent.backend as BackendKind)
-    ? selectedAgent.backend as BackendKind
-    : backend
   const config: ServerConfig = {
-    backend: selectedBackend,
+    backend,
     host: host.trim(),
     port,
     username: username.trim(),
@@ -315,13 +311,13 @@ export function ConnectServerWizard({
 
       if (discovered) {
         const available = discovered.agents.filter((agent) => agent.state === "available" || agent.state === "configured")
-        const preferred = available.find((agent) => agent.backend === backend) ?? available[0]
+        const preferred = available.find((agent) => agent.backend === backend)
         setMachine(discovered)
         setAgentId(preferred?.id ?? "")
         if (preferred) setName(`${discovered.machine.name} · ${preferred.label}`)
         setTestResult({
-          ok: available.length > 0,
-          message: available.length > 0
+          ok: Boolean(preferred),
+          message: preferred
             ? `${t('connection.connected')} · ${discovered.machine.name}`
             : `${discovered.machine.name} · ${t('detail.unavailable')}`
         })
@@ -493,7 +489,7 @@ export function ConnectServerWizard({
                       if (next) setName(`${machine.machine.name} · ${next.label}`)
                     }}
                   >
-                    {machine.agents.map((agent) => (
+                    {machine.agents.filter((agent) => agent.backend === backend).map((agent) => (
                       <option
                         key={agent.id}
                         value={agent.id}

@@ -56,6 +56,21 @@ function profileName(backend: BackendKind, position: number): string {
   return position === 0 ? `${label} server` : `${label} server ${position + 1}`
 }
 
+/** Repair only profiles whose human name makes the earlier wrong-agent fallback unambiguous. */
+function namedHarness(name: string): BackendKind | undefined {
+  const value = name.trim().toLowerCase()
+  if (/\boh my pi\b|\bomp\b/.test(value)) return "omp"
+  if (/(^|[\s·._-])pi([\s·._-]|$)/.test(value)) return "pi"
+  if (/\bclaude\b/.test(value)) return "claude"
+  return undefined
+}
+
+function repairMisroutedDaemonProfile(profile: SavedServerProfile): SavedServerProfile {
+  const intended = namedHarness(profile.name)
+  if (!intended || profile.config.backend !== "codex" || profile.config.agentId !== "codex") return profile
+  return { ...profile, config: { ...profile.config, backend: intended, agentId: intended } }
+}
+
 function parseProfiles(value: string | null): SavedServerProfile[] | null {
   if (!value) return null
   try {
@@ -72,7 +87,7 @@ function parseProfiles(value: string | null): SavedServerProfile[] | null {
         config
       }]
     })
-    return profiles.length > 0 ? profiles : null
+    return profiles.length > 0 ? profiles.map(repairMisroutedDaemonProfile) : null
   } catch {
     return null
   }
