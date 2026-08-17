@@ -88,6 +88,58 @@ test("a non-primary ACP agent is dispatched to its own bridge instead of the pri
   }
 })
 
+test("a stale profile agent id is corrected from its declared harness backend", async () => {
+  const codex = new BridgeServer()
+  codex.on("request", (request, response) => response.end("wrong agent"))
+  const omp = new BridgeServer()
+  omp.on("request", (request, response) => response.end(request.url))
+  const server = createAgentRoutingServer({
+    daemon: {
+      ...daemonWith({ codex: { id: "codex", kind: "acp" }, omp: { id: "omp", kind: "acp" } }, { codex: "available", omp: "configured" }),
+      snapshot() { return { agents: [{ id: "codex", backend: "codex" }, { id: "omp", backend: "omp" }] } }
+    },
+    config: { username: "", password: "", corsOrigins: [] },
+    primaryAgentID: "codex",
+    bridgeServer: codex,
+    acpBridgeServer: (agentID) => agentID === "omp" ? omp : undefined
+  })
+  const port = await listen(server)
+  try {
+    const response = await fetch(`http://127.0.0.1:${port}/v1/agents/codex/session`, {
+      headers: { "X-Harness-Backend": "omp" }
+    })
+    assert.equal(await response.text(), "/session")
+  } finally {
+    await close(server)
+  }
+})
+
+test("a legacy root profile is scoped from its declared harness backend", async () => {
+  const primary = new BridgeServer()
+  primary.on("request", (request, response) => response.end("primary"))
+  const pi = new BridgeServer()
+  pi.on("request", (request, response) => response.end(request.url))
+  const server = createAgentRoutingServer({
+    daemon: {
+      ...daemonWith({ pi: { id: "pi", kind: "acp" } }, { pi: "configured" }),
+      snapshot() { return { agents: [{ id: "codex", backend: "codex" }, { id: "pi", backend: "pi" }] } }
+    },
+    config: { username: "", password: "", corsOrigins: [] },
+    primaryAgentID: "codex",
+    bridgeServer: primary,
+    acpBridgeServer: (agentID) => agentID === "pi" ? pi : undefined
+  })
+  const port = await listen(server)
+  try {
+    const response = await fetch(`http://127.0.0.1:${port}/experimental/session`, {
+      headers: { "X-Harness-Backend": "pi" }
+    })
+    assert.equal(await response.text(), "/experimental/session")
+  } finally {
+    await close(server)
+  }
+})
+
 test("managed HTTP routing replaces client credentials with host credentials", async () => {
   let upstreamRequest
   const upstream = http.createServer((request, response) => {
