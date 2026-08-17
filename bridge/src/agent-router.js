@@ -84,6 +84,12 @@ export function agentScopedRequest(request) {
   }
 }
 
+function routedAgentForBackend(daemon, route, requestedBackend) {
+  if (!requestedBackend || daemon.registry.host(route.agentID)?.backend === requestedBackend) return route
+  const matching = daemon.snapshot().agents.find((agent) => agent.backend === requestedBackend)
+  return matching ? { ...route, agentID: matching.id } : route
+}
+
 export function proxyManagedHttpRequest({
   request,
   response,
@@ -224,11 +230,22 @@ export function createAgentRoutingServer({
       return
     }
 
-    const route = agentScopedRequest(request)
+    const requestedBackend = typeof request.headers["x-harness-backend"] === "string"
+      ? request.headers["x-harness-backend"].trim()
+      : ""
+    let route = agentScopedRequest(request)
     if (!route) {
-      bridgeServer.emit("request", request, response)
-      return
+      // Old profiles have no agent id at all. The selected backend still identifies the intended
+      // daemon host, so make the root request scoped before it can reach the primary bridge.
+      const matching = requestedBackend && daemon.snapshot().agents.find((agent) => agent.backend === requestedBackend)
+      if (matching && matching.id !== primaryAgentID) {
+        route = { agentID: matching.id, path: requestURL.pathname, search: requestURL.search }
+      } else {
+        bridgeServer.emit("request", request, response)
+        return
+      }
     }
+    route = routedAgentForBackend(daemon, route, requestedBackend)
 
     if (route.agentID === primaryAgentID) {
       request.url = `${route.path}${route.search}`
