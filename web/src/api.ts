@@ -129,10 +129,7 @@ async function requestWithHeaders<T>(config: ServerConfig, path: string, options
 
   const target = `${baseUrl(config)}${path}`
   const headers: Record<string, string> = {
-    Accept: "application/json",
-    // A daemon can repair profiles saved by older clients, which lacked (or stored the wrong)
-    // agentId. It must never fall back to the primary agent just because that stale id is present.
-    "X-Harness-Backend": config.backend
+    Accept: "application/json"
   }
   if (hasCredentials(config)) {
     headers.Authorization = authHeader(config)

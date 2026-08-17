@@ -18,7 +18,7 @@ export function applyCorsHeaders(request, response, config) {
   if (!origin) return
   response.setHeader("Access-Control-Allow-Origin", origin)
   response.setHeader("Access-Control-Allow-Credentials", "true")
-  response.setHeader("Access-Control-Allow-Headers", "authorization, content-type, x-harness-backend")
+  response.setHeader("Access-Control-Allow-Headers", "authorization, content-type")
   response.setHeader("Access-Control-Allow-Methods", "GET, POST, PATCH, DELETE, OPTIONS")
   // Chromium's Private Network Access preflight is sent when this public PWA
   // connects to a local daemon/bridge (for example github.io -> localhost).
