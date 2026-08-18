@@ -1,0 +1,568 @@
+.uw-shell {
+  font-size: 15px;
+}
+
+.uw-topbar {
+  height: 68px;
+  grid-template-columns: minmax(230px, 300px) minmax(320px, 680px) minmax(230px, 1fr);
+}
+
+.uw-layout {
+  height: calc(100vh - 68px);
+  grid-template-columns: 230px minmax(320px, 370px) minmax(0, 1fr) 310px;
+}
+
+.uw-brand strong {
+  font-size: 16px;
+}
+
+.uw-brand small {
+  font-size: 12px;
+}
+
+.uw-global-search {
+  height: 42px;
+}
+
+.uw-global-search input {
+  font-size: 14px;
+}
+
+.uw-global-search kbd {
+  font-size: 11px;
+}
+
+.uw-button {
+  min-height: 38px;
+  padding-inline: 13px;
+  font-size: 13px;
+}
+
+.uw-new-button {
+  min-height: 44px;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.uw-nav-label {
+  padding-bottom: 9px;
+  font-size: 10.5px;
+  letter-spacing: 0.1em;
+}
+
+.uw-nav-section > button,
+.uw-nav-bottom > button {
+  min-height: 39px;
+  gap: 8px;
+  padding-inline: 10px;
+}
+
+.uw-nav-section > button > span:nth-child(2),
+.uw-nav-bottom > button > span:nth-child(2) {
+  font-size: 13px;
+}
+
+.uw-nav-section button b,
+.uw-nav-bottom button b {
+  font-size: 11.5px;
+}
+
+.uw-nav-empty {
+  font-size: 11.5px;
+  line-height: 1.55;
+}
+
+.uw-session-column-header {
+  min-height: 72px;
+  padding-inline: 16px;
+}
+
+.uw-session-column-header h2 {
+  font-size: 17px;
+}
+
+.uw-session-column-header span {
+  font-size: 11.5px;
+}
+
+.uw-filter-row {
+  gap: 7px;
+  padding: 10px 12px;
+}
+
+.uw-pill {
+  min-height: 32px;
+  padding-inline: 11px;
+  font-size: 11.5px;
+}
+
+.uw-session-card {
+  min-height: 112px;
+}
+
+.uw-session-title-row strong {
+  font-size: 14px;
+  line-height: 1.35;
+}
+
+.uw-status-chip {
+  font-size: 10.5px;
+}
+
+.uw-session-meta {
+  font-size: 11.5px;
+  line-height: 1.45;
+}
+
+.uw-session-preview {
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+
+.uw-session-footer {
+  font-size: 11px;
+}
+
+.uw-session-header {
+  min-height: 86px;
+  padding: 14px 20px;
+}
+
+.uw-session-heading-title h1 {
+  font-size: 20px;
+  line-height: 1.25;
+}
+
+.uw-context-strip small {
+  font-size: 10.5px;
+}
+
+.uw-context-strip b {
+  font-size: 12px;
+}
+
+.uw-detail-tabs button {
+  min-height: 42px;
+  font-size: 13px;
+}
+
+.uw-message {
+  gap: 13px;
+}
+
+.uw-message-body header strong {
+  font-size: 13px;
+}
+
+.uw-message-body header time {
+  font-size: 11px;
+}
+
+.uw-markdown {
+  font-size: 14.5px;
+  line-height: 1.65;
+}
+
+.uw-markdown code,
+.uw-tool-card code,
+.uw-tool-card pre,
+.uw-diff-file code,
+.uw-diff-file pre {
+  font-size: 12.5px;
+}
+
+.uw-composer-shell textarea {
+  font-size: 14.5px;
+  line-height: 1.55;
+}
+
+.uw-composer-footer {
+  font-size: 11.5px;
+}
+
+.uw-composer-footer small {
+  font-size: 11px;
+}
+
+.uw-inspector header h3 {
+  font-size: 15px;
+}
+
+.uw-inspector header span,
+.uw-inspector-label,
+.uw-inspector-copy,
+.uw-inspector-grid,
+.uw-file-list,
+.uw-todo-list,
+.uw-status-line {
+  font-size: 12.5px;
+}
+
+.uw-inspector-grid code,
+.uw-file-list code {
+  font-size: 11.5px;
+}
+
+.uw-modal {
+  font-size: 14px;
+}
+
+.uw-modal-header h2 {
+  font-size: 19px;
+}
+
+.uw-modal-header p {
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+
+.uw-form-grid label > span,
+.uw-new-session-grid label > span {
+  font-size: 12px;
+}
+
+.uw-form-grid input,
+.uw-form-grid textarea,
+.uw-new-session-grid textarea,
+.uw-select {
+  min-height: 42px;
+  font-size: 14px;
+}
+
+.uw-standalone-host {
+  min-height: 100vh;
+}
+
+.uw-standalone-host > .uw-shell .uw-top-actions > .uw-button:last-child {
+  visibility: hidden;
+  width: 92px;
+}
+
+.uw-machine-manager-trigger {
+  position: fixed;
+  top: 15px;
+  right: 18px;
+  z-index: 80;
+  height: 38px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 12px;
+  border: 1px solid rgba(148, 163, 184, 0.23);
+  border-radius: 10px;
+  color: #e8edf5;
+  background: #121b2a;
+  font: 600 13px/1 Inter, ui-sans-serif, system-ui, sans-serif;
+  cursor: pointer;
+}
+
+.uw-machine-manager-trigger:hover {
+  background: #172235;
+  border-color: rgba(148, 163, 184, 0.35);
+}
+
+.uw-machine-manager-trigger span {
+  min-width: 22px;
+  padding: 3px 6px;
+  border-radius: 999px;
+  background: rgba(79, 124, 255, 0.16);
+  color: #cdd8ff;
+  text-align: center;
+  font-size: 11px;
+}
+
+.uw-manager-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(3, 7, 14, 0.76);
+  backdrop-filter: blur(12px);
+}
+
+.uw-machine-manager {
+  width: min(780px, 96vw);
+  max-height: min(780px, 92vh);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  border-radius: 16px;
+  color: #f7f9fc;
+  background: #0c1320;
+  box-shadow: 0 28px 90px rgba(0, 0, 0, 0.45);
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+.uw-machine-manager-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 22px 24px 18px;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.13);
+}
+
+.uw-machine-manager-header h2 {
+  margin: 0;
+  font-size: 22px;
+}
+
+.uw-machine-manager-header p {
+  max-width: 610px;
+  margin: 7px 0 0;
+  color: #9aa8bc;
+  font-size: 13.5px;
+  line-height: 1.5;
+}
+
+.uw-manager-close {
+  width: 36px;
+  height: 36px;
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  border-radius: 9px;
+  color: #cbd5e1;
+  background: rgba(255, 255, 255, 0.025);
+  font-size: 22px;
+  cursor: pointer;
+}
+
+.uw-machine-manager-body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 18px 24px;
+  overflow: auto;
+}
+
+.uw-machine-config-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 15px 16px;
+  border: 1px solid rgba(148, 163, 184, 0.14);
+  border-radius: 12px;
+  background: #101827;
+}
+
+.uw-machine-config-main {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.uw-machine-config-main strong {
+  font-size: 15px;
+}
+
+.uw-machine-config-main span {
+  color: #b9c4d3;
+  font-size: 13px;
+}
+
+.uw-machine-config-main small {
+  color: #77859a;
+  font-size: 11.5px;
+}
+
+.uw-machine-config-actions,
+.uw-machine-editor-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.uw-manager-button {
+  min-height: 38px;
+  padding: 0 12px;
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  border-radius: 9px;
+  color: #dce4ef;
+  background: rgba(255, 255, 255, 0.035);
+  font: 600 12.5px/1 Inter, ui-sans-serif, system-ui, sans-serif;
+  cursor: pointer;
+}
+
+.uw-manager-button:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.075);
+}
+
+.uw-manager-button.primary {
+  border-color: rgba(118, 150, 255, 0.42);
+  background: #466ee8;
+  color: white;
+}
+
+.uw-manager-button.danger {
+  color: #fda4af;
+  border-color: rgba(248, 113, 113, 0.2);
+  background: rgba(127, 29, 29, 0.12);
+}
+
+.uw-manager-button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.uw-machine-editor {
+  padding: 18px;
+  border: 1px solid rgba(79, 124, 255, 0.3);
+  border-radius: 12px;
+  background: rgba(79, 124, 255, 0.055);
+}
+
+.uw-machine-editor-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 13px;
+}
+
+.uw-machine-editor-grid label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.uw-machine-editor-grid label > span {
+  color: #9aa8bc;
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.uw-machine-editor-grid input {
+  width: 100%;
+  min-height: 42px;
+  padding: 0 11px;
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  border-radius: 9px;
+  outline: none;
+  color: #f7f9fc;
+  background: #0a111d;
+  font-size: 14px;
+}
+
+.uw-machine-editor-grid input:focus {
+  border-color: rgba(92, 132, 255, 0.62);
+  box-shadow: 0 0 0 3px rgba(79, 124, 255, 0.1);
+}
+
+.uw-machine-editor-wide {
+  grid-column: 1 / -1;
+}
+
+.uw-machine-editor-actions {
+  justify-content: flex-end;
+  margin-top: 16px;
+}
+
+.uw-machine-test-result {
+  margin-top: 13px;
+  padding: 10px 12px;
+  border-radius: 9px;
+  font-size: 12.5px;
+  line-height: 1.45;
+}
+
+.uw-machine-test-result.ok {
+  color: #bbf7d0;
+  background: rgba(22, 101, 52, 0.2);
+}
+
+.uw-machine-test-result.error {
+  color: #fecaca;
+  background: rgba(127, 29, 29, 0.18);
+}
+
+.uw-machine-manager-empty {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 22px;
+  border: 1px dashed rgba(148, 163, 184, 0.2);
+  border-radius: 12px;
+  text-align: center;
+}
+
+.uw-machine-manager-empty strong {
+  font-size: 15px;
+}
+
+.uw-machine-manager-empty span {
+  color: #8f9caf;
+  font-size: 13px;
+}
+
+.uw-machine-manager-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 16px 24px 20px;
+  border-top: 1px solid rgba(148, 163, 184, 0.13);
+}
+
+.uw-machine-manager-footer > span {
+  color: #8795aa;
+  font-size: 12.5px;
+}
+
+@media (max-width: 1450px) {
+  .uw-layout {
+    grid-template-columns: 220px minmax(300px, 340px) minmax(0, 1fr) 290px;
+  }
+}
+
+@media (max-width: 1180px) {
+  .uw-layout {
+    grid-template-columns: 210px minmax(285px, 330px) minmax(0, 1fr);
+  }
+
+  .uw-inspector {
+    display: none;
+  }
+}
+
+@media (max-width: 780px) {
+  .uw-shell {
+    font-size: 14px;
+  }
+
+  .uw-machine-manager-trigger {
+    right: 10px;
+    top: 14px;
+  }
+
+  .uw-machine-manager-trigger {
+    width: 42px;
+    padding: 0;
+    justify-content: center;
+    font-size: 0;
+  }
+
+  .uw-machine-manager-trigger span {
+    font-size: 11px;
+  }
+
+  .uw-machine-editor-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .uw-machine-editor-wide {
+    grid-column: auto;
+  }
+
+  .uw-machine-config-card {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .uw-machine-config-actions,
+  .uw-machine-editor-actions {
+    width: 100%;
+    flex-wrap: wrap;
+  }
+}
