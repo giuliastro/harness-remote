@@ -68,6 +68,14 @@ assert.match(app, /const hasConfiguredServer = isValidServerConfig\(config\)/, '
 
 const main = readFileSync(new URL('./main.tsx', import.meta.url), 'utf8')
 assert.match(main, /<ErrorBoundary resetKeys=\{SERVER_STORAGE_KEYS\}>/, 'a crash must render recoverable UI instead of an empty root')
+assert.match(main, /ACTIVE_PROFILE_CHANGED_EVENT/, 'server changes must remount App so server-scoped session state is re-read')
+assert.match(main, /return <App key=\{revision\} \/>/, 'the profile boundary must remount App without reloading the page')
+
+const serverProfiles = readFileSync(new URL('./serverProfiles.ts', import.meta.url), 'utf8')
+assert.match(serverProfiles, /newSessionDirectoryByProfile/, 'new-session directories must be stored per server profile')
+assert.match(serverProfiles, /localStorage\.removeItem\(NEW_SESSION_DIRECTORY_STORAGE_KEY\)/, 'the unsafe legacy global directory must be discarded on migration')
+assert.match(serverProfiles, /switchNewSessionDirectory\(previousProfileID, activeProfileID, connectionChanged\)/, 'profile switches must swap the remembered new-session directory')
+assert.match(serverProfiles, /connectionIdentity\(previousProfile\.config\) !== connectionIdentity\(nextProfile\.config\)/, 'changing the machine behind one profile must clear its remembered directory')
 
 const boundary = readFileSync(new URL('./ErrorBoundary.tsx', import.meta.url), 'utf8')
 assert.match(boundary, /localStorage\.removeItem\(key\)/, 'recovery must clear the saved server configuration')
