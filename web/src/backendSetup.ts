@@ -13,17 +13,20 @@ export function backendDisplayName(backend: BackendKind): string {
 }
 
 /** Whether the harness is reached through the bundled bridge rather than by talking to a server it
- *  runs itself — which is what decides the command the user has to run on the host machine. */
+ *  runs itself. Kept for API compatibility paths; the normal v3 connection wizard points every
+ *  harness at the machine daemon. */
 export function isBridgeBackend(backend: BackendKind): boolean {
   return backend === "omp" || backend === "pi" || backend === "claude" || backend === "codex"
 }
 
-export function backendDefaultPort(backend: BackendKind): number {
-  return backend === "opencode" ? 4096 : 4097
+/** v3 connects to the public machine daemon. Managed OpenCode may still use 4096 internally, but
+ *  clients must never be configured with that loopback-only implementation detail. */
+export function backendDefaultPort(_backend: BackendKind): number {
+  return 4097
 }
 
-export function backendDefaultUsername(backend: BackendKind): string {
-  return backend === "opencode" ? "opencode" : backend
+export function backendDefaultUsername(_backend: BackendKind): string {
+  return "harness"
 }
 
 export function backendDocsAnchor(backend: BackendKind): string {
@@ -35,28 +38,19 @@ export function backendDocsAnchor(backend: BackendKind): string {
 }
 
 /**
- * The exact line to paste on the machine that runs the agent, filled in with the address and
- * credentials the user has just typed. Setting a server up used to mean reading the Help page,
- * finding the right snippet for the chosen harness and editing four values into it by hand; the
- * wizard shows the finished command instead, which is the single biggest thing standing between a
- * new user and a working connection.
+ * The normal v3 host setup is harness-neutral: one launcher detects the installed harnesses and
+ * exposes them through the public machine daemon. The selected harness only affects which agent
+ * the client chooses after discovery, not which command the user has to start on the host.
  */
 export function backendSetupCommand(
-  backend: BackendKind,
+  _backend: BackendKind,
   options: { port?: number; username?: string; password?: string } = {}
 ): string {
-  const port = options.port && options.port > 0 ? options.port : backendDefaultPort(backend)
-  const username = options.username?.trim() || backendDefaultUsername(backend)
+  const port = options.port && options.port > 0 ? options.port : 4097
+  const username = options.username?.trim() || "harness"
   const password = options.password?.trim() || "your-password"
-  if (backend === "opencode") {
-    return [
-      `OPENCODE_SERVER_USERNAME=${username} \\`,
-      `OPENCODE_SERVER_PASSWORD=${password} \\`,
-      `npx -y opencode-ai serve --hostname 0.0.0.0 --port ${port}`
-    ].join("\n")
-  }
   return [
-    `npx --yes ./bridge --backend ${backend} \\`,
+    `npx github:giuliastro/harness-remote \\`,
     `  --host 0.0.0.0 --port ${port} \\`,
     `  --username ${username} --password ${password} \\`,
     `  --root "$PWD"`
