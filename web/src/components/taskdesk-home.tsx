@@ -13,6 +13,8 @@ type TaskDeskView = "tasks" | "sessions"
 
 type LoadState = "loading" | "ready" | "unavailable" | "error"
 
+const TASKDESK_DISCOVERY_TIMEOUT_MS = 12_000
+
 function formatLastActivity(value: string): string {
   const timestamp = Date.parse(value)
   if (!Number.isFinite(timestamp)) return "Unknown activity"
@@ -20,6 +22,28 @@ function formatLastActivity(value: string): string {
     dateStyle: "medium",
     timeStyle: "short"
   }).format(timestamp)
+}
+
+function withTimeout<T>(promise: Promise<T>, label: string): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = window.setTimeout(() => reject(new Error(`${label} timed out after ${TASKDESK_DISCOVERY_TIMEOUT_MS / 1000}s.`)), TASKDESK_DISCOVERY_TIMEOUT_MS)
+    promise.then(
+      (value) => {
+        window.clearTimeout(timer)
+        resolve(value)
+      },
+      (reason) => {
+        window.clearTimeout(timer)
+        reject(reason)
+      }
+    )
+  })
+}
+
+function browserConnectionHint(config: ServerConfig): string {
+  if (typeof window === "undefined") return ""
+  const origin = window.location.origin
+  return ` Browser access requires the daemon to allow this exact origin with --cors ${origin}. Target: ${config.host}:${config.port}.`
 }
 
 export function TaskDeskHome({ config, sessions }: TaskDeskHomeProps) {
@@ -35,32 +59,30 @@ export function TaskDeskHome({ config, sessions }: TaskDeskHomeProps) {
     setState("loading")
     setError(null)
 
-    void Promise.all([
-      discoverMachine(config),
-      taskClient.listTasks(config).catch((reason) => ({ error: reason instanceof Error ? reason : new Error(String(reason)) }))
-    ]).then(([snapshot, taskResult]) => {
-      if (cancelled) return
-      setMachine(snapshot)
-      if (!snapshot) {
+    void (async () => {
+      try {
+        const snapshot = await withTimeout(discoverMachine(config), "Machine discovery")
+        if (cancelled) return
+        setMachine(snapshot)
+        if (!snapshot) {
+          setTasks([])
+          setState("unavailable")
+          return
+        }
+
+        const loadedTasks = await withTimeout(taskClient.listTasks(config), "Task loading")
+        if (cancelled) return
+        setTasks(sortTasksByActivity(loadedTasks))
+        setState("ready")
+      } catch (reason) {
+        if (cancelled) return
+        setMachine(null)
         setTasks([])
-        setState("unavailable")
-        return
-      }
-      if ("error" in taskResult) {
-        setTasks([])
-        setError(taskResult.error.message)
+        const detail = reason instanceof Error ? reason.message : String(reason)
+        setError(`${detail}${browserConnectionHint(config)}`)
         setState("error")
-        return
       }
-      setTasks(sortTasksByActivity(taskResult))
-      setState("ready")
-    }).catch((reason) => {
-      if (cancelled) return
-      setMachine(null)
-      setTasks([])
-      setError(reason instanceof Error ? reason.message : String(reason))
-      setState("error")
-    })
+    })()
 
     return () => {
       cancelled = true
