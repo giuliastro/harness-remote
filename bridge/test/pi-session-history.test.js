@@ -58,7 +58,7 @@ test("PI journal loader follows the current leaf instead of replaying abandoned 
 test("PI journal stays authoritative after an ACP load when a provider error was retried", async () => {
   const { root, sessionID, file } = await fixture()
   const records = (await readFile(file, "utf8")).trim().split("\n").map(JSON.parse)
-  records.splice(2, 1,
+  records.splice(2, 2,
     {
       type: "message",
       id: "a-error",
