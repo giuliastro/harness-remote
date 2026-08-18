@@ -83,6 +83,23 @@ function normalizeHeaders(headers: Record<string, unknown> | undefined): Record<
   )
 }
 
+/**
+ * CapacitorHttp normally decodes JSON, but native engines can still hand a JSON response back as a
+ * string depending on the server headers and platform. The browser path always calls response.json(),
+ * so returning the string unchanged makes Android the only client that can turn a session array into
+ * an iterable string. Parse JSON-looking native strings here while preserving ordinary text bodies.
+ */
+function normalizeNativeResponseData(data: unknown): unknown {
+  if (typeof data !== "string") return data
+  const trimmed = data.trim()
+  if (!trimmed || (trimmed[0] !== "{" && trimmed[0] !== "[")) return data
+  try {
+    return JSON.parse(trimmed)
+  } catch {
+    return data
+  }
+}
+
 type ConfigProvidersResponse = {
   providers: Array<{
     id: string
@@ -168,7 +185,7 @@ async function requestWithHeaders<T>(config: ServerConfig, path: string, options
 
     const responseHeaders = normalizeHeaders(response.headers)
     if (response.status === 204) return { data: true as T, headers: responseHeaders }
-    return { data: response.data as T, headers: responseHeaders }
+    return { data: normalizeNativeResponseData(response.data) as T, headers: responseHeaders }
   }
 
   let response: Response
