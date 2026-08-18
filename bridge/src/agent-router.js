@@ -92,6 +92,23 @@ function routedAgentForBackend(daemon, route, requestedBackend) {
   return matching ? { ...route, agentID: matching.id } : route
 }
 
+/**
+ * The universal workspace reads a common detail shape for every native session. ACP profiles
+ * deliberately advertise questions/permissions as unsupported, and the ACP bridge has no VCS
+ * endpoint. Do not forward those known-unsupported optional reads just to manufacture a 404 every
+ * poll. Empty data means "nothing exposed by this harness" while preserving real 404s for unknown
+ * agents and for paths we have not explicitly normalized here.
+ */
+function unsupportedOptionalRead(daemon, route, method) {
+  if (method !== "GET") return undefined
+  const host = daemon.registry.host(route.agentID)
+  if (!host) return undefined
+  if (route.path === "/question" && host.capabilities?.questions === false) return []
+  if (route.path === "/permission" && host.capabilities?.permissions === false) return []
+  if (route.path === "/vcs" && daemon.hostEntry(route.agentID)?.kind === "acp") return {}
+  return undefined
+}
+
 export function proxyManagedHttpRequest({
   request,
   response,
@@ -246,6 +263,13 @@ export function createAgentRoutingServer({
       }
     }
     route = routedAgentForBackend(daemon, route, requestedBackend)
+
+    const optionalPayload = unsupportedOptionalRead(daemon, route, request.method)
+    if (optionalPayload !== undefined) {
+      if (!authenticateMachineRequest(request, response, config)) return
+      writeJSON(response, 200, optionalPayload)
+      return
+    }
 
     if (route.agentID === primaryAgentID) {
       request.url = `${route.path}${route.search}`
