@@ -71,7 +71,7 @@ function CopyButton({ text, copyLabel, copiedLabel }: { text: string; copyLabel:
 
 /**
  * Choosing where a new session runs. The old dialog dropped the user into whatever folder the
- * server happened to report and offered a flat list plus a "parent folder" row — no way to see
+ * server happened to report and offered a flat list plus a "parent folder" row - no way to see
  * where you were, no way to type a path you already knew, and no shortcut to a project you had
  * opened ten minutes earlier. All three are here now, and the folder that will actually be used is
  * stated in full before the button that uses it.
@@ -256,6 +256,7 @@ export function ConnectServerWizard({
   const [step, setStep] = useState<WizardStep>("harness")
   const [backend, setBackend] = useState<BackendKind>("opencode")
   const [name, setName] = useState(initialName)
+  const [nameEdited, setNameEdited] = useState(false)
   const [host, setHost] = useState("")
   const [port, setPort] = useState(backendDefaultPort("opencode"))
   const [username, setUsername] = useState(backendDefaultUsername("opencode"))
@@ -283,7 +284,7 @@ export function ConnectServerWizard({
     setBackend(next)
     setPort(backendDefaultPort(next))
     setUsername(backendDefaultUsername(next))
-    setName(`${backendDisplayName(next)} server`)
+    if (!nameEdited) setName(`${backendDisplayName(next)} server`)
     setTestResult(null)
     setMachine(null)
     setAgentId("")
@@ -314,7 +315,7 @@ export function ConnectServerWizard({
         const preferred = available.find((agent) => agent.backend === backend)
         setMachine(discovered)
         setAgentId(preferred?.id ?? "")
-        if (preferred) setName(`${discovered.machine.name} · ${preferred.label}`)
+        if (preferred && !nameEdited) setName(`${discovered.machine.name} · ${preferred.label}`)
         setTestResult({
           ok: Boolean(preferred),
           message: preferred
@@ -399,7 +400,14 @@ export function ConnectServerWizard({
             <>
               <label className="field">
                 <span>{t('settings.serverName')}</span>
-                <input value={name} onChange={(event) => setName(event.target.value)} autoComplete="off" />
+                <input
+                  value={name}
+                  onChange={(event) => {
+                    setName(event.target.value)
+                    setNameEdited(true)
+                  }}
+                  autoComplete="off"
+                />
               </label>
               <div className="form-grid">
                 <label className="field">
@@ -486,7 +494,7 @@ export function ConnectServerWizard({
                       const nextID = event.target.value
                       setAgentId(nextID)
                       const next = machine.agents.find((agent) => agent.id === nextID)
-                      if (next) setName(`${machine.machine.name} · ${next.label}`)
+                      if (next && !nameEdited) setName(`${machine.machine.name} · ${next.label}`)
                     }}
                   >
                     {machine.agents.filter((agent) => agent.backend === backend).map((agent) => (
@@ -506,7 +514,7 @@ export function ConnectServerWizard({
         </div>
 
         {/* Outside the scrolling body on purpose. Testing the connection is the first thing anyone
-            does on this step, and with a keyboard open the body is only a couple of lines tall — a
+            does on this step, and with a keyboard open the body is only a couple of lines tall, so a
             test button living at the end of it scrolled out of sight and came to rest against the
             save button, which is the one press you do not want to hit by accident. */}
         {step === "credentials" && (
