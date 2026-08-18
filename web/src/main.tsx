@@ -18,8 +18,20 @@ import {
 import { SERVER_STORAGE_KEYS } from "./storageKeys"
 import type { MachineSnapshot, ServerConfig } from "./types"
 import "./styles.css"
+import "./v3-polish.css"
 
 installCompletionAudioGuard()
+
+// Creating a session is a deliberate multi-step action. A stray click on the dimmed page around
+// the dialog must not throw the user's folder selection away; only the dialog's explicit close or
+// cancel controls dismiss it.
+document.addEventListener("click", (event) => {
+  const target = event.target
+  if (!(target instanceof HTMLElement) || !target.classList.contains("modal-backdrop")) return
+  if (!target.querySelector("#new-session-title")) return
+  event.preventDefault()
+  event.stopImmediatePropagation()
+}, true)
 
 const LANGUAGE_STORAGE_KEY = "opencode.remote.language"
 const taskDeskTestMode = import.meta.env.DEV && new URLSearchParams(window.location.search).get("taskdesk-test") === "1"
@@ -56,6 +68,10 @@ function AppProfileBoundary() {
 
   useEffect(() => {
     const onProfileChanged = () => {
+      // Settings edits can persist while the user is still typing. If a stale profile-change event
+      // lands during that edit, remounting App would close the modal and start a connection using a
+      // half-edited draft. Keep the editor stable; explicit server selection already updates App.
+      if (document.querySelector(".settings")) return
       setCheckedRoutingKey(null)
       setRevision((value) => value + 1)
     }
