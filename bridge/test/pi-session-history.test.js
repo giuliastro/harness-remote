@@ -36,6 +36,24 @@ test("PI journal loader reads the authoritative current branch without opening A
   ])
 })
 
+test("PI journal loader follows the current leaf instead of replaying abandoned branches", async () => {
+  const { root, sessionID, file } = await fixture()
+  const records = (await readFile(file, "utf8")).trim().split("\n").map(JSON.parse)
+  records.splice(3, 0, {
+    type: "message",
+    id: "abandoned",
+    parentId: "u1",
+    timestamp: "2026-08-18T10:00:02.500Z",
+    message: { role: "assistant", content: [{ type: "text", text: "Abandoned branch" }] }
+  })
+  await writeFile(file, records.map((record) => JSON.stringify(record)).join("\n") + "\n")
+  const loader = createPiHistoryLoader(root)
+  assert.deepEqual(visible(await loader(sessionID)), [
+    { role: "user", text: "First prompt" },
+    { role: "assistant", text: "Complete PI answer" }
+  ])
+})
+
 test("PI journal rename appends the same session_info record PI list/resume uses", async () => {
   const { root, sessionID, file } = await fixture()
   const loader = createPiHistoryLoader(root)
