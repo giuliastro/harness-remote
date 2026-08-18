@@ -44,18 +44,17 @@ export const HARNESS_PROFILES = {
     // project deliberately does not depend on. The version is pinned because an unpinned
     // default failed with `notarget` when a release outran its own tarball in the registry.
     command: process.platform === "win32" ? "npx.cmd" : "npx",
-    args: ["-y", "@automatalabs/pi-acp@0.3.0"],
+    args: ["-y", "@automatalabs/pi-acp@0.2.5"],
     adapterCommand: "pi-acp",
     permissionMode: "allow",
     preserveListedTimestamps: true,
     // Opening a PI session explicitly asks for fresh history. Honour that request so a stale bridge
     // snapshot cannot hide assistant output that PI has already persisted.
     reloadOnHistoryRefresh: true,
+    // PI owns its display names. The bridge must use the title from session/list and propagate an
+    // app rename through PI's own /name command so the app and PI /resume cannot drift apart.
     preferListedTitles: true,
     nativeRenameCommand: "name",
-    // Several unrelated packages install a binary named pi-acp. Keep PI deterministic by using the
-    // exact Automata Labs package unless the user explicitly overrides the ACP launch command.
-    preferInstalledAdapter: false,
     // PI may flush the last replay chunks just after session/load resolves, most visibly on Windows.
     replaySettleMs: 250,
     capabilities: {
@@ -153,7 +152,7 @@ export function harnessProfile(id) {
  */
 export function resolveAcpLaunch(profile, { find = findExecutable } = {}) {
   if (!profile.adapterCommand) return { command: profile.command, args: [...profile.args], source: "harness" }
-  const installed = profile.preferInstalledAdapter === false ? undefined : find(profile.adapterCommand)
+  const installed = find(profile.adapterCommand)
   if (installed) return { command: installed, args: [], source: "path" }
   return { command: profile.command, args: [...profile.args], source: "npx" }
 }
