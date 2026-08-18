@@ -1,0 +1,361 @@
+.taskdesk-shell {
+  min-height: 100vh;
+  background: var(--bg, #0f1115);
+  color: var(--text, #f3f4f6);
+}
+
+.taskdesk-shell-sessions {
+  display: flex;
+  min-height: 100vh;
+  flex-direction: column;
+}
+
+.taskdesk-topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 22px 28px;
+  border-bottom: 1px solid var(--border, rgba(255, 255, 255, 0.1));
+  background: color-mix(in srgb, var(--bg, #0f1115) 92%, transparent);
+  backdrop-filter: blur(16px);
+}
+
+.taskdesk-topbar h1,
+.taskdesk-section-heading h2,
+.taskdesk-task-card h3 {
+  margin: 0;
+}
+
+.taskdesk-topbar h1 {
+  font-size: clamp(24px, 4vw, 34px);
+  letter-spacing: -0.03em;
+}
+
+.taskdesk-eyebrow {
+  margin: 0 0 5px;
+  color: var(--muted, #9ca3af);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.taskdesk-machine-id {
+  margin: 5px 0 0;
+  color: var(--muted, #9ca3af);
+  font-size: 13px;
+}
+
+.taskdesk-topbar-actions,
+.taskdesk-machine-heading,
+.taskdesk-agents,
+.taskdesk-task-title-row,
+.taskdesk-task-meta {
+  display: flex;
+  align-items: center;
+}
+
+.taskdesk-topbar-actions {
+  gap: 8px;
+}
+
+.taskdesk-secondary-button,
+.taskdesk-primary-button,
+.taskdesk-back {
+  border: 1px solid var(--border, rgba(255, 255, 255, 0.14));
+  border-radius: 10px;
+  font: inherit;
+  cursor: pointer;
+}
+
+.taskdesk-secondary-button,
+.taskdesk-back {
+  padding: 9px 13px;
+  background: var(--surface, rgba(255, 255, 255, 0.05));
+  color: inherit;
+}
+
+.taskdesk-secondary-button:hover,
+.taskdesk-back:hover {
+  background: var(--surface-hover, rgba(255, 255, 255, 0.09));
+}
+
+.taskdesk-secondary-button:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+
+.taskdesk-primary-button {
+  align-self: flex-start;
+  padding: 10px 14px;
+  background: var(--text, #f3f4f6);
+  color: var(--bg, #0f1115);
+  font-weight: 700;
+}
+
+.taskdesk-machine-heading {
+  gap: 10px;
+}
+
+.taskdesk-back {
+  padding: 7px 10px;
+}
+
+.taskdesk-divider {
+  color: var(--muted, #9ca3af);
+}
+
+.taskdesk-session-host {
+  min-height: 0;
+  flex: 1;
+}
+
+.taskdesk-session-host > * {
+  min-height: 100%;
+}
+
+.taskdesk-home {
+  width: min(1180px, calc(100% - 40px));
+  margin: 0 auto;
+  padding: 28px 0 56px;
+}
+
+.taskdesk-summary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.taskdesk-summary-card {
+  display: flex;
+  min-height: 94px;
+  flex-direction: column;
+  justify-content: space-between;
+  padding: 16px;
+  border: 1px solid var(--border, rgba(255, 255, 255, 0.1));
+  border-radius: 14px;
+  background: var(--surface, rgba(255, 255, 255, 0.04));
+}
+
+.taskdesk-summary-card span,
+.taskdesk-task-project,
+.taskdesk-task-meta,
+.taskdesk-task-side,
+.taskdesk-section-heading > p {
+  color: var(--muted, #9ca3af);
+}
+
+.taskdesk-summary-card strong {
+  font-size: 20px;
+}
+
+.taskdesk-agents {
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 16px 0 2px;
+}
+
+.taskdesk-agent-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 10px;
+  border: 1px solid var(--border, rgba(255, 255, 255, 0.1));
+  border-radius: 999px;
+  background: var(--surface, rgba(255, 255, 255, 0.04));
+  font-size: 12px;
+}
+
+.taskdesk-agent-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: currentColor;
+  opacity: 0.55;
+}
+
+.taskdesk-agent-dot-available,
+.taskdesk-agent-dot-configured {
+  opacity: 1;
+}
+
+.taskdesk-tasks-section {
+  margin-top: 34px;
+}
+
+.taskdesk-section-heading {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 24px;
+  margin-bottom: 14px;
+}
+
+.taskdesk-section-heading h2 {
+  font-size: 24px;
+}
+
+.taskdesk-section-heading > p {
+  max-width: 570px;
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.taskdesk-state {
+  display: flex;
+  min-height: 180px;
+  flex-direction: column;
+  justify-content: center;
+  gap: 9px;
+  padding: 24px;
+  border: 1px dashed var(--border, rgba(255, 255, 255, 0.14));
+  border-radius: 16px;
+  color: var(--muted, #9ca3af);
+}
+
+.taskdesk-state strong {
+  color: var(--text, #f3f4f6);
+  font-size: 17px;
+}
+
+.taskdesk-state-warning,
+.taskdesk-state-error {
+  border-style: solid;
+}
+
+.taskdesk-task-list {
+  display: grid;
+  gap: 10px;
+}
+
+.taskdesk-task-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 20px;
+  padding: 17px 18px;
+  border: 1px solid var(--border, rgba(255, 255, 255, 0.1));
+  border-radius: 14px;
+  background: var(--surface, rgba(255, 255, 255, 0.04));
+}
+
+.taskdesk-task-card:hover {
+  background: var(--surface-hover, rgba(255, 255, 255, 0.065));
+}
+
+.taskdesk-task-title-row {
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.taskdesk-task-card h3 {
+  min-width: 0;
+  overflow: hidden;
+  font-size: 16px;
+  line-height: 1.4;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.taskdesk-status {
+  flex: none;
+  padding: 4px 8px;
+  border-radius: 999px;
+  background: rgba(148, 163, 184, 0.14);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.taskdesk-status-running,
+.taskdesk-status-waiting {
+  background: rgba(250, 204, 21, 0.13);
+}
+
+.taskdesk-status-completed {
+  background: rgba(34, 197, 94, 0.13);
+}
+
+.taskdesk-status-failed,
+.taskdesk-status-cancelled {
+  background: rgba(239, 68, 68, 0.13);
+}
+
+.taskdesk-task-project {
+  margin: 4px 0 9px;
+  font-size: 12px;
+}
+
+.taskdesk-task-meta {
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  font-size: 12px;
+}
+
+.taskdesk-task-meta b {
+  color: var(--text, #f3f4f6);
+  font-weight: 600;
+}
+
+.taskdesk-task-side {
+  display: flex;
+  min-width: 170px;
+  flex-direction: column;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 11px;
+}
+
+.taskdesk-task-open-hint {
+  opacity: 0.7;
+}
+
+@media (max-width: 780px) {
+  .taskdesk-topbar {
+    align-items: flex-start;
+    padding: 18px 16px;
+  }
+
+  .taskdesk-topbar-actions {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .taskdesk-home {
+    width: min(100% - 24px, 1180px);
+    padding-top: 18px;
+  }
+
+  .taskdesk-summary {
+    grid-template-columns: 1fr;
+  }
+
+  .taskdesk-summary-card {
+    min-height: 72px;
+  }
+
+  .taskdesk-section-heading {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .taskdesk-task-card {
+    grid-template-columns: 1fr;
+  }
+
+  .taskdesk-task-title-row {
+    align-items: flex-start;
+  }
+
+  .taskdesk-task-card h3 {
+    white-space: normal;
+  }
+
+  .taskdesk-task-side {
+    min-width: 0;
+    align-items: flex-start;
+    flex-direction: row;
+  }
+}
