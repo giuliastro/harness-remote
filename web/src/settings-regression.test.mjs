@@ -45,6 +45,14 @@ assert.equal(panels.includes('agents discovered'), false, 'machine discovery fee
 assert.equal(panels.includes('{agent.label} · {agent.state}'), false, 'protocol host states must not be rendered verbatim')
 assert.ok(panels.includes('agent.state !== "available" && agent.state !== "configured"'), 'unavailable machine agents must not be selectable')
 
+// Automatic server names are suggestions. Once the user types a name, later discovery or agent
+// selection must not silently replace it with a generated machine/harness label.
+assert.ok(panels.includes('const [nameEdited, setNameEdited] = useState(false)'), 'the wizard should remember when the user has edited the server name')
+assert.ok(panels.includes('if (!nameEdited) setName(`${backendDisplayName(next)} server`)'), 'backend defaults should only replace an untouched automatic name')
+assert.ok(panels.includes('if (preferred && !nameEdited) setName(`${discovered.machine.name} · ${preferred.label}`)'), 'machine discovery should preserve a manually entered name')
+assert.ok(panels.includes('if (next && !nameEdited) setName(`${machine.machine.name} · ${next.label}`)'), 'agent selection should preserve a manually entered name')
+assert.match(panels, /setName\(event\.target\.value\)[\s\S]*?setNameEdited\(true\)/, 'typing in the server-name field should lock in the user value')
+
 // The server picker used to caption itself with a visually-hidden span, but no rule ever hid it: the
 // caption rendered as stray text above the header. Every class the picker and its actions rely on has
 // to exist in the stylesheet, or the layout falls back to whatever the bare markup does.
