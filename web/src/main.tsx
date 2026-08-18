@@ -16,7 +16,7 @@ import {
   persistServerProfiles
 } from "./serverProfiles"
 import { SERVER_STORAGE_KEYS } from "./storageKeys"
-import type { ServerConfig } from "./types"
+import type { MachineSnapshot, ServerConfig } from "./types"
 import "./styles.css"
 
 installCompletionAudioGuard()
@@ -24,8 +24,26 @@ installCompletionAudioGuard()
 const LANGUAGE_STORAGE_KEY = "opencode.remote.language"
 const taskDeskTestMode = import.meta.env.DEV && new URLSearchParams(window.location.search).get("taskdesk-test") === "1"
 
+function matchingMachineAgent(machine: MachineSnapshot | null, backend: ServerConfig["backend"]) {
+  return machine?.agents.find((agent) =>
+    agent.backend === backend && (agent.state === "available" || agent.state === "configured")
+  )
+}
+
+function profileRoutingKey(profileID: string, config: ServerConfig): string {
+  return JSON.stringify({
+    profileID,
+    backend: config.backend,
+    host: config.host.trim().toLowerCase(),
+    port: config.port,
+    username: config.username,
+    password: config.password
+  })
+}
+
 function AppProfileBoundary() {
   const [revision, setRevision] = useState(0)
+  const [checkedRoutingKey, setCheckedRoutingKey] = useState<string | null>(null)
   const profiles = useMemo(loadServerProfiles, [revision])
   const activeProfile = useMemo(() => loadActiveServerProfile(profiles), [profiles])
   const t = useMemo(
@@ -33,12 +51,43 @@ function AppProfileBoundary() {
     [revision]
   )
   const needsInitialSetup = !isValidServerConfig(activeProfile.config)
+  const routingKey = profileRoutingKey(activeProfile.id, activeProfile.config)
+  const needsRoutingDiscovery = !needsInitialSetup && !activeProfile.config.agentId && checkedRoutingKey !== routingKey
 
   useEffect(() => {
-    const onProfileChanged = () => setRevision((value) => value + 1)
+    const onProfileChanged = () => {
+      setCheckedRoutingKey(null)
+      setRevision((value) => value + 1)
+    }
     window.addEventListener(ACTIVE_PROFILE_CHANGED_EVENT, onProfileChanged)
     return () => window.removeEventListener(ACTIVE_PROFILE_CHANGED_EVENT, onProfileChanged)
   }, [])
+
+  useEffect(() => {
+    if (!needsRoutingDiscovery) return
+    let cancelled = false
+    void discoverMachine(activeProfile.config).then((machine) => {
+      if (cancelled) return
+      const agent = matchingMachineAgent(machine, activeProfile.config.backend)
+      if (agent) {
+        const nextProfiles = profiles.map((profile) =>
+          profile.id === activeProfile.id
+            ? { ...profile, config: { ...profile.config, agentId: agent.id } }
+            : profile
+        )
+        persistServerProfiles(nextProfiles, activeProfile.id)
+        setCheckedRoutingKey(null)
+        setRevision((value) => value + 1)
+        return
+      }
+      setCheckedRoutingKey(routingKey)
+    }).catch(() => {
+      if (!cancelled) setCheckedRoutingKey(routingKey)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [activeProfile, needsRoutingDiscovery, profiles, routingKey])
 
   if (needsInitialSetup) {
     return (
@@ -59,13 +108,34 @@ function AppProfileBoundary() {
           }
         }}
         onSave={(name, config) => {
-          const nextProfiles = profiles.map((profile) =>
-            profile.id === activeProfile.id ? { ...profile, name: name.trim() || profile.name, config } : profile
-          )
-          persistServerProfiles(nextProfiles, activeProfile.id)
-          setRevision((value) => value + 1)
+          void (async () => {
+            let routedConfig = config
+            if (!config.agentId) {
+              const machine = await discoverMachine(config).catch(() => null)
+              const agent = matchingMachineAgent(machine, config.backend)
+              if (agent) routedConfig = { ...config, agentId: agent.id }
+            }
+            const nextProfiles = profiles.map((profile) =>
+              profile.id === activeProfile.id
+                ? { ...profile, name: name.trim() || profile.name, config: routedConfig }
+                : profile
+            )
+            persistServerProfiles(nextProfiles, activeProfile.id)
+            setCheckedRoutingKey(null)
+            setRevision((value) => value + 1)
+          })()
         }}
       />
+    )
+  }
+
+  if (needsRoutingDiscovery) {
+    return (
+      <div className="app-shell">
+        <div className="empty-state compact" role="status" aria-live="polite">
+          <p>{t('connection.connecting')}</p>
+        </div>
+      </div>
     )
   }
 
