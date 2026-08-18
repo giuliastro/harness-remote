@@ -32,8 +32,8 @@ function defaultConfig(backend: BackendKind): ServerConfig {
   return {
     backend,
     host: "",
-    port: backend === "opencode" ? 4096 : 4097,
-    username: backend === "opencode" ? "opencode" : backend,
+    port: 4097,
+    username: "harness",
     password: ""
   }
 }
