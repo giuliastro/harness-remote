@@ -106,7 +106,12 @@ function providersResponse(models, fallbackProviderID) {
 export function createBridgeServer({ config, acp, serviceOptions, machineRegistry }) {
   const backend = config.backend ?? "omp"
   const profile = harnessProfile(backend)
-  const service = new AcpService(acp, { ...serviceOptions, actionProviders: profile.actionProviders })
+  const service = new AcpService(acp, {
+    ...serviceOptions,
+    actionProviders: profile.actionProviders,
+    preferListedTitles: profile.preferListedTitles,
+    nativeRenameCommand: profile.nativeRenameCommand
+  })
   const hiddenSessionIDs = serviceOptions?.hiddenSessionIDs
   const listVisibleSessions = async (directory) => {
     const sessions = await service.listSessions(directory)

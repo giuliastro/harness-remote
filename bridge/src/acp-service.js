@@ -248,12 +248,16 @@ export class AcpService {
   #preserveListedTimestamps
   #reloadOnHistoryRefresh
   #replaySettleMs
+  #preferListedTitles
+  #nativeRenameCommand
   constructor(acp, {
     snapshotDirectory,
     historyLoader,
     preserveListedTimestamps = false,
     reloadOnHistoryRefresh = true,
     replaySettleMs = 0,
+    preferListedTitles = false,
+    nativeRenameCommand,
     actionProviders = []
   } = {}) {
     this.#acp = acp
@@ -262,6 +266,8 @@ export class AcpService {
     this.#preserveListedTimestamps = preserveListedTimestamps
     this.#reloadOnHistoryRefresh = reloadOnHistoryRefresh
     this.#replaySettleMs = replaySettleMs
+    this.#preferListedTitles = preferListedTitles
+    this.#nativeRenameCommand = nativeRenameCommand
     this.#actionProviders = actionProviders
     acp.on("notification", (notification) => this.#handleNotification(notification))
   }
@@ -325,9 +331,42 @@ export class AcpService {
   }
 
   async renameSession(sessionID, title) {
-    const normalized = title.trim()
+    const normalized = title.trim().replace(/\s+/g, " ")
     if (!normalized) throw new Error("A session title is required")
     await this.#requireSession(sessionID)
+
+    if (this.#nativeRenameCommand) {
+      await this.#load(sessionID, true)
+      const messagesBefore = structuredClone(this.#messages.get(sessionID) ?? [])
+      const todosBefore = structuredClone(this.#todos.get(sessionID) ?? [])
+      const wasActive = this.#active.has(sessionID)
+      if (!wasActive) this.#active.add(sessionID)
+      try {
+        await this.#acp.request("session/prompt", {
+          sessionId: sessionID,
+          prompt: [{ type: "text", text: `/${this.#nativeRenameCommand} ${normalized}` }]
+        }, 300_000)
+      } finally {
+        if (!wasActive) this.#active.delete(sessionID)
+        this.#messages.set(sessionID, messagesBefore)
+        this.#todos.set(sessionID, todosBefore)
+        this.#chunkMessageIDs.delete(`${sessionID}:user`)
+        this.#chunkMessageIDs.delete(`${sessionID}:assistant`)
+      }
+      this.#titles.delete(sessionID)
+      await this.#refreshSessions()
+      const session = this.#sessions.get(sessionID)
+      if (!session) throw new Error("Harness session not found after rename")
+      this.#persistSnapshot(sessionID)
+      this.#emit("session.updated", sessionID)
+      return sessionView(
+        session,
+        this.#isBusy(sessionID) ? "busy" : "idle",
+        this.#titleFor(sessionID),
+        Boolean(this.#historyLoader && !this.#ownedSessions.has(sessionID))
+      )
+    }
+
     this.#titles.set(sessionID, normalized)
     this.#persistSnapshot(sessionID)
     this.#emit("session.updated", sessionID)
@@ -687,7 +726,7 @@ export class AcpService {
       if (snapshot?.version !== 1) return
       if (Array.isArray(snapshot.messages)) this.#messages.set(sessionID, mergeFragmentedPiSnapshot(snapshot.messages))
       if (Array.isArray(snapshot.todos)) this.#todos.set(sessionID, snapshot.todos)
-      if (typeof snapshot.title === "string" && snapshot.title) this.#titles.set(sessionID, snapshot.title)
+      if (!this.#preferListedTitles && typeof snapshot.title === "string" && snapshot.title) this.#titles.set(sessionID, snapshot.title)
       if (snapshot?.deleted === true) this.#deletedSessions.add(sessionID)
     } catch (error) {
       if (error?.code !== "ENOENT") this.#emit("session.error", sessionID, { message: "Stored session snapshot is unreadable" })
@@ -894,6 +933,8 @@ export class AcpService {
 
   /** ACP session listings may carry no title, so keep the creation title or derive one from the first prompt. */
   #titleFor(sessionID) {
+    const listed = this.#sessions.get(sessionID)?.title?.trim()
+    if (this.#preferListedTitles && listed) return listed
     const known = this.#titles.get(sessionID)
     if (known) return known
     const firstPrompt = this.#messages.get(sessionID)?.find((message) => message.info.role === "user")
