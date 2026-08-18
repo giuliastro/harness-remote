@@ -14,5 +14,8 @@ assert.match(api, /if \(isDesktopPlatform\(\)\)/, 'Electron must select desktop 
 assert.match(api, /desktopRequest\(config,/, 'Desktop request must resolve profile only after synchronization finishes')
 assert.doesNotMatch(api, /desktopProfileID\(config\)/, 'API must not resolve an unacknowledged desktop profile before waiting for synchronization')
 assert.match(desktopBridge, /profileId: string/, 'Desktop stream adapter must accept profile ID, not URL')
+assert.match(api, /function normalizeNativeResponseData\(data: unknown\): unknown/, 'Native transport must normalize stringified JSON payloads')
+assert.match(api, /return JSON\.parse\(trimmed\)/, 'Native JSON normalizer must parse JSON-looking strings')
+assert.match(api, /normalizeNativeResponseData\(response\.data\) as T/, 'Capacitor responses must use native JSON normalization before reaching API callers')
 
 console.log('platform selection regression tests passed')
