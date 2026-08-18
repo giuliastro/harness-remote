@@ -78,3 +78,14 @@ test("Universal workspace machine configuration is independent from Classic prof
   assert.match(standalone, /\+ Add machine/)
   assert.match(standalone, /Classic connections are separate/)
 })
+
+test("Universal workspace counts and projects follow the selected machine scope", () => {
+  const source = readFileSync(new URL("./components/universal-workspace.tsx", import.meta.url), "utf8")
+
+  assert.match(source, /const machineScopedSessions = useMemo/)
+  assert.match(source, /for \(const item of machineScopedSessions\)/)
+  assert.match(source, /all: scopedSessions\.length/)
+  assert.doesNotMatch(source, /all: sessions\.length/)
+  assert.match(source, /function selectMachine\(machine: MachineSource\)[\s\S]*?setProjectFilter\("all"\)/)
+  assert.match(source, /currentItem\?\.machineKey === machine\.key/)
+})
