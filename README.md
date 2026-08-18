@@ -2,28 +2,22 @@
 
 **Run and supervise AI coding agents on the machines where your code already lives, from anywhere.**
 
-Harness Remote is a **local-first control plane for AI coding agents**. Connect to the machine where your code and credentials already live, then supervise OpenCode, Claude Code, Codex CLI, Oh My Pi and PI from one interface on phone, web or desktop.
+Harness Remote is a local-first control plane for AI coding agents. Connect to a machine where your repositories, CLIs, subscriptions and credentials already live, then supervise OpenCode, Claude Code, Codex CLI, Oh My Pi and PI from one interface on phone, web or desktop.
 
 **One interface. Multiple agents. Your machines, your credentials, your code.**
 
 > Harness Remote is not another coding agent. It is the control plane above them.
 
-Execution stays on your machines. Repositories stay on your machines. Agent credentials and model access stay on your machines. Harness Remote coordinates and supervises the work remotely.
+Execution stays on your machines. Repositories stay on your machines. Agent credentials and model access stay on your machines.
 
 ## Quick start
 
-There are currently two supported server paths. **The per-harness bridge is the stable compatibility path used by the current release.** The machine daemon is the newer path and is still being expanded.
+The v3 / TaskDesk path uses one launcher per machine. The launcher detects supported harness CLIs on `PATH` and chooses the appropriate runtime automatically.
 
-### Stable per-harness bridge
-
-Use this when you want the same connection model as the current stable clients: one configured server per harness.
-
-From a checkout of this repository:
+From a checkout or directly from GitHub:
 
 ```bash
-# Oh My Pi / OMP
-node bridge/src/cli.js \
-  --backend omp \
+npx github:giuliastro/harness-remote \
   --host 0.0.0.0 \
   --port 4097 \
   --username harness \
@@ -31,103 +25,129 @@ node bridge/src/cli.js \
   --root "$HOME/Software"
 ```
 
+The important values for a client connection are the machine address, public port, username and password. The normal public port is **4097**.
+
+When the machine has multiple supported harnesses, Harness Remote starts the machine daemon and exposes the detected agents through that one public endpoint. OpenCode can run as a managed internal host, normally on loopback port **4096**. That 4096 port is an implementation detail and should not be entered in the client wizard.
+
+The launcher currently recognizes:
+
+- OpenCode
+- Claude Code
+- Codex CLI
+- Oh My Pi (OMP)
+- PI
+
+If only one compatible harness is installed, the launcher may use the single-backend compatibility path automatically. The client setup does not change: connect to the public address printed by the launcher and let the connection wizard discover the available harness.
+
+If `--port` is omitted, the launcher starts from the normal public port and chooses an available port when necessary. If username/password are omitted, it generates credentials and prints them.
+
+### Connecting from the app
+
+Use **Connect server** and follow the connection wizard:
+
+1. choose the harness you want to expose as that saved profile;
+2. enter the host running Harness Remote;
+3. use the public daemon port, normally `4097`;
+4. enter the credentials printed by the launcher;
+5. test the connection and save.
+
+The wizard discovers the machine and routes the saved profile to the selected harness. Multiple profiles may point to the same machine and public port while selecting different harnesses.
+
+For example, one machine can appear in the client as separate saved profiles for OpenCode, Codex, Claude, OMP and PI, while all of them use the same `host:4097` endpoint.
+
+## Root and project access
+
+`--root` defines the filesystem boundary the remote client is allowed to browse and use. Pick a directory containing the projects you actually want Harness Remote to access, for example:
+
 ```bash
-# PI
-node bridge/src/cli.js \
-  --backend pi \
-  --host 0.0.0.0 \
-  --port 4097 \
-  --username harness \
-  --password "use-a-long-unique-password" \
-  --root "$HOME/Software"
+--root "$HOME/Software"
 ```
 
-The PI bridge uses `@automatalabs/pi-acp@0.2.5` by default. Claude Code and Codex CLI use the same bridge with `--backend claude` and `--backend codex` respectively. OpenCode continues to support its direct HTTP server path.
+A path outside that boundary is intentionally rejected.
 
-Then install a client from [GitHub Releases](https://github.com/giuliastro/harness-remote/releases/latest) and configure the matching harness with that host, port and credentials.
+Manual sessions can still choose a directory inside the configured root. TaskDesk is moving the normal workflow toward selecting a known **Project** and letting the daemon choose the project directory or prepare an isolated Git worktree for the task.
 
-### Experimental machine daemon / one-command launcher
+## TaskDesk / v3
 
-```bash
-npx github:giuliastro/harness-remote
+The v3 branch is evolving Harness Remote from a remote session viewer into a task-first control plane.
+
+The backend already supports:
+
+- machine identity and agent discovery;
+- multiple harnesses behind one machine endpoint;
+- per-agent model catalogs;
+- persisted projects and tasks;
+- Task -> Run -> Session linkage;
+- project-directory or isolated Git worktree execution;
+- running/completed/failed lifecycle state;
+- restart reconciliation;
+- result/workspace inspection and explicit cleanup.
+
+The client UX is being completed and stabilized before v3 replaces the current mainline experience.
+
+The intended product model is:
+
+```text
+Machine
+  Projects
+    Project
+      Tasks
+        Task
+          Run / Session
 ```
 
-The launcher detects supported CLIs on `PATH`, chooses a primary ACP backend, can start OpenCode as a managed internal host, picks a free public port and prints credentials.
+A Task chooses a machine, project, harness and model. For Git projects it can run in an isolated worktree, so the user does not have to type platform-specific filesystem paths from the phone.
 
-**Current limitation:** one launcher connection does **not yet serve every detected ACP backend simultaneously**. Today the daemon serves the selected primary ACP backend plus managed OpenCode when available. Other ACP CLIs may be detected and printed but are not yet independently routable through that same daemon connection. Use the stable per-harness bridge above for PI, OMP, Claude or Codex when you need deterministic compatibility with the current release.
+## Current clients
 
-## What works today
+- **Android**: native Capacitor app
+- **Web / PWA**: browser client
+- **Desktop**: Electron builds for Windows, macOS and Linux
 
-Harness Remote already gives you a common remote UI for five coding-agent harnesses:
+From any client you can monitor sessions, read streamed progress, send prompts, stop work, select models where supported, inspect questions/todos and use the capabilities exposed by each harness.
 
-| Harness | Stable connection |
-|---|---|
-| [OpenCode](https://github.com/sst/opencode) | direct HTTP server |
-| [Claude Code](https://code.claude.com/) | per-harness ACP bridge |
-| [Codex CLI](https://github.com/openai/codex) | per-harness ACP bridge |
-| [Oh My Pi (OMP)](https://omp.sh/) | per-harness ACP bridge |
-| [PI](https://pi.dev/) | per-harness ACP bridge via `@automatalabs/pi-acp` |
+## Legacy compatibility
 
-From Android, the web/PWA or the desktop app you can monitor sessions, read streamed progress, send prompts, stop work, select models where supported, inspect agent questions/todos and use the capabilities each harness exposes.
+The repository still contains the standalone per-harness bridge and direct OpenCode compatibility code because existing installations and stable releases may depend on them.
 
-The machine-daemon work adds a stable machine identity and a foundation for routing multiple agent hosts through one connection, but the fully universal multi-ACP path is still in progress. Legacy per-harness connections remain supported and are the compatibility baseline while that migration continues.
+Those paths are compatibility mechanisms, not the normal v3 onboarding flow. New v3 connections should use the machine launcher and the connection wizard above.
 
-The backend task foundation is also in place: the daemon can discover known projects, persist normalized tasks, prepare isolated Git worktrees, launch supported agents inside those workspaces, reconcile run state after daemon restarts, inspect Git results and explicitly release finished worktrees without silently deleting dirty or unmerged work.
+For low-level legacy setup details see [REFERENCE.md](REFERENCE.md).
 
-These task/worktree/finish primitives are currently **backend/API foundations**. The complete task-first client experience — selecting a project, creating work and reviewing the result directly from the app — is still being built.
+## Development
 
-## Where it is going
+Requirements:
 
-The goal is not just remote chat with coding agents. The goal is a local-first operating layer for **coding work across agents and machines**:
+- Node.js 20+
+- one or more supported harness CLIs installed on the host machine
 
-- **Task-first client UX** — expose the existing project/task/worktree/launch primitives as the normal way to create work from phone, web and desktop.
-- **Review / PR lifecycle** — extend result inspection into diff, tests/checks, review, PR creation and CI visibility.
-- **Multi-machine fleet** — supervise and explicitly place work across desktops, laptops and servers without moving credentials or repositories into a hosted control plane.
-- **Attention plane** — one place for the questions, permissions, failures and completed work that actually need you.
-- **Fleet attention / Inbox** — turn normalized attention into a useful mobile queue once enough concurrent work exists.
-- **Automatic coordination later** — choose machine and agent by availability, capability, workload, cost or rate limits only after explicit task/fleet workflows are reliable.
+Useful commands:
 
-See [docs/HARNESS_3_ROADMAP.md](docs/HARNESS_3_ROADMAP.md) for the architecture and implementation roadmap.
+```bash
+# Launcher / daemon from a checkout
+npm start
 
-## Why local-first
+# Bridge tests
+npm test
 
-Coding agents are most useful where the repositories, build tools, local models, subscriptions and credentials already are. Harness Remote keeps that execution boundary intact and adds the missing remote control layer on top.
+# Web client
+cd web
+npm ci
+npm run dev
+```
 
-That means you can leave a workstation or server doing the work while you use another device to check progress, answer the agent, stop a bad run or start the next step.
-
-## Clients
-
-- **Android** — native Capacitor app.
-- **Web / PWA** — installable web client published from this repository.
-- **Desktop** — Electron builds for Windows, macOS and Linux.
-
-Current screenshots:
-
-<table>
-  <tr>
-    <th width="50%">Sessions</th>
-    <th width="50%">Detail</th>
-  </tr>
-  <tr>
-    <td><img src="docs/screenshots/sessions.jpg" alt="Harness Remote sessions view"></td>
-    <td><img src="docs/screenshots/detail.jpg" alt="Harness Remote session detail"></td>
-  </tr>
-</table>
+The pull-request CI type-checks and builds the web app, runs the regression suites and bridge tests on Linux/macOS/Windows, and produces a signed debug APK for test branches.
 
 ## Documentation
 
-The previous full README — including detailed OpenCode, OMP, PI, Claude Code and Codex setup, Android/Desktop/PWA notes, security caveats, endpoints and build instructions — is preserved as [REFERENCE.md](REFERENCE.md).
-
-Other useful docs:
-
 - [Harness 3 roadmap](docs/HARNESS_3_ROADMAP.md)
+- [Nitsuga / TaskDesk integration plan](docs/NITSUGA_TASKDESK_INTEGRATION_PLAN.md)
 - [Harness dependency notes](docs/DEPENDENCIES.md)
+- [Legacy/full reference](REFERENCE.md)
 - [Contributing](CONTRIBUTING.md)
 
 ## Project status
 
-Harness Remote is evolving from a multi-harness remote client into a local-first control plane. The current stable release continues to use the proven per-harness connection model. The one-command launcher, machine daemon and normalized task/worktree/run/finish backend are the migration path toward a unified machine-level control plane, and are still being stabilized before replacing the compatibility path.
+Harness Remote is moving toward a machine-first, task-first model while keeping compatibility with existing per-harness installations during the transition.
 
-The repository deliberately keeps backward compatibility while that transition lands in small, reviewable slices.
-
-If that is a problem you have too — several coding agents, several machines, and too much terminal babysitting — issues and feedback are especially useful now.
+The immediate v3 goal is stability: every supported harness must route to the correct sessions and models, task launch must preserve project/workspace ownership, web and Android must behave consistently, and the exact candidate SHA must pass real-device testing before promotion to `main`.
