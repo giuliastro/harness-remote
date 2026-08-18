@@ -3,6 +3,8 @@ import { desktopRequestResult, isDesktopPlatform } from "./desktopBridge"
 import { authHeader, hasCredentials, machineBaseUrl } from "./serverConfig"
 import type { MachineSnapshot, ServerConfig } from "./types"
 
+const BROWSER_DISCOVERY_TIMEOUT_MS = 12_000
+
 function headers(config: ServerConfig): Record<string, string> {
   const value: Record<string, string> = { Accept: "application/json" }
   if (hasCredentials(config)) value.Authorization = authHeader(config)
@@ -59,11 +61,18 @@ export async function discoverMachine(config: ServerConfig): Promise<MachineSnap
     return machineSnapshot(response.data)
   }
 
+  const controller = new AbortController()
+  const timer = globalThis.setTimeout(() => controller.abort(), BROWSER_DISCOVERY_TIMEOUT_MS)
   let response: Response
   try {
-    response = await fetch(target, { headers: headers(config) })
-  } catch {
+    response = await fetch(target, { headers: headers(config), signal: controller.signal })
+  } catch (error) {
+    if (controller.signal.aborted) {
+      throw new Error(`Machine discovery at ${config.host}:${config.port} timed out after ${BROWSER_DISCOVERY_TIMEOUT_MS / 1000}s.`)
+    }
     throw new Error(`Cannot reach ${config.host}:${config.port}.`)
+  } finally {
+    globalThis.clearTimeout(timer)
   }
   if (noMachineStatus(response.status)) return null
   if (!response.ok) throw new Error(`HTTP ${response.status}`)
