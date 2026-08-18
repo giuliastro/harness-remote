@@ -231,6 +231,7 @@ export class AcpService {
   #replaying = new Set()
   #historyLoader
   #ownedSessions = new Set()
+  #acpOpenSessions = new Set()
   #promptAcknowledgements = new Map()
   #titles = new Map()
   #deletedSessions = new Set()
@@ -294,6 +295,7 @@ export class AcpService {
   async createSession({ directory, title, model }) {
     await this.#acp.start()
     const result = await this.#acp.request("session/new", { cwd: directory, mcpServers: [] })
+    this.#acpOpenSessions.add(result.sessionId)
     this.#rememberConfigOptions(result.sessionId, result.configOptions)
     const session = {
       sessionId: result.sessionId,
@@ -334,6 +336,33 @@ export class AcpService {
     const normalized = title.trim().replace(/\s+/g, " ")
     if (!normalized) throw new Error("A session title is required")
     await this.#requireSession(sessionID)
+
+    if (typeof this.#historyLoader?.renameSession === "function") {
+      if (this.#isBusy(sessionID)) throw new Error("A busy PI session cannot be renamed")
+      if (this.#acpOpenSessions.has(sessionID)) {
+        await this.#acp.request("session/close", { sessionId: sessionID })
+        this.#acpOpenSessions.delete(sessionID)
+      }
+      await this.#historyLoader.renameSession(sessionID, normalized)
+      this.#loaded.delete(sessionID)
+      this.#ownedSessions.delete(sessionID)
+      this.#configOptions.delete(sessionID)
+      this.#commandCatalogs.delete(sessionID)
+      this.#actionStates.delete(sessionID)
+      this.#authoritativeActionStates.delete(sessionID)
+      this.#titles.delete(sessionID)
+      await this.#refreshSessions()
+      const session = this.#sessions.get(sessionID)
+      if (!session) throw new Error("Harness session not found after rename")
+      this.#persistSnapshot(sessionID)
+      this.#emit("session.updated", sessionID)
+      return sessionView(
+        session,
+        "idle",
+        this.#titleFor(sessionID),
+        Boolean(this.#historyLoader && !this.#ownedSessions.has(sessionID))
+      )
+    }
 
     if (this.#nativeRenameCommand) {
       await this.#load(sessionID, true)
@@ -853,6 +882,8 @@ export class AcpService {
     this.#chunkMessageIDs.delete(`${sessionID}:assistant`)
     try {
       const result = await this.#acp.request("session/load", { sessionId: sessionID, cwd: session.cwd, mcpServers: [] }, 300_000)
+      this.#acpOpenSessions.add(sessionID)
+      if (this.#historyLoader?.claimOnLoad) this.#ownedSessions.add(sessionID)
       // PI can resolve session/load just before its final replay notifications drain from stdout,
       // especially through the Windows cmd/npx pipe. Profiles can opt into a short replay tail so
       // those assistant chunks remain historical output instead of being rejected as unsolicited

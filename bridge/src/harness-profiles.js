@@ -1,6 +1,7 @@
 import { findExecutable } from "./launcher.js"
 import { createCodexHistoryLoader } from "./codex-session-history.js"
 import { createOmpHistoryLoader } from "./omp-session-history.js"
+import { createPiHistoryLoader } from "./pi-session-history.js"
 import { OMP_EXTENSION_ACTION_PROVIDERS } from "./extension-actions.js"
 
 const COMMON_CAPABILITIES = {
@@ -47,15 +48,13 @@ export const HARNESS_PROFILES = {
     args: ["-y", "@automatalabs/pi-acp@0.2.5"],
     adapterCommand: "pi-acp",
     permissionMode: "allow",
+    historyLoader: createPiHistoryLoader(),
     preserveListedTimestamps: true,
-    // Opening a PI session explicitly asks for fresh history. Honour that request so a stale bridge
-    // snapshot cannot hide assistant output that PI has already persisted.
-    reloadOnHistoryRefresh: true,
-    // PI owns its display names. The bridge must use the title from session/list and propagate an
-    // app rename through PI's own /name command so the app and PI /resume cannot drift apart.
+    // PI journals are authoritative for transcript and title metadata. session/load is a live-session
+    // operation and cannot be used as a refresh primitive because PI rejects a second open.
+    reloadOnHistoryRefresh: false,
     preferListedTitles: true,
-    nativeRenameCommand: "name",
-    // PI may flush the last replay chunks just after session/load resolves, most visibly on Windows.
+    // Keep the replay tail for the one real session/load used when the bridge takes ownership to prompt.
     replaySettleMs: 250,
     capabilities: {
       ...COMMON_CAPABILITIES,
