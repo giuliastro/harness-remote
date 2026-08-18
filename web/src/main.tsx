@@ -57,6 +57,13 @@ function AppProfileBoundary() {
   const [checkedRoutingKey, setCheckedRoutingKey] = useState<string | null>(null)
   const profiles = useMemo(loadServerProfiles, [revision])
   const activeProfile = useMemo(() => loadActiveServerProfile(profiles), [profiles])
+  // UniversalWorkspace collapses duplicate machine endpoints. Put the active profile first so the
+  // credentials the user just selected win over stale legacy/backend-specific profiles that may
+  // point at the same daemon with an old or empty password.
+  const workspaceProfiles = useMemo(
+    () => [activeProfile, ...profiles.filter((profile) => profile.id !== activeProfile.id)],
+    [activeProfile, profiles]
+  )
   const t = useMemo(
     () => createTranslator(normalizeLanguage(localStorage.getItem(LANGUAGE_STORAGE_KEY) || navigator.language)),
     [revision]
@@ -157,7 +164,7 @@ function AppProfileBoundary() {
 
   return (
     <UniversalWorkspace
-      profiles={profiles}
+      profiles={workspaceProfiles}
       activeProfileID={activeProfile.id}
       onPersistProfiles={persistWorkspaceProfiles}
       legacyView={<App key={revision} />}
