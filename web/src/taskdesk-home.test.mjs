@@ -64,3 +64,15 @@ test("Universal workspace cannot starve initial loading with overlapping polls",
   assert.match(source, /await withTimeout\(Promise\.all\(\[/)
   assert.match(source, /refreshInFlight\.current = false/)
 })
+
+test("Universal workspace machine configuration is independent from Classic profiles", () => {
+  const main = readFileSync(new URL("./main.tsx", import.meta.url), "utf8")
+  const machineStorage = readFileSync(new URL("./workspaceMachines.ts", import.meta.url), "utf8")
+  const standalone = readFileSync(new URL("./components/standalone-universal-workspace.tsx", import.meta.url), "utf8")
+
+  assert.match(main, /loadWorkspaceMachines/)
+  assert.doesNotMatch(main, /loadServerProfiles/)
+  assert.match(machineStorage, /harness-remote\.workspace\.machines\.v1/)
+  assert.match(standalone, /\+ Add machine/)
+  assert.match(standalone, /Classic connections are separate/)
+})
