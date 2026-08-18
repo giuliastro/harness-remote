@@ -6,6 +6,7 @@ import { api, isValidServerConfig } from "./api"
 import { backendDisplayName } from "./backendSetup"
 import { installCompletionAudioGuard } from "./completion-audio"
 import { ConnectServerWizard } from "./components/panels"
+import { TaskDeskHome } from "./components/taskdesk-home"
 import { ErrorBoundary } from "./ErrorBoundary"
 import { createTranslator, normalizeLanguage } from "./i18n"
 import { discoverMachine } from "./machineClient"
@@ -19,6 +20,7 @@ import { SERVER_STORAGE_KEYS } from "./storageKeys"
 import type { MachineSnapshot, ServerConfig } from "./types"
 import "./styles.css"
 import "./v3-polish.css"
+import "./taskdesk-home.css"
 
 installCompletionAudioGuard()
 
@@ -155,7 +157,12 @@ function AppProfileBoundary() {
     )
   }
 
-  return <App key={revision} />
+  return (
+    <TaskDeskHome
+      config={activeProfile.config}
+      sessions={<App key={revision} />}
+    />
+  )
 }
 
 async function renderApp() {
