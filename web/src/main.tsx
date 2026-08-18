@@ -15,6 +15,7 @@ import "./styles.css"
 import "./v3-polish.css"
 import "./universal-workspace.css"
 import "./universal-workspace-readable.css"
+import "./universal-workspace-readable-fixes.css"
 
 installCompletionAudioGuard()
 
