@@ -624,8 +624,5 @@ assert.match(styles, /\.task-launch-close\s*\{[^}]*margin-left:\s*auto/, 'TaskDe
 console.log('ui regression tests passed')
 
 
-test("desktop session auto-select never navigates away from Settings or Help", () => {
-  const source = readFileSync(new URL("./App.tsx", import.meta.url), "utf8")
-  const guard = 'if (!isDesktop || view === "settings" || view === "help" || autoSelectAttemptedRef.current || selectedID || sessions.length === 0) return'
-  assert.ok(source.includes(guard), "desktop auto-select must preserve explicit Settings and Help views")
-})
+const settingsAutoSelectGuard = 'if (!isDesktop || view === "settings" || view === "help" || autoSelectAttemptedRef.current || selectedID || sessions.length === 0) return'
+assert.ok(app.includes(settingsAutoSelectGuard), 'desktop auto-select must preserve explicit Settings and Help views')
