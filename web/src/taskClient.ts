@@ -4,6 +4,8 @@ import { unwrapPayload } from "./machinePayload"
 import { authHeader, hasCredentials, machineBaseUrl } from "./serverConfig"
 import type { ModelOption, ModelSelection, ServerConfig } from "./types"
 
+const BROWSER_MACHINE_REQUEST_TIMEOUT_MS = 12_000
+
 export type MachineProject = {
   id: string
   machineId: string
@@ -114,15 +116,23 @@ async function machineRequest<T>(config: ServerConfig, path: string, options: Ta
     return parseTaskPayload<T>(response.data, path)
   }
 
+  const controller = new AbortController()
+  const timer = globalThis.setTimeout(() => controller.abort(), BROWSER_MACHINE_REQUEST_TIMEOUT_MS)
   let response: Response
   try {
     response = await fetch(target, {
       method,
       headers,
-      body: options.body === undefined ? undefined : JSON.stringify(options.body)
+      body: options.body === undefined ? undefined : JSON.stringify(options.body),
+      signal: controller.signal
     })
-  } catch {
+  } catch (error) {
+    if (controller.signal.aborted) {
+      throw new Error(`${path} at ${config.host}:${config.port} timed out after ${BROWSER_MACHINE_REQUEST_TIMEOUT_MS / 1000}s.`)
+    }
     throw new Error(`Cannot reach ${config.host}:${config.port}.`)
+  } finally {
+    globalThis.clearTimeout(timer)
   }
   if (response.status === 401) throw new Error(unauthorizedDetail(config))
   if (!response.ok) {
