@@ -54,6 +54,7 @@ test("PI journal loader follows the current leaf instead of replaying abandoned 
   ])
 })
 
+// Regression: a provider failure can leave ACP replay incomplete even though PI's journal is complete.
 test("PI journal stays authoritative after an ACP load when a provider error was retried", async () => {
   const { root, sessionID, file } = await fixture()
   const records = (await readFile(file, "utf8")).trim().split("\n").map(JSON.parse)
