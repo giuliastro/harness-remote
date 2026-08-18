@@ -1,0 +1,55 @@
+.uw-detail-tabs button span {
+  font-size: 10.5px;
+}
+
+.uw-tool-title {
+  font-size: 11.5px;
+}
+
+.uw-tool-status {
+  font-size: 10.5px;
+}
+
+.uw-composer-footer .uw-button {
+  min-height: 36px;
+  font-size: 12px;
+}
+
+.uw-inspector-grid > b,
+.uw-inspector-grid > code {
+  font-size: 11.5px;
+  line-height: 1.45;
+}
+
+.uw-file-list p,
+.uw-todo-list > div,
+.uw-agent-buttons button,
+.uw-inspector-danger .uw-button,
+.uw-attention-card > strong,
+.uw-question > span,
+.uw-empty-panel span,
+.uw-inline-error,
+.uw-handoff-summary span {
+  font-size: 11.5px;
+}
+
+.uw-attention-card > p,
+.uw-attention-card > code,
+.uw-question > p,
+.uw-question-options button,
+.uw-question input {
+  font-size: 11.5px;
+}
+
+.uw-diff-file summary span,
+.uw-diff-file > p {
+  font-size: 11.5px;
+}
+
+.uw-tool-card summary code {
+  font-size: 11.5px;
+}
+
+.uw-empty-panel strong {
+  font-size: 13px;
+}
