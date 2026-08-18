@@ -15,6 +15,10 @@ export const BACKEND_STORAGE_KEYS = {
 
 export const SERVER_PROFILES_STORAGE_KEY = "opencode.remote.serverProfiles"
 export const ACTIVE_PROFILE_STORAGE_KEY = "opencode.remote.activeServerProfile"
+export const ACTIVE_PROFILE_CHANGED_EVENT = "harness-remote:active-profile-changed"
+
+const NEW_SESSION_DIRECTORY_STORAGE_KEY = "opencode.remote.newSessionDirectory"
+const NEW_SESSION_DIRECTORY_BY_PROFILE_STORAGE_KEY = "opencode.remote.newSessionDirectoryByProfile"
 
 export type SavedServerProfile = {
   id: string
@@ -144,6 +148,46 @@ function legacyProfiles(): SavedServerProfile[] {
   return [{ id: profileID(), name: profileName(fallback, 0), config: defaultConfig(fallback) }]
 }
 
+function readDirectoryScopes(): Record<string, string> {
+  const raw = localStorage.getItem(NEW_SESSION_DIRECTORY_BY_PROFILE_STORAGE_KEY)
+  if (raw === null) {
+    // The previous format had one path for every machine. It is unsafe to guess which profile owns
+    // that value, so discard it once instead of carrying a Windows path into Linux or vice versa.
+    localStorage.removeItem(NEW_SESSION_DIRECTORY_STORAGE_KEY)
+    localStorage.setItem(NEW_SESSION_DIRECTORY_BY_PROFILE_STORAGE_KEY, "{}")
+    return {}
+  }
+  try {
+    const parsed = JSON.parse(raw)
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {}
+    return Object.fromEntries(Object.entries(parsed).filter((entry): entry is [string, string] => typeof entry[1] === "string"))
+  } catch {
+    return {}
+  }
+}
+
+function connectionIdentity(config: ServerConfig): string {
+  return JSON.stringify({
+    backend: config.backend,
+    host: config.host.trim().toLowerCase(),
+    port: config.port,
+    username: config.username,
+    agentId: config.agentId?.trim() ?? ""
+  })
+}
+
+function switchNewSessionDirectory(previousProfileID: string | null, nextProfileID: string, clearNext: boolean): void {
+  const scopes = readDirectoryScopes()
+  if (previousProfileID) {
+    const current = localStorage.getItem(NEW_SESSION_DIRECTORY_STORAGE_KEY) ?? ""
+    if (current) scopes[previousProfileID] = current
+    else delete scopes[previousProfileID]
+  }
+  if (clearNext) delete scopes[nextProfileID]
+  localStorage.setItem(NEW_SESSION_DIRECTORY_BY_PROFILE_STORAGE_KEY, JSON.stringify(scopes))
+  localStorage.setItem(NEW_SESSION_DIRECTORY_STORAGE_KEY, clearNext ? "" : (scopes[nextProfileID] ?? ""))
+}
+
 export function loadServerProfiles(): SavedServerProfile[] {
   const savedProfiles = parseProfiles(localStorage.getItem(SERVER_PROFILES_STORAGE_KEY))
   if (!savedProfiles) return legacyProfiles()
@@ -159,13 +203,32 @@ export function loadServerProfiles(): SavedServerProfile[] {
 }
 
 export function loadActiveServerProfile(profiles: SavedServerProfile[]): SavedServerProfile {
+  readDirectoryScopes()
   const storedID = localStorage.getItem(ACTIVE_PROFILE_STORAGE_KEY)
   return profiles.find((profile) => profile.id === storedID) ?? profiles[0]
 }
 
 export function persistServerProfiles(profiles: SavedServerProfile[], activeProfileID: string): void {
+  const previousProfileID = localStorage.getItem(ACTIVE_PROFILE_STORAGE_KEY)
+  const previousProfiles = parseProfiles(localStorage.getItem(SERVER_PROFILES_STORAGE_KEY)) ?? []
+  const previousProfile = previousProfiles.find((profile) => profile.id === previousProfileID)
+  const nextProfile = profiles.find((profile) => profile.id === activeProfileID)
+  const profileChanged = previousProfileID !== null && previousProfileID !== activeProfileID
+  const connectionChanged = Boolean(
+    previousProfileID === activeProfileID && previousProfile && nextProfile &&
+    connectionIdentity(previousProfile.config) !== connectionIdentity(nextProfile.config)
+  )
+
+  if (profileChanged || connectionChanged) {
+    switchNewSessionDirectory(previousProfileID, activeProfileID, connectionChanged)
+  }
+
   localStorage.setItem(SERVER_PROFILES_STORAGE_KEY, JSON.stringify(profiles))
   localStorage.setItem(ACTIVE_PROFILE_STORAGE_KEY, activeProfileID)
+
+  if (profileChanged || connectionChanged) {
+    window.dispatchEvent(new CustomEvent(ACTIVE_PROFILE_CHANGED_EVENT, { detail: activeProfileID }))
+  }
 }
 
 export function createServerProfile(name: string, backend: BackendKind): SavedServerProfile {
