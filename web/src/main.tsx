@@ -6,7 +6,7 @@ import { api, isValidServerConfig } from "./api"
 import { backendDisplayName } from "./backendSetup"
 import { installCompletionAudioGuard } from "./completion-audio"
 import { ConnectServerWizard } from "./components/panels"
-import { TaskDeskHome } from "./components/taskdesk-home"
+import { UniversalWorkspace } from "./components/universal-workspace"
 import { ErrorBoundary } from "./ErrorBoundary"
 import { createTranslator, normalizeLanguage } from "./i18n"
 import { discoverMachine } from "./machineClient"
@@ -20,7 +20,7 @@ import { SERVER_STORAGE_KEYS } from "./storageKeys"
 import type { MachineSnapshot, ServerConfig } from "./types"
 import "./styles.css"
 import "./v3-polish.css"
-import "./taskdesk-home.css"
+import "./universal-workspace.css"
 
 installCompletionAudioGuard()
 
@@ -101,11 +101,8 @@ function AppProfileBoundary() {
     }
   }, [activeProfile, needsRoutingDiscovery, profiles, routingKey])
 
-  const saveConnection = (config: ServerConfig) => {
-    const nextProfiles = profiles.map((profile) =>
-      profile.id === activeProfile.id ? { ...profile, config } : profile
-    )
-    persistServerProfiles(nextProfiles, activeProfile.id)
+  const persistWorkspaceProfiles = (nextProfiles: typeof profiles, nextActiveProfileID: string) => {
+    persistServerProfiles(nextProfiles, nextActiveProfileID)
     setCheckedRoutingKey(null)
     setRevision((value) => value + 1)
   }
@@ -141,9 +138,7 @@ function AppProfileBoundary() {
                 ? { ...profile, name: name.trim() || profile.name, config: routedConfig }
                 : profile
             )
-            persistServerProfiles(nextProfiles, activeProfile.id)
-            setCheckedRoutingKey(null)
-            setRevision((value) => value + 1)
+            persistWorkspaceProfiles(nextProfiles, activeProfile.id)
           })()
         }}
       />
@@ -161,10 +156,11 @@ function AppProfileBoundary() {
   }
 
   return (
-    <TaskDeskHome
-      config={activeProfile.config}
-      onUpdateConnection={saveConnection}
-      sessions={<App key={revision} />}
+    <UniversalWorkspace
+      profiles={profiles}
+      activeProfileID={activeProfile.id}
+      onPersistProfiles={persistWorkspaceProfiles}
+      legacyView={<App key={revision} />}
     />
   )
 }
