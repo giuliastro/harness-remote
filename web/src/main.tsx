@@ -3,7 +3,7 @@ import ReactDOM from "react-dom/client"
 import { Capacitor } from "@capacitor/core"
 import App from "./App"
 import { installCompletionAudioGuard } from "./completion-audio"
-import { UniversalWorkspace } from "./components/universal-workspace"
+import { StandaloneUniversalWorkspace } from "./components/standalone-universal-workspace"
 import { ErrorBoundary } from "./ErrorBoundary"
 import { SERVER_STORAGE_KEYS } from "./storageKeys"
 import {
@@ -38,8 +38,8 @@ function TaskDeskBoundary() {
   }
 
   return (
-    <UniversalWorkspace
-      machineProfiles={machines}
+    <StandaloneUniversalWorkspace
+      machines={machines}
       onPersistMachines={persistMachines}
       legacyView={<App />}
     />
