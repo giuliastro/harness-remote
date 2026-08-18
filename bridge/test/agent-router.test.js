@@ -26,7 +26,18 @@ function daemonWith(entries, states = {}) {
   return {
     hostEntry(id) { return entries[id] },
     registry: {
-      host(id) { return states[id] ? { state: states[id] } : undefined }
+      host(id) {
+        const value = states[id]
+        if (!value) return undefined
+        return typeof value === "string" ? { state: value } : value
+      }
+    },
+    snapshot() {
+      return {
+        agents: Object.entries(states).map(([id, value]) => typeof value === "string"
+          ? { id, backend: id, state: value }
+          : { id, backend: value.backend ?? id, ...value })
+      }
     }
   }
 }
@@ -58,6 +69,54 @@ test("primary ACP agent prefix reuses the normalized bridge routes", async () =>
     const response = await fetch(`http://127.0.0.1:${port}/v1/agents/codex/session?directory=%2Fwork`)
     assert.equal(response.status, 200)
     assert.deepEqual(await response.json(), { url: "/session?directory=%2Fwork" })
+  } finally {
+    await close(server)
+  }
+})
+
+test("known unsupported ACP detail reads return empty data without hitting the bridge", async () => {
+  let bridgeHits = 0
+  const bridgeServer = new BridgeServer()
+  bridgeServer.on("request", (_request, response) => {
+    bridgeHits += 1
+    response.writeHead(500)
+    response.end()
+  })
+  const daemon = daemonWith(
+    { codex: { id: "codex", kind: "acp" } },
+    {
+      codex: {
+        state: "available",
+        backend: "codex",
+        capabilities: { questions: false, permissions: false }
+      }
+    }
+  )
+  const server = createAgentRoutingServer({
+    daemon,
+    config: { username: "outer", password: "secret", corsOrigins: [] },
+    primaryAgentID: "codex",
+    bridgeServer
+  })
+  const port = await listen(server)
+  const headers = { Authorization: basic("outer", "secret") }
+  try {
+    const unauthorized = await fetch(`http://127.0.0.1:${port}/v1/agents/codex/question`)
+    assert.equal(unauthorized.status, 401)
+
+    const question = await fetch(`http://127.0.0.1:${port}/v1/agents/codex/question`, { headers })
+    assert.equal(question.status, 200)
+    assert.deepEqual(await question.json(), [])
+
+    const permission = await fetch(`http://127.0.0.1:${port}/v1/agents/codex/permission?directory=%2Fwork`, { headers })
+    assert.equal(permission.status, 200)
+    assert.deepEqual(await permission.json(), [])
+
+    const vcs = await fetch(`http://127.0.0.1:${port}/v1/agents/codex/vcs?directory=%2Fwork`, { headers })
+    assert.equal(vcs.status, 200)
+    assert.deepEqual(await vcs.json(), {})
+
+    assert.equal(bridgeHits, 0)
   } finally {
     await close(server)
   }
