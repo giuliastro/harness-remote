@@ -111,7 +111,7 @@ function machineLabel(source: MachineSource): string {
 function directoryLabel(directory: string): string {
   const normalized = directory.replace(/[\\/]+$/, "")
   const chunks = normalized.split(/[\\/]/).filter(Boolean)
-  return chunks.at(-1) || directory || "Project"
+  return (chunks.length ? chunks[chunks.length - 1] : "") || directory || "Project"
 }
 
 function projectNameFor(session: Session): string {
@@ -752,7 +752,7 @@ function QuestionPanel({
   async function submit() {
     setSending(true)
     try {
-      const payload = request.questions.map((question, index) => {
+      const payload = request.questions.map((_question, index) => {
         const selected = answers[index] || []
         const customValue = custom[index]?.trim()
         return customValue ? [...selected, customValue] : selected
