@@ -18,6 +18,10 @@ export const BACKEND_CLIENTS: Record<BackendKind, BackendClient> = {
     modelSelectionRequiresSession: true,
     messageRefreshSupported: true
   },
+  prime: {
+    modelSelectionRequiresSession: true,
+    messageRefreshSupported: false
+  },
   claude: {
     modelSelectionRequiresSession: true,
     messageRefreshSupported: true

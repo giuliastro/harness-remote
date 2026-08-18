@@ -57,6 +57,24 @@ export const DEFAULT_HARNESS_CAPABILITIES: Record<BackendKind, HarnessCapabiliti
     sessionDelete: true,
     attachments: false
   },
+  prime: {
+    sessions: true,
+    prompt: true,
+    abort: true,
+    streaming: true,
+    models: false,
+    agents: false,
+    todos: false,
+    diff: false,
+    filesystemBrowser: true,
+    questions: false,
+    permissions: false,
+    commands: false,
+    actions: false,
+    sessionRename: true,
+    sessionDelete: true,
+    attachments: false
+  },
   claude: {
     sessions: true,
     prompt: true,

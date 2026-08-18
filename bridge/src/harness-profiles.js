@@ -57,6 +57,27 @@ export const HARNESS_PROFILES = {
       sessionDelete: true
     }
   },
+  prime: {
+    id: "prime",
+    label: "Prime Agent",
+    // Prime Agent speaks ACP natively. Its current ACP surface intentionally omits
+    // session/list and session/load, so this first integration supports sessions created
+    // by the running bridge process and relies on the bridge snapshots for their UI state.
+    command: "prime-agent",
+    args: ["--mode", "acp"],
+    permissionMode: "allow",
+    preserveListedTimestamps: true,
+    reloadOnHistoryRefresh: false,
+    capabilities: {
+      ...COMMON_CAPABILITIES,
+      models: false,
+      todos: false,
+      commands: false,
+      actions: false,
+      sessionRename: true,
+      sessionDelete: true
+    }
+  },
   claude: {
     id: "claude",
     label: "Claude Code",
