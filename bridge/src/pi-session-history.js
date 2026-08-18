@@ -102,6 +102,9 @@ export function createPiHistoryLoader(sessionRoot = defaultSessionRoot()) {
     return messages
   }
 
+  // PI's JSONL journal remains the source of truth for transcript reads even after ACP takes
+  // ownership for models/prompts. A live ACP session is lifecycle state, not history authority.
+  loadPiHistory.authoritativeHistory = true
   loadPiHistory.claimOnLoad = true
   loadPiHistory.renameSession = async (sessionID, title) => {
     const file = await locateSession(sessionID)

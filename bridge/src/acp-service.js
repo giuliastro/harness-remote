@@ -432,6 +432,24 @@ export class AcpService {
   async messages(sessionID, refresh = false) {
     await this.#refreshSessions()
     await this.#restoreSnapshot(sessionID)
+    if (this.#historyLoader?.authoritativeHistory) {
+      try {
+        const persistedMessages = mergeFragmentedPiSnapshot(await this.#historyLoader(sessionID))
+        const cachedMessages = mergeFragmentedPiSnapshot(this.#messages.get(sessionID) ?? [])
+        const messages = this.#isBusy(sessionID)
+          ? mergeFragmentedPiSnapshot(mergeExternalHistory(persistedMessages, cachedMessages))
+          : persistedMessages
+        if (semanticHistorySignature(messages) !== semanticHistorySignature(cachedMessages)) {
+          this.#resetActionsForSessionChange(sessionID)
+        }
+        this.#messages.set(sessionID, messages)
+        this.#loaded.add(sessionID)
+        this.#persistSnapshot(sessionID)
+        return messages
+      } catch {
+        this.#emit("session.error", sessionID, { message: "Harness session history could not be read" })
+      }
+    }
     const externalHistory = Boolean(this.#historyLoader && !this.#ownedSessions.has(sessionID))
     const reloadHistory = refresh && this.#reloadOnHistoryRefresh
     await this.#load(sessionID, reloadHistory || externalHistory)

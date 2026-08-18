@@ -15,7 +15,7 @@ name: PR checks
       - '.github/workflows/pr-checks.yml'
 
 permissions:
-  contents: write
+  contents: read
 
 # A pull request that is pushed to twice in a minute does not need the first Android build to
 # finish: it takes the longest and its APK is already stale.
@@ -24,27 +24,6 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  apply-pi-history-fix:
-    name: Apply PI authoritative history fix
-    if: github.event_name == 'pull_request' && github.event.pull_request.head.ref == 'fix/v3-pi-error-history-authority'
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout PR branch
-        uses: actions/checkout@v7
-        with:
-          ref: ${{ github.event.pull_request.head.ref }}
-          fetch-depth: 0
-      - name: Apply guarded patch
-        run: node bridge/scripts/apply-pi-authoritative-history-fix.mjs
-      - name: Restore workflow and publish patch
-        run: |
-          git checkout origin/v3/taskdesk -- .github/workflows/pr-checks.yml
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add bridge/src/acp-service.js bridge/src/pi-session-history.js bridge/test/pi-session-history.test.js bridge/scripts/apply-pi-authoritative-history-fix.mjs .github/workflows/pr-checks.yml
-          git commit -m "fix(v3): keep PI journal authoritative after ACP load"
-          git push origin HEAD:${{ github.event.pull_request.head.ref }}
-
   tests:
     name: Type-check and regressions
     runs-on: ubuntu-latest
