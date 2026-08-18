@@ -9,6 +9,25 @@ function headers(config: ServerConfig): Record<string, string> {
   return value
 }
 
+function machineSnapshot(value: unknown): MachineSnapshot {
+  let parsed = value
+  if (typeof parsed === "string") {
+    try {
+      parsed = JSON.parse(parsed)
+    } catch {
+      throw new Error("Invalid machine discovery response")
+    }
+  }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    throw new Error("Invalid machine discovery response")
+  }
+  const candidate = parsed as Partial<MachineSnapshot>
+  if (!candidate.machine || !Array.isArray(candidate.agents)) {
+    throw new Error("Invalid machine discovery response")
+  }
+  return candidate as MachineSnapshot
+}
+
 export function noMachineStatus(status: number | undefined): boolean {
   return status === 404 || status === 503
 }
@@ -24,7 +43,7 @@ export async function discoverMachine(config: ServerConfig): Promise<MachineSnap
       if (result.error.code === "http" && noMachineStatus(result.error.status)) return null
       throw new Error(result.error.message)
     }
-    return result.response.data as MachineSnapshot
+    return machineSnapshot(result.response.data)
   }
 
   const target = `${machineBaseUrl(config)}/v1/machine`
@@ -37,7 +56,7 @@ export async function discoverMachine(config: ServerConfig): Promise<MachineSnap
     }
     if (noMachineStatus(response.status)) return null
     if (response.status >= 400) throw new Error(`HTTP ${response.status}`)
-    return response.data as MachineSnapshot
+    return machineSnapshot(response.data)
   }
 
   let response: Response
@@ -48,7 +67,7 @@ export async function discoverMachine(config: ServerConfig): Promise<MachineSnap
   }
   if (noMachineStatus(response.status)) return null
   if (!response.ok) throw new Error(`HTTP ${response.status}`)
-  return await response.json() as MachineSnapshot
+  return machineSnapshot(await response.json())
 }
 
 export function selectableMachineAgents(machine: MachineSnapshot): MachineSnapshot["agents"] {
