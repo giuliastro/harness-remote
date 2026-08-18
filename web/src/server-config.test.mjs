@@ -69,7 +69,7 @@ assert.match(app, /const hasConfiguredServer = isValidServerConfig\(config\)/, '
 const main = readFileSync(new URL('./main.tsx', import.meta.url), 'utf8')
 assert.match(main, /<ErrorBoundary resetKeys=\{SERVER_STORAGE_KEYS\}>/, 'a crash must render recoverable UI instead of an empty root')
 assert.match(main, /ACTIVE_PROFILE_CHANGED_EVENT/, 'server changes must remount App so server-scoped session state is re-read')
-assert.match(main, /legacyView=\{<App key=\{revision\} \/>\}/, 'the universal workspace must still remount the classic App on the profile revision without reloading the page')
+assert.match(main, /return <App key=\{revision\} \/>/, 'the isolated Classic boundary must still remount App on the profile revision without reloading the page')
 
 const serverProfiles = readFileSync(new URL('./serverProfiles.ts', import.meta.url), 'utf8')
 assert.match(serverProfiles, /newSessionDirectoryByProfile/, 'new-session directories must be stored per server profile')
