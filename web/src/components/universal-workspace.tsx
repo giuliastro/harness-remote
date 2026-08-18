@@ -1041,30 +1041,20 @@ export function UniversalWorkspace({
     localStorage.setItem(PINNED_STORAGE_KEY, JSON.stringify([...pinned]))
   }, [pinned])
 
+  const machineScopedSessions = useMemo(() =>
+    sessions.filter((item) => machineFilter === "all" || item.machineKey === machineFilter),
+  [sessions, machineFilter])
+
   const projects = useMemo(() => {
     const map = new Map<string, number>()
-    for (const item of sessions) map.set(item.projectName, (map.get(item.projectName) || 0) + 1)
+    for (const item of machineScopedSessions) map.set(item.projectName, (map.get(item.projectName) || 0) + 1)
     return [...map.entries()].sort((left, right) => right[1] - left[1])
-  }, [sessions])
+  }, [machineScopedSessions])
 
-  const counts = useMemo(() => ({
-    all: sessions.length,
-    working: sessions.filter((item) => normalizeStatus(item.status, item.attention) === "working").length,
-    needs: sessions.filter((item) => normalizeStatus(item.status, item.attention) === "needs-you").length,
-    idle: sessions.filter((item) => normalizeStatus(item.status, item.attention) === "idle").length,
-    pinned: sessions.filter((item) => pinned.has(item.key)).length
-  }), [sessions, pinned])
-
-  const filteredSessions = useMemo(() => {
+  const scopedSessions = useMemo(() => {
     const needle = query.trim().toLowerCase()
-    return sessions.filter((item) => {
+    return machineScopedSessions.filter((item) => {
       if (projectFilter !== "all" && item.projectName !== projectFilter) return false
-      if (machineFilter !== "all" && item.machineKey !== machineFilter) return false
-      const normalized = normalizeStatus(item.status, item.attention)
-      if (filter === "working" && normalized !== "working") return false
-      if (filter === "needs-you" && normalized !== "needs-you") return false
-      if (filter === "idle" && normalized !== "idle") return false
-      if (filter === "pinned" && !pinned.has(item.key)) return false
       if (!needle) return true
       return [
         item.session.title,
@@ -1076,7 +1066,24 @@ export function UniversalWorkspace({
         previews[item.key]
       ].some((value) => value?.toLowerCase().includes(needle))
     })
-  }, [sessions, projectFilter, machineFilter, filter, pinned, query, previews])
+  }, [machineScopedSessions, projectFilter, query, previews])
+
+  const counts = useMemo(() => ({
+    all: scopedSessions.length,
+    working: scopedSessions.filter((item) => normalizeStatus(item.status, item.attention) === "working").length,
+    needs: scopedSessions.filter((item) => normalizeStatus(item.status, item.attention) === "needs-you").length,
+    idle: scopedSessions.filter((item) => normalizeStatus(item.status, item.attention) === "idle").length,
+    pinned: scopedSessions.filter((item) => pinned.has(item.key)).length
+  }), [scopedSessions, pinned])
+
+  const filteredSessions = useMemo(() => scopedSessions.filter((item) => {
+    const normalized = normalizeStatus(item.status, item.attention)
+    if (filter === "working" && normalized !== "working") return false
+    if (filter === "needs-you" && normalized !== "needs-you") return false
+    if (filter === "idle" && normalized !== "idle") return false
+    if (filter === "pinned" && !pinned.has(item.key)) return false
+    return true
+  }), [scopedSessions, filter, pinned])
 
   async function sendPrompt() {
     if (!selected || !composer.trim() || sending) return
@@ -1120,6 +1127,26 @@ export function UniversalWorkspace({
     } catch (reason) {
       setGlobalError(reason instanceof Error ? reason.message : String(reason))
     }
+  }
+
+  function selectMachine(machine: MachineSource) {
+    setMachineFilter(machine.key)
+    setProjectFilter("all")
+    setDetailTab("conversation")
+    setSelectedKey((current) => {
+      const currentItem = current ? sessions.find((item) => item.key === current) : undefined
+      if (currentItem?.machineKey === machine.key) return current
+      return sessions.find((item) => item.machineKey === machine.key)?.key || null
+    })
+  }
+
+  function selectProject(project: string) {
+    setProjectFilter(project)
+    setDetailTab("conversation")
+    const candidate = sessions.find((item) =>
+      (machineFilter === "all" || item.machineKey === machineFilter) && item.projectName === project
+    )
+    if (candidate) setSelectedKey(candidate.key)
   }
 
   const selectedMachine = selected ? machines.find((machine) => machine.key === selected.machineKey) : undefined
@@ -1211,7 +1238,7 @@ export function UniversalWorkspace({
               <button type="button" title="Show all projects" onClick={() => setProjectFilter("all")}>×</button>
             </div>
             {projects.slice(0, 8).map(([project, count]) => (
-              <button key={project} className={projectFilter === project ? "active" : ""} onClick={() => setProjectFilter(project)}>
+              <button key={project} className={projectFilter === project ? "active" : ""} onClick={() => selectProject(project)}>
                 <FolderIcon size={15} /><span title={project}>{project}</span><b>{count}</b>
               </button>
             ))}
@@ -1221,13 +1248,16 @@ export function UniversalWorkspace({
           <section className="uw-nav-section uw-machines-section">
             <div className="uw-nav-heading">
               <span className="uw-nav-label">Machines</span>
-              <button type="button" onClick={() => setMachineFilter("all")} title="Show every machine">×</button>
+              <button type="button" onClick={() => {
+                setMachineFilter("all")
+                setProjectFilter("all")
+              }} title="Show every machine">×</button>
             </div>
             {machines.map((machine) => (
               <button
                 key={machine.key}
                 className={machineFilter === machine.key ? "active" : ""}
-                onClick={() => setMachineFilter(machine.key)}
+                onClick={() => selectMachine(machine)}
                 onDoubleClick={() => setConnectionProfileID(machine.profile.id)}
                 title={machine.error || `${machine.profile.config.host}:${machine.profile.config.port}`}
               >
