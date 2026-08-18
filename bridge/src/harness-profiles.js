@@ -49,6 +49,8 @@ export const HARNESS_PROFILES = {
     permissionMode: "allow",
     preserveListedTimestamps: true,
     reloadOnHistoryRefresh: false,
+    // PI may flush the last replay chunks just after session/load resolves, most visibly on Windows.
+    replaySettleMs: 250,
     capabilities: {
       ...COMMON_CAPABILITIES,
       models: true,

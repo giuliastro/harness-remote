@@ -45,7 +45,8 @@ if (config) {
       snapshotDirectory: path.join(config.stateDirectory, profile.id),
       historyLoader: profile.historyLoader,
       preserveListedTimestamps: profile.preserveListedTimestamps,
-      reloadOnHistoryRefresh: profile.reloadOnHistoryRefresh
+      reloadOnHistoryRefresh: profile.reloadOnHistoryRefresh,
+      replaySettleMs: profile.replaySettleMs
     }
   })
   let shuttingDown = false

@@ -2342,10 +2342,13 @@ function App() {
   // server connection so it doesn't fight a session the user deliberately closed back out of.
   const autoSelectAttemptedRef = useRef(false)
   useEffect(() => {
-    if (!isDesktop || autoSelectAttemptedRef.current || selectedID || sessions.length === 0) return
+    // Loading or reconnecting a server while Settings or Help is open must never navigate away
+    // from that panel. Settings autosaves a valid password after a short pause; the resulting
+    // session refresh is not an instruction to open the first conversation.
+    if (!isDesktop || view === "settings" || view === "help" || autoSelectAttemptedRef.current || selectedID || sessions.length === 0) return
     autoSelectAttemptedRef.current = true
     openSession(sessions[0].id, sessions[0].directory).catch(() => undefined)
-  }, [isDesktop, selectedID, sessions])
+  }, [isDesktop, view, selectedID, sessions])
 
   const filteredSessions = useMemo(() => {
     const text = query.trim().toLowerCase()

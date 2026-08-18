@@ -247,11 +247,13 @@ export class AcpService {
   #snapshotWrites = new Map()
   #preserveListedTimestamps
   #reloadOnHistoryRefresh
+  #replaySettleMs
   constructor(acp, {
     snapshotDirectory,
     historyLoader,
     preserveListedTimestamps = false,
     reloadOnHistoryRefresh = true,
+    replaySettleMs = 0,
     actionProviders = []
   } = {}) {
     this.#acp = acp
@@ -259,6 +261,7 @@ export class AcpService {
     this.#historyLoader = historyLoader
     this.#preserveListedTimestamps = preserveListedTimestamps
     this.#reloadOnHistoryRefresh = reloadOnHistoryRefresh
+    this.#replaySettleMs = replaySettleMs
     this.#actionProviders = actionProviders
     acp.on("notification", (notification) => this.#handleNotification(notification))
   }
@@ -811,6 +814,13 @@ export class AcpService {
     this.#chunkMessageIDs.delete(`${sessionID}:assistant`)
     try {
       const result = await this.#acp.request("session/load", { sessionId: sessionID, cwd: session.cwd, mcpServers: [] }, 300_000)
+      // PI can resolve session/load just before its final replay notifications drain from stdout,
+      // especially through the Windows cmd/npx pipe. Profiles can opt into a short replay tail so
+      // those assistant chunks remain historical output instead of being rejected as unsolicited
+      // live output. Other ACP harnesses keep the zero-delay default.
+      if (this.#replaySettleMs > 0) {
+        await new Promise((resolve) => setTimeout(resolve, this.#replaySettleMs))
+      }
       this.#rememberConfigOptions(sessionID, result.configOptions)
       const replayedMessages = mergeFragmentedPiSnapshot(this.#messages.get(sessionID) ?? [])
       this.#messages.set(sessionID, replaceHistory ? replayedMessages : mergeReplay(previousMessages, replayedMessages))
