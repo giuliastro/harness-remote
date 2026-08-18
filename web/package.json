@@ -27,7 +27,7 @@
     "cap:sync:android": "npx cap sync android && node scripts/sync-native-live-events.mjs",
     "cap:add:android": "npx cap add android",
     "test:ui": "node src/ui-regression.test.mjs",
-    "test:settings": "node src/settings-regression.test.mjs",
+    "test:settings": "node src/settings-regression.test.mjs && node src/v3-ux-polish-regression.test.mjs",
     "test:model": "node src/model-regression.test.mjs",
     "test:events": "node --experimental-strip-types src/opencode-events.test.mjs",
     "test:profiles": "node --experimental-strip-types src/server-profiles.test.mjs",
