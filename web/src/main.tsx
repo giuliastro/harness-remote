@@ -24,9 +24,6 @@ import "./taskdesk-home.css"
 
 installCompletionAudioGuard()
 
-// Creating a session is a deliberate multi-step action. A stray click on the dimmed page around
-// the dialog must not throw the user's folder selection away; only the dialog's explicit close or
-// cancel controls dismiss it.
 document.addEventListener("click", (event) => {
   const target = event.target
   if (!(target instanceof HTMLElement) || !target.classList.contains("modal-backdrop")) return
@@ -70,9 +67,6 @@ function AppProfileBoundary() {
 
   useEffect(() => {
     const onProfileChanged = () => {
-      // Settings edits can persist while the user is still typing. If a stale profile-change event
-      // lands during that edit, remounting App would close the modal and start a connection using a
-      // half-edited draft. Keep the editor stable; explicit server selection already updates App.
       if (document.querySelector(".settings")) return
       setCheckedRoutingKey(null)
       setRevision((value) => value + 1)
@@ -106,6 +100,15 @@ function AppProfileBoundary() {
       cancelled = true
     }
   }, [activeProfile, needsRoutingDiscovery, profiles, routingKey])
+
+  const saveConnection = (config: ServerConfig) => {
+    const nextProfiles = profiles.map((profile) =>
+      profile.id === activeProfile.id ? { ...profile, config } : profile
+    )
+    persistServerProfiles(nextProfiles, activeProfile.id)
+    setCheckedRoutingKey(null)
+    setRevision((value) => value + 1)
+  }
 
   if (needsInitialSetup) {
     return (
@@ -160,6 +163,7 @@ function AppProfileBoundary() {
   return (
     <TaskDeskHome
       config={activeProfile.config}
+      onUpdateConnection={saveConnection}
       sessions={<App key={revision} />}
     />
   )
