@@ -141,7 +141,16 @@ export function createBridgeServer({ config, acp, serviceOptions, machineRegistr
       }
       if (request.method === "GET" && (url.pathname === "/v1/health" || url.pathname === "/global/health")) {
         await acp.start()
-        writeJSON(response, 200, { healthy: true, backend, version: acp.agentInfo?.version ?? "unknown" })
+        // A machine daemon exposes several harnesses behind one endpoint. Its ACP primary is an
+        // internal routing choice, not the identity of the whole server. Omitting `backend` here
+        // prevents legacy connection tests from rejecting OpenCode/PI/OMP/Claude merely because
+        // Codex (or another ACP harness) happens to be the daemon primary. Single-backend bridge
+        // servers still report their backend exactly as before.
+        writeJSON(response, 200, {
+          healthy: true,
+          ...(machineRegistry ? {} : { backend }),
+          version: acp.agentInfo?.version ?? "unknown"
+        })
         return
       }
       if (request.method === "GET" && url.pathname === "/v1/capabilities") {
