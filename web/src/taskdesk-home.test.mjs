@@ -1,4 +1,5 @@
 import assert from "node:assert/strict"
+import { readFileSync } from "node:fs"
 import test from "node:test"
 import {
   agentLabel,
@@ -53,4 +54,13 @@ test("TaskDesk sorts Tasks by durable task activity rather than session order", 
   const older = task({ id: "older", updatedAt: "2026-08-18T09:00:00.000Z" })
   const newer = task({ id: "newer", updatedAt: "2026-08-18T12:00:00.000Z" })
   assert.deepEqual(sortTasksByActivity([older, newer]).map((item) => item.id), ["newer", "older"])
+})
+
+test("Universal workspace cannot starve initial loading with overlapping polls", () => {
+  const source = readFileSync(new URL("./components/universal-workspace.tsx", import.meta.url), "utf8")
+  assert.match(source, /const AGENT_SESSION_LOAD_TIMEOUT_MS = 12_000/)
+  assert.match(source, /const refreshInFlight = useRef\(false\)/)
+  assert.match(source, /if \(refreshInFlight\.current\) return/)
+  assert.match(source, /await withTimeout\(Promise\.all\(\[/)
+  assert.match(source, /refreshInFlight\.current = false/)
 })
