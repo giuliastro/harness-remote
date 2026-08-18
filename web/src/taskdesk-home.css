@@ -47,16 +47,35 @@
   font-size: 13px;
 }
 
+.taskdesk-machine-address {
+  display: inline-flex;
+  margin: 5px 0 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--muted, #9ca3af);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.taskdesk-machine-address:hover {
+  color: var(--text, #f3f4f6);
+  text-decoration: underline;
+}
+
 .taskdesk-topbar-actions,
 .taskdesk-machine-heading,
 .taskdesk-agents,
 .taskdesk-task-title-row,
-.taskdesk-task-meta {
+.taskdesk-task-meta,
+.taskdesk-state-actions {
   display: flex;
   align-items: center;
 }
 
-.taskdesk-topbar-actions {
+.taskdesk-topbar-actions,
+.taskdesk-state-actions {
   gap: 8px;
 }
 
@@ -311,6 +330,15 @@
   opacity: 0.7;
 }
 
+.taskdesk-connection-editor {
+  width: min(520px, calc(100vw - 32px));
+}
+
+.taskdesk-connection-editor .wizard-body {
+  display: grid;
+  gap: 14px;
+}
+
 @media (max-width: 780px) {
   .taskdesk-topbar {
     align-items: flex-start;
@@ -357,5 +385,10 @@
     min-width: 0;
     align-items: flex-start;
     flex-direction: row;
+  }
+
+  .taskdesk-state-actions {
+    align-items: flex-start;
+    flex-direction: column;
   }
 }
