@@ -40,6 +40,7 @@ import {
 const REMARK_PLUGINS = [remarkGfm]
 const REFRESH_INTERVAL_MS = 4_000
 const DETAIL_REFRESH_INTERVAL_MS = 2_500
+const AGENT_SESSION_LOAD_TIMEOUT_MS = 12_000
 const PINNED_STORAGE_KEY = "harness-remote.universal-workspace.pinned"
 
 type WorkspaceFilter = "all" | "working" | "needs-you" | "idle" | "pinned"
@@ -84,6 +85,25 @@ type UniversalWorkspaceProps = {
   activeProfileID: string
   onPersistProfiles: (profiles: SavedServerProfile[], activeProfileID: string) => void
   legacyView: ReactNode
+}
+
+function withTimeout<T>(promise: Promise<T>, label: string, timeoutMs = AGENT_SESSION_LOAD_TIMEOUT_MS): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = window.setTimeout(
+      () => reject(new Error(`${label} timed out after ${Math.round(timeoutMs / 1000)}s.`)),
+      timeoutMs
+    )
+    promise.then(
+      (value) => {
+        window.clearTimeout(timer)
+        resolve(value)
+      },
+      (reason) => {
+        window.clearTimeout(timer)
+        reject(reason)
+      }
+    )
+  })
 }
 
 function endpointKey(config: ServerConfig): string {
@@ -850,11 +870,14 @@ export function UniversalWorkspace({
   const [pinned, setPinned] = useState<Set<string>>(() => loadPinned())
   const [questionRevision, setQuestionRevision] = useState(0)
   const refreshGeneration = useRef(0)
+  const refreshInFlight = useRef(false)
   const transcriptRef = useRef<HTMLDivElement>(null)
 
   const selected = sessions.find((item) => item.key === selectedKey) || null
 
   const refreshAll = useCallback(async (silent = false) => {
+    if (refreshInFlight.current) return
+    refreshInFlight.current = true
     const generation = ++refreshGeneration.current
     if (!silent) setLoading(true)
     else setRefreshing(true)
@@ -908,12 +931,12 @@ export function UniversalWorkspace({
       const collected = (await Promise.all(nextMachines.flatMap((machine) => machine.agents.map(async (agent) => {
         const config = configForAgent(machine, agent)
         try {
-          const [agentSessions, statuses, questions, permissions] = await Promise.all([
+          const [agentSessions, statuses, questions, permissions] = await withTimeout(Promise.all([
             api.listGlobalSessions(config).catch(() => api.listSessions(config)),
             api.listStatuses(config).catch(() => ({} as Record<string, SessionStatus>)),
             api.loadQuestions(config).catch(() => []),
             api.loadPermissions(config).catch(() => [])
-          ])
+          ]), `${agent.label} session loading`)
           const attentionBySession = new Map<string, number>()
           for (const request of [...questions, ...permissions]) {
             attentionBySession.set(request.sessionID, (attentionBySession.get(request.sessionID) || 0) + 1)
@@ -963,6 +986,7 @@ export function UniversalWorkspace({
         setLoading(false)
         setRefreshing(false)
       }
+      refreshInFlight.current = false
     }
   }, [profiles])
 
