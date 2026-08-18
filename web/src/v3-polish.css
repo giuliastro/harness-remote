@@ -1,0 +1,33 @@
+/* Small v3-only polish kept separate from the main design-system sheet while TaskDesk is still
+   stabilizing. These selectors intentionally depend only on existing DOM structure. */
+
+/* A long server list may scroll, but both server-management actions must remain visible. */
+.server-switcher-menu > .menu-separator:nth-last-child(3),
+.server-switcher-menu > .menu-item:nth-last-child(2),
+.server-switcher-menu > .menu-item:last-child {
+  position: sticky;
+  z-index: 2;
+  background: var(--surface);
+}
+
+.server-switcher-menu > .menu-separator:nth-last-child(3) {
+  bottom: calc(2 * var(--control-h));
+  margin-bottom: 0;
+}
+
+.server-switcher-menu > .menu-item:nth-last-child(2) {
+  bottom: var(--control-h);
+  width: 100%;
+  border-radius: 0;
+}
+
+.server-switcher-menu > .menu-item:last-child {
+  bottom: 0;
+  width: 100%;
+  border-radius: 0 0 var(--radius-md) var(--radius-md);
+}
+
+/* The first breadcrumb button already renders '/'. Do not add another separator before 'home'. */
+.path-breadcrumb > span:first-child + span > .path-breadcrumb-sep {
+  display: none;
+}
