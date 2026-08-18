@@ -7,10 +7,10 @@ import type { MachineSnapshot, ServerConfig } from "../types"
 type TaskDeskHomeProps = {
   config: ServerConfig
   sessions: ReactNode
+  onUpdateConnection: (config: ServerConfig) => void
 }
 
 type TaskDeskView = "tasks" | "sessions"
-
 type LoadState = "loading" | "ready" | "unavailable" | "error"
 
 const TASKDESK_DISCOVERY_TIMEOUT_MS = 12_000
@@ -18,10 +18,7 @@ const TASKDESK_DISCOVERY_TIMEOUT_MS = 12_000
 function formatLastActivity(value: string): string {
   const timestamp = Date.parse(value)
   if (!Number.isFinite(timestamp)) return "Unknown activity"
-  return new Intl.DateTimeFormat(undefined, {
-    dateStyle: "medium",
-    timeStyle: "short"
-  }).format(timestamp)
+  return new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(timestamp)
 }
 
 function withTimeout<T>(promise: Promise<T>, label: string): Promise<T> {
@@ -42,17 +39,76 @@ function withTimeout<T>(promise: Promise<T>, label: string): Promise<T> {
 
 function browserConnectionHint(config: ServerConfig): string {
   if (typeof window === "undefined") return ""
-  const origin = window.location.origin
-  return ` Browser access requires the daemon to allow this exact origin with --cors ${origin}. Target: ${config.host}:${config.port}.`
+  return ` Browser access requires the daemon to allow this exact origin with --cors ${window.location.origin}. Target: ${config.host}:${config.port}.`
 }
 
-export function TaskDeskHome({ config, sessions }: TaskDeskHomeProps) {
+function ConnectionEditor({
+  config,
+  onCancel,
+  onSave
+}: {
+  config: ServerConfig
+  onCancel: () => void
+  onSave: (config: ServerConfig) => void
+}) {
+  const [host, setHost] = useState(config.host)
+  const [port, setPort] = useState(String(config.port))
+  const [username, setUsername] = useState(config.username)
+  const [password, setPassword] = useState(config.password)
+  const parsedPort = Number(port)
+  const valid = host.trim().length > 0 && Number.isInteger(parsedPort) && parsedPort > 0 && parsedPort <= 65_535
+
+  return (
+    <div className="modal-backdrop" role="presentation" onClick={onCancel}>
+      <section className="modal-card wizard taskdesk-connection-editor" role="dialog" aria-modal="true" aria-labelledby="taskdesk-connection-title" onClick={(event) => event.stopPropagation()}>
+        <div className="wizard-header">
+          <div className="wizard-header-text">
+            <h2 id="taskdesk-connection-title">Machine connection</h2>
+            <p className="subtle">Use the Address, Username and Password printed by the Harness Remote daemon.</p>
+          </div>
+        </div>
+        <div className="wizard-body">
+          <label className="field">
+            <span>Host</span>
+            <input value={host} onChange={(event) => setHost(event.target.value)} spellCheck={false} autoCapitalize="none" autoCorrect="off" />
+          </label>
+          <label className="field">
+            <span>Port</span>
+            <input value={port} inputMode="numeric" onChange={(event) => setPort(event.target.value)} />
+          </label>
+          <label className="field">
+            <span>Username</span>
+            <input value={username} onChange={(event) => setUsername(event.target.value)} spellCheck={false} autoCapitalize="none" autoCorrect="off" />
+          </label>
+          <label className="field">
+            <span>Password</span>
+            <input type="password" value={password} onChange={(event) => setPassword(event.target.value)} autoComplete="current-password" />
+          </label>
+        </div>
+        <div className="wizard-footer">
+          <button type="button" className="btn-secondary" onClick={onCancel}>Cancel</button>
+          <button
+            type="button"
+            className="btn-primary"
+            disabled={!valid}
+            onClick={() => onSave({ ...config, host: host.trim(), port: parsedPort, username: username.trim(), password: password.trim() })}
+          >
+            Save and reconnect
+          </button>
+        </div>
+      </section>
+    </div>
+  )
+}
+
+export function TaskDeskHome({ config, sessions, onUpdateConnection }: TaskDeskHomeProps) {
   const [view, setView] = useState<TaskDeskView>("tasks")
   const [machine, setMachine] = useState<MachineSnapshot | null>(null)
   const [tasks, setTasks] = useState<MachineTask[]>([])
   const [state, setState] = useState<LoadState>("loading")
   const [error, setError] = useState<string | null>(null)
   const [revision, setRevision] = useState(0)
+  const [editingConnection, setEditingConnection] = useState(false)
 
   useEffect(() => {
     let cancelled = false
@@ -113,11 +169,12 @@ export function TaskDeskHome({ config, sessions }: TaskDeskHomeProps) {
         <div>
           <p className="taskdesk-eyebrow">TaskDesk 3.0</p>
           <h1>{machine?.machine.name || "Machine"}</h1>
-          <p className="taskdesk-machine-id">
-            {machine ? `${agents.length} agent${agents.length === 1 ? "" : "s"} available` : `${config.host}:${config.port}`}
-          </p>
+          <button type="button" className="taskdesk-machine-address" onClick={() => setEditingConnection(true)} title="Edit machine connection">
+            {machine ? `${agents.length} agent${agents.length === 1 ? "" : "s"} available · ${config.host}:${config.port}` : `${config.host}:${config.port}`}
+          </button>
         </div>
         <div className="taskdesk-topbar-actions">
+          <button type="button" className="taskdesk-secondary-button" onClick={() => setEditingConnection(true)}>Connection</button>
           <button type="button" className="taskdesk-secondary-button" onClick={() => setView("sessions")}>Sessions</button>
           <button type="button" className="taskdesk-secondary-button" onClick={refresh} disabled={state === "loading"}>Refresh</button>
         </div>
@@ -165,13 +222,16 @@ export function TaskDeskHome({ config, sessions }: TaskDeskHomeProps) {
             <div className="taskdesk-state taskdesk-state-warning">
               <strong>This connection does not expose TaskDesk machine APIs.</strong>
               <span>Ordinary sessions still work. Connect to the unified Harness Remote daemon to use Tasks.</span>
-              <button type="button" className="taskdesk-primary-button" onClick={() => setView("sessions")}>Open Sessions</button>
+              <button type="button" className="taskdesk-primary-button" onClick={() => setEditingConnection(true)}>Change connection</button>
             </div>
           ) : state === "error" ? (
             <div className="taskdesk-state taskdesk-state-error" role="alert">
               <strong>Could not load TaskDesk.</strong>
               <span>{error || "Unknown error"}</span>
-              <button type="button" className="taskdesk-primary-button" onClick={refresh}>Try again</button>
+              <div className="taskdesk-state-actions">
+                <button type="button" className="taskdesk-primary-button" onClick={() => setEditingConnection(true)}>Change connection</button>
+                <button type="button" className="taskdesk-secondary-button" onClick={refresh}>Try again</button>
+              </div>
             </div>
           ) : tasks.length === 0 ? (
             <div className="taskdesk-state">
@@ -207,6 +267,17 @@ export function TaskDeskHome({ config, sessions }: TaskDeskHomeProps) {
           )}
         </section>
       </main>
+
+      {editingConnection && (
+        <ConnectionEditor
+          config={config}
+          onCancel={() => setEditingConnection(false)}
+          onSave={(nextConfig) => {
+            setEditingConnection(false)
+            onUpdateConnection(nextConfig)
+          }}
+        />
+      )}
     </div>
   )
 }
