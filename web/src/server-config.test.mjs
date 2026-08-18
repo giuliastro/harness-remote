@@ -69,7 +69,7 @@ assert.match(app, /const hasConfiguredServer = isValidServerConfig\(config\)/, '
 const main = readFileSync(new URL('./main.tsx', import.meta.url), 'utf8')
 assert.match(main, /<ErrorBoundary resetKeys=\{SERVER_STORAGE_KEYS\}>/, 'a crash must render recoverable UI instead of an empty root')
 assert.match(main, /ACTIVE_PROFILE_CHANGED_EVENT/, 'server changes must remount App so server-scoped session state is re-read')
-assert.match(main, /sessions=\{<App key=\{revision\} \/>\}/, 'the TaskDesk shell must still remount App on the profile revision without reloading the page')
+assert.match(main, /legacyView=\{<App key=\{revision\} \/>\}/, 'the universal workspace must still remount the classic App on the profile revision without reloading the page')
 
 const serverProfiles = readFileSync(new URL('./serverProfiles.ts', import.meta.url), 'utf8')
 assert.match(serverProfiles, /newSessionDirectoryByProfile/, 'new-session directories must be stored per server profile')
@@ -97,6 +97,20 @@ assert.equal(
   authHeader(creds('opencode', 'secret')),
   'surrounding whitespace must not change the credentials sent'
 )
+
+// `btoa` encodes Latin-1: `à` went out as one byte where curl and every other client send the two
+// UTF-8 bytes the server decodes, so the password silently did not match. Above U+00FF it threw.
+assert.equal(
+  authHeader(creds('opencode', 'pàssword')),
+  'Basic b3BlbmNvZGU6cMOgc3N3b3Jk',
+  'credentials must be encoded as UTF-8 before base64'
+)
+assert.notEqual(
+  authHeader(creds('opencode', 'pàssword')),
+  'Basic b3BlbmNvZGU6cOBzc3dvcmQ=',
+  'the Latin-1 encoding btoa produces on its own must not be what goes on the wire'
+)
+assert.doesNotThrow(() => authHeader(creds('opencode', 'påsswörd☂')), 'a character above U+00FF must not throw')
 
 // `btoa` encodes Latin-1: `à` went out as one byte where curl and every other client send the two
 // UTF-8 bytes the server decodes, so the password silently did not match. Above U+00FF it threw.
