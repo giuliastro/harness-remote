@@ -3,6 +3,8 @@ import { readFileSync } from 'node:fs'
 
 const app = readFileSync(new URL('./App.tsx', import.meta.url), 'utf8')
 const api = readFileSync(new URL('./api.ts', import.meta.url), 'utf8')
+const main = readFileSync(new URL('./main.tsx', import.meta.url), 'utf8')
+const serverProfiles = readFileSync(new URL('./serverProfiles.ts', import.meta.url), 'utf8')
 const i18n = readFileSync(new URL('./i18n.ts', import.meta.url), 'utf8')
 const styles = readFileSync(new URL('./styles.css', import.meta.url), 'utf8')
 const shell = readFileSync(new URL('./components/shell.tsx', import.meta.url), 'utf8')
@@ -34,6 +36,18 @@ assert.ok(app.includes('health.backend && health.backend !== configToTest.backen
 assert.ok(app.includes('https://github.com/giuliastro/harness-remote#'), 'Help should link to the canonical repository')
 assert.equal(app.includes('https://github.com/gervaso-assistant/opencode-remote-android#'), false, 'Help must not link to the obsolete repository owner')
 
+// First-run configuration is a guided flow, not the editable Settings panel. A blank fallback
+// profile must never mount App first, because App's Settings screen auto-persists valid drafts.
+assert.ok(main.includes('const needsInitialSetup = !isValidServerConfig(activeProfile.config)'), 'first-run setup must be derived from the active profile validity')
+assert.match(main, /if \(needsInitialSetup\) \{[\s\S]*?<ConnectServerWizard/, 'an unconfigured install must render the connection wizard directly')
+assert.match(main, /onCancel=\{\(\) => undefined\}/, 'the required first-run wizard must not dismiss into the raw Settings form')
+
+// Settings may still auto-save edits, but changing the current profile identity must not remount the
+// whole React tree. That remount closed the editor after a couple of typed characters and started a
+// connection with a half-entered address.
+assert.ok(serverProfiles.includes('if (profileChanged) {'), 'only an actual saved-profile switch should emit the remount event')
+assert.doesNotMatch(serverProfiles, /if \(profileChanged \|\| connectionChanged\) \{\s*window\.dispatchEvent/, 'editing host, port or credentials must not remount App')
+
 // A daemon-backed connection discovers the machine before falling back to the backend-specific
 // health check. Legacy servers return null from discovery and therefore keep the existing save flow.
 assert.ok(panels.includes('await import("../machineClient")'), 'the connection wizard should discover a machine without requiring App-level wiring')
@@ -45,6 +59,15 @@ assert.equal(panels.includes('Agent on '), false, 'the machine picker must not i
 assert.equal(panels.includes('agents discovered'), false, 'machine discovery feedback must not introduce hardcoded English copy')
 assert.equal(panels.includes('{agent.label} · {agent.state}'), false, 'protocol host states must not be rendered verbatim')
 assert.ok(panels.includes('agent.state !== "available" && agent.state !== "configured"'), 'unavailable machine agents must not be selectable')
+
+// A valid profile without an agentId is not safe to use against a multi-harness daemon. OpenCode is
+// intentionally not a bridge backend, so the old App-only repair skipped it and its first session
+// request fell through to the daemon primary, commonly Codex. Resolve every unscoped profile before
+// App mounts and repeat the same resolution on first-run Save in case the user skipped Test.
+assert.ok(main.includes('const needsRoutingDiscovery = !needsInitialSetup && !activeProfile.config.agentId'), 'unscoped saved profiles must be resolved before App starts loading sessions')
+assert.ok(main.includes('matchingMachineAgent(machine, activeProfile.config.backend)'), 'routing discovery must match the selected backend, including OpenCode')
+assert.match(main, /if \(needsRoutingDiscovery\) \{[\s\S]*?connection\.connecting/, 'the app must not mount its session UI while daemon routing is unresolved')
+assert.match(main, /onSave=\{\(name, config\) => \{[\s\S]*?if \(!config\.agentId\)[\s\S]*?discoverMachine\(config\)/, 'saving the first server must resolve its daemon agent even when Test was skipped')
 
 // Automatic server names are suggestions. Once the user types a name, later discovery or agent
 // selection must not silently replace it with a generated machine/harness label.
