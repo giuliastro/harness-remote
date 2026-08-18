@@ -69,9 +69,11 @@ test("Universal workspace machine configuration is independent from Classic prof
   const main = readFileSync(new URL("./main.tsx", import.meta.url), "utf8")
   const machineStorage = readFileSync(new URL("./workspaceMachines.ts", import.meta.url), "utf8")
   const standalone = readFileSync(new URL("./components/standalone-universal-workspace.tsx", import.meta.url), "utf8")
+  const taskDeskBoundary = main.match(/function TaskDeskBoundary\(\) \{[\s\S]*?\n\}\n\nasync function renderApp/)
 
-  assert.match(main, /loadWorkspaceMachines/)
-  assert.doesNotMatch(main, /loadServerProfiles/)
+  assert.ok(taskDeskBoundary, "TaskDesk boundary should remain explicit")
+  assert.match(taskDeskBoundary[0], /loadWorkspaceMachines/)
+  assert.doesNotMatch(taskDeskBoundary[0], /loadServerProfiles/)
   assert.match(machineStorage, /harness-remote\.workspace\.machines\.v1/)
   assert.match(standalone, /\+ Add machine/)
   assert.match(standalone, /Classic connections are separate/)
