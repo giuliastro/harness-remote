@@ -7,6 +7,7 @@ import { backendDisplayName } from "./backendSetup"
 import { installCompletionAudioGuard } from "./completion-audio"
 import { ConnectServerWizard } from "./components/panels"
 import { ErrorBoundary } from "./ErrorBoundary"
+import { createTranslator, normalizeLanguage } from "./i18n"
 import { discoverMachine } from "./machineClient"
 import {
   ACTIVE_PROFILE_CHANGED_EVENT,
@@ -20,12 +21,17 @@ import "./styles.css"
 
 installCompletionAudioGuard()
 
+const LANGUAGE_STORAGE_KEY = "opencode.remote.language"
 const taskDeskTestMode = import.meta.env.DEV && new URLSearchParams(window.location.search).get("taskdesk-test") === "1"
 
 function AppProfileBoundary() {
   const [revision, setRevision] = useState(0)
   const profiles = useMemo(loadServerProfiles, [revision])
   const activeProfile = useMemo(() => loadActiveServerProfile(profiles), [profiles])
+  const t = useMemo(
+    () => createTranslator(normalizeLanguage(localStorage.getItem(LANGUAGE_STORAGE_KEY) || navigator.language)),
+    [revision]
+  )
   const needsInitialSetup = !isValidServerConfig(activeProfile.config)
 
   useEffect(() => {
@@ -37,10 +43,7 @@ function AppProfileBoundary() {
   if (needsInitialSetup) {
     return (
       <ConnectServerWizard
-        t={(key, values) => {
-          const text = String(key)
-          return values ? Object.entries(values).reduce((result, [name, value]) => result.replace(`{${name}}`, String(value)), text) : text
-        }}
+        t={t}
         initialName={activeProfile.name}
         onCancel={() => undefined}
         onDiscover={discoverMachine}
@@ -50,9 +53,9 @@ function AppProfileBoundary() {
             if (health.backend && health.backend !== config.backend) {
               throw new Error(`Expected ${backendDisplayName(config.backend)} but reached ${backendDisplayName(health.backend)}`)
             }
-            return { ok: true, message: `Connected to ${health.version}` }
+            return { ok: true, message: t('settings.connectedTo', { version: health.version }) }
           } catch (error) {
-            return { ok: false, message: (error as Error).message }
+            return { ok: false, message: t('settings.connectionFailed', { message: (error as Error).message }) }
           }
         }}
         onSave={(name, config) => {
