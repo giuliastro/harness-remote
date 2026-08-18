@@ -55,6 +55,30 @@ The wizard discovers the machine and routes the saved profile to the selected ha
 
 For example, one machine can appear in the client as separate saved profiles for OpenCode, Codex, Claude, OMP and PI, while all of them use the same `host:4097` endpoint.
 
+## Using the clients
+
+All clients use the same connection wizard and the same machine endpoint.
+
+- **Desktop (Windows, macOS, Linux):** install a desktop build from GitHub Releases, open Harness Remote, choose **Connect server**, and enter the machine address, public port and credentials printed by the launcher. Desktop does not need browser CORS configuration.
+- **Android APK:** install the APK, open the app, and use the same **Connect server** wizard. Android uses native HTTP transport, so browser CORS restrictions do not apply.
+- **Web / PWA:** run the web client locally with `cd web && npm ci && npm run dev`, then open the URL printed by Vite. Because this is a browser client, the daemon must allow that exact web origin with `--cors`.
+- **GitHub Pages:** the hosted client is available at `https://giuliastro.github.io/harness-remote/` after deployments from `main`. To connect from it, start the daemon with `--cors https://giuliastro.github.io` in addition to the normal launcher options.
+
+For example, to allow both the hosted GitHub Pages client and a local Vite development client:
+
+```bash
+npx github:giuliastro/harness-remote \
+  --host 0.0.0.0 \
+  --port 4097 \
+  --username harness \
+  --password "use-a-long-unique-password" \
+  --root "$HOME/Software" \
+  --cors https://giuliastro.github.io \
+  --cors http://localhost:5173
+```
+
+`--cors` accepts exact origins and may be repeated. It is needed only by browser-based clients such as the Web/PWA and GitHub Pages builds, not by the native Android or desktop clients.
+
 ## Root and project access
 
 `--root` defines the filesystem boundary the remote client is allowed to browse and use. Pick a directory containing the projects you actually want Harness Remote to access, for example:
@@ -97,14 +121,6 @@ Machine
 ```
 
 A Task chooses a machine, project, harness and model. For Git projects it can run in an isolated worktree, so the user does not have to type platform-specific filesystem paths from the phone.
-
-## Current clients
-
-- **Android**: native Capacitor app
-- **Web / PWA**: browser client
-- **Desktop**: Electron builds for Windows, macOS and Linux
-
-From any client you can monitor sessions, read streamed progress, send prompts, stop work, select models where supported, inspect questions/todos and use the capabilities exposed by each harness.
 
 ## Legacy compatibility
 
