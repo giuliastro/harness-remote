@@ -226,7 +226,10 @@ export function persistServerProfiles(profiles: SavedServerProfile[], activeProf
   localStorage.setItem(SERVER_PROFILES_STORAGE_KEY, JSON.stringify(profiles))
   localStorage.setItem(ACTIVE_PROFILE_STORAGE_KEY, activeProfileID)
 
-  if (profileChanged || connectionChanged) {
+  // Switching profiles must remount the app so profile-scoped state is re-read. Editing the host,
+  // port or credentials of the current profile must not: Settings persists valid drafts while the
+  // user types, and remounting there closes the editor and starts a connection mid-entry.
+  if (profileChanged) {
     window.dispatchEvent(new CustomEvent(ACTIVE_PROFILE_CHANGED_EVENT, { detail: activeProfileID }))
   }
 }
