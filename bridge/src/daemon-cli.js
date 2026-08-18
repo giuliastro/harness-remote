@@ -210,8 +210,7 @@ async function main() {
       process.stdout.write(`  • ${host.label} — primary (${host.transport.toUpperCase()})\n`)
       continue
     }
-    const location = host.id === "opencode" ? ` on 127.0.0.1:${openCodePort}` : ""
-    process.stdout.write(`  • ${host.label} — managed ${host.transport.toUpperCase()}${location}, ${host.state}\n`)
+    process.stdout.write(`  • ${host.label} — managed ${host.transport.toUpperCase()}, ${host.state}\n`)
   }
   for (const result of managedResults) {
     if (result.status !== "available") process.stderr.write(`[${result.id}] unavailable: ${result.error?.message ?? "startup failed"}\n`)
