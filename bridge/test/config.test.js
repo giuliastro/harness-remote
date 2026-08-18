@@ -91,8 +91,8 @@ test("allows session snapshot storage to be relocated", () => {
 
 test("shares the bridge with browser origins only when asked", () => {
   assert.deepEqual(parseConfig([], {}).corsOrigins, [])
-  const config = parseConfig(["--cors", "http://localhost:5173", "--cors", "http://192.168.1.64:5199"], {}).corsOrigins
-  assert.deepEqual(config, ["http://localhost:5173", "http://192.168.1.64:5199"])
+  const config = parseConfig(["--cors", "http://localhost:5173", "--cors", "http://192.168.1.64:5199"], {})
+  assert.deepEqual(config.corsOrigins, ["http://localhost:5173", "http://192.168.1.64:5199"])
   assert.deepEqual(parseConfig([], { OMP_BRIDGE_CORS: "http://localhost:5173" }).corsOrigins, ["http://localhost:5173"])
 })
 
@@ -115,5 +115,5 @@ test("accepts authenticated LAN configuration and repeated roots", () => {
 
 test("enables safe request diagnostics explicitly", () => {
   assert.equal(parseConfig(["--log-requests"], {}).logRequests, true)
-  assert.equal(parseConfig([], { HARNESS_REMOTE_LOG_REQUESTS: "1" }).logRequests, true)
+  assert.equal(parseConfig([], { OMP_BRIDGE_LOG_REQUESTS: "1" }).logRequests, true)
 })
