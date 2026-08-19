@@ -20,16 +20,22 @@ name: Build desktop apps
 permissions:
   contents: read
 
-# Cutting a release pushes the same commit to main and then tags it: without a group, the two push
-# events each start the full 3-OS matrix and the duplicate run doubles the simultaneous runner
-# demand. Same commit, same build — keep the newer run (the tag one, which is what attaches the
-# artifacts to the release) and cancel the redundant main-push build.
+# Release commits are pushed to main and then tagged. The tag build is the one that owns release
+# artifacts, so the main-push copy is skipped below instead of being started and then cancelled.
+# That keeps the commit status neutral/green rather than leaving main with a cancelled red check.
 concurrency:
   group: desktop-apps-${{ github.sha }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   package:
+    # A release commit is immediately followed by a v* tag on the same SHA. Build it only for the
+    # tag: starting the main copy and cancelling it later leaves the main commit looking failed even
+    # though the release build itself is healthy. Manual runs are always allowed.
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      startsWith(github.ref, 'refs/tags/v') ||
+      !startsWith(github.event.head_commit.message, 'Release Harness Remote ')
     name: Package ${{ matrix.platform }}
     runs-on: ${{ matrix.os }}
     strategy:
