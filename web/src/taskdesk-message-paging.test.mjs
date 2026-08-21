@@ -58,7 +58,7 @@ test("Session conversation exposes bounded older-history loading without scroll 
   assert.match(workspace, /silent \? mergeLatestMessagePage\(current\.messages, messagePage\.messages\) : messagePage\.messages/)
   assert.match(workspace, /async function loadOlderMessages\(\)/)
   assert.match(workspace, /prependOlderMessagePage\(current\.messages, page\.messages\)/)
-  assert.match(workspace, /messageHasMore \? \(/)
+  assert.match(workspace, /messageHasMore\s*\?/)
   assert.match(workspace, /Load older messages/)
   assert.match(workspace, /previousTop \+ \(transcriptRef\.current\.scrollHeight - previousHeight\)/)
   assert.match(workspace, /if \(preserveTranscriptPosition\.current\)/)
