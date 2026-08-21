@@ -108,7 +108,6 @@ export function IntelligentContinueTaskModal({
   const [error, setError] = useState<string | null>(null)
   const modelGeneration = useRef(0)
 
-  const targetAgent = record.runtime.agents.find((agent) => agent.id === agentID)
   const reusableRun = useMemo(() => latestReusableRun(record.task, agentID), [record.task, agentID])
   const reusableSessionID = runSessionID(reusableRun)
 
