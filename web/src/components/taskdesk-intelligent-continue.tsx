@@ -110,6 +110,13 @@ export function IntelligentContinueTaskModal({
 
   const reusableRun = useMemo(() => latestReusableRun(record.task, agentID), [record.task, agentID])
   const reusableSessionID = runSessionID(reusableRun)
+  const selectedAgent = useMemo(
+    () => record.runtime.agents.find((agent) => agent.id === agentID) || null,
+    [record.runtime.agents, agentID]
+  )
+  const targetAgentAvailable = Boolean(
+    selectedAgent && (selectedAgent.state === "available" || selectedAgent.state === "configured")
+  )
 
   useEffect(() => {
     let cancelled = false
@@ -172,6 +179,7 @@ export function IntelligentContinueTaskModal({
   const canStart = Boolean(
     prompt.trim()
     && agentID
+    && targetAgentAvailable
     && roleValue
     && !working
     && !modelsLoading
@@ -270,6 +278,7 @@ export function IntelligentContinueTaskModal({
             </label>
           ) : null}
 
+          {!targetAgentAvailable ? <div className="td3-inline-warning td3-continue-wide">{t("detail.unavailable")}</div> : null}
           {!reusableRun ? <div className="td3-inline-warning td3-continue-wide">{copy.noReusableSession}</div> : null}
           {reusableSessionID ? <p className="td3-continue-model-note td3-continue-wide">{copy.reuseSession}: {reusableSessionID}</p> : null}
 
