@@ -149,6 +149,185 @@
   height: auto;
 }
 
+/* A Task conversation is the durable work thread. Old Runs are compact turns; the current native
+   Session remains fully live below them. */
+.td3-task-thread-history {
+  display: grid;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.td3-task-thread-turn {
+  overflow: hidden;
+  border: 1px solid var(--td3-border);
+  border-radius: 12px;
+  background: var(--td3-raise-1);
+}
+
+.td3-task-thread-turn > header {
+  min-height: 34px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 0 11px;
+  border-bottom: 1px solid var(--td3-border-soft);
+  color: var(--td3-muted);
+  font-size: 10px;
+}
+
+.td3-task-thread-message {
+  padding: 10px 12px;
+}
+
+.td3-task-thread-message + .td3-task-thread-message {
+  border-top: 1px solid var(--td3-border-soft);
+}
+
+.td3-task-thread-message.user {
+  background: var(--td3-blue-soft-2);
+}
+
+.td3-task-thread-message > strong {
+  display: block;
+  margin-bottom: 4px;
+  color: var(--td3-text);
+  font-size: 10.5px;
+}
+
+.td3-task-thread-message > p {
+  margin: 0;
+  color: var(--td3-text-2);
+  font-size: 11.5px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+}
+
+.td3-task-thread-current-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 2px 0 10px;
+  color: var(--td3-muted-2);
+  font-size: 9.5px;
+  font-weight: 750;
+  letter-spacing: .07em;
+  text-transform: uppercase;
+}
+
+.td3-task-thread-current-label::before,
+.td3-task-thread-current-label::after {
+  content: "";
+  height: 1px;
+  flex: 1;
+  background: var(--td3-border-soft);
+}
+
+/* Continuing a Task should feel like continuing a chat. Advanced Run controls are one small button,
+   not a mandatory form between the user and the next instruction. */
+.td3-task-composer {
+  margin-top: 14px;
+  padding: 9px;
+  border: 1px solid var(--td3-border-strong);
+  border-radius: 14px;
+  background: var(--td3-card-raised);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, .12);
+}
+
+.td3-task-composer textarea {
+  width: 100%;
+  min-height: 72px;
+  max-height: 220px;
+  padding: 10px 11px;
+  resize: vertical;
+  border: 0;
+  outline: 0;
+  color: var(--td3-text);
+  background: transparent;
+  font: inherit;
+  line-height: 1.5;
+}
+
+.td3-task-composer > footer {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-top: 7px;
+  border-top: 1px solid var(--td3-border-soft);
+}
+
+.td3-task-composer-context {
+  min-width: 0;
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  overflow: hidden;
+  color: var(--td3-muted);
+  font-size: 10px;
+  white-space: nowrap;
+}
+
+.td3-task-composer-context span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.td3-task-composer .td3-composer-settings {
+  width: 34px;
+  min-width: 34px;
+  padding: 0;
+}
+
+.td3-task-composer .td3-composer-send {
+  min-width: 86px;
+}
+
+.td3-task-composer-error {
+  margin-top: 7px;
+}
+
+.td3-task-composer-working {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin-top: 14px;
+  padding: 10px 12px;
+  border: 1px solid var(--td3-blue-border);
+  border-radius: 12px;
+  color: var(--td3-blue-text);
+  background: var(--td3-blue-soft-2);
+  font-size: 11px;
+}
+
+.td3-result-modal {
+  width: min(1040px, calc(100vw - 36px));
+  max-height: calc(100dvh - 36px);
+}
+
+.td3-result-modal .td3-modal-body {
+  padding: 22px 24px 30px;
+}
+
+.td3-result-modal .td3-markdown {
+  font-size: 13.5px;
+  line-height: 1.7;
+}
+
+.td3-result-open {
+  width: 31px;
+  height: 31px;
+  display: grid;
+  place-items: center;
+  flex: none;
+  padding: 0;
+  border: 1px solid var(--td3-border);
+  border-radius: 8px;
+  color: var(--td3-blue-link);
+  background: var(--td3-raise-1);
+  cursor: pointer;
+}
+
 /* Native Sessions use the same calm activity language. */
 .uw-status-chip.uw-status-working {
   animation: td3-live-breathe 2.8s ease-in-out infinite;
@@ -177,6 +356,61 @@
   .td3-detail-cards > section:first-child {
     grid-column: auto;
     padding: 13px;
+  }
+
+  .td3-task-composer {
+    margin: 10px 0 0;
+    border-radius: 13px;
+  }
+
+  .td3-task-composer textarea {
+    min-height: 64px;
+    max-height: 28dvh;
+    resize: none;
+    font-size: 16px;
+  }
+
+  .td3-task-composer > footer {
+    flex-wrap: wrap;
+  }
+
+  .td3-task-composer-context {
+    width: 100%;
+    flex-basis: 100%;
+    order: -1;
+  }
+
+  .td3-task-composer .td3-composer-send {
+    margin-left: auto;
+  }
+
+  .td3-modal-backdrop:has(> .td3-result-modal) {
+    place-items: stretch;
+    padding: 0;
+    background: var(--td3-bg);
+    backdrop-filter: none;
+  }
+
+  .td3-result-modal {
+    width: 100%;
+    height: 100dvh;
+    max-height: 100dvh;
+    border: 0;
+    border-radius: 0;
+    box-shadow: none;
+  }
+
+  .td3-result-modal > header {
+    flex: none;
+  }
+
+  .td3-result-modal .td3-modal-body {
+    flex: 1;
+    padding: 16px 14px max(24px, env(safe-area-inset-bottom));
+  }
+
+  .td3-result-modal .td3-markdown {
+    font-size: 13px;
   }
 }
 
