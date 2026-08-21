@@ -1,0 +1,525 @@
+/* Mobile TaskDesk is a navigation stack, not a desktop dashboard squeezed into a phone.
+   This sheet loads last and deliberately changes only phone-sized interaction surfaces. */
+
+.uw-machine-test-block {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.uw-machine-test-block .uw-machine-test-result {
+  min-width: 0;
+  flex: 1;
+}
+
+.uw-machine-manager-footer > div {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.uw-manager-done {
+  display: none;
+}
+
+@media (max-width: 680px) {
+  /* -----------------------------------------------------------------------
+     Session conversation
+     ----------------------------------------------------------------------- */
+
+  /* The conversation gets one compact navigation bar. Desktop metadata belongs in Session details,
+     not above every message on a phone. */
+  .td3-shell-unified .td3-sessions-embedded.td3-mobile-session-detail .uw-session-header {
+    min-height: 48px;
+    display: block;
+    position: relative;
+    padding: 7px 48px 7px 88px;
+    border-bottom: 1px solid var(--td3-border-soft);
+    background: var(--td3-bg);
+  }
+
+  .td3-shell-unified .td3-sessions-embedded.td3-mobile-session-detail .uw-session-back {
+    position: absolute;
+    top: 7px;
+    left: 8px;
+    z-index: 2;
+    width: 74px;
+    min-height: 34px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: flex-start;
+    gap: 4px;
+    padding: 0 4px;
+    border: 0;
+    color: var(--td3-blue-link);
+    background: transparent;
+    font-size: 11px;
+  }
+
+  .td3-shell-unified .td3-sessions-embedded.td3-mobile-session-detail .uw-session-heading,
+  .td3-shell-unified .td3-sessions-embedded.td3-mobile-session-detail .uw-session-heading-title {
+    min-width: 0;
+    width: 100%;
+  }
+
+  .td3-shell-unified .td3-sessions-embedded.td3-mobile-session-detail .uw-session-heading h1 {
+    margin: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 14px;
+    line-height: 34px;
+  }
+
+  .td3-shell-unified .td3-sessions-embedded.td3-mobile-session-detail .uw-header-pin,
+  .td3-shell-unified .td3-sessions-embedded.td3-mobile-session-detail .uw-context-strip {
+    display: none;
+  }
+
+  /* Keep one gateway to secondary information. Rename, handoff and other desktop actions live in
+     the details page instead of consuming a second toolbar above the transcript. */
+  .td3-shell-unified .td3-sessions-embedded.td3-mobile-session-detail .uw-session-actions {
+    position: absolute;
+    top: 7px;
+    right: 8px;
+    z-index: 2;
+    width: 36px;
+    height: 34px;
+    display: block;
+    padding: 0;
+    overflow: visible;
+  }
+
+  .td3-shell-unified .td3-sessions-embedded.td3-mobile-session-detail .uw-session-actions > .uw-button {
+    display: none;
+  }
+
+  .td3-shell-unified .td3-sessions-embedded.td3-mobile-session-detail .uw-session-actions > .uw-button:last-child {
+    width: 34px;
+    min-height: 34px;
+    display: inline-flex;
+    padding: 0;
+  }
+
+  .td3-shell-unified .td3-sessions-embedded.td3-mobile-session-detail .uw-detail-tabs {
+    height: 38px;
+    flex: none;
+    gap: 20px;
+    padding: 0 10px;
+  }
+
+  .td3-shell-unified .td3-sessions-embedded.td3-mobile-session-detail .uw-detail-tabs button {
+    font-size: 11px;
+  }
+
+  .td3-shell-unified .td3-sessions-embedded.td3-mobile-session-detail .uw-transcript {
+    min-height: 0;
+    flex: 1;
+    padding: 9px 8px 12px;
+    scroll-padding-bottom: 12px;
+  }
+
+  .td3-shell-unified .td3-sessions-embedded.td3-mobile-session-detail .uw-message {
+    grid-template-columns: 24px minmax(0, 1fr);
+    gap: 7px;
+    margin-bottom: 14px;
+  }
+
+  .td3-shell-unified .td3-sessions-embedded.td3-mobile-session-detail .uw-composer-shell {
+    width: calc(100% - 12px);
+    margin: 0 6px max(6px, env(safe-area-inset-bottom));
+    border-radius: 11px;
+  }
+
+  .td3-shell-unified .td3-sessions-embedded.td3-mobile-session-detail .uw-composer-shell textarea {
+    min-height: 48px;
+    max-height: 23dvh;
+    padding: 9px 10px 4px;
+    resize: none;
+    font-size: 16px;
+    line-height: 1.4;
+  }
+
+  .td3-shell-unified .td3-sessions-embedded.td3-mobile-session-detail .uw-composer-footer {
+    min-height: 36px;
+    padding: 3px 5px 5px;
+  }
+
+  .td3-shell-unified .td3-sessions-embedded.td3-mobile-session-detail .uw-composer-footer .uw-button {
+    min-height: 32px;
+    padding-inline: 10px;
+  }
+
+  /* The Android software keyboard reduces the visual viewport. While the composer owns focus,
+     navigation chrome disappears and the transcript gets every remaining pixel above the keyboard. */
+  .td3-shell-unified .td3-sessions-embedded.td3-mobile-session-detail:has(.uw-composer-shell textarea:focus) .uw-session-header,
+  .td3-shell-unified .td3-sessions-embedded.td3-mobile-session-detail:has(.uw-composer-shell textarea:focus) .uw-detail-tabs {
+    display: none;
+  }
+
+  .td3-shell-unified .td3-sessions-embedded.td3-mobile-session-detail:has(.uw-composer-shell textarea:focus) .uw-composer-shell {
+    margin-top: 4px;
+  }
+
+  /* Session details are themselves a full phone page. Their close control is the navigation affordance
+     for that page, so no conversation controls are left visible underneath. */
+  .td3-shell-unified .td3-sessions-embedded .uw-inspector {
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+
+  /* -----------------------------------------------------------------------
+     Task detail
+     ----------------------------------------------------------------------- */
+
+  /* A Task detail is already a full-screen route on mobile. Make the former modal-close control read
+     as Back and remove the desktop metadata wall before the tabs. */
+  .td3-shell-unified .td3-task-detail-open .td3-detail-header {
+    position: relative;
+    padding: 9px 10px 8px;
+  }
+
+  .td3-shell-unified .td3-task-detail-open .td3-detail-eyebrow {
+    display: none;
+  }
+
+  .td3-shell-unified .td3-task-detail-open .td3-detail-title-line {
+    position: relative;
+    min-height: 34px;
+    padding-left: 38px;
+  }
+
+  .td3-shell-unified .td3-task-detail-open .td3-detail-title-line h2 {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 15px;
+    line-height: 34px;
+  }
+
+  .td3-shell-unified .td3-task-detail-open .td3-detail-close {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 32px;
+    height: 32px;
+    border: 0;
+    color: var(--td3-blue-link);
+    background: transparent;
+  }
+
+  .td3-shell-unified .td3-task-detail-open .td3-detail-close svg {
+    display: none;
+  }
+
+  .td3-shell-unified .td3-task-detail-open .td3-detail-close::before {
+    content: "←";
+    font-size: 21px;
+    line-height: 1;
+  }
+
+  .td3-shell-unified .td3-task-detail-open .td3-detail-header p {
+    max-height: 38px;
+    margin: 3px 0 0 38px;
+    display: -webkit-box;
+    overflow: hidden;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    font-size: 11px;
+    line-height: 1.35;
+  }
+
+  .td3-shell-unified .td3-task-detail-open .td3-detail-meta {
+    display: none;
+  }
+
+  .td3-shell-unified .td3-task-detail-open .td3-detail-tabs {
+    top: 0;
+    height: 42px;
+    padding: 0 7px;
+  }
+
+  .td3-shell-unified .td3-task-detail-open .td3-detail-tabs button {
+    padding-inline: 6px;
+    font-size: 11px;
+  }
+
+  .td3-shell-unified .td3-task-detail-open .td3-detail-body {
+    padding: 9px;
+  }
+
+  .td3-shell-unified .td3-task-detail-open .td3-review-hero {
+    margin-bottom: 8px;
+    padding: 10px;
+  }
+
+  .td3-shell-unified .td3-task-detail-open .td3-review-metrics span {
+    min-width: 0;
+    min-height: 48px;
+    padding: 6px;
+  }
+
+  /* Actions are ordinary page flow, not a sticky overlay. The primary actions form a small grid and
+     workspace cleanup gets its own full-width destructive row underneath. */
+  .td3-shell-unified .td3-task-detail-open .td3-detail-actions {
+    position: static;
+    bottom: auto;
+    z-index: auto;
+    width: 100%;
+    flex: none;
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+    padding: 8px 9px max(9px, env(safe-area-inset-bottom));
+    border-top: 1px solid var(--td3-border-soft);
+    background: var(--td3-bg);
+  }
+
+  .td3-shell-unified .td3-task-detail-open .td3-detail-actions-primary {
+    width: 100%;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 7px;
+    overflow: visible;
+    padding: 0;
+  }
+
+  .td3-shell-unified .td3-task-detail-open .td3-detail-actions .td3-button {
+    width: 100%;
+    min-width: 0;
+    min-height: 38px;
+    white-space: normal;
+    line-height: 1.2;
+  }
+
+  .td3-shell-unified .td3-task-detail-open .td3-detail-actions > .td3-button.danger {
+    grid-column: 1 / -1;
+  }
+
+  .td3-shell-unified .td3-task-detail-open .td3-action-error {
+    width: 100%;
+    white-space: normal;
+  }
+
+  /* -----------------------------------------------------------------------
+     Machine management
+     ----------------------------------------------------------------------- */
+
+  .uw-manager-backdrop {
+    place-items: stretch;
+    padding: 0;
+    background: var(--td3-bg);
+    backdrop-filter: none;
+  }
+
+  .uw-machine-manager {
+    width: 100%;
+    height: 100dvh;
+    max-width: none;
+    max-height: none;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    border: 0;
+    border-radius: 0;
+    box-shadow: none;
+  }
+
+  .uw-machine-manager-header {
+    min-height: 58px;
+    flex: none;
+    padding: 9px 11px;
+  }
+
+  .uw-machine-manager-header h2 {
+    font-size: 16px;
+  }
+
+  .uw-machine-manager-header p {
+    max-width: calc(100vw - 22px);
+    margin-top: 2px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 10.5px;
+  }
+
+  /* A full-screen manager has Done in its footer. A second X is redundant and creates two competing
+     dismissal models. */
+  .uw-machine-manager .uw-manager-close {
+    display: none;
+  }
+
+  .uw-machine-manager-body {
+    min-height: 0;
+    flex: 1;
+    overflow-y: auto;
+    padding: 9px;
+  }
+
+  .uw-machine-manager.editing .uw-machine-manager-body {
+    padding: 0;
+  }
+
+  .uw-machine-editor {
+    min-height: 100%;
+    display: flex;
+    flex-direction: column;
+    padding: 10px;
+  }
+
+  .uw-machine-editor-grid {
+    grid-template-columns: 1fr;
+    gap: 10px;
+  }
+
+  .uw-machine-editor-wide {
+    grid-column: auto;
+  }
+
+  .uw-machine-editor input {
+    min-height: 42px;
+    font-size: 16px;
+  }
+
+  .uw-machine-test-block {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 7px;
+    margin-top: 12px;
+    padding: 10px;
+    border: 1px solid var(--td3-border-soft);
+    border-radius: 10px;
+    background: var(--td3-raise-1);
+  }
+
+  .uw-machine-test-block .uw-manager-button {
+    width: 100%;
+    min-height: 40px;
+  }
+
+  .uw-machine-editor-actions {
+    width: 100%;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+    margin-top: auto;
+    padding-top: 14px;
+  }
+
+  .uw-machine-editor-actions .uw-manager-button {
+    width: 100%;
+    min-height: 42px;
+  }
+
+  .uw-machine-config-card {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 9px;
+  }
+
+  .uw-machine-config-actions {
+    width: 100%;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 7px;
+  }
+
+  .uw-machine-config-actions .uw-manager-button {
+    width: 100%;
+  }
+
+  .uw-machine-manager-footer {
+    min-height: 58px;
+    flex: none;
+    gap: 8px;
+    padding: 8px 9px max(8px, env(safe-area-inset-bottom));
+  }
+
+  .uw-machine-manager-footer > span {
+    display: none;
+  }
+
+  .uw-machine-manager-footer > div {
+    width: 100%;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+  }
+
+  .uw-machine-manager-footer .uw-manager-button {
+    width: 100%;
+    min-height: 42px;
+  }
+
+  .uw-manager-done {
+    display: inline-flex;
+  }
+
+  /* -----------------------------------------------------------------------
+     Shared phone wizards
+     ----------------------------------------------------------------------- */
+
+  /* Folder/session and connection wizards become pages. Their footer already has Cancel, so hiding
+     the header X removes duplicate dismissal without removing a way out. */
+  .modal-backdrop:has(> .modal-card.wizard) {
+    align-items: stretch;
+    padding: 0;
+    background: var(--td3-bg, var(--bg));
+  }
+
+  .modal-card.wizard {
+    width: 100%;
+    height: 100dvh;
+    max-width: none;
+    max-height: 100dvh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    border: 0;
+    border-radius: 0;
+    box-shadow: none;
+  }
+
+  .modal-card.wizard .wizard-header {
+    min-height: 58px;
+    flex: none;
+  }
+
+  .modal-card.wizard .wizard-header .wizard-close,
+  .modal-card.wizard:has(#new-session-title) .wizard-header .btn-icon {
+    display: none;
+  }
+
+  .modal-card.wizard .wizard-body {
+    min-height: 0;
+    flex: 1;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+
+  .modal-card.wizard .wizard-footer {
+    min-height: 58px;
+    flex: none;
+    flex-wrap: nowrap;
+    gap: 7px;
+    padding-bottom: max(9px, env(safe-area-inset-bottom));
+  }
+
+  .modal-card.wizard .wizard-footer .spacer {
+    min-width: 0;
+  }
+
+  .modal-card.wizard .wizard-footer button {
+    min-height: 40px;
+  }
+
+  .modal-card.wizard input,
+  .modal-card.wizard textarea,
+  .modal-card.wizard select {
+    font-size: 16px;
+  }
+}
