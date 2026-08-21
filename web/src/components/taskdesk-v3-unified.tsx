@@ -63,6 +63,7 @@ import {
   SparkIcon,
   TaskListIcon
 } from "../Icons"
+import { IntelligentContinueTaskModal } from "./taskdesk-intelligent-continue"
 import { TaskDeskMessageContent } from "./taskdesk-message-content"
 import { UniversalWorkspace } from "./universal-workspace"
 
@@ -1755,9 +1756,11 @@ export function TaskDeskV3Unified({ machines, activeMachineID, onActiveMachineID
         />
       ) : null}
       {continueOpen && selected ? (
-        <ContinueTaskModal
+        <IntelligentContinueTaskModal
           record={selected}
+          language={language}
           t={t}
+          legacyFallback={ContinueTaskModal}
           onClose={() => setContinueOpen(false)}
           onContinued={(task) => { setDetailTab("review"); void refreshAndReselect(task.id, selected.runtime.machine.id) }}
         />
