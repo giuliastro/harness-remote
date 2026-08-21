@@ -34,7 +34,7 @@ test("TaskDesk Continue cannot launch an unavailable or stale harness target", (
   assert.match(modal, /record\.runtime\.agents\.find\(\(agent\) => agent\.id === agentID\)/)
   assert.match(modal, /selectedAgent\.state === "available" \|\| selectedAgent\.state === "configured"/)
   assert.match(modal, /&& targetAgentAvailable[\s\S]*?&& roleValue/)
-  assert.match(modal, /!targetAgentAvailable \? <div className="td3-inline-warning td3-continue-wide">\{t\("detail\.unavailable"\)\}<\/div>/)
+  assert.match(modal, /!targetAgentAvailable \? <div className="td3-inline-warning td3-continue-wide">\{copy\.targetUnavailable\}<\/div>/)
 })
 
 test("TaskDesk Continue previews bounded context and keeps an older-daemon compatibility path", async () => {
@@ -57,6 +57,7 @@ test("TaskDesk Continue previews bounded context and keeps an older-daemon compa
   for (const language of ["en", "it", "zh-TW", "zh-CN"]) {
     const copy = taskDeskContinueCopy(language)
     assert.ok(copy.targetHarness.trim(), `${language} should translate the target harness label`)
+    assert.ok(copy.targetUnavailable.trim(), `${language} should explain an unavailable target harness`)
     assert.ok(copy.transferredContext.trim(), `${language} should explain transferred Task Context`)
     assert.ok(copy.reuseSession.trim() && copy.freshSession.trim(), `${language} should translate both Session strategies`)
   }
