@@ -26,6 +26,11 @@ export type MachineTaskRun = {
   id?: string
   sequence?: number
   agentId?: string
+  model?: ModelSelection | null
+  role?: string
+  contextRevision?: number
+  handoffFromRunId?: string | null
+  resumedFromRunId?: string | null
   sessionId?: string | null
   sessionID?: string | null
   status?: string
@@ -53,6 +58,57 @@ export type MachineTask = {
   error?: { message?: string } | null
   createdAt: string
   updatedAt: string
+}
+
+export type TaskContextRunSummary = {
+  id?: string
+  sequence?: number
+  agentId: string
+  role: string
+  model?: ModelSelection
+  sessionId?: string
+  status: string
+  prompt: string
+  outcome?: string
+  startedAt?: string
+  finishedAt?: string
+  contextRevision?: number
+}
+
+export type TaskContext = {
+  version: number
+  revision: number
+  taskId: string
+  objective: string
+  currentState: string
+  latestOutcome: null | {
+    status: string
+    agentId: string
+    role: string
+    text?: string
+    error?: string
+  }
+  runSummaries: TaskContextRunSummary[]
+  runCount: number
+  latestRun: TaskContextRunSummary | null
+  changedFiles: string[]
+  workspace: {
+    dirty: boolean
+    changeCount: number
+    listedChangeCount: number
+    truncated: boolean
+  }
+  verification: unknown
+  unresolved: string[]
+}
+
+export type ContinueTaskInput = {
+  prompt: string
+  agentId?: string
+  model?: ModelSelection | null
+  role?: string
+  mode?: "fresh" | "resume"
+  fresh?: boolean
 }
 
 export type TaskWorkspaceInspection = {
@@ -251,8 +307,13 @@ export const taskClient = {
     return machineRequest<MachineTask>(config, `/v1/tasks/${encodeURIComponent(taskId)}/launch`, { method: "POST", body: {} })
   },
 
-  continueTask(config: ServerConfig, taskId: string, prompt: string): Promise<MachineTask> {
-    return machineRequest<MachineTask>(config, `/v1/tasks/${encodeURIComponent(taskId)}/continue`, { method: "POST", body: { prompt } })
+  loadContext(config: ServerConfig, taskId: string): Promise<TaskContext> {
+    return machineRequest<TaskContext>(config, `/v1/tasks/${encodeURIComponent(taskId)}/context`)
+  },
+
+  continueTask(config: ServerConfig, taskId: string, input: string | ContinueTaskInput): Promise<MachineTask> {
+    const body = typeof input === "string" ? { prompt: input } : input
+    return machineRequest<MachineTask>(config, `/v1/tasks/${encodeURIComponent(taskId)}/continue`, { method: "POST", body })
   },
 
   inspectResult(config: ServerConfig, taskId: string): Promise<TaskWorkspaceInspection> {
