@@ -35,6 +35,7 @@ import "./taskdesk-run-review.css"
 import "./v3-polish.css"
 import "./taskdesk-mobile-ux.css"
 import "./taskdesk-mobile-surfaces.css"
+import "./taskdesk-live-state.css"
 
 installAppPreferences()
 installCompletionAudioGuard()
