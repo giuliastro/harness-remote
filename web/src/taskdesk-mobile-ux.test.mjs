@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs"
 import test from "node:test"
 
 const mobileCss = readFileSync(new URL("./taskdesk-mobile-ux.css", import.meta.url), "utf8")
+const surfaceCss = readFileSync(new URL("./taskdesk-mobile-surfaces.css", import.meta.url), "utf8")
 const continueCss = readFileSync(new URL("./taskdesk-continue.css", import.meta.url), "utf8")
 const continueSource = readFileSync(new URL("./components/taskdesk-intelligent-continue.tsx", import.meta.url), "utf8")
 const machineSource = readFileSync(new URL("./components/standalone-universal-workspace.tsx", import.meta.url), "utf8")
@@ -10,6 +11,7 @@ const mainSource = readFileSync(new URL("./main.tsx", import.meta.url), "utf8")
 
 test("mobile Session conversation prioritizes transcript and composer over desktop metadata", () => {
   assert.match(mainSource, /import "\.\/taskdesk-mobile-ux\.css"/)
+  assert.match(mainSource, /import "\.\/taskdesk-mobile-surfaces\.css"/)
   assert.match(mobileCss, /td3-mobile-session-detail \.uw-context-strip[\s\S]*display:\s*none/)
   assert.match(mobileCss, /\.uw-session-actions > \.uw-button:last-child/)
   assert.match(mobileCss, /:has\(\.uw-composer-shell textarea:focus\)[\s\S]*\.uw-session-header/)
@@ -48,4 +50,25 @@ test("shared phone wizards use one full-screen dismissal hierarchy", () => {
   assert.match(mobileCss, /\.wizard-header \.wizard-close[\s\S]*display:\s*none/)
   assert.match(mobileCss, /:has\(#new-session-title\) \.wizard-header \.btn-icon/)
   assert.match(mobileCss, /\.wizard-body[\s\S]*overflow-y:\s*auto/)
+})
+
+test("New Task and Run Review become keyboard-safe full-screen phone pages", () => {
+  assert.match(surfaceCss, /:has\(> \.td3-new-task\)[\s\S]*:has\(> \.td3-run-review\)/)
+  assert.match(surfaceCss, /\.td3-new-task,[\s\S]*\.td3-run-review[\s\S]*height:\s*100dvh/)
+  assert.match(surfaceCss, /\.td3-new-task \.td3-form-grid[\s\S]*grid-template-columns:\s*1fr/)
+  assert.match(surfaceCss, /\.td3-new-task :is\(select, textarea, input:not\(\[type="checkbox"\]\)\)[\s\S]*font-size:\s*16px/)
+  assert.match(surfaceCss, /\.td3-run-review-meta[\s\S]*grid-template-columns:\s*repeat\(2/)
+})
+
+test("short Settings and More surfaces are phone bottom sheets with one dismissal hierarchy", () => {
+  assert.match(surfaceCss, /:has\(> \.td3-settings-modal\)[\s\S]*:has\(> \.td3-more-sheet\)/)
+  assert.match(surfaceCss, /place-items:\s*end stretch/)
+  assert.match(surfaceCss, /\.td3-settings-modal > header > button[\s\S]*display:\s*none/)
+  assert.doesNotMatch(surfaceCss, /\.td3-more-sheet > header > button[\s\S]*display:\s*none/)
+})
+
+test("simple information pages and Needs You reduce chrome and avoid action overflow on phones", () => {
+  assert.match(surfaceCss, /\.td3-simple-page \.td3-page-heading small,[\s\S]*\.td3-simple-page \.td3-page-heading p[\s\S]*display:\s*none/)
+  assert.match(surfaceCss, /\.td3-attention-card > footer[\s\S]*grid-template-columns:\s*repeat\(2/)
+  assert.match(surfaceCss, /\.td3-attention-card > footer > \.td3-link-button:first-child[\s\S]*grid-column:\s*1 \/ -1/)
 })
