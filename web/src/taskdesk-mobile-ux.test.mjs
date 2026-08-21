@@ -62,7 +62,9 @@ test("mobile Continue exposes Run settings explicitly while preserving the Task 
 
 test("Task detail follows the current Run harness for Session, conversation and diff routing", () => {
   assert.match(unifiedSource, /function currentRunAgentID\(task: MachineTask\)/)
-  assert.match(unifiedSource, /record\.runtime\.agents\.find\(\(candidate\) => candidate\.id === currentRunAgentID\(record\.task\)\)/)
+  assert.match(unifiedSource, /const agentID = currentRunAgentID\(record\.task\)/)
+  assert.match(unifiedSource, /record\.runtime\.agents\.find\(\(candidate\) => candidate\.id === agentID\)/)
+  assert.match(unifiedSource, /const config = configForAgent\(record\.runtime, agent\)/)
   assert.match(unifiedSource, /openNativeSession\(selected\.runtime, selectedSessionID, selectedRunAgentID\)/)
   assert.match(unifiedSource, /SessionFocusRequest = \{ sessionID: string; requestID: number; agentID\?: string \}/)
 })
