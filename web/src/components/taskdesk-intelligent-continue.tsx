@@ -278,7 +278,7 @@ export function IntelligentContinueTaskModal({
             </label>
           ) : null}
 
-          {!targetAgentAvailable ? <div className="td3-inline-warning td3-continue-wide">{t("detail.unavailable")}</div> : null}
+          {!targetAgentAvailable ? <div className="td3-inline-warning td3-continue-wide">{copy.targetUnavailable}</div> : null}
           {!reusableRun ? <div className="td3-inline-warning td3-continue-wide">{copy.noReusableSession}</div> : null}
           {reusableSessionID ? <p className="td3-continue-model-note td3-continue-wide">{copy.reuseSession}: {reusableSessionID}</p> : null}
 
