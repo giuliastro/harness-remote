@@ -8,14 +8,16 @@
   gap: 12px;
 }
 
-.td3-continue-grid > label {
+.td3-continue-grid > label,
+.td3-continue-settings-body > label {
   min-width: 0;
   display: flex;
   flex-direction: column;
   gap: 5px;
 }
 
-.td3-continue-grid > label > span {
+.td3-continue-grid > label > span,
+.td3-continue-settings-body > label > span {
   color: var(--td3-muted);
   font-size: 10.5px;
   font-weight: 650;
@@ -40,27 +42,42 @@
 }
 
 .td3-continue-grid textarea {
-  min-height: 116px;
+  min-height: 106px;
   padding: 10px;
   resize: vertical;
   line-height: 1.55;
 }
 
-.td3-continue-wide {
+.td3-continue-wide,
+.td3-continue-settings,
+.td3-continue-context {
   grid-column: 1 / -1;
 }
 
+.td3-continue-settings {
+  border: 0;
+}
+
+.td3-continue-settings > summary {
+  display: none;
+}
+
+.td3-continue-settings-body {
+  display: grid !important;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
 .td3-continue-context {
-  grid-column: 1 / -1;
   border: 1px solid var(--td3-border);
   border-radius: 10px;
   background: var(--td3-raise-1);
   overflow: hidden;
 }
 
-.td3-continue-context > summary {
+.td3-continue-context > summary,
+.td3-continue-settings > summary {
   min-height: 46px;
-  display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
@@ -69,17 +86,28 @@
   list-style: none;
 }
 
-.td3-continue-context > summary::-webkit-details-marker {
+.td3-continue-context > summary {
+  display: flex;
+}
+
+.td3-continue-context > summary::-webkit-details-marker,
+.td3-continue-settings > summary::-webkit-details-marker {
   display: none;
 }
 
-.td3-continue-context > summary strong {
+.td3-continue-context > summary strong,
+.td3-continue-settings > summary strong {
   color: var(--td3-text);
   font-size: 12px;
 }
 
-.td3-continue-context > summary span {
+.td3-continue-context > summary span,
+.td3-continue-settings > summary span {
+  min-width: 0;
+  overflow: hidden;
   color: var(--td3-muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
   font-size: 10.5px;
 }
 
@@ -146,21 +174,142 @@
 }
 
 @media (max-width: 680px) {
+  .td3-modal-backdrop:has(> .td3-intelligent-continue) {
+    place-items: stretch;
+    padding: 0;
+    background: var(--td3-bg);
+    backdrop-filter: none;
+  }
+
   .td3-intelligent-continue {
     width: 100%;
-    max-height: calc(100dvh - 20px);
+    height: 100dvh;
+    max-height: 100dvh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    border: 0;
+    border-radius: 0;
+    box-shadow: none;
+  }
+
+  .td3-intelligent-continue > header {
+    min-height: auto;
+    flex: none;
+    padding: 10px 12px 8px;
+  }
+
+  .td3-intelligent-continue > header small {
+    display: none;
+  }
+
+  .td3-intelligent-continue > header h2 {
+    font-size: 16px;
+  }
+
+  .td3-intelligent-continue > header p {
+    max-width: calc(100vw - 24px);
+    margin-top: 2px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 11px;
+  }
+
+  /* Cancel in the footer is the dismissal affordance on a phone. A second X in a full-screen page
+     reads like a modal layered on top of a page and wastes the most valuable header space. */
+  .td3-intelligent-continue > header > button {
+    display: none;
+  }
+
+  .td3-intelligent-continue > .td3-modal-body {
+    min-height: 0;
+    flex: 1;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    padding: 9px 10px 12px;
   }
 
   .td3-continue-grid {
     grid-template-columns: minmax(0, 1fr);
+    gap: 9px;
   }
 
   .td3-continue-wide,
+  .td3-continue-settings,
   .td3-continue-context {
     grid-column: 1;
   }
 
+  /* Four selectors used to occupy most of the screen before the user could even see Task Context.
+     They are still fully available, but behind one compact disclosure that shows the active choices. */
+  .td3-continue-settings {
+    border: 1px solid var(--td3-border);
+    border-radius: 10px;
+    background: var(--td3-raise-1);
+    overflow: hidden;
+  }
+
+  .td3-continue-settings > summary {
+    display: flex;
+  }
+
+  .td3-continue-settings > summary strong {
+    flex: none;
+    max-width: 34%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .td3-continue-settings-body {
+    display: none !important;
+    grid-template-columns: 1fr;
+    gap: 9px;
+    padding: 10px;
+    border-top: 1px solid var(--td3-border-soft);
+  }
+
+  .td3-continue-settings[open] > .td3-continue-settings-body {
+    display: grid !important;
+  }
+
   .td3-continue-context-body {
-    max-height: 240px;
+    max-height: 34dvh;
+  }
+
+  .td3-continue-context-note {
+    margin-top: 8px;
+  }
+
+  .td3-continue-prompt textarea {
+    min-height: 88px;
+    max-height: 28dvh;
+    resize: none;
+    font-size: 16px;
+  }
+
+  /* Android shrinks the visual viewport when the keyboard appears. Keep a useful slice of Task
+     Context above the prompt instead of letting a large preview or Run settings consume the viewport. */
+  .td3-intelligent-continue:has(.td3-continue-prompt textarea:focus) .td3-continue-context-body {
+    max-height: 110px;
+  }
+
+  .td3-intelligent-continue:has(.td3-continue-prompt textarea:focus) .td3-continue-settings[open] > .td3-continue-settings-body {
+    display: none !important;
+  }
+
+  .td3-intelligent-continue > footer {
+    min-height: 54px;
+    flex: none;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+    padding: 8px 10px max(8px, env(safe-area-inset-bottom));
+  }
+
+  .td3-intelligent-continue > footer .td3-button {
+    width: 100%;
+    min-height: 40px;
   }
 }
