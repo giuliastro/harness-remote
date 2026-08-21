@@ -234,4 +234,107 @@
   .td3-attention-card > footer > .td3-link-button:first-child {
     grid-column: 1 / -1;
   }
+
+  /* Sessions outer chrome is one compact row: machine at left, page identity and actions at right.
+     The descriptive subtitle costs a full line on a phone and duplicates the Session list itself. */
+  .td3-shell-unified:has(.td3-sessions-embedded) .td3-topbar-unified {
+    min-height: 54px;
+    grid-template-columns: minmax(0, 1fr) auto auto;
+    grid-auto-flow: column;
+    align-items: center;
+    gap: 7px;
+    padding: 7px 8px;
+  }
+
+  .td3-shell-unified:has(.td3-sessions-embedded) .td3-view-context {
+    gap: 0;
+  }
+
+  .td3-shell-unified:has(.td3-sessions-embedded) .td3-view-context > svg,
+  .td3-shell-unified:has(.td3-sessions-embedded) .td3-view-context small {
+    display: none;
+  }
+
+  .td3-shell-unified:has(.td3-sessions-embedded) .td3-view-context strong {
+    font-size: 14px;
+    line-height: 34px;
+    white-space: nowrap;
+  }
+
+  .td3-shell-unified:has(.td3-sessions-embedded) .td3-topbar-actions {
+    grid-column: auto;
+    width: auto;
+    justify-self: end;
+    flex-wrap: nowrap;
+  }
+
+  /* The inspector is intentionally hidden on tablet widths by the desktop responsive sheet. On a
+     phone it is a full-screen details page, so re-enable it when the explicit details control opens it. */
+  .td3-shell-unified .td3-sessions-embedded .uw-inspector {
+    display: block;
+    position: absolute;
+    z-index: 90;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: var(--td3-bg);
+    box-shadow: none;
+  }
+
+  /* Chat composers on phones behave like modern messaging inputs: the text area is the main surface
+     and the send action sits clearly at the lower-right with a comfortable touch target. */
+  .td3-shell-unified .td3-sessions-embedded.td3-mobile-session-detail .uw-composer-shell {
+    border-radius: 16px;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, .16);
+  }
+
+  .td3-shell-unified .td3-sessions-embedded.td3-mobile-session-detail .uw-composer-shell textarea {
+    min-height: 54px;
+    padding: 11px 12px 7px;
+  }
+
+  .td3-shell-unified .td3-sessions-embedded.td3-mobile-session-detail .uw-composer-footer {
+    min-height: 46px;
+    justify-content: flex-end;
+    padding: 4px 7px 7px;
+  }
+
+  .td3-shell-unified .td3-sessions-embedded.td3-mobile-session-detail .uw-composer-footer > div {
+    width: 100%;
+    margin-left: auto;
+    justify-content: flex-end;
+  }
+
+  .td3-shell-unified .td3-sessions-embedded.td3-mobile-session-detail .uw-composer-footer .uw-button {
+    min-width: 72px;
+    min-height: 40px;
+    padding-inline: 15px;
+    border-radius: 999px;
+    font-size: 12px;
+    font-weight: 700;
+  }
+
+  /* All four Task actions share the same 2x2 grid. Cleanup is destructive but not structurally
+     special enough to waste an entire extra row on a phone. */
+  .td3-shell-unified .td3-task-detail-open .td3-detail-actions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    align-items: stretch;
+    gap: 7px;
+  }
+
+  .td3-shell-unified .td3-task-detail-open .td3-detail-actions-primary {
+    display: contents;
+  }
+
+  .td3-shell-unified .td3-task-detail-open .td3-detail-actions > .td3-button.danger {
+    grid-column: auto;
+  }
+
+  .td3-shell-unified .td3-task-detail-open .td3-action-error {
+    grid-column: 1 / -1;
+  }
 }
