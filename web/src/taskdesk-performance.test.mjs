@@ -100,7 +100,8 @@ test("TaskDesk keeps create actions reachable at every width and a manual Sessio
   assert.doesNotMatch(v3, /\.td3-topbar > \.td3-button:last-child \{ display:none; \}/)
   assert.match(unified, /\.td3-topbar-actions[\s\S]*?flex: 0 0 auto/)
   assert.match(unified, /\.td3-topbar-primary > \.td3-button-label[\s\S]*?clip-path: inset\(50%\)/)
-  assert.match(workspace, /if \(!newSessionRequest\) return/)
+  assert.match(workspace, /if \(!newSessionRequest \|\| newSessionRequest === appliedNewSessionRequest\.current\) return/)
+  assert.match(workspace, /appliedNewSessionRequest\.current = newSessionRequest/)
 
   // Every phone destination is rendered, so nothing falls off the end of the bottom bar.
   assert.match(taskDesk, /const mobilePrimary: TaskDeskView\[\] = \["tasks", "sessions", "needs", "projects"\]/)
