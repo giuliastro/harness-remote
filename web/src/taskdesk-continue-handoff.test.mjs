@@ -28,6 +28,15 @@ test("TaskDesk Continue selects harness, live model, role and native Session str
   assert.match(modal, /providerID: model\.providerID, modelID: model\.modelID, variant: model\.variant/)
 })
 
+test("TaskDesk Continue cannot launch an unavailable or stale harness target", () => {
+  const modal = readFileSync(new URL("./components/taskdesk-intelligent-continue.tsx", import.meta.url), "utf8")
+
+  assert.match(modal, /record\.runtime\.agents\.find\(\(agent\) => agent\.id === agentID\)/)
+  assert.match(modal, /selectedAgent\.state === "available" \|\| selectedAgent\.state === "configured"/)
+  assert.match(modal, /&& targetAgentAvailable[\s\S]*?&& roleValue/)
+  assert.match(modal, /!targetAgentAvailable \? <div className="td3-inline-warning td3-continue-wide">\{t\("detail\.unavailable"\)\}<\/div>/)
+})
+
 test("TaskDesk Continue previews bounded context and keeps an older-daemon compatibility path", async () => {
   const shell = readFileSync(new URL("./components/taskdesk-v3-unified.tsx", import.meta.url), "utf8")
   const modal = readFileSync(new URL("./components/taskdesk-intelligent-continue.tsx", import.meta.url), "utf8")
