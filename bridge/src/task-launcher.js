@@ -2,6 +2,8 @@ import { taskLaunchError } from "./task-errors.js"
 import { promptModelBody } from "./task-model.js"
 
 const MAX_OUTCOME_CHARS = 6_000
+const ACP_LATE_COMPLETION_QUIET_MS = 12_000
+const ACP_LATE_COMPLETION_MAX_MS = 10 * 60_000
 
 function basicAuthorization(username, password) {
   if (!username && !password) return undefined
@@ -108,6 +110,69 @@ function outcomeFromResult(result) {
   if (Array.isArray(result.parts)) return boundOutcome(terminalMessageText(result))
   if (result.message && typeof result.message === "object") return outcomeFromResult(result.message)
   return undefined
+}
+
+export function isAcpPromptTimeout(error) {
+  return /^ACP adapter request timed out: session\/prompt\b/.test(error?.message ?? "")
+}
+
+/**
+ * ACP is a streaming protocol carried over a request/response pipe. A slow agent can outlive the
+ * request timeout while continuing to emit valid assistant chunks. Treating that transport timeout
+ * as the agent's final result made a Task permanently failed even though its native Session kept
+ * working and eventually produced a good answer.
+ *
+ * After the timeout, only late Session activity can recover the Run. We wait until assistant updates
+ * have been quiet for a short window, then read the native transcript and accept its terminal answer.
+ * No late activity means the original timeout still wins after the bounded recovery window.
+ */
+export function recoverLateAcpOutcome(service, sessionID, {
+  timeoutError = new Error("ACP prompt timed out"),
+  quietMs = ACP_LATE_COMPLETION_QUIET_MS,
+  maxMs = ACP_LATE_COMPLETION_MAX_MS
+} = {}) {
+  return new Promise((resolve, reject) => {
+    let settled = false
+    let sawLateActivity = false
+    let quietTimer
+    let maxTimer
+    const unsubscribe = typeof service?.subscribe === "function"
+      ? service.subscribe((event) => {
+          if (event?.sessionId !== sessionID || settled) return
+          if (event.type === "message.updated" || event.type === "todo.updated") {
+            sawLateActivity = true
+            clearTimeout(quietTimer)
+            quietTimer = setTimeout(() => { void inspect() }, quietMs)
+            return
+          }
+          if (event.type === "session.error" && !isAcpPromptTimeout({ message: event.message })) {
+            finish(new Error(event.message ?? "Harness prompt failed"))
+          }
+        })
+      : () => {}
+
+    const cleanup = () => {
+      clearTimeout(quietTimer)
+      clearTimeout(maxTimer)
+      unsubscribe()
+    }
+    const finish = (error, outcome) => {
+      if (settled) return
+      settled = true
+      cleanup()
+      if (error) reject(error)
+      else resolve(outcome)
+    }
+    const inspect = async () => {
+      if (settled || !sawLateActivity) return
+      try {
+        const outcome = latestAssistantOutcome(await service.messages(sessionID))
+        if (outcome) finish(null, outcome)
+      } catch {}
+    }
+
+    maxTimer = setTimeout(() => finish(timeoutError), maxMs)
+  })
 }
 
 export class TaskLauncher {
@@ -220,7 +285,18 @@ export class TaskLauncher {
           let outcome
           try { outcome = latestAssistantOutcome(await service.messages(run.sessionId)) } catch {}
           onCompleted?.({ outcome })
-        }).catch((error) => onFailed?.(error))
+        }).catch(async (error) => {
+          if (!isAcpPromptTimeout(error)) {
+            onFailed?.(error)
+            return
+          }
+          try {
+            const outcome = await recoverLateAcpOutcome(service, run.sessionId, { timeoutError: error })
+            onCompleted?.({ outcome })
+          } catch (recoveryError) {
+            onFailed?.(recoveryError)
+          }
+        })
         return
       }
       void entry.host.request("session/prompt", {
