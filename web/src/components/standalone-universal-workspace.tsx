@@ -74,10 +74,14 @@ function MachineEditor({ machine, isNew, onCancel, onSave }: MachineEditorProps)
         <label><span>Username</span><input value={username} onChange={(event) => setUsername(event.target.value)} autoComplete="username" /></label>
         <label className="uw-machine-editor-wide"><span>Password</span><input type="password" value={password} onChange={(event) => setPassword(event.target.value)} autoComplete="current-password" /></label>
       </div>
-      {testResult ? <div className={`uw-machine-test-result ${testResult.ok ? "ok" : "error"}`}>{testResult.text}</div> : null}
+
+      <div className="uw-machine-test-block">
+        <button type="button" className="uw-manager-button" disabled={!valid || testing} onClick={() => void testConnection()}>{testing ? "Testing..." : "Test connection"}</button>
+        {testResult ? <div className={`uw-machine-test-result ${testResult.ok ? "ok" : "error"}`}>{testResult.text}</div> : null}
+      </div>
+
       <div className="uw-machine-editor-actions">
         <button type="button" className="uw-manager-button" onClick={onCancel}>Cancel</button>
-        <button type="button" className="uw-manager-button" disabled={!valid || testing} onClick={() => void testConnection()}>{testing ? "Testing..." : "Test connection"}</button>
         <button type="button" className="uw-manager-button primary" disabled={!valid} onClick={() => valid && onSave(nextMachine())}>{isNew ? "Add machine" : "Save machine"}</button>
       </div>
     </div>
@@ -97,16 +101,50 @@ function MachineManager({ machines, onClose, onPersist }: { machines: WorkspaceM
     onPersist(machines.filter((candidate) => candidate.id !== machine.id))
     if (editingID === machine.id) setEditingID(null)
   }
+
   return (
     <div className="uw-manager-backdrop" role="presentation" onMouseDown={onClose}>
-      <section className="uw-machine-manager" role="dialog" aria-modal="true" aria-label="Machines" onMouseDown={(event) => event.stopPropagation()}>
-        <header className="uw-machine-manager-header"><div><h2>Machines</h2><p>Configure machine daemons used by TaskDesk. Classic connections remain separate.</p></div><button type="button" className="uw-manager-close" onClick={onClose} aria-label="Close">×</button></header>
+      <section className={`uw-machine-manager${draft ? " editing" : ""}`} role="dialog" aria-modal="true" aria-label="Machines" onMouseDown={(event) => event.stopPropagation()}>
+        <header className="uw-machine-manager-header">
+          <div>
+            <h2>{draft ? (editingID === "new" ? "Add machine" : "Edit machine") : "Machines"}</h2>
+            <p>{draft ? "Configure and test the daemon endpoint before saving it." : "Configure machine daemons used by TaskDesk. Classic connections remain separate."}</p>
+          </div>
+          <button type="button" className="uw-manager-close" onClick={onClose} aria-label="Close">×</button>
+        </header>
+
         <div className="uw-machine-manager-body">
-          {machines.length === 0 && editingID !== "new" ? <div className="uw-machine-manager-empty"><strong>No machines configured</strong><span>Add a Harness machine daemon to use TaskDesk.</span></div> : null}
-          {machines.map((machine) => <div className="uw-machine-config-card" key={machine.id}><div className="uw-machine-config-main"><strong>{machine.name}</strong><span>{machine.config.host}:{machine.config.port}</span><small>{machine.config.username || "No username"}</small></div><div className="uw-machine-config-actions"><button type="button" className="uw-manager-button" onClick={() => setEditingID(machine.id)}>Edit</button><button type="button" className="uw-manager-button danger" onClick={() => remove(machine)}>Remove</button></div></div>)}
-          {draft ? <MachineEditor key={draft.id} machine={draft} isNew={editingID === "new"} onCancel={() => setEditingID(null)} onSave={save} /> : null}
+          {draft ? (
+            <MachineEditor key={draft.id} machine={draft} isNew={editingID === "new"} onCancel={() => setEditingID(null)} onSave={save} />
+          ) : (
+            <>
+              {machines.length === 0 ? <div className="uw-machine-manager-empty"><strong>No machines configured</strong><span>Add a Harness machine daemon to use TaskDesk.</span></div> : null}
+              {machines.map((machine) => (
+                <div className="uw-machine-config-card" key={machine.id}>
+                  <div className="uw-machine-config-main">
+                    <strong>{machine.name}</strong>
+                    <span>{machine.config.host}:{machine.config.port}</span>
+                    <small>{machine.config.username || "No username"}</small>
+                  </div>
+                  <div className="uw-machine-config-actions">
+                    <button type="button" className="uw-manager-button" onClick={() => setEditingID(machine.id)}>Edit</button>
+                    <button type="button" className="uw-manager-button danger" onClick={() => remove(machine)}>Remove</button>
+                  </div>
+                </div>
+              ))}
+            </>
+          )}
         </div>
-        <footer className="uw-machine-manager-footer"><span>{machines.length} machine{machines.length === 1 ? "" : "s"} configured</span><button type="button" className="uw-manager-button primary" onClick={() => setEditingID("new")}>+ Add machine</button></footer>
+
+        {!draft ? (
+          <footer className="uw-machine-manager-footer">
+            <span>{machines.length} machine{machines.length === 1 ? "" : "s"} configured</span>
+            <div>
+              <button type="button" className="uw-manager-button uw-manager-done" onClick={onClose}>Done</button>
+              <button type="button" className="uw-manager-button primary" onClick={() => setEditingID("new")}>+ Add machine</button>
+            </div>
+          </footer>
+        ) : null}
       </section>
     </div>
   )
