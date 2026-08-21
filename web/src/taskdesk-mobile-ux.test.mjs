@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs"
 import test from "node:test"
 
 const mobileCss = readFileSync(new URL("./taskdesk-mobile-ux.css", import.meta.url), "utf8")
+const continueCss = readFileSync(new URL("./taskdesk-continue.css", import.meta.url), "utf8")
 const continueSource = readFileSync(new URL("./components/taskdesk-intelligent-continue.tsx", import.meta.url), "utf8")
 const machineSource = readFileSync(new URL("./components/standalone-universal-workspace.tsx", import.meta.url), "utf8")
 const mainSource = readFileSync(new URL("./main.tsx", import.meta.url), "utf8")
@@ -21,8 +22,8 @@ test("mobile Continue keeps Run options available without stacking four controls
   assert.match(continueSource, /className="td3-continue-settings-body"/)
   assert.match(continueSource, /<details className="td3-continue-context" open>/)
   assert.match(continueSource, /className="td3-continue-wide td3-continue-prompt"/)
-  assert.match(mobileCss, /\.td3-continue-settings-body[\s\S]*display:\s*none\s*!important/)
-  assert.match(mobileCss, /\.td3-continue-settings\[open\] > \.td3-continue-settings-body[\s\S]*display:\s*grid\s*!important/)
+  assert.match(continueCss, /\.td3-continue-settings-body[\s\S]*display:\s*none\s*!important/)
+  assert.match(continueCss, /\.td3-continue-settings\[open\] > \.td3-continue-settings-body[\s\S]*display:\s*grid\s*!important/)
 })
 
 test("machine editor separates connection testing from save and hides parent add action while editing", () => {
