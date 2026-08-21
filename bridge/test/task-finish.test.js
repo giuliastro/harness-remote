@@ -105,6 +105,35 @@ test("finish may close a task with uncommitted work because cleanup is a separat
   }
 })
 
+test("finish closes a failed task even when its worktree can no longer be inspected", async () => {
+  const innerServer = new EventEmitter()
+  let marked = false
+  const task = { id: "t", status: "failed", workspace, project: { path: "/repo" }, finishedAt: null }
+  const worktreeManager = manager()
+  worktreeManager.inspect = async () => { throw new Error("worktree disappeared after the failed run") }
+  const server = createTaskFinishServer({
+    innerServer,
+    config: { username: "", password: "", corsOrigins: [] },
+    taskStore: {
+      async get() { return task },
+      async markFinished() { marked = true; return { ...task, finishedAt: "2026-08-21T08:15:00.000Z" } }
+    },
+    worktreeManager
+  })
+  const port = await listen(server)
+  try {
+    const response = await fetch(`http://127.0.0.1:${port}/v1/tasks/t/finish`, { method: "POST" })
+    assert.equal(response.status, 200)
+    const body = await response.json()
+    assert.equal(body.task.finishedAt, "2026-08-21T08:15:00.000Z")
+    assert.equal(body.result.unavailable, true)
+    assert.match(body.result.error, /worktree disappeared/)
+    assert.equal(marked, true)
+  } finally {
+    await close(server)
+  }
+})
+
 test("finish waits for restart reconciliation before deciding whether a task is active", async () => {
   const innerServer = new EventEmitter()
   const task = { id: "t", status: "running", workspace, project: { path: "/repo" } }
