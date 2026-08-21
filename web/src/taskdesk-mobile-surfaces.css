@@ -1,0 +1,237 @@
+/* Secondary TaskDesk phone surfaces. These rules deliberately distinguish full work pages from
+   short choice sheets instead of giving every desktop modal the same phone treatment. */
+
+@media (max-width: 680px) {
+  /* New Task is input-heavy and must survive a reduced visual viewport when the keyboard opens. */
+  .td3-modal-backdrop:has(> .td3-new-task),
+  .td3-modal-backdrop:has(> .td3-run-review) {
+    place-items: stretch;
+    padding: 0;
+    background: var(--td3-bg);
+    backdrop-filter: none;
+  }
+
+  .td3-new-task,
+  .td3-run-review {
+    width: 100%;
+    height: 100dvh;
+    max-height: 100dvh;
+    border: 0;
+    border-radius: 0;
+    box-shadow: none;
+  }
+
+  .td3-new-task > header,
+  .td3-run-review > header {
+    min-height: 58px;
+    flex: none;
+    padding: 9px 11px;
+  }
+
+  .td3-new-task > header small,
+  .td3-run-review > header small {
+    display: none;
+  }
+
+  .td3-new-task > header h2,
+  .td3-run-review > header h2 {
+    font-size: 16px;
+  }
+
+  .td3-new-task > header p,
+  .td3-run-review > header p {
+    max-width: calc(100vw - 22px);
+    margin-top: 2px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 10.5px;
+  }
+
+  /* Both full-screen pages already have a footer action that exits them. */
+  .td3-new-task > header > button,
+  .td3-run-review > header > button {
+    display: none;
+  }
+
+  .td3-new-task > .td3-modal-body,
+  .td3-run-review > .td3-modal-body {
+    min-height: 0;
+    flex: 1;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    padding: 10px;
+  }
+
+  .td3-new-task .td3-form-grid {
+    grid-template-columns: 1fr;
+    gap: 9px;
+  }
+
+  .td3-new-task .td3-form-wide {
+    grid-column: auto;
+  }
+
+  .td3-new-task :is(select, textarea, input:not([type="checkbox"])) {
+    font-size: 16px;
+  }
+
+  .td3-new-task textarea {
+    min-height: 96px;
+    max-height: 28dvh;
+    resize: none;
+  }
+
+  .td3-new-task > footer {
+    min-height: 56px;
+    flex: none;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+    padding: 8px 10px max(8px, env(safe-area-inset-bottom));
+  }
+
+  .td3-new-task > footer .td3-button {
+    width: 100%;
+    min-height: 40px;
+  }
+
+  /* Historical Run review is a transcript page, not a small modal. Metadata is compact and the
+     conversation owns the remaining height. */
+  .td3-run-review-meta {
+    flex: none;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    padding: 6px 8px;
+  }
+
+  .td3-run-review-meta span {
+    padding: 3px 5px;
+  }
+
+  .td3-run-review > footer {
+    min-height: 54px;
+    flex: none;
+    padding: 7px 10px max(7px, env(safe-area-inset-bottom));
+  }
+
+  .td3-run-review > footer .td3-button {
+    width: 100%;
+    min-height: 40px;
+  }
+
+  /* Settings and More are short choice surfaces. A bottom sheet is less visually expensive than a
+     full-screen page and keeps the phone navigation model obvious. */
+  .td3-modal-backdrop:has(> .td3-settings-modal),
+  .td3-modal-backdrop:has(> .td3-more-sheet) {
+    place-items: end stretch;
+    padding: 0;
+  }
+
+  .td3-settings-modal,
+  .td3-more-sheet {
+    width: 100%;
+    max-height: 78dvh;
+    border-radius: 16px 16px 0 0;
+    border-bottom: 0;
+  }
+
+  .td3-settings-modal > header,
+  .td3-more-sheet > header {
+    min-height: 58px;
+    flex: none;
+    padding: 10px 12px;
+  }
+
+  .td3-settings-modal > header small,
+  .td3-more-sheet > header small {
+    display: none;
+  }
+
+  .td3-settings-modal > header h2,
+  .td3-more-sheet > header h2 {
+    font-size: 16px;
+  }
+
+  .td3-settings-modal > header p,
+  .td3-more-sheet > header p {
+    margin-top: 2px;
+    font-size: 10.5px;
+  }
+
+  /* Settings already has Done. More has no footer, so it keeps its close control. */
+  .td3-settings-modal > header > button {
+    display: none;
+  }
+
+  .td3-settings-modal > .td3-modal-body,
+  .td3-more-sheet > .td3-modal-body {
+    min-height: 0;
+    overflow-y: auto;
+    padding: 10px 12px;
+  }
+
+  .td3-settings-modal .td3-choice-row {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .td3-settings-modal .td3-choice-row button {
+    width: 100%;
+    min-height: 42px;
+  }
+
+  .td3-settings-modal > footer {
+    padding: 8px 10px max(8px, env(safe-area-inset-bottom));
+  }
+
+  .td3-settings-modal > footer .td3-button {
+    width: 100%;
+    min-height: 40px;
+  }
+
+  .td3-more-list button {
+    min-height: 50px;
+  }
+
+  /* Information pages should not spend a quarter of a phone screen explaining themselves before
+     showing the cards the user opened the page to inspect. */
+  .td3-simple-page .td3-page-heading {
+    align-items: center;
+    gap: 10px;
+    padding: 12px 12px 10px;
+  }
+
+  .td3-simple-page .td3-page-heading small,
+  .td3-simple-page .td3-page-heading p {
+    display: none;
+  }
+
+  .td3-simple-page .td3-page-heading h1 {
+    margin: 0;
+    font-size: 18px;
+  }
+
+  .td3-simple-page .td3-page-heading > button {
+    min-height: 36px;
+  }
+
+  /* Needs You can have four actions on a permission card. They wrap into a predictable grid rather
+     than becoming a narrow, overflowing horizontal toolbar. */
+  .td3-attention-card > footer {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 7px;
+  }
+
+  .td3-attention-card > footer > :is(.td3-button, .td3-link-button) {
+    width: 100%;
+    min-width: 0;
+    min-height: 38px;
+    justify-content: center;
+    text-align: center;
+  }
+
+  .td3-attention-card > footer > .td3-link-button:first-child {
+    grid-column: 1 / -1;
+  }
+}
