@@ -337,4 +337,27 @@
   .td3-shell-unified .td3-task-detail-open .td3-action-error {
     grid-column: 1 / -1;
   }
+
+  /* Task actions must acknowledge a tap immediately. Finish and other primary operations are disabled
+     while their request is in flight; use that state as a visible progress affordance on phones. */
+  .td3-shell-unified .td3-task-detail-open .td3-detail-actions .td3-button.primary:disabled {
+    position: relative;
+    cursor: progress;
+    opacity: .78;
+  }
+
+  .td3-shell-unified .td3-task-detail-open .td3-detail-actions .td3-button.primary:disabled::before {
+    width: 12px;
+    height: 12px;
+    content: "";
+    flex: none;
+    border: 2px solid currentColor;
+    border-right-color: transparent;
+    border-radius: 50%;
+    animation: td3-mobile-action-spin .7s linear infinite;
+  }
+}
+
+@keyframes td3-mobile-action-spin {
+  to { transform: rotate(360deg); }
 }
