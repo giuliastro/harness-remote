@@ -12,6 +12,16 @@ function status(error) {
   return 500
 }
 
+function unavailableResult(task, error) {
+  return {
+    managed: task.workspace?.mode === "worktree",
+    dirty: false,
+    changeCount: 0,
+    unavailable: true,
+    error: error instanceof Error ? error.message : String(error)
+  }
+}
+
 export function createTaskFinishServer({ innerServer, config, taskStore, worktreeManager, taskRunController, createServer = http.createServer }) {
   return createServer(async (request, response) => {
     const pathname = new URL(request.url ?? "/", `http://${request.headers.host ?? "localhost"}`).pathname
@@ -47,26 +57,30 @@ export function createTaskFinishServer({ innerServer, config, taskStore, worktre
         throw error
       }
 
-      let result
-      if (task.workspace?.mode !== "worktree") {
-        result = { managed: false, dirty: false, changeCount: 0 }
-      } else {
-        result = await inspectTaskWork(task.workspace, worktreeManager)
-      }
-
-      if (!finish) {
-        writeJSON(response, 200, result)
+      if (finish) {
+        const updated = typeof taskStore.markFinished === "function"
+          ? await taskStore.markFinished(taskID)
+          : { ...task, finishedAt: new Date().toISOString() }
+        let result
+        try {
+          result = task.workspace?.mode !== "worktree"
+            ? { managed: false, dirty: false, changeCount: 0 }
+            : await inspectTaskWork(task.workspace, worktreeManager)
+        } catch (error) {
+          result = unavailableResult(task, error)
+        }
+        writeJSON(response, 200, {
+          task: updated,
+          result,
+          cleanup: { removed: false, branchDeleted: false }
+        })
         return
       }
 
-      const updated = typeof taskStore.markFinished === "function"
-        ? await taskStore.markFinished(taskID)
-        : { ...task, finishedAt: new Date().toISOString() }
-      writeJSON(response, 200, {
-        task: updated,
-        result,
-        cleanup: { removed: false, branchDeleted: false }
-      })
+      const result = task.workspace?.mode !== "worktree"
+        ? { managed: false, dirty: false, changeCount: 0 }
+        : await inspectTaskWork(task.workspace, worktreeManager)
+      writeJSON(response, 200, result)
     } catch (error) {
       writeJSON(response, status(error), { error: error instanceof Error ? error.message : String(error), ...(error?.code ? { code: error.code } : {}) })
     }
