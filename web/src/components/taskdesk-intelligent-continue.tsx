@@ -187,6 +187,12 @@ export function IntelligentContinueTaskModal({
     && context
     && (mode === "fresh" || reusableRun)
   )
+  const settingsSummary = [
+    selectedAgent?.label || copy.targetHarness,
+    model?.modelName || (modelsLoading ? t("model.loading") : t("model.agentDefault")),
+    roleLabel(role, copy),
+    mode === "resume" ? copy.reuseSession : copy.freshSession
+  ].join(" · ")
 
   async function submit() {
     if (!canStart) return
@@ -228,59 +234,67 @@ export function IntelligentContinueTaskModal({
         </header>
 
         <div className="td3-modal-body td3-continue-grid">
-          <label>
-            <span>{copy.targetHarness}</span>
-            <select value={agentID} onChange={(event) => setAgentID(event.target.value)}>
-              {record.runtime.agents.map((agent) => (
-                <option
-                  key={agent.id}
-                  value={agent.id}
-                  disabled={agent.state !== "available" && agent.state !== "configured"}
-                >
-                  {agent.label}
-                </option>
-              ))}
-            </select>
-          </label>
+          <details className="td3-continue-settings">
+            <summary>
+              <strong>{selectedAgent?.label || copy.targetHarness}</strong>
+              <span>{settingsSummary}</span>
+            </summary>
+            <div className="td3-continue-settings-body">
+              <label>
+                <span>{copy.targetHarness}</span>
+                <select value={agentID} onChange={(event) => setAgentID(event.target.value)}>
+                  {record.runtime.agents.map((agent) => (
+                    <option
+                      key={agent.id}
+                      value={agent.id}
+                      disabled={agent.state !== "available" && agent.state !== "configured"}
+                    >
+                      {agent.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
 
-          <label>
-            <span>{copy.targetModel}</span>
-            <select value={modelKeyValue} onChange={(event) => setModelKeyValue(event.target.value)} disabled={modelsLoading || models.length === 0}>
-              {modelsLoading ? <option value="">{t("model.loading")}</option> : null}
-              {!modelsLoading && models.length === 0 ? <option value="">{t("model.agentDefault")}</option> : null}
-              {models.map((candidate) => (
-                <option key={modelKey(candidate)} value={modelKey(candidate)}>
-                  {candidate.modelName}{candidate.variant ? ` (${candidate.variant})` : ""}
-                </option>
-              ))}
-            </select>
-          </label>
+              <label>
+                <span>{copy.targetModel}</span>
+                <select value={modelKeyValue} onChange={(event) => setModelKeyValue(event.target.value)} disabled={modelsLoading || models.length === 0}>
+                  {modelsLoading ? <option value="">{t("model.loading")}</option> : null}
+                  {!modelsLoading && models.length === 0 ? <option value="">{t("model.agentDefault")}</option> : null}
+                  {models.map((candidate) => (
+                    <option key={modelKey(candidate)} value={modelKey(candidate)}>
+                      {candidate.modelName}{candidate.variant ? ` (${candidate.variant})` : ""}
+                    </option>
+                  ))}
+                </select>
+              </label>
 
-          <label>
-            <span>{copy.role}</span>
-            <select value={role} onChange={(event) => setRole(event.target.value as RoleOption)}>
-              {ROLE_OPTIONS.map((candidate) => <option key={candidate} value={candidate}>{roleLabel(candidate, copy)}</option>)}
-            </select>
-          </label>
+              <label>
+                <span>{copy.role}</span>
+                <select value={role} onChange={(event) => setRole(event.target.value as RoleOption)}>
+                  {ROLE_OPTIONS.map((candidate) => <option key={candidate} value={candidate}>{roleLabel(candidate, copy)}</option>)}
+                </select>
+              </label>
 
-          <label>
-            <span>{copy.sessionStrategy}</span>
-            <select value={mode} onChange={(event) => setMode(event.target.value as "resume" | "fresh")}>
-              {reusableRun ? <option value="resume">{copy.reuseSession}</option> : null}
-              <option value="fresh">{copy.freshSession}</option>
-            </select>
-          </label>
+              <label>
+                <span>{copy.sessionStrategy}</span>
+                <select value={mode} onChange={(event) => setMode(event.target.value as "resume" | "fresh")}>
+                  {reusableRun ? <option value="resume">{copy.reuseSession}</option> : null}
+                  <option value="fresh">{copy.freshSession}</option>
+                </select>
+              </label>
 
-          {role === "custom" ? (
-            <label className="td3-continue-wide">
-              <span>{copy.customRole}</span>
-              <input value={customRole} onChange={(event) => setCustomRole(event.target.value.slice(0, 80))} maxLength={80} />
-            </label>
-          ) : null}
+              {role === "custom" ? (
+                <label className="td3-continue-wide">
+                  <span>{copy.customRole}</span>
+                  <input value={customRole} onChange={(event) => setCustomRole(event.target.value.slice(0, 80))} maxLength={80} />
+                </label>
+              ) : null}
 
-          {!targetAgentAvailable ? <div className="td3-inline-warning td3-continue-wide">{copy.targetUnavailable}</div> : null}
-          {!reusableRun ? <div className="td3-inline-warning td3-continue-wide">{copy.noReusableSession}</div> : null}
-          {reusableSessionID ? <p className="td3-continue-model-note td3-continue-wide">{copy.reuseSession}: {reusableSessionID}</p> : null}
+              {!targetAgentAvailable ? <div className="td3-inline-warning td3-continue-wide">{copy.targetUnavailable}</div> : null}
+              {!reusableRun ? <div className="td3-inline-warning td3-continue-wide">{copy.noReusableSession}</div> : null}
+              {reusableSessionID ? <p className="td3-continue-model-note td3-continue-wide">{copy.reuseSession}: {reusableSessionID}</p> : null}
+            </div>
+          </details>
 
           <details className="td3-continue-context" open>
             <summary>
@@ -331,9 +345,9 @@ export function IntelligentContinueTaskModal({
             </div>
           </details>
 
-          <label className="td3-continue-wide">
+          <label className="td3-continue-wide td3-continue-prompt">
             <span>{t("continue.prompt")}</span>
-            <textarea rows={6} value={prompt} onChange={(event) => setPrompt(event.target.value)} placeholder={t("continue.placeholder")} />
+            <textarea rows={5} value={prompt} onChange={(event) => setPrompt(event.target.value)} placeholder={t("continue.placeholder")} />
           </label>
 
           {error ? <div className="td3-inline-error td3-continue-wide" role="alert">{error}</div> : null}
