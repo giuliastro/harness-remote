@@ -3,6 +3,7 @@ import type { LanguageCode } from "./i18n"
 type ContinueCopy = {
   targetHarness: string
   targetModel: string
+  targetUnavailable: string
   role: string
   roleContinue: string
   roleReview: string
@@ -34,6 +35,7 @@ const copy: Record<LanguageCode, ContinueCopy> = {
   en: {
     targetHarness: "Target harness",
     targetModel: "Target model",
+    targetUnavailable: "The selected harness is unavailable. Choose an available harness before starting the next Run.",
     role: "Role / purpose",
     roleContinue: "Continue implementation",
     roleReview: "Review",
@@ -63,6 +65,7 @@ const copy: Record<LanguageCode, ContinueCopy> = {
   it: {
     targetHarness: "Harness di destinazione",
     targetModel: "Modello di destinazione",
+    targetUnavailable: "L'harness selezionato non è disponibile. Scegli un harness disponibile prima di avviare il prossimo Run.",
     role: "Ruolo / scopo",
     roleContinue: "Continua implementazione",
     roleReview: "Revisione",
@@ -92,6 +95,7 @@ const copy: Record<LanguageCode, ContinueCopy> = {
   "zh-TW": {
     targetHarness: "目標 Harness",
     targetModel: "目標模型",
+    targetUnavailable: "所選 Harness 目前無法使用。請選擇可用的 Harness，再啟動下一個 Run。",
     role: "角色 / 目的",
     roleContinue: "繼續實作",
     roleReview: "審閱",
@@ -121,6 +125,7 @@ const copy: Record<LanguageCode, ContinueCopy> = {
   "zh-CN": {
     targetHarness: "目标 Harness",
     targetModel: "目标模型",
+    targetUnavailable: "所选 Harness 当前不可用。请选择可用的 Harness，再启动下一个 Run。",
     role: "角色 / 目的",
     roleContinue: "继续实现",
     roleReview: "审阅",
