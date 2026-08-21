@@ -103,6 +103,7 @@ export function IntelligentContinueTaskModal({
   const [role, setRole] = useState<RoleOption>("continue")
   const [customRole, setCustomRole] = useState("")
   const [mode, setMode] = useState<"resume" | "fresh">(() => latestReusableRun(record.task, initialAgentID) ? "resume" : "fresh")
+  const [settingsOpen, setSettingsOpen] = useState(false)
   const [prompt, setPrompt] = useState("")
   const [working, setWorking] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -187,6 +188,7 @@ export function IntelligentContinueTaskModal({
     && context
     && (mode === "fresh" || reusableRun)
   )
+  const taskHeading = record.task.prompt.split(/\r?\n/, 1)[0]?.trim() || t("continue.title")
   const settingsSummary = [
     selectedAgent?.label || copy.targetHarness,
     model?.modelName || (modelsLoading ? t("model.loading") : t("model.agentDefault")),
@@ -225,76 +227,90 @@ export function IntelligentContinueTaskModal({
         onMouseDown={(event) => event.stopPropagation()}
       >
         <header>
-          <div>
+          <div className="td3-continue-heading">
             <small>{t("continue.eyebrow")}</small>
-            <h2>{t("continue.title")}</h2>
-            <p>{record.task.prompt.split(/\r?\n/)[0]}</p>
+            <h2>{taskHeading}</h2>
+            <p>{t("continue.title")}</p>
           </div>
           <button type="button" onClick={onClose} aria-label={t("nav.close")} title={t("nav.close")}>×</button>
         </header>
 
         <div className="td3-modal-body td3-continue-grid">
-          <details className="td3-continue-settings">
-            <summary>
-              <strong>{selectedAgent?.label || copy.targetHarness}</strong>
-              <span>{settingsSummary}</span>
-            </summary>
-            <div className="td3-continue-settings-body">
-              <label>
-                <span>{copy.targetHarness}</span>
-                <select value={agentID} onChange={(event) => setAgentID(event.target.value)}>
-                  {record.runtime.agents.map((agent) => (
-                    <option
-                      key={agent.id}
-                      value={agent.id}
-                      disabled={agent.state !== "available" && agent.state !== "configured"}
-                    >
-                      {agent.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
-
-              <label>
-                <span>{copy.targetModel}</span>
-                <select value={modelKeyValue} onChange={(event) => setModelKeyValue(event.target.value)} disabled={modelsLoading || models.length === 0}>
-                  {modelsLoading ? <option value="">{t("model.loading")}</option> : null}
-                  {!modelsLoading && models.length === 0 ? <option value="">{t("model.agentDefault")}</option> : null}
-                  {models.map((candidate) => (
-                    <option key={modelKey(candidate)} value={modelKey(candidate)}>
-                      {candidate.modelName}{candidate.variant ? ` (${candidate.variant})` : ""}
-                    </option>
-                  ))}
-                </select>
-              </label>
-
-              <label>
-                <span>{copy.role}</span>
-                <select value={role} onChange={(event) => setRole(event.target.value as RoleOption)}>
-                  {ROLE_OPTIONS.map((candidate) => <option key={candidate} value={candidate}>{roleLabel(candidate, copy)}</option>)}
-                </select>
-              </label>
-
-              <label>
-                <span>{copy.sessionStrategy}</span>
-                <select value={mode} onChange={(event) => setMode(event.target.value as "resume" | "fresh")}>
-                  {reusableRun ? <option value="resume">{copy.reuseSession}</option> : null}
-                  <option value="fresh">{copy.freshSession}</option>
-                </select>
-              </label>
-
-              {role === "custom" ? (
-                <label className="td3-continue-wide">
-                  <span>{copy.customRole}</span>
-                  <input value={customRole} onChange={(event) => setCustomRole(event.target.value.slice(0, 80))} maxLength={80} />
-                </label>
-              ) : null}
-
-              {!targetAgentAvailable ? <div className="td3-inline-warning td3-continue-wide">{copy.targetUnavailable}</div> : null}
-              {!reusableRun ? <div className="td3-inline-warning td3-continue-wide">{copy.noReusableSession}</div> : null}
-              {reusableSessionID ? <p className="td3-continue-model-note td3-continue-wide">{copy.reuseSession}: {reusableSessionID}</p> : null}
+          <section className={`td3-continue-settings${settingsOpen ? " open" : ""}`}>
+            <div className="td3-continue-settings-summary">
+              <div>
+                <small>{copy.runSettings}</small>
+                <strong>{selectedAgent?.label || copy.targetHarness}</strong>
+                <span>{settingsSummary}</span>
+              </div>
+              <button
+                type="button"
+                className="td3-continue-settings-toggle"
+                aria-expanded={settingsOpen}
+                onClick={() => setSettingsOpen((value) => !value)}
+              >
+                {settingsOpen ? copy.hideSettings : copy.editSettings}
+              </button>
             </div>
-          </details>
+
+            {settingsOpen ? (
+              <div className="td3-continue-settings-body">
+                <label>
+                  <span>{copy.targetHarness}</span>
+                  <select value={agentID} onChange={(event) => setAgentID(event.target.value)}>
+                    {record.runtime.agents.map((agent) => (
+                      <option
+                        key={agent.id}
+                        value={agent.id}
+                        disabled={agent.state !== "available" && agent.state !== "configured"}
+                      >
+                        {agent.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+
+                <label>
+                  <span>{copy.targetModel}</span>
+                  <select value={modelKeyValue} onChange={(event) => setModelKeyValue(event.target.value)} disabled={modelsLoading || models.length === 0}>
+                    {modelsLoading ? <option value="">{t("model.loading")}</option> : null}
+                    {!modelsLoading && models.length === 0 ? <option value="">{t("model.agentDefault")}</option> : null}
+                    {models.map((candidate) => (
+                      <option key={modelKey(candidate)} value={modelKey(candidate)}>
+                        {candidate.modelName}{candidate.variant ? ` (${candidate.variant})` : ""}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+
+                <label>
+                  <span>{copy.role}</span>
+                  <select value={role} onChange={(event) => setRole(event.target.value as RoleOption)}>
+                    {ROLE_OPTIONS.map((candidate) => <option key={candidate} value={candidate}>{roleLabel(candidate, copy)}</option>)}
+                  </select>
+                </label>
+
+                <label>
+                  <span>{copy.sessionStrategy}</span>
+                  <select value={mode} onChange={(event) => setMode(event.target.value as "resume" | "fresh")}>
+                    {reusableRun ? <option value="resume">{copy.reuseSession}</option> : null}
+                    <option value="fresh">{copy.freshSession}</option>
+                  </select>
+                </label>
+
+                {role === "custom" ? (
+                  <label className="td3-continue-wide">
+                    <span>{copy.customRole}</span>
+                    <input value={customRole} onChange={(event) => setCustomRole(event.target.value.slice(0, 80))} maxLength={80} />
+                  </label>
+                ) : null}
+
+                {!targetAgentAvailable ? <div className="td3-inline-warning td3-continue-wide">{copy.targetUnavailable}</div> : null}
+                {!reusableRun ? <div className="td3-inline-warning td3-continue-wide">{copy.noReusableSession}</div> : null}
+                {reusableSessionID ? <p className="td3-continue-model-note td3-continue-wide">{copy.reuseSession}: {reusableSessionID}</p> : null}
+              </div>
+            ) : null}
+          </section>
 
           <details className="td3-continue-context" open>
             <summary>
