@@ -21,12 +21,12 @@ test("TaskDesk normalizes backend lifecycle states for the Tasks view", () => {
   assert.equal(normalizeTaskStatus("completed"), "completed")
   assert.equal(normalizeTaskStatus("failed"), "failed")
   assert.equal(normalizeTaskStatus("cancelled"), "cancelled")
-  assert.equal(normalizeTaskStatus("mystery"), "draft")
+  assert.equal(normalizeTaskStatus("mystery"), "unknown")
 })
 
 test("TaskDesk derives stable task row labels without flattening Tasks into Sessions", () => {
   assert.equal(taskTitle({ id: "abc", prompt: "First line\nSecond line" }), "First line")
-  assert.equal(taskTitle({ id: "abc", prompt: "" }), "Task abc")
+  assert.equal(taskTitle({ id: "abc", prompt: "" }), "Untitled task")
 })
 
 test("TaskDesk sorts Tasks by durable task activity rather than session order", () => {
