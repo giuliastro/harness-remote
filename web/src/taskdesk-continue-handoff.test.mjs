@@ -28,10 +28,11 @@ test("TaskDesk Continue selects harness, live model, role and native Session str
   assert.match(modal, /providerID: model\.providerID, modelID: model\.modelID, variant: model\.variant/)
 })
 
-test("TaskDesk Continue previews bounded context and keeps an older-daemon compatibility path", () => {
+test("TaskDesk Continue previews bounded context and keeps an older-daemon compatibility path", async () => {
   const shell = readFileSync(new URL("./components/taskdesk-v3-unified.tsx", import.meta.url), "utf8")
   const modal = readFileSync(new URL("./components/taskdesk-intelligent-continue.tsx", import.meta.url), "utf8")
-  const copy = readFileSync(new URL("./taskdesk-continue-i18n.ts", import.meta.url), "utf8")
+  const copySource = readFileSync(new URL("./taskdesk-continue-i18n.ts", import.meta.url), "utf8")
+  const { taskDeskContinueCopy } = await import("./taskdesk-continue-i18n.ts")
 
   assert.match(shell, /<IntelligentContinueTaskModal/)
   assert.match(shell, /legacyFallback=\{ContinueTaskModal\}/)
@@ -43,8 +44,11 @@ test("TaskDesk Continue previews bounded context and keeps an older-daemon compa
   assert.match(modal, /context\.changedFiles\.slice\(0, 12\)/)
   assert.match(modal, /context\.runSummaries\.slice\(-6\)\.reverse\(\)/)
   assert.match(modal, /HTTP 404\|incompatible response/)
-  assert.match(copy, /It is not native conversational memory from another harness/)
+  assert.match(copySource, /It is not native conversational memory from another harness/)
   for (const language of ["en", "it", "zh-TW", "zh-CN"]) {
-    assert.match(copy, new RegExp(`(?:^|\\n)  ${JSON.stringify(language).replace(/["']/g, "\\\"")}|(?:^|\\n)  ${language === "en" || language === "it" ? language : `"${language}"`}:`), `localized Continue copy should include ${language}`)
+    const copy = taskDeskContinueCopy(language)
+    assert.ok(copy.targetHarness.trim(), `${language} should translate the target harness label`)
+    assert.ok(copy.transferredContext.trim(), `${language} should explain transferred Task Context`)
+    assert.ok(copy.reuseSession.trim() && copy.freshSession.trim(), `${language} should translate both Session strategies`)
   }
 })
