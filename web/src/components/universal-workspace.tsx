@@ -406,12 +406,12 @@ function NewSessionModal({ machines, initialMachineKey, initialProject, initialA
     setModelError(null)
     setError(null)
     void taskClient.listAgentModels(machine.profile.config, agent.id)
-      .then(async (catalog) => {
-        if (cancelled) return
+      .then(async (catalog): Promise<ModelOption[]> => {
+        if (cancelled) return []
         if (catalog.models.length) return catalog.models
         if (catalog.error) throw new Error(catalog.error)
         try { return await api.listModels(configForAgent(machine, agent), directory || undefined) }
-        catch { return [] as ModelOption[] }
+        catch { return [] }
       })
       .then((catalogModels) => {
         if (cancelled) return
