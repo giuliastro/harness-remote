@@ -1,0 +1,193 @@
+/* Live work should read as activity, not as decoration. These effects are deliberately slow and
+   low-contrast so TaskDesk stays calm while still making an active agent unmistakable. */
+
+@keyframes td3-live-breathe {
+  0%, 100% { box-shadow: 0 0 0 0 var(--td3-blue-soft), 0 0 0 transparent; }
+  50% { box-shadow: 0 0 0 3px var(--td3-blue-soft), 0 0 14px var(--td3-blue-border); }
+}
+
+@keyframes td3-live-dot {
+  0%, 100% { opacity: .72; transform: scale(.9); }
+  50% { opacity: 1; transform: scale(1.08); }
+}
+
+@keyframes td3-live-sweep {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+@keyframes td3-session-accent-flow {
+  0%, 100% { background-position: 50% 0%; filter: brightness(.92); }
+  50% { background-position: 50% 100%; filter: brightness(1.12); }
+}
+
+.td3-status-pill.td3-status-active {
+  animation: td3-live-breathe 2.8s ease-in-out infinite;
+}
+
+.td3-status-dot.td3-status-active {
+  animation: td3-live-dot 1.9s ease-in-out infinite;
+}
+
+.td3-run-live {
+  position: relative;
+  overflow: hidden;
+  border-color: var(--td3-blue-border);
+  background: linear-gradient(90deg, var(--td3-blue-soft-2), var(--td3-raise-1), var(--td3-blue-soft-2));
+  background-size: 220% 100%;
+  animation: td3-run-live-shift 4.8s ease-in-out infinite;
+}
+
+@keyframes td3-run-live-shift {
+  0%, 100% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+}
+
+/* The current outcome is the primary answer of a Task. While the agent is still working, let a
+   single restrained highlight orbit the card rather than adding another spinner. */
+.td3-detail-body:has(> .td3-run-live) .td3-review-hero {
+  position: relative;
+  isolation: isolate;
+  border-color: transparent;
+}
+
+.td3-detail-body:has(> .td3-run-live) .td3-review-hero::before {
+  content: "";
+  position: absolute;
+  inset: -1px;
+  z-index: -1;
+  border-radius: inherit;
+  padding: 1px;
+  pointer-events: none;
+  background: conic-gradient(
+    from 0deg,
+    transparent 0deg 270deg,
+    var(--td3-blue-border) 310deg,
+    var(--td3-blue-text) 338deg,
+    transparent 360deg
+  );
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  animation: td3-live-sweep 5.5s linear infinite;
+}
+
+/* A Task is a work surface, so once its detail is open the detail gets most of the desktop canvas.
+   The list remains visible for orientation and fast switching instead of squeezing the result into
+   an inspector-sized column. */
+@media (min-width: 981px) {
+  .td3-tasks-layout-unified.detail-open {
+    grid-template-columns: minmax(300px, .42fr) minmax(600px, 1.58fr);
+  }
+
+  .td3-task-list-pane .td3-task-table-head,
+  .td3-task-list-pane .td3-task-row {
+    grid-template-columns: minmax(210px, 1fr) 92px 92px;
+  }
+
+  .td3-task-list-pane .td3-task-table-head > :nth-child(4),
+  .td3-task-list-pane .td3-task-table-head > :nth-child(5),
+  .td3-task-list-pane .td3-task-table-head > :nth-child(7),
+  .td3-task-list-pane .td3-task-row > :nth-child(4),
+  .td3-task-list-pane .td3-task-row > :nth-child(5),
+  .td3-task-list-pane .td3-task-row > :nth-child(7) {
+    display: none;
+  }
+}
+
+/* Result Summary is the thing the user came back to see. Give it the whole review width and make
+   every kind of generated text stay inside its surface. */
+.td3-detail-cards > section:first-child {
+  grid-column: 1 / -1;
+  padding: 16px 17px;
+  border-color: var(--td3-blue-border-soft);
+  background: linear-gradient(180deg, var(--td3-blue-soft-2), var(--td3-sunken-soft));
+}
+
+.td3-detail-cards > section:first-child > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--td3-border-soft);
+}
+
+.td3-detail-cards > section:first-child > header h3 {
+  margin: 0;
+  color: var(--td3-text);
+  font-size: 13px;
+}
+
+.td3-markdown,
+.td3-markdown * {
+  min-width: 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.td3-markdown pre {
+  max-width: 100%;
+  overflow-x: auto;
+  white-space: pre-wrap;
+}
+
+.td3-markdown code {
+  white-space: break-spaces;
+}
+
+.td3-markdown table {
+  display: block;
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+.td3-markdown img,
+.td3-markdown video {
+  max-width: 100%;
+  height: auto;
+}
+
+/* Native Sessions use the same calm activity language. */
+.uw-status-chip.uw-status-working {
+  animation: td3-live-breathe 2.8s ease-in-out infinite;
+}
+
+.uw-session-accent.uw-status-working {
+  background: linear-gradient(180deg, var(--td3-blue-text), var(--td3-blue), var(--td3-blue-text));
+  background-size: 100% 220%;
+  animation: td3-session-accent-flow 2.6s ease-in-out infinite;
+}
+
+.uw-context-strip .uw-status-working b {
+  animation: td3-session-working-text 2.6s ease-in-out infinite;
+}
+
+@keyframes td3-session-working-text {
+  0%, 100% { opacity: .76; text-shadow: 0 0 0 transparent; }
+  50% { opacity: 1; text-shadow: 0 0 10px var(--td3-blue-border); }
+}
+
+@media (max-width: 680px) {
+  .td3-detail-cards {
+    grid-template-columns: 1fr;
+  }
+
+  .td3-detail-cards > section:first-child {
+    grid-column: auto;
+    padding: 13px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .td3-status-pill.td3-status-active,
+  .td3-status-dot.td3-status-active,
+  .td3-run-live,
+  .td3-detail-body:has(> .td3-run-live) .td3-review-hero::before,
+  .uw-status-chip.uw-status-working,
+  .uw-session-accent.uw-status-working,
+  .uw-context-strip .uw-status-working b {
+    animation: none !important;
+  }
+}
