@@ -1,0 +1,182 @@
+/* Workspace/navigation refinements live separately from the original TaskDesk shell so the
+   product hierarchy can evolve without making the base stylesheet harder to reason about. */
+
+.tdw-shell { --tdw-workspace-width: 238px; }
+.tdw-shell.workspace-collapsed { --tdw-workspace-width: 56px; }
+
+.tdw-layout {
+  grid-template-columns: var(--tdw-workspace-width) minmax(260px, min(var(--tdw-thread-width, 330px), 40vw)) minmax(0, 1fr);
+  transition: grid-template-columns 140ms ease;
+}
+.tdw-project-column { overflow-y: auto; overflow-x: hidden; scrollbar-width: thin; }
+.tdw-workspace-heading { flex: none; }
+.tdw-sidebar-collapse {
+  width: 30px; height: 30px; flex: none; display: grid; place-items: center;
+  border: 1px solid var(--td3-border); border-radius: 8px; color: var(--td3-text-3);
+  background: var(--td3-raise-1); cursor: pointer; font-size: 18px; line-height: 1;
+}
+.tdw-sidebar-collapse:hover { color: var(--td3-text); border-color: var(--td3-border-strong); background: var(--td3-raise-2); }
+.tdw-workspace-section { flex: none; padding: 5px 8px 8px; border-bottom: 1px solid var(--td3-border-soft); }
+.tdw-workspace-section-header {
+  width: 100%; min-height: 29px; display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  padding: 0 5px; border: 0; border-radius: 7px; color: inherit; background: transparent; cursor: pointer;
+}
+.tdw-workspace-section-header:hover { background: var(--td3-raise-1); }
+.tdw-workspace-label {
+  display: block; padding: 0; color: var(--td3-muted); font-size: 8.5px;
+  font-weight: 800; letter-spacing: .09em; text-transform: uppercase;
+}
+.tdw-section-chevron {
+  flex: none; color: var(--td3-muted); font-size: 13px; line-height: 1; transform: rotate(0deg);
+  transition: transform 120ms ease;
+}
+.tdw-workspace-section.section-collapsed .tdw-section-chevron { transform: rotate(-90deg); }
+.tdw-workspace-section.section-collapsed .tdw-workspace-section-body { display: none; }
+.tdw-workspace-section-body { min-width: 0; }
+.tdw-side-row, .tdw-harness-row, .tdw-filter-row {
+  width: 100%; min-width: 0; min-height: 38px; display: grid; align-items: center; gap: 8px;
+  margin: 2px 0; padding: 6px 7px; border: 1px solid transparent; border-radius: 9px;
+  color: var(--td3-text-3); background: transparent; text-align: left;
+}
+.tdw-side-row { grid-template-columns: 18px minmax(0, 1fr); cursor: pointer; }
+.tdw-side-row:hover, .tdw-side-row.active, .tdw-filter-row:hover, .tdw-filter-row.active { color: var(--td3-text); background: var(--td3-raise-1); }
+.tdw-side-row.active, .tdw-filter-row.active { border-color: var(--td3-blue-border); background: var(--td3-blue-soft); }
+.tdw-side-row > span:last-child, .tdw-harness-row > span:last-child { min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.tdw-side-row strong, .tdw-harness-row strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 10.5px; }
+.tdw-side-row small, .tdw-harness-row small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--td3-muted); font-size: 8.5px; }
+.tdw-side-icon { width: 18px; height: 18px; display: grid; place-items: center; color: var(--td3-text-3); }
+.tdw-presence-dot {
+  width: 8px; height: 8px; justify-self: center; border-radius: 999px; background: var(--td3-muted);
+  box-shadow: 0 0 0 3px var(--td3-raise-2);
+}
+.tdw-presence-dot.online, .tdw-presence-dot.available, .tdw-presence-dot.configured { background: var(--td3-green); }
+.tdw-presence-dot.loading { background: var(--td3-yellow); }
+.tdw-presence-dot.offline, .tdw-presence-dot.unavailable { background: var(--td3-red); }
+/* A row exists only after the daemon has detected that harness. Detection is the useful binary
+   signal here, so every detected harness is green regardless of lazy/running/transitional process
+   state. Text carries Ready/Running detail; only a real unavailable state is red. */
+.tdw-harness-row .tdw-presence-dot { background: var(--td3-green); }
+.tdw-harness-row .tdw-presence-dot.unavailable { background: var(--td3-red); }
+.tdw-harness-row { grid-template-columns: 18px minmax(0, 1fr); }
+.tdw-side-empty { padding: 6px 7px; color: var(--td3-muted); font-size: 9px; }
+.tdw-project-section .tdw-project-row { width: 100%; margin: 2px 0; min-height: 40px; }
+.tdw-project-column .tdw-project-list { min-height: 0; flex: none; padding: 0; overflow: visible; }
+.tdw-filter-row { grid-template-columns: 10px minmax(0, 1fr) auto; cursor: pointer; font-size: 10px; }
+.tdw-filter-row b { color: var(--td3-muted); font-size: 9px; }
+.tdw-filter-dot { width: 7px; height: 7px; border-radius: 999px; background: var(--td3-muted); }
+.tdw-filter-dot.working { background: var(--td3-blue-text); }
+.tdw-filter-dot.attention { background: var(--td3-red); }
+.tdw-filter-dot.done { background: var(--td3-green); }
+
+.tdw-shell.workspace-collapsed .tdw-workspace-heading { min-height: 52px; justify-content: center; padding-inline: 0; }
+.tdw-shell.workspace-collapsed .tdw-workspace-heading > div,
+.tdw-shell.workspace-collapsed .tdw-workspace-section-header,
+.tdw-shell.workspace-collapsed .tdw-harness-section,
+.tdw-shell.workspace-collapsed .tdw-filter-section { display: none; }
+.tdw-shell.workspace-collapsed .tdw-workspace-section { padding: 5px; }
+.tdw-shell.workspace-collapsed .tdw-workspace-section.section-collapsed .tdw-workspace-section-body { display: block; }
+.tdw-shell.workspace-collapsed .tdw-side-row,
+.tdw-shell.workspace-collapsed .tdw-project-row {
+  width: 44px; min-height: 42px; margin: 3px auto; display: grid; grid-template-columns: 1fr;
+  place-items: center; padding: 5px;
+}
+.tdw-shell.workspace-collapsed .tdw-side-row > span:last-child,
+.tdw-shell.workspace-collapsed .tdw-project-row > span:nth-child(2),
+.tdw-shell.workspace-collapsed .tdw-project-row > b { display: none; }
+.tdw-shell.workspace-collapsed .tdw-project-icon { width: 28px; height: 28px; }
+
+.tdw-thread-column { position: relative; }
+.tdw-pane-resizer { position: absolute; z-index: 5; top: 0; right: -4px; bottom: 0; width: 8px; cursor: col-resize; touch-action: none; }
+.tdw-pane-resizer::after { content: ""; position: absolute; top: 0; bottom: 0; left: 3px; width: 1px; background: transparent; }
+.tdw-pane-resizer:hover::after { background: var(--td3-blue-border); }
+
+.tdw-thread-state.attention { background: var(--td3-red); }
+.tdw-thread-state.stopped { background: var(--td3-yellow); }
+.tdw-thread-state.done { background: var(--td3-green); }
+.tdw-thread-status.attention { color: var(--td3-red-text); background: var(--td3-red-soft); }
+.tdw-thread-status.stopped { color: var(--td3-yellow-text); background: var(--td3-yellow-soft); }
+.tdw-thread-status.done { color: var(--td3-green-text); background: var(--td3-green-soft); }
+.tdw-live-state.stopped i { background: var(--td3-yellow); box-shadow: 0 0 0 3px var(--td3-yellow-soft); }
+.tdw-live-state.done i { background: var(--td3-green); box-shadow: 0 0 0 3px var(--td3-green-soft); }
+
+.tdw-result-markdown { color: var(--td3-text-2); font-size: 12px; line-height: 1.65; }
+.tdw-result-markdown > :first-child { margin-top: 0; }
+.tdw-result-markdown > :last-child { margin-bottom: 0; }
+.tdw-result-markdown p { margin: 7px 0; white-space: normal; }
+.tdw-result-markdown ul, .tdw-result-markdown ol { padding-left: 1.4em; }
+.tdw-result-markdown pre { max-width: 100%; overflow: auto; padding: 10px 12px; border-radius: 9px; background: var(--td3-bg); }
+.tdw-result-markdown code { overflow-wrap: anywhere; }
+
+.tdw-mobile-only-menu { display: none; }
+.tdw-shell input:focus-visible, .tdw-shell textarea:focus-visible, .tdw-shell select:focus-visible, .tdw-shell button:focus-visible,
+.tdw-modal input:focus-visible, .tdw-modal textarea:focus-visible, .tdw-modal select:focus-visible, .tdw-modal button:focus-visible {
+  outline: none; border-color: var(--td3-focus) !important; box-shadow: 0 0 0 3px var(--td3-blue-soft) !important;
+}
+
+/* Machines exposes the live harness inventory returned by the daemon. A configured ACP host is
+   ready to use but intentionally starts lazily, so both configured (Ready) and available
+   (Running) use the healthy green affordance. Yellow is reserved for machine/task transitions,
+   not harness detection. */
+.uw-machine-config-main { flex: 1; }
+.uw-machine-harness-list {
+  min-width: 0; display: flex; flex-wrap: wrap; gap: 5px; margin-top: 7px;
+}
+.uw-machine-harness {
+  min-width: 0; display: grid; grid-template-columns: 7px auto auto; align-items: center; gap: 5px;
+  padding: 4px 7px; border: 1px solid var(--td3-border); border-radius: 999px;
+  color: var(--td3-text-3); background: var(--td3-raise-1);
+}
+.uw-machine-harness > i { width: 7px; height: 7px; border-radius: 999px; background: var(--td3-green); }
+.uw-machine-harness > i.available, .uw-machine-harness > i.configured { background: var(--td3-green); }
+.uw-machine-harness > i.loading { background: var(--td3-green); }
+.uw-machine-harness > i.unavailable { background: var(--td3-red); }
+.uw-machine-harness > strong { font-size: 10px; }
+.uw-machine-harness > small { color: var(--td3-muted); font-size: 8.5px; }
+
+/* Classic must remain usable even when an old harness supplies a pathological session title. */
+.tdw-classic-host { position: relative; height: 100vh; min-height: 0; padding-top: 52px; overflow: hidden; }
+.tdw-classic-host > :not(.tdw-return) { height: 100%; min-height: 0; }
+.tdw-return { top: 8px; left: 10px; }
+.tdw-classic-host .appbar-titles,
+.tdw-classic-host .session-title-button,
+.tdw-classic-host .session-title-text { min-width: 0; max-width: 100%; }
+.tdw-classic-host .appbar-titles h1,
+.tdw-classic-host .session-title-text {
+  display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.tdw-classic-host .appbar-titles h1 { max-width: min(62vw, 720px); }
+.tdw-classic-host .session-title-text { max-width: min(58vw, 680px); }
+
+@media (max-width: 1180px) and (min-width: 781px) {
+  .tdw-layout { grid-template-columns: min(var(--tdw-workspace-width), 200px) minmax(260px, min(var(--tdw-thread-width, 320px), 38vw)) minmax(0, 1fr); }
+}
+
+@media (max-width: 780px) {
+  .tdw-mobile-only-menu { display: block; }
+  .tdw-pane-resizer { display: none; }
+  .tdw-shell.workspace-collapsed { --tdw-workspace-width: auto; }
+  .tdw-machine-section, .tdw-harness-section, .tdw-filter-section, .tdw-workspace-heading { display: none !important; }
+  .tdw-project-section {
+    width: max-content; min-width: 100%; flex: none; padding: 0 !important; border: 0;
+  }
+  .tdw-project-section .tdw-workspace-section-header { display: none; }
+  .tdw-project-section .tdw-workspace-section-body,
+  .tdw-project-section.section-collapsed .tdw-workspace-section-body,
+  .tdw-shell.workspace-collapsed .tdw-project-section.section-collapsed .tdw-workspace-section-body {
+    width: max-content; min-width: 100%; display: flex; align-items: center; gap: 6px;
+  }
+  .tdw-project-section .tdw-project-list { display: flex; align-items: center; gap: 6px; }
+  .tdw-project-section .tdw-project-row,
+  .tdw-project-section .tdw-project-list .tdw-project-row,
+  .tdw-shell.workspace-collapsed .tdw-project-section .tdw-project-row {
+    width: auto; min-width: max-content; min-height: 42px; margin: 0; display: grid;
+    grid-template-columns: 24px minmax(0, auto) auto; gap: 6px; padding: 5px 9px;
+  }
+  .tdw-shell.workspace-collapsed .tdw-project-section .tdw-project-row > span:nth-child(2),
+  .tdw-shell.workspace-collapsed .tdw-project-section .tdw-project-row > b { display: flex; }
+  .tdw-result-markdown { font-size: 13px; }
+  .uw-machine-harness { grid-template-columns: 7px minmax(0, 1fr); border-radius: 9px; }
+  .uw-machine-harness > small { grid-column: 2; }
+  .tdw-classic-host .appbar-titles h1,
+  .tdw-classic-host .session-title-text { max-width: 62vw; }
+}

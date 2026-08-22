@@ -197,6 +197,65 @@ test("managed HTTP agent routes keep daemon authentication", async () => {
   }
 })
 
+test("configured managed HTTP agents start on first authenticated request", async () => {
+  const state = { value: "configured" }
+  let starts = 0
+  let proxied = 0
+  const managed = {
+    async start() {
+      starts += 1
+      state.value = "available"
+    }
+  }
+  const daemon = {
+    hostEntry(id) { return id === "opencode" ? { id, kind: "http", host: managed } : undefined },
+    registry: { host(id) { return id === "opencode" ? { state: state.value } : undefined } },
+    snapshot() { return { agents: [{ id: "opencode", backend: "opencode", state: state.value }] } }
+  }
+  const server = createAgentRoutingServer({
+    daemon,
+    config: { username: "", password: "", corsOrigins: [] },
+    primaryAgentID: "codex",
+    bridgeServer: new BridgeServer(),
+    proxyRequest: async ({ response }) => {
+      proxied += 1
+      response.writeHead(200, { "Content-Type": "application/json" })
+      response.end(JSON.stringify({ ok: true }))
+    }
+  })
+  const port = await listen(server)
+  try {
+    const response = await fetch(`http://127.0.0.1:${port}/v1/agents/opencode/session`)
+    assert.equal(response.status, 200)
+    assert.equal(starts, 1)
+    assert.equal(proxied, 1)
+    assert.equal(state.value, "available")
+  } finally {
+    await close(server)
+  }
+})
+
+test("failed first-use managed HTTP startup returns 503 without proxying", async () => {
+  let proxied = 0
+  const managed = { async start() { throw new Error("OpenCode boot failed") } }
+  const server = createAgentRoutingServer({
+    daemon: daemonWith({ opencode: { id: "opencode", kind: "http", host: managed } }, { opencode: "configured" }),
+    config: { username: "", password: "", corsOrigins: [] },
+    primaryAgentID: "codex",
+    bridgeServer: new BridgeServer(),
+    proxyRequest: async () => { proxied += 1 }
+  })
+  const port = await listen(server)
+  try {
+    const response = await fetch(`http://127.0.0.1:${port}/v1/agents/opencode/session`)
+    assert.equal(response.status, 503)
+    assert.match((await response.json()).error, /OpenCode boot failed/)
+    assert.equal(proxied, 0)
+  } finally {
+    await close(server)
+  }
+})
+
 test("unavailable and unknown agents fail without contacting a managed host", async () => {
   let proxied = 0
   const managed = { readinessHost: "127.0.0.1", port: 4096 }

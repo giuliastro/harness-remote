@@ -4,6 +4,8 @@ import { authHeader, hasCredentials, machineBaseUrl } from "./serverConfig"
 import type { MachineSnapshot, ServerConfig } from "./types"
 
 const BROWSER_DISCOVERY_TIMEOUT_MS = 12_000
+const DISCOVERY_STALE_GRACE_MS = 45_000
+const discoveryCache = new Map<string, { snapshot: MachineSnapshot; at: number }>()
 
 function headers(config: ServerConfig): Record<string, string> {
   const value: Record<string, string> = { Accept: "application/json" }
@@ -30,6 +32,21 @@ function machineSnapshot(value: unknown): MachineSnapshot {
   return candidate as MachineSnapshot
 }
 
+function cacheKey(config: ServerConfig): string {
+  return `${machineBaseUrl(config)}|${config.username || ""}`
+}
+
+function remember(config: ServerConfig, snapshot: MachineSnapshot): MachineSnapshot {
+  discoveryCache.set(cacheKey(config), { snapshot, at: Date.now() })
+  return snapshot
+}
+
+function recentCachedSnapshot(config: ServerConfig): MachineSnapshot | null {
+  const cached = discoveryCache.get(cacheKey(config))
+  if (!cached || Date.now() - cached.at > DISCOVERY_STALE_GRACE_MS) return null
+  return cached.snapshot
+}
+
 export function noMachineStatus(status: number | undefined): boolean {
   return status === 404 || status === 503
 }
@@ -37,15 +54,23 @@ export function noMachineStatus(status: number | undefined): boolean {
 /**
  * Best-effort daemon discovery. A legacy bridge/OpenCode server, or a bridge without a machine
  * registry configured, returns null so every pre-daemon saved profile keeps working as before.
+ *
+ * Mobile radios and WebViews can briefly drop an otherwise healthy request while switching network
+ * state. A short in-memory grace period keeps the already-rendered workspace stable during that
+ * transient transport failure instead of making the whole app look unconfigured for one poll.
  */
 export async function discoverMachine(config: ServerConfig): Promise<MachineSnapshot | null> {
   if (isDesktopPlatform()) {
     const result = await desktopRequestResult(config, { path: "/v1/machine" })
     if (!result.ok) {
       if (result.error.code === "http" && noMachineStatus(result.error.status)) return null
+      if (result.error.code !== "http") {
+        const cached = recentCachedSnapshot(config)
+        if (cached) return cached
+      }
       throw new Error(result.error.message)
     }
-    return machineSnapshot(result.response.data)
+    return remember(config, machineSnapshot(result.response.data))
   }
 
   const target = `${machineBaseUrl(config)}/v1/machine`
@@ -54,11 +79,13 @@ export async function discoverMachine(config: ServerConfig): Promise<MachineSnap
     try {
       response = await CapacitorHttp.get({ url: target, headers: headers(config), connectTimeout: 12_000, readTimeout: 12_000 })
     } catch {
+      const cached = recentCachedSnapshot(config)
+      if (cached) return cached
       throw new Error(`Cannot reach ${config.host}:${config.port}.`)
     }
     if (noMachineStatus(response.status)) return null
     if (response.status >= 400) throw new Error(`HTTP ${response.status}`)
-    return machineSnapshot(response.data)
+    return remember(config, machineSnapshot(response.data))
   }
 
   const controller = new AbortController()
@@ -67,6 +94,8 @@ export async function discoverMachine(config: ServerConfig): Promise<MachineSnap
   try {
     response = await fetch(target, { headers: headers(config), signal: controller.signal })
   } catch (error) {
+    const cached = recentCachedSnapshot(config)
+    if (cached) return cached
     if (controller.signal.aborted) {
       throw new Error(`Machine discovery at ${config.host}:${config.port} timed out after ${BROWSER_DISCOVERY_TIMEOUT_MS / 1000}s.`)
     }
@@ -76,7 +105,7 @@ export async function discoverMachine(config: ServerConfig): Promise<MachineSnap
   }
   if (noMachineStatus(response.status)) return null
   if (!response.ok) throw new Error(`HTTP ${response.status}`)
-  return machineSnapshot(await response.json())
+  return remember(config, machineSnapshot(await response.json()))
 }
 
 export function selectableMachineAgents(machine: MachineSnapshot): MachineSnapshot["agents"] {

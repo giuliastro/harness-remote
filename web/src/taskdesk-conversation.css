@@ -1,0 +1,400 @@
+@import "./work-thread-detail.css";
+
+.uw-conversation-core {
+  min-width: 0;
+  min-height: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+.uw-message-turn-error {
+  margin-top: 10px;
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  border: 1px solid var(--td3-red-border);
+  border-radius: 10px;
+  background: var(--td3-red-soft);
+  color: var(--td3-red-text);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.uw-message-turn-error strong {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: .05em;
+}
+
+/* --------------------------------------------------------------------------
+   TaskDesk Work Thread conversation
+   The old Native Session stylesheet deliberately stays dense for diagnostics.
+   A Work Thread is the product chat, so it gets a wider, calmer reading column.
+   -------------------------------------------------------------------------- */
+
+.tdw-work-thread-conversation .uw-transcript {
+  padding: 22px clamp(18px, 3vw, 34px) 30px;
+  scroll-padding-block: 20px;
+}
+
+.tdw-work-thread-conversation .uw-message {
+  width: min(1040px, 100%);
+  grid-template-columns: 36px minmax(0, 1fr);
+  gap: 13px;
+  margin: 0 auto 26px;
+}
+
+.tdw-work-thread-conversation .uw-avatar {
+  width: 34px;
+  height: 34px;
+  font-size: 8.5px;
+  box-shadow: 0 1px 0 var(--td3-border-soft);
+}
+
+.tdw-work-thread-conversation .uw-avatar img {
+  width: 20px;
+  height: 20px;
+  object-fit: contain;
+}
+
+.tdw-work-thread-conversation .uw-message-body {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.tdw-work-thread-conversation .uw-message-body > header {
+  min-height: 29px;
+  gap: 8px;
+}
+
+.tdw-work-thread-conversation .uw-message-body > header strong {
+  font-size: 13px;
+  font-weight: 720;
+}
+
+.tdw-work-thread-conversation .uw-message-body > header time {
+  font-size: 10px;
+}
+
+.tdw-work-thread-conversation .uw-markdown {
+  min-width: 0;
+  max-width: 100%;
+  color: var(--td3-text-2);
+  font-size: 15.5px;
+  line-height: 1.58;
+  overflow-wrap: anywhere;
+}
+
+.tdw-work-thread-conversation .uw-markdown p {
+  margin: 6px 0;
+}
+
+.tdw-work-thread-conversation .uw-markdown h1 { font-size: 1.38em; }
+.tdw-work-thread-conversation .uw-markdown h2 { font-size: 1.22em; }
+.tdw-work-thread-conversation .uw-markdown h3 { font-size: 1.08em; }
+
+.tdw-work-thread-conversation .uw-markdown ul,
+.tdw-work-thread-conversation .uw-markdown ol {
+  padding-left: 1.45em;
+}
+
+.tdw-work-thread-conversation .uw-markdown code {
+  font-size: .88em;
+}
+
+.tdw-work-thread-conversation .uw-markdown pre {
+  max-width: 100%;
+  margin: 9px 0;
+  padding: 13px 14px;
+  overflow: auto;
+  border-radius: 11px;
+  line-height: 1.48;
+}
+
+.tdw-work-thread-conversation .uw-message-user .uw-message-body {
+  padding: 10px 13px 11px;
+  border: 1px solid var(--td3-blue-border);
+  border-radius: 14px;
+  background: linear-gradient(135deg, var(--td3-blue-soft), var(--td3-raise-1));
+}
+
+.tdw-work-thread-conversation .uw-message-user .uw-message-body > header {
+  min-height: 22px;
+}
+
+.tdw-work-thread-conversation .uw-message-user .uw-markdown {
+  color: var(--td3-text);
+}
+
+/* Activity behaves like a compact Tool Chip until expanded. Every descendant is explicitly
+   shrinkable because long commands/reasoning are untrusted content and must never widen the chat. */
+.tdw-work-thread-conversation .uw-message-parts,
+.tdw-work-thread-conversation .uw-message-content-group,
+.tdw-work-thread-conversation .uw-activity-parts,
+.tdw-work-thread-conversation .uw-reasoning,
+.tdw-work-thread-conversation .uw-tool-stack,
+.tdw-work-thread-conversation .uw-tool-card {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.tdw-work-thread-conversation .uw-activity-group {
+  width: min(720px, 100%);
+  margin-top: 10px;
+  overflow: hidden;
+  border-color: var(--td3-border);
+  border-radius: 11px;
+  background: var(--td3-raise-1);
+}
+
+.tdw-work-thread-conversation .uw-activity-group > summary {
+  min-width: 0;
+  grid-template-columns: 22px minmax(0, 1fr) auto;
+  min-height: 38px;
+  gap: 8px;
+  padding: 0 11px;
+}
+
+.tdw-work-thread-conversation .uw-activity-group > summary .uw-tool-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+}
+
+.tdw-work-thread-conversation .uw-activity-group > summary .uw-tool-status {
+  font-size: 9px;
+}
+
+.tdw-work-thread-conversation .uw-activity-parts {
+  width: 100%;
+  padding: 9px;
+  overflow: hidden;
+  border-top: 1px solid var(--td3-border-soft);
+  background: var(--td3-panel);
+}
+
+.tdw-work-thread-conversation .uw-activity-parts > * + * {
+  margin-top: 7px;
+}
+
+.tdw-work-thread-conversation .uw-activity-parts .uw-tool-stack {
+  width: 100%;
+  margin: 0;
+}
+
+.tdw-work-thread-conversation .uw-activity-parts .uw-tool-card {
+  width: 100%;
+  overflow: hidden;
+  background: var(--td3-raise-1);
+}
+
+.tdw-work-thread-conversation .uw-activity-parts .uw-tool-card > summary {
+  min-width: 0;
+  grid-template-columns: 22px minmax(88px, auto) minmax(0, 1fr) auto;
+  padding-inline: 9px;
+}
+
+.tdw-work-thread-conversation .uw-activity-parts .uw-tool-card summary code {
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 10px;
+}
+
+.tdw-work-thread-conversation .uw-activity-parts .uw-tool-card pre {
+  width: 100%;
+  max-width: 100%;
+  max-height: 320px;
+  padding: 10px 12px;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.tdw-work-thread-conversation .uw-reasoning {
+  width: 100%;
+  padding: 10px 12px;
+  overflow: hidden;
+  border: 1px solid var(--td3-border-soft);
+  border-radius: 9px;
+  background: var(--td3-raise-1);
+}
+
+.tdw-work-thread-conversation .uw-reasoning > strong {
+  display: block;
+  margin-bottom: 5px;
+  color: var(--td3-muted);
+  font-size: 9px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: .07em;
+}
+
+.tdw-work-thread-conversation .uw-reasoning .uw-markdown {
+  font-size: 12px;
+  line-height: 1.48;
+}
+
+.tdw-work-thread-conversation .uw-reasoning .uw-markdown pre,
+.tdw-work-thread-conversation .uw-reasoning .uw-markdown code {
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+/* Composer aligns to exactly the same reading column as the messages. */
+.tdw-work-thread-conversation .uw-composer-shell {
+  width: min(1040px, calc(100% - 44px));
+  margin: 0 auto 18px;
+  border-radius: 16px;
+  box-shadow: 0 18px 45px rgba(0,0,0,.16), inset 0 1px 0 var(--td3-raise-1);
+}
+
+.tdw-work-thread-conversation .uw-composer-shell textarea {
+  min-height: 76px;
+  padding: 14px 15px 7px;
+  font-size: 15px;
+  line-height: 1.48;
+}
+
+.tdw-work-thread-conversation .uw-composer-footer {
+  min-height: 44px;
+  padding: 5px 8px 8px 14px;
+}
+
+.tdw-work-thread-conversation .uw-composer-footer small {
+  font-size: 10px;
+}
+
+/* Beautiful-UI-inspired loading language: a compact animated signal, shimmer and elapsed time.
+   It is intentionally implemented with TaskDesk tokens rather than importing a foreign theme. */
+.tdw-work-thread-conversation .uw-session-typing {
+  position: relative;
+  width: min(1040px, 100%);
+  max-width: none;
+  min-height: 54px;
+  margin: 4px auto 22px;
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding: 8px 12px;
+  overflow: hidden;
+  border: 1px solid var(--td3-border);
+  border-radius: 14px;
+  color: var(--td3-text-2);
+  background: linear-gradient(110deg, var(--td3-raise-1), var(--td3-panel), var(--td3-raise-1));
+  box-shadow: inset 0 1px 0 var(--td3-raise-1);
+}
+
+.uw-thinking-orb {
+  position: relative;
+  z-index: 1;
+  width: 34px;
+  height: 34px;
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  border: 1px solid var(--td3-blue-border);
+  border-radius: 11px;
+  background: var(--td3-blue-soft);
+  box-shadow: 0 0 0 4px var(--td3-blue-soft-2);
+}
+
+.uw-thinking-orb i {
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: var(--td3-blue-text);
+  animation: tdw-thinking-dot 1.15s ease-in-out infinite;
+}
+.uw-thinking-orb i:nth-child(2) { animation-delay: .14s; }
+.uw-thinking-orb i:nth-child(3) { animation-delay: .28s; }
+
+.uw-thinking-copy {
+  position: relative;
+  z-index: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.uw-thinking-copy strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--td3-text);
+  font-size: 12px;
+  font-weight: 720;
+}
+
+.uw-thinking-copy small {
+  color: var(--td3-muted);
+  font-size: 9.5px;
+  font-variant-numeric: tabular-nums;
+}
+
+.uw-thinking-shimmer {
+  position: absolute;
+  inset: 0 auto 0 -35%;
+  width: 28%;
+  background: linear-gradient(90deg, transparent, var(--td3-blue-soft), transparent);
+  transform: skewX(-18deg);
+  animation: tdw-thinking-shimmer 2.1s ease-in-out infinite;
+  pointer-events: none;
+}
+
+@keyframes tdw-thinking-dot {
+  0%, 60%, 100% { transform: translateY(1px) scale(.72); opacity: .42; }
+  30% { transform: translateY(-2px) scale(1); opacity: 1; }
+}
+
+@keyframes tdw-thinking-shimmer {
+  0%, 18% { transform: translateX(0) skewX(-18deg); opacity: 0; }
+  36% { opacity: .7; }
+  68%, 100% { transform: translateX(560%) skewX(-18deg); opacity: 0; }
+}
+
+@media (max-width: 780px) {
+  .tdw-work-thread-conversation .uw-transcript {
+    padding: 14px 12px 24px;
+  }
+
+  .tdw-work-thread-conversation .uw-message {
+    grid-template-columns: 30px minmax(0, 1fr);
+    gap: 9px;
+    margin-bottom: 20px;
+  }
+
+  .tdw-work-thread-conversation .uw-avatar {
+    width: 30px;
+    height: 30px;
+  }
+
+  .tdw-work-thread-conversation .uw-markdown {
+    font-size: 15px;
+    line-height: 1.55;
+  }
+
+  .tdw-work-thread-conversation .uw-composer-shell {
+    width: calc(100% - 20px);
+    margin-bottom: 10px;
+  }
+
+  .tdw-work-thread-conversation .uw-composer-shell textarea {
+    min-height: 66px;
+    font-size: 16px;
+    line-height: 1.45;
+  }
+}

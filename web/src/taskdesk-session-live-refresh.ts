@@ -15,6 +15,10 @@ export type SelectedLiveSession = {
 
 type Timer = ReturnType<typeof setTimeout>
 
+function isAttentionEvent(type: string): boolean {
+  return type.startsWith("permission.") || type.startsWith("question.")
+}
+
 /**
  * Drive Session freshness from the existing per-agent event stream without turning every streamed
  * token into a full workspace refresh. Message chunks refresh only the selected transcript tail;
@@ -66,8 +70,15 @@ export function startTaskDeskSessionLiveRefresh({
         && selected.sessionID === event.sessionID
       )
 
-      if (event.type === "message.updated") {
-        if (selectedEvent) throttle("message", 180, onMessage)
+      if (event.type === "message.updated" || event.type === "message.part.updated" || event.type === "message.part.delta") {
+        if (selectedEvent) throttle("message", 140, onMessage)
+        return
+      }
+
+      // OpenCode and ACP adapters can expose permission/question lifecycle events with different
+      // suffixes. They all mean the selected conversation detail must be re-read immediately.
+      if (isAttentionEvent(event.type)) {
+        if (selectedEvent) throttle("detail", 80, onDetail)
         return
       }
 
@@ -88,8 +99,8 @@ export function startTaskDeskSessionLiveRefresh({
       }
 
       if (event.type === "session.error" && selectedEvent) {
-        throttle("message", 180, onMessage)
-        throttle("detail", 450, onDetail)
+        throttle("message", 140, onMessage)
+        throttle("detail", 250, onDetail)
       }
     },
     onStatus: (status) => {

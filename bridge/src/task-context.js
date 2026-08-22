@@ -34,6 +34,11 @@ function runStatus(run, taskStatus) {
   return taskStatus || "unknown"
 }
 
+function runError(run) {
+  if (typeof run?.error === "string") return boundedText(run.error, MAX_ERROR_CHARS)
+  return boundedText(run?.error?.message, MAX_ERROR_CHARS)
+}
+
 export function summarizeTaskRun(run, taskStatus = "unknown") {
   if (!run || typeof run !== "object") return null
   const sequence = Number.isFinite(Number(run.sequence)) ? Number(run.sequence) : undefined
@@ -45,6 +50,7 @@ export function summarizeTaskRun(run, taskStatus = "unknown") {
       }
     : null
   const outcome = boundedText(run.outcome)
+  const error = runError(run)
   return {
     ...(run.id ? { id: run.id } : {}),
     ...(sequence ? { sequence } : {}),
@@ -55,6 +61,7 @@ export function summarizeTaskRun(run, taskStatus = "unknown") {
     status: runStatus(run, taskStatus),
     prompt: boundedText(run.prompt, MAX_RUN_PROMPT_CHARS),
     ...(outcome ? { outcome } : {}),
+    ...(error ? { error } : {}),
     ...(run.startedAt ? { startedAt: run.startedAt } : {}),
     ...(run.finishedAt ? { finishedAt: run.finishedAt } : {}),
     ...(Number.isFinite(Number(run.contextRevision)) ? { contextRevision: Number(run.contextRevision) } : {})
@@ -68,7 +75,7 @@ export function buildPersistedTaskContext(task, revision = task?.context?.revisi
     .map((run) => summarizeTaskRun(run, run?.id === task?.run?.id ? task?.status : run?.status || (run?.finishedAt ? "completed" : "unknown")))
     .filter(Boolean)
   const latestRun = task?.run ? summarizeTaskRun(task.run, task.status) : null
-  const errorMessage = boundedText(task?.error?.message, MAX_ERROR_CHARS)
+  const errorMessage = boundedText(task?.error?.message, MAX_ERROR_CHARS) || latestRun?.error || ""
   return {
     version: 1,
     revision: Math.max(0, Number(revision) || 0),
@@ -108,6 +115,12 @@ export function buildTaskContext(task, { workspace } = {}) {
       listedChangeCount: changedFiles.length,
       truncated: allChangedFiles.length > changedFiles.length
     },
+    restore: task?.restoredAt
+      ? {
+          at: task.restoredAt,
+          checkpointId: cleanText(task?.restoredCheckpointId) || null
+        }
+      : null,
     verification: null,
     unresolved: []
   }
@@ -129,6 +142,14 @@ export function formatTaskHandoff(context, { targetAgentId, role, instruction })
   if (latest) lines.push("", "PREVIOUS STEP", `${latest.agentId || "unknown harness"} / ${latest.role || "continue"} / ${latest.status || "unknown"}`)
   if (context.latestOutcome?.text) lines.push("", "PREVIOUS RESULT", boundedText(context.latestOutcome.text, HANDOFF_OUTCOME_CHARS))
   if (context.latestOutcome?.error) lines.push("", "LATEST ERROR", boundedText(context.latestOutcome.error, MAX_ERROR_CHARS))
+  if (context.restore?.at) {
+    lines.push(
+      "",
+      "WORKSPACE RESTORE",
+      `TaskDesk restored the shared workspace${context.restore.checkpointId ? ` to checkpoint ${context.restore.checkpointId}` : " to an earlier checkpoint"} at ${context.restore.at}.`,
+      "The current files are authoritative. Native session memory may describe code from after the restored point, so inspect the workspace again before relying on remembered file state."
+    )
+  }
   if (context.changedFiles?.length) {
     lines.push("", "CHANGED FILES", ...context.changedFiles.map((file) => `- ${boundedText(file, MAX_CHANGED_FILE_CHARS)}`))
     if (context.workspace?.truncated) lines.push(`- …and ${Math.max(0, Number(context.workspace.changeCount) - context.changedFiles.length)} more changed file(s)`)
@@ -140,6 +161,7 @@ export function formatTaskHandoff(context, { targetAgentId, role, instruction })
     for (const run of context.runSummaries.slice(-HANDOFF_RECENT_RUNS)) {
       lines.push(`- Run ${run.sequence || "?"}: ${run.agentId || "unknown"} / ${run.role || "continue"} / ${run.status || "unknown"}`)
       if (run.outcome) lines.push(`  Result: ${boundedText(run.outcome, HANDOFF_OUTCOME_CHARS)}`)
+      if (run.error) lines.push(`  Error: ${boundedText(run.error, MAX_ERROR_CHARS)}`)
     }
     if (Number(context.runCount) > context.runSummaries.length) {
       lines.push(`- ${Number(context.runCount) - context.runSummaries.length} earlier Task step(s) retained in Task history but omitted from this handoff`)

@@ -1,125 +1,63 @@
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 
-const app = readFileSync(new URL('./App.tsx', import.meta.url), 'utf8')
-const api = readFileSync(new URL('./api.ts', import.meta.url), 'utf8')
 const main = readFileSync(new URL('./main.tsx', import.meta.url), 'utf8')
-const serverProfiles = readFileSync(new URL('./serverProfiles.ts', import.meta.url), 'utf8')
-const i18n = readFileSync(new URL('./i18n.ts', import.meta.url), 'utf8')
-const styles = readFileSync(new URL('./styles.css', import.meta.url), 'utf8')
-const shell = readFileSync(new URL('./components/shell.tsx', import.meta.url), 'utf8')
-const panels = readFileSync(new URL('./components/panels.tsx', import.meta.url), 'utf8')
+const workspace = readFileSync(new URL('./components/conversation-workspace.tsx', import.meta.url), 'utf8')
+const standalone = readFileSync(new URL('./components/standalone-universal-workspace.tsx', import.meta.url), 'utf8')
+const machineClient = readFileSync(new URL('./machineClient.ts', import.meta.url), 'utf8')
+const preferences = readFileSync(new URL('./appPreferences.ts', import.meta.url), 'utf8')
 const serverConfig = readFileSync(new URL('./serverConfig.ts', import.meta.url), 'utf8')
 const desktopRequestTransport = readFileSync(new URL('../electron/request-transport.ts', import.meta.url), 'utf8')
 const desktopEventTransport = readFileSync(new URL('../electron/event-transport.ts', import.meta.url), 'utf8')
 
-const testConnection = app.match(/async function testConnection[\s\S]*?async function refreshSessions/)
-assert.ok(testConnection, 'testConnection function should be present')
-assert.equal(testConnection[0].includes('setView("sessions")'), false, 'Test Connection must not navigate away from settings')
-assert.equal(testConnection[0].includes('setConfig(configToTest)'), false, 'Test Connection must not overwrite the current configuration')
+// 3.0 starts from machine-level configuration. There is no first-run Classic profile wizard in the
+// primary product shell: an empty machine list opens the machine manager immediately.
+assert.match(main, /loadWorkspaceMachines/)
+assert.match(main, /persistWorkspaceMachines/)
+assert.doesNotMatch(main, /ConnectServerWizard/)
+assert.doesNotMatch(main, /needsInitialSetup/)
+assert.doesNotMatch(main, /loadServerProfiles/)
+assert.match(standalone, /useState\(machines\.length === 0\)/, 'an empty install must open Machines immediately')
+assert.match(standalone, /createWorkspaceMachine\(\)/, 'the manager must provide a new machine draft')
+assert.match(standalone, /discoverMachine\(nextMachine\(\)\.config\)/, 'Test connection must discover the daemon before save')
+assert.match(standalone, /Connected to \$\{snapshot\.machine\.name\}/, 'successful discovery must identify the connected machine')
+assert.match(standalone, /onPersist\(\[\.\.\.machines, machine\]\)/, 'adding a machine must persist it in the machine collection')
+assert.match(standalone, /onPersist\(machines\.map/, 'editing a machine must replace that machine without rebuilding profiles')
+assert.match(standalone, /Remove \"\$\{machine\.name\}\" from Harness Remote\?/, 'machine removal must ask for confirmation')
 
-const applyConfig = app.match(/function applyConfig[\s\S]*?async function testConnection/)
-assert.ok(applyConfig, 'applyConfig function should persist the active configuration')
-assert.equal(applyConfig[0].includes('setView("sessions")'), false, 'Automatic saves must leave the user on settings')
-assert.ok(app.includes('setTimeout(() => applyConfig(draftConfig), 500)'), 'Configuration edits should be persisted after a short debounce')
-assert.equal(app.includes('onClick={saveConfig}'), false, 'Settings should not require a separate Save action')
-assert.ok(app.includes("t('settings.draftHint')"), 'Settings should explain automatic saving')
-assert.ok(i18n.includes("'settings.saved': 'Changes saved automatically.'"), 'Automatic save feedback should be translated')
-assert.match(app, /id="port"[\s\S]*?type="text"[\s\S]*?value=\{draftConfig\.port \|\| ""\}/, 'the port field should be clearable instead of forcing a zero')
-assert.match(app, /pattern="\[0-9\]\*"/, 'the port field should still accept only digits')
-assert.ok(i18n.includes("'settings.testedNotSaved'"), 'Test success should remain distinct from connectivity state')
-assert.ok(app.includes('function canTestConfig'), 'Settings should have a central testability check for required connection fields')
-assert.ok(app.includes('disabled={testingConnection || !canTestDraft || testAlreadyPassedForDraft}'), 'Test button should be disabled when fields are missing, testing is active, or the unchanged configuration already passed')
-assert.ok(app.includes('connection-help'), 'Settings should explain whether the current configuration can be tested')
-assert.ok(app.includes('Full, versioned backend guides live in the Harness Remote repository'), 'Help should link out instead of duplicating every backend guide')
-assert.ok(app.includes('"oh-my-pi-bridge-setup"') && app.includes('"pi-bridge-setup"') && app.includes('"opencode-server-setup"') && app.includes('"codex-bridge-setup"'), 'Help should select the repository guide for the active backend')
-assert.ok(app.includes('<option value="pi">PI (ACP bridge)</option>'), 'Settings should expose the PI backend')
-assert.ok(app.includes('<option value="codex">Codex CLI (ACP bridge)</option>'), 'Settings should expose the Codex backend')
-assert.ok(app.includes('health.backend && health.backend !== configToTest.backend'), 'Connection tests should reject a bridge for the wrong backend')
-assert.ok(app.includes('https://github.com/giuliastro/harness-remote#'), 'Help should link to the canonical repository')
-assert.equal(app.includes('https://github.com/gervaso-assistant/opencode-remote-android#'), false, 'Help must not link to the obsolete repository owner')
+// Machine configuration keeps the existing connection fields and a bounded numeric port.
+assert.match(standalone, /placeholder="192\.168\.1\.20 or localhost"/)
+assert.match(standalone, /Number\(port\) >= 1 && Number\(port\) <= 65_535/)
+assert.match(standalone, /autoComplete="username"/)
+assert.match(standalone, /autoComplete="current-password"/)
+assert.match(standalone, /disabled=\{!valid \|\| testing\}/, 'Test connection must not run with an invalid endpoint')
+assert.match(standalone, /disabled=\{!valid\}/, 'Save must not accept an invalid machine endpoint')
 
-// First-run configuration is a guided flow, not the editable Settings panel. A blank fallback
-// profile must never mount App first, because App's Settings screen auto-persists valid drafts.
-assert.ok(main.includes('const needsInitialSetup = !isValidServerConfig(activeProfile.config)'), 'first-run setup must be derived from the active profile validity')
-assert.match(main, /if \(needsInitialSetup\) \{[\s\S]*?<ConnectServerWizard/, 'an unconfigured install must render the connection wizard directly')
-assert.match(main, /onCancel=\{\(\) => undefined\}/, 'the required first-run wizard must not dismiss into the raw Settings form')
+// The control plane retains appearance and language settings even though Classic is no longer a mode.
+assert.match(workspace, /function ConversationSettingsModal/)
+assert.match(workspace, /loadThemePreference/)
+assert.match(workspace, /persistThemePreference\(value\)/)
+assert.match(workspace, /loadLanguage/)
+assert.match(workspace, /persistLanguage\(next\)/)
+assert.match(workspace, /<option value="system">/)
+assert.match(workspace, /<option value="light">/)
+assert.match(workspace, /<option value="dark">/)
+assert.match(preferences, /export function installAppPreferences/)
+assert.match(main, /installAppPreferences\(\)/, 'preferences must be installed before the product shell renders')
 
-// Settings may still auto-save edits, but changing the current profile identity must not remount the
-// whole React tree. That remount closed the editor after a couple of typed characters and started a
-// connection with a half-entered address.
-assert.ok(serverProfiles.includes('if (profileChanged) {'), 'only an actual saved-profile switch should emit the remount event')
-assert.doesNotMatch(serverProfiles, /if \(profileChanged \|\| connectionChanged\) \{\s*window\.dispatchEvent/, 'editing host, port or credentials must not remount App')
+// One machine connection discovers the available coding agents instead of asking for one profile per harness.
+assert.match(workspace, /selectableMachineAgents\(snapshot\)/)
+assert.match(workspace, /taskClient\.listAgentModels\(runtime\.machine\.config, agentID\)/)
+assert.match(workspace, /<span className="tdw-workspace-label">Coding agents<\/span>/)
+assert.match(machineClient, /export async function discoverMachine/)
 
-// A daemon-backed connection discovers the machine before falling back to the backend-specific
-// health check. Legacy servers return null from discovery and therefore keep the existing save flow.
-assert.ok(panels.includes('await import("../machineClient")'), 'the connection wizard should discover a machine without requiring App-level wiring')
-assert.ok(panels.includes('discoverMachine(candidate)'), 'the wizard should call machine discovery when testing the connection')
-assert.ok(panels.includes('agentId: agentId || undefined'), 'the selected machine agent should be persisted in the saved server config')
-assert.ok(panels.includes("t('detail.agentTitle')"), 'the discovered-agent picker label should use translated UI copy')
-assert.ok(panels.includes("t('detail.unavailable')"), 'unavailable machine hosts should use translated UI copy')
-assert.equal(panels.includes('Agent on '), false, 'the machine picker must not introduce hardcoded English labels')
-assert.equal(panels.includes('agents discovered'), false, 'machine discovery feedback must not introduce hardcoded English copy')
-assert.equal(panels.includes('{agent.label} · {agent.state}'), false, 'protocol host states must not be rendered verbatim')
-assert.ok(panels.includes('agent.state !== "available" && agent.state !== "configured"'), 'unavailable machine agents must not be selectable')
-
-// A valid profile without an agentId is not safe to use against a multi-harness daemon. OpenCode is
-// intentionally not a bridge backend, so the old App-only repair skipped it and its first session
-// request fell through to the daemon primary, commonly Codex. Resolve every unscoped profile before
-// App mounts and repeat the same resolution on first-run Save in case the user skipped Test.
-assert.ok(main.includes('const needsRoutingDiscovery = !needsInitialSetup && !activeProfile.config.agentId'), 'unscoped saved profiles must be resolved before App starts loading sessions')
-assert.ok(main.includes('matchingMachineAgent(machine, activeProfile.config.backend)'), 'routing discovery must match the selected backend, including OpenCode')
-assert.match(main, /if \(needsRoutingDiscovery\) \{[\s\S]*?connection\.connecting/, 'the app must not mount its session UI while daemon routing is unresolved')
-assert.match(main, /onSave=\{\(name, config\) => \{[\s\S]*?if \(!config\.agentId\)[\s\S]*?discoverMachine\(config\)/, 'saving the first server must resolve its daemon agent even when Test was skipped')
-
-// Automatic server names are suggestions. Once the user types a name, later discovery or agent
-// selection must not silently replace it with a generated machine/harness label.
-assert.ok(panels.includes('const [nameEdited, setNameEdited] = useState(false)'), 'the wizard should remember when the server name was edited manually')
-assert.ok(panels.includes('if (!nameEdited) setName(`${backendDisplayName(next)} server`)'), 'backend defaults should only replace an untouched automatic name')
-assert.ok(panels.includes('if (preferred && !nameEdited) setName(`${discovered.machine.name} · ${preferred.label}`)'), 'machine discovery should preserve a manually entered server name')
-assert.ok(panels.includes('if (next && !nameEdited) setName(`${machine.machine.name} · ${next.label}`)'), 'agent selection should preserve a manually entered server name')
-assert.match(panels, /setName\(event\.target\.value\)[\s\S]*?setNameEdited\(true\)/, 'typing in the server-name field should lock in the user value')
-
-// Agent-scoped URLs are the primary routing contract. The backend header is a compatibility guard
-// for profiles saved by older builds with no agentId, or with an agentId that points at the old primary.
-// A raw OpenCode server must not receive the custom header because its CORS policy does not know it.
-// The rule lives with the URL builders, not with one transport: the browser and the desktop app take
-// separate request paths, and a header only the browser sent is how the desktop app came to route
-// every server to the daemon's primary agent.
-assert.match(serverConfig, /export function routingHeaders\(\s*config: Pick<ServerConfig, "backend" \| "agentId">/, 'the routing hint should be defined once beside the URL builders')
-assert.ok(serverConfig.includes('return { "X-Harness-Backend": config.backend }'), 'daemon requests should identify the selected harness backend')
-assert.ok(serverConfig.includes('if (preflight && config.backend === "opencode" && !config.agentId?.trim()) return {}'), 'direct legacy OpenCode servers must not receive the daemon routing header from the browser')
-assert.equal(/function routingHeaders/.test(api), false, 'api.ts should reuse the shared routing hint rather than defining its own')
-assert.ok(api.includes('...routingHeaders(config)'), 'ordinary API requests should carry the selected harness routing hint')
-assert.match(api, /eventStream\(config: ServerConfig\)[\s\S]*?routingHeaders\(config\)/, 'browser SSE should preserve the selected harness routing hint too')
-assert.ok(desktopRequestTransport.includes('...routingHeaders(profile, { preflight: false })'), 'desktop requests never preflight, so they always carry the routing hint')
-assert.ok(desktopEventTransport.includes('...routingHeaders(targetProfile, { preflight: false })'), 'desktop SSE should carry the selected agent routing hint')
-assert.ok(desktopEventTransport.includes('const authorization = authHeader(profile)'), 'desktop SSE authorization must still come from the approved saved profile')
-assert.ok(desktopEventTransport.includes('fetch(streamURL(targetProfile, subscription.options)'), 'desktop SSE URL should follow only the validated target routing')
-
-// The server picker used to caption itself with a visually-hidden span, but no rule ever hid it: the
-// caption rendered as stray text above the header. Every class the picker and its actions rely on has
-// to exist in the stylesheet, or the layout falls back to whatever the bare markup does.
-for (const className of ['server-profile-actions', 'section-heading-text']) {
-  assert.ok(app.includes(`className="${className}"`), `${className} should be used by the saved-server UI`)
-  assert.ok(styles.includes(`.${className}`), `${className} should be styled instead of relying on default rendering`)
-}
-assert.ok(shell.includes('className="server-switcher"'), 'the saved-server UI should use the richer server switcher')
-assert.ok(styles.includes('.server-switcher'), 'the server switcher should be styled instead of relying on default rendering')
-assert.equal(/className="sr-only"/.test(app), false, 'a caption the stylesheet cannot hide must not be rendered at all')
-assert.ok(panels.includes('aria-pressed={backend === kind}'), 'harness choices should expose their selected state without relying on color alone')
-assert.match(styles, /\.choice-card\s*\{[\s\S]*?grid-template-columns:\s*minmax\(0, 1fr\)/, 'harness choice text should share one full-width alignment column')
-assert.match(styles, /--harness-pi:\s*#0e7490/, 'PI should use a distinct cyan hue instead of OpenCode blue')
-
-// Sized to their labels the two actions came out visibly different widths, and a full row of their own
-// pushed a form that already fills the height cap into scrolling for a few pixels.
-assert.match(styles, /\.server-profile-actions\s*\{[^}]*display:\s*flex/, 'the saved-server actions must stay aligned as one action group')
-assert.match(styles, /\.desktop-panel-modal\s*\{[^}]*max-height:\s*calc\(100dvh - 2 \* var\(--modal-margin\) - 2px\)/, 'a panel modal must claim every pixel the backdrop margin leaves so a form that fits does not scroll')
-assert.match(styles, /\.desktop-panel-modal > \.panel\s*\{[^}]*border:\s*0/, 'the panel inside a modal must not draw a second frame inside the card')
-
-// Deleting a saved server discards a host, a username and a password with no way back.
-assert.ok(app.includes('setProfileToDelete(profiles.find((profile) => profile.id === activeProfileID) ?? null)'), 'deleting a saved server must ask first')
-assert.ok(app.includes('aria-labelledby="delete-server-title"'), 'the saved-server deletion must be confirmed in a dialog')
-assert.ok(i18n.includes("'settings.deleteServerTitle'"), 'the deletion dialog needs a translated title')
+// Routing remains agent-scoped below the machine endpoint. Browser and desktop transports share the
+// same validated routing hint and desktop SSE authorization still comes from the approved config.
+assert.match(serverConfig, /export function routingHeaders\(/)
+assert.ok(serverConfig.includes('return { "X-Harness-Backend": config.backend }'))
+assert.ok(serverConfig.includes('if (preflight && config.backend === "opencode" && !config.agentId?.trim()) return {}'))
+assert.ok(desktopRequestTransport.includes('...routingHeaders(profile, { preflight: false })'))
+assert.ok(desktopEventTransport.includes('...routingHeaders(targetProfile, { preflight: false })'))
+assert.ok(desktopEventTransport.includes('const authorization = authHeader(profile)'))
 
 console.log('settings regression tests passed')

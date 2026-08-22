@@ -1,60 +1,60 @@
 import assert from "node:assert/strict"
 import { readFileSync } from "node:fs"
 import test from "node:test"
-import {
-  assistantTerminalTextForPrompt,
-  latestAssistantTerminalText,
-  terminalMessageText
-} from "./message-content.ts"
+import { assistantTerminalTextForPrompt } from "./message-content.ts"
 
 function message(id, role, parts) {
   return {
-    info: { id, role, sessionID: "session-1", time: { created: 1 } },
-    parts: parts.map((part, index) => ({ id: `${id}:${index}`, ...part }))
+    info: { id, role, sessionID: "s", time: { created: Date.now() } },
+    parts: parts.map((part, index) => ({ id: `${id}:${index}`, messageID: id, ...part }))
   }
 }
 
 const claudeStyleReply = message("assistant-1", "assistant", [
-  { type: "text", text: "I will inspect the UI first." },
-  { type: "reasoning", text: "Need to find the relevant component." },
-  { type: "tool", tool: "Read", state: { status: "completed" } },
+  { type: "reasoning", text: "I should inspect the files first." },
+  { type: "text", text: "I found the likely cause. I will verify it." },
+  { type: "tool", tool: "bash", state: { status: "completed", title: "Run tests", input: { command: "npm test" }, output: "ok" } },
+  { type: "reasoning", text: "The tests confirm the fix." },
   { type: "text", text: "Fixed the UI glitch and opened PR #276." }
 ])
 
 test("terminal result keeps only text after the last reasoning/tool activity", () => {
-  assert.equal(terminalMessageText(claudeStyleReply), "Fixed the UI glitch and opened PR #276.")
+  assert.equal(
+    assistantTerminalTextForPrompt([
+      message("user-1", "user", [{ type: "text", text: "Fix the TaskDesk UI" }]),
+      claudeStyleReply
+    ], "Fix the TaskDesk UI"),
+    "Fixed the UI glitch and opened PR #276."
+  )
 })
 
 test("latest terminal result never crosses the latest user turn", () => {
   const transcript = [
-    message("user-1", "user", [{ type: "text", text: "First task" }]),
-    claudeStyleReply,
-    message("user-2", "user", [{ type: "text", text: "Second task" }]),
-    message("assistant-2", "assistant", [
-      { type: "text", text: "Working on it." },
-      { type: "tool", tool: "Edit", state: { status: "completed" } }
-    ])
+    message("user-1", "user", [{ type: "text", text: "First request" }]),
+    message("assistant-old", "assistant", [{ type: "text", text: "Old answer" }]),
+    message("user-2", "user", [{ type: "text", text: "Current request" }]),
+    message("assistant-current", "assistant", [{ type: "text", text: "Current answer" }])
   ]
-  assert.equal(latestAssistantTerminalText(transcript), "")
+  assert.equal(assistantTerminalTextForPrompt(transcript, "Current request"), "Current answer")
 })
 
 test("tool activity in a later assistant envelope blocks earlier narration", () => {
   const transcript = [
-    message("user-1", "user", [{ type: "text", text: "Fix it" }]),
-    message("assistant-text", "assistant", [{ type: "text", text: "I will inspect it." }]),
-    message("assistant-tool", "assistant", [{ type: "tool", tool: "Edit", state: { status: "completed" } }])
+    message("user", "user", [{ type: "text", text: "Do work" }]),
+    message("assistant-narration", "assistant", [{ type: "text", text: "I am checking now" }]),
+    message("assistant-tool", "assistant", [{ type: "tool", tool: "bash", state: { status: "completed" } }])
   ]
-  assert.equal(latestAssistantTerminalText(transcript), "")
+  assert.equal(assistantTerminalTextForPrompt(transcript, "Do work"), "")
 })
 
 test("final text in a later assistant envelope wins after tool activity", () => {
   const transcript = [
-    message("user-1", "user", [{ type: "text", text: "Fix it" }]),
-    message("assistant-text", "assistant", [{ type: "text", text: "I will inspect it." }]),
-    message("assistant-tool", "assistant", [{ type: "tool", tool: "Edit", state: { status: "completed" } }]),
-    message("assistant-final", "assistant", [{ type: "text", text: "The fix is complete." }])
+    message("user", "user", [{ type: "text", text: "Do work" }]),
+    message("assistant-narration", "assistant", [{ type: "text", text: "I am checking now" }]),
+    message("assistant-tool", "assistant", [{ type: "tool", tool: "bash", state: { status: "completed" } }]),
+    message("assistant-final", "assistant", [{ type: "text", text: "Done and verified" }])
   ]
-  assert.equal(latestAssistantTerminalText(transcript), "The fix is complete.")
+  assert.equal(assistantTerminalTextForPrompt(transcript, "Do work"), "Done and verified")
 })
 
 test("Task summary stays attached to its Run prompt after the Session is continued manually", () => {
@@ -71,12 +71,30 @@ test("Task summary stays attached to its Run prompt after the Session is continu
   )
 })
 
-test("TaskDesk renderer preserves native part order instead of regrouping text and tools", () => {
+test("TaskDesk renderer keeps Activity collapsed by default while retaining technical content", () => {
   const renderer = readFileSync(new URL("./components/taskdesk-message-content.tsx", import.meta.url), "utf8")
-  assert.match(renderer, /message\.parts\.map\(\(part\) => \{/)
-  assert.match(renderer, /part\.type === "text"/)
-  assert.match(renderer, /part\.type === "reasoning"/)
-  assert.match(renderer, /part\.type === "tool"/)
+  assert.match(renderer, /visibleParts = message\.parts\.filter/)
+  assert.match(renderer, /groupConversationParts\(visibleParts,/)
+  assert.match(renderer, /forceActivity: liveAssistant/)
+  assert.match(renderer, /forceRunning: liveAssistant/)
+  assert.match(renderer, /group\.kind === "content"/)
+  assert.match(renderer, /uw-activity-group/)
+  assert.match(renderer, /ActivityPart/)
+  assert.match(renderer, /part\.type === "reasoning" \|\| part\.type === "text"/)
+  assert.match(renderer, /useState\(group\.status === "error"\)/)
+  assert.match(renderer, /if \(group\.status === "error"\) setOpen\(true\)/)
+  assert.match(renderer, /open=\{open\}/)
+  assert.match(renderer, /\{open \? \(/)
+  assert.match(renderer, /group\.parts\.map\(\(part\) => <ActivityPart/)
+  assert.match(renderer, /"step-start", "step-finish", "snapshot", "patch"/)
+})
+
+test("Work Thread keeps live state in compact chat chrome and forbids detached waiting rows", () => {
+  const conversation = readFileSync(new URL("./components/work-thread-conversation.tsx", import.meta.url), "utf8")
+  assert.doesNotMatch(conversation, /tdw-turn-working/)
+  assert.doesNotMatch(conversation, /workingMessageID/)
+  assert.match(conversation, /showWaitingIndicator=\{false\}/)
+  assert.match(conversation, /ConversationStatePill/)
 })
 
 test("legacy unversioned persisted outcomes fall back to transcript reconstruction", () => {

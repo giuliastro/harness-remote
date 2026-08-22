@@ -174,6 +174,20 @@ export function proxyManagedHttpRequest({
   })
 }
 
+async function ensureManagedHttpAvailable(daemon, entry, agentID) {
+  const state = daemon.registry.host(agentID)?.state
+  if (state === "available") return { ok: true }
+  if (state !== "configured") return { ok: false }
+  try {
+    await entry.host.start?.()
+  } catch (error) {
+    return { ok: false, error }
+  }
+  return daemon.registry.host(agentID)?.state === "available"
+    ? { ok: true }
+    : { ok: false }
+}
+
 export function createAgentRoutingServer({
   daemon,
   config,
@@ -294,9 +308,13 @@ export function createAgentRoutingServer({
       writeJSON(response, 404, { error: `Unknown agent: ${route.agentID}` })
       return
     }
-    if (entry.kind === "http" && daemon.registry.host(route.agentID)?.state !== "available") {
-      writeJSON(response, 503, { error: `Agent ${route.agentID} is unavailable` })
-      return
+    if (entry.kind === "http") {
+      const readiness = await ensureManagedHttpAvailable(daemon, entry, route.agentID)
+      if (!readiness.ok) {
+        const detail = readiness.error instanceof Error ? `: ${readiness.error.message}` : ""
+        writeJSON(response, 503, { error: `Agent ${route.agentID} is unavailable${detail}` })
+        return
+      }
     }
 
     if (entry.kind === "acp") {

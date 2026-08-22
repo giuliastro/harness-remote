@@ -91,6 +91,22 @@ test("eager managed hosts start concurrently rather than serially", async () => 
   assert.deepEqual(result.map(({ id, status }) => [id, status]), [["first", "available"], ["second", "available"]])
 })
 
+test("lazy managed hosts stay configured until a real consumer starts them", async () => {
+  const daemon = new MachineDaemon({ id: "machine_test", name: "workstation" })
+  let starts = 0
+  const openCode = new FakeHttpHost({ startImpl: async () => { starts += 1 } })
+  daemon.registerManagedHttpHost({ id: "opencode", host: openCode, eager: false })
+
+  const result = await daemon.startManagedHosts()
+  assert.deepEqual(result, [])
+  assert.equal(starts, 0)
+  assert.equal(daemon.snapshot().agents.find((host) => host.id === "opencode").state, "configured")
+
+  await openCode.start()
+  assert.equal(starts, 1)
+  assert.equal(daemon.snapshot().agents.find((host) => host.id === "opencode").state, "available")
+})
+
 test("one host failure does not erase or stop the other host", async () => {
   const daemon = new MachineDaemon({ id: "machine_test", name: "workstation" })
   const acp = new FakeAcp()
@@ -118,7 +134,7 @@ test("failed eager startup is isolated and reported in the machine snapshot", as
   assert.equal(daemon.snapshot().agents.find((host) => host.id === "codex").state, "configured")
 })
 
-test("machine server wires the shared registry, agent router, task launch, model validation, and finish wrappers", () => {
+test("machine server wires registry, routing, task lifecycle, finish, and Work Thread wrappers", () => {
   const daemon = new MachineDaemon({ id: "machine_test", name: "workstation" })
   const acp = new FakeAcp()
   const openCode = new FakeHttpHost()
@@ -130,11 +146,13 @@ test("machine server wires the shared registry, agent router, task launch, model
   let launchOptions
   let modelOptions
   let finishOptions
+  let workThreadOptions
   const bridgeServer = { marker: "bridge" }
   const routedServer = { marker: "router" }
   const launchServer = { marker: "launch" }
   const modelServer = { marker: "models" }
   const finishServer = { marker: "finish" }
+  const workThreadServer = { marker: "work-threads" }
   const value = createMachineDaemonServer({
     daemon,
     config: { backend: "pi", port: 4097 },
@@ -145,10 +163,11 @@ test("machine server wires the shared registry, agent router, task launch, model
     createRouter: (options) => { routerOptions = options; return routedServer },
     createLaunchServer: (options) => { launchOptions = options; return launchServer },
     createModelServer: (options) => { modelOptions = options; return modelServer },
-    createFinishServer: (options) => { finishOptions = options; return finishServer }
+    createFinishServer: (options) => { finishOptions = options; return finishServer },
+    createWorkThreadServerFactory: (options) => { workThreadOptions = options; return workThreadServer }
   })
 
-  assert.equal(value, finishServer)
+  assert.equal(value, workThreadServer)
   assert.equal(bridgeOptions.machineRegistry, daemon.registry)
   assert.equal(bridgeOptions.acp, acp)
   assert.equal(routerOptions.daemon, daemon)
@@ -162,6 +181,9 @@ test("machine server wires the shared registry, agent router, task launch, model
   assert.equal(finishOptions.innerServer, modelServer)
   assert.equal(finishOptions.taskStore, routerOptions.taskStore)
   assert.equal(finishOptions.worktreeManager, routerOptions.worktreeManager)
+  assert.equal(workThreadOptions.innerServer, finishServer)
+  assert.equal(typeof workThreadOptions.controller.reconcile, "function")
+  assert.equal(workThreadOptions.controller.taskStore, routerOptions.taskStore)
   assert.deepEqual(bridgeOptions.machineRegistry.snapshot().agents.map((host) => host.id), ["pi", "opencode"])
 })
 
@@ -185,7 +207,8 @@ test("machine server creates an isolated bridge service for every registered ACP
     createRouter: (options) => { routerOptions = options; return {} },
     createLaunchServer: ({ innerServer }) => innerServer,
     createModelServer: ({ innerServer }) => innerServer,
-    createFinishServer: ({ innerServer }) => innerServer
+    createFinishServer: ({ innerServer }) => innerServer,
+    createWorkThreadServerFactory: ({ innerServer }) => innerServer
   })
   assert.equal(created.length, 1)
   const piBridge = routerOptions.acpBridgeServer("pi")

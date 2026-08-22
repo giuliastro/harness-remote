@@ -1,6 +1,7 @@
 import assert from "node:assert/strict"
 import test from "node:test"
 import { TaskRunController } from "../src/task-run-controller.js"
+import { taskLaunchError } from "../src/task-errors.js"
 
 function completedChain() {
   const runs = [
@@ -117,6 +118,64 @@ test("returning to a harness reuses its previous Session and transfers interveni
   assert.match(effectivePrompt, /Review found an unsafe refresh-token rotation path/)
   assert.match(effectivePrompt, /One refresh-token regression test is failing/)
   assert.match(effectivePrompt, /USER INSTRUCTION\nFix the review and test findings/)
+})
+
+test("implicit continuation falls back to a fresh Session when a persisted native Session disappeared", async () => {
+  const store = inMemoryStore(completedChain())
+  let created = 0
+  let effectivePrompt = null
+  const controller = new TaskRunController({
+    taskStore: store,
+    taskLauncher: {
+      async resumeSession(_task, previousRun) {
+        assert.equal(previousRun.id, "run-1")
+        throw taskLaunchError("session_unavailable", "Session codex-session-a not found")
+      },
+      async createSession(task) {
+        created += 1
+        effectivePrompt = task.prompt
+        return { sessionId: "codex-session-new", transport: "acp", directory: task.workspace.path }
+      },
+      async startPrompt(task) { effectivePrompt = task.prompt }
+    },
+    runIDFactory: () => "run-4",
+    clock: () => "2026-08-20T08:04:00.000Z"
+  })
+
+  const continued = await controller.continue("task-1", {
+    prompt: "Fix everything and continue",
+    agentId: "codex"
+  })
+
+  assert.equal(created, 1)
+  assert.equal(continued.run.sessionId, "codex-session-new")
+  assert.equal(continued.run.resumedFromRunId, undefined)
+  assert.equal(continued.run.handoffFromRunId, "run-3")
+  assert.equal(continued.run.handoffReason, "session_unavailable")
+  assert.match(effectivePrompt, /Review found an unsafe refresh-token rotation path/)
+  assert.match(effectivePrompt, /One refresh-token regression test is failing/)
+  assert.match(effectivePrompt, /USER INSTRUCTION\nFix everything and continue/)
+})
+
+test("explicit Advanced resume remains strict when the requested native Session disappeared", async () => {
+  const store = inMemoryStore(completedChain())
+  let created = 0
+  const controller = new TaskRunController({
+    taskStore: store,
+    taskLauncher: {
+      async resumeSession() { throw taskLaunchError("session_unavailable", "Session not found") },
+      async createSession() { created += 1; return { sessionId: "should-not-exist", transport: "acp", directory: "/repo" } },
+      async startPrompt() {}
+    },
+    runIDFactory: () => "run-4"
+  })
+
+  await assert.rejects(() => controller.continue("task-1", {
+    prompt: "Resume exactly that Codex session",
+    agentId: "codex",
+    mode: "resume"
+  }), /Session not found/)
+  assert.equal(created, 0)
 })
 
 test("a completed Run persists a bounded harness outcome for the next handoff", async () => {

@@ -1,0 +1,552 @@
+.hr-control-plane .tdw-conversation-state {
+  margin-left: auto;
+}
+
+.hr-control-plane .tdw-work-thread-conversation .uw-session-empty-copy,
+.hr-control-plane .tdw-work-thread-conversation .uw-empty-copy {
+  max-width: 520px;
+}
+
+/* Keep the first-run state visually anchored to the canvas center even though the welcome block has
+   an explicit reading width. The copy below is stateful without becoming another card or banner. */
+.hr-control-plane .hr-welcome {
+  align-self: center;
+  margin-inline: auto;
+}
+
+.hr-control-plane .hr-welcome > p::after {
+  content: "Next: select a project and start a conversation. If nothing is available yet, open Machines to add or reconnect a coding computer.";
+  width: fit-content;
+  max-width: 100%;
+  margin: 14px auto 0;
+  padding: 7px 10px;
+  display: block;
+  border: 1px solid var(--td3-border);
+  border-radius: 9px;
+  color: var(--td3-text-3);
+  background: var(--td3-raise-1);
+  font-size: 10px;
+  font-weight: 650;
+  line-height: 1.45;
+}
+
+.hr-control-plane:not(:has(.tdw-presence-dot.online)):not(:has(.tdw-presence-dot.loading)) .hr-welcome > p::after {
+  content: "No coding machine is connected. Open Machines to add one or reconnect an existing computer.";
+}
+
+.hr-control-plane:has(.tdw-presence-dot.loading) .hr-welcome > p::after {
+  content: "Connecting to your machines · loading projects and conversations";
+  padding-left: 29px;
+  border-color: var(--td3-blue-border-soft);
+  border-radius: 999px;
+  background:
+    radial-gradient(circle at 14px 50%, var(--td3-blue-text) 0 3px, transparent 3.5px),
+    var(--td3-raise-1);
+  animation: tdw-welcome-prepare 1.5s ease-in-out infinite;
+}
+
+/* Agent/model transitions are part of the conversation history. Keep them quiet, but make them
+   unmistakable enough that a user can see where continuity crossed a native Session boundary. */
+.hr-control-plane .tdw-conversation-event {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 10px 6px 8px;
+  border-color: var(--td3-blue-border-soft);
+  color: var(--td3-text-3);
+  background: var(--td3-blue-soft-2);
+  font-size: 10px;
+  font-weight: 650;
+}
+
+.hr-control-plane .tdw-conversation-event::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  flex: none;
+  border-radius: 50%;
+  background: var(--td3-blue-text);
+  box-shadow: 0 0 0 3px var(--td3-blue-soft);
+}
+
+/* Once native reasoning/tool/text exists, the preparatory row disappears. The Activity header then
+   becomes the single live indicator, so work never looks stalled and no second status is added. */
+.hr-control-plane .tdw-work-thread-conversation .uw-activity-group.uw-tool-running > summary {
+  background: var(--td3-blue-soft-2);
+}
+
+.hr-control-plane .tdw-work-thread-conversation .uw-activity-group.uw-tool-running > summary .uw-tool-icon {
+  color: var(--td3-blue-text);
+  animation: hr-activity-working 1.25s ease-in-out infinite;
+}
+
+.hr-control-plane .tdw-work-thread-conversation .uw-activity-group.uw-tool-running > summary .uw-tool-status {
+  color: var(--td3-blue-text);
+  font-size: 0;
+}
+
+.hr-control-plane .tdw-work-thread-conversation .uw-activity-group.uw-tool-running > summary .uw-tool-status::after {
+  content: "Working";
+  font-size: 9.5px;
+  font-weight: 750;
+  letter-spacing: .01em;
+}
+
+@keyframes hr-activity-working {
+  0%, 100% { opacity: .48; transform: scale(.88); }
+  50% { opacity: 1; transform: scale(1.06); }
+}
+
+/* The mobile shell is intentionally closer to a native chat app than to a squeezed desktop layout. */
+.hr-mobile-nav,
+.hr-mobile-settings-page {
+  display: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hr-control-plane:has(.tdw-presence-dot.loading) .hr-welcome > p::after,
+  .hr-control-plane .tdw-work-thread-conversation .uw-activity-group.uw-tool-running > summary .uw-tool-icon {
+    animation: none;
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@media (max-width: 780px) {
+  .uw-standalone-host {
+    --hr-mobile-nav-height: 64px;
+    width: 100%;
+    height: 100dvh;
+    min-height: 100dvh;
+    overflow: hidden;
+  }
+
+  .hr-control-plane .hr-welcome > p::after {
+    text-align: left;
+  }
+
+  /* The bottom navigation now owns top-level app navigation. Keep the top bar quiet and task-focused. */
+  .hr-control-plane .tdw-topbar {
+    grid-template-columns: minmax(0, 1fr) auto !important;
+    gap: 8px;
+    padding-inline: 10px;
+  }
+
+  .hr-control-plane .tdw-context-path,
+  .hr-control-plane .tdw-machine-health,
+  .hr-control-plane .tdw-tasks-toggle,
+  .hr-control-plane .tdw-machines-button,
+  .hr-control-plane .tdw-top-actions > .tdw-icon-button {
+    display: none !important;
+  }
+
+  .hr-control-plane .tdw-top-actions {
+    gap: 0;
+  }
+
+  .hr-control-plane .hr-brand small {
+    display: none;
+  }
+
+  .hr-control-plane .hr-new-conversation {
+    width: 42px !important;
+    min-width: 42px;
+    height: 42px;
+    min-height: 42px;
+    padding: 0 !important;
+    border-radius: 12px;
+    font-size: 0 !important;
+  }
+
+  .hr-control-plane .hr-new-conversation svg {
+    width: 19px;
+    height: 19px;
+  }
+
+  .uw-standalone-host:not(:has(.tdw-main.mobile-open)) .hr-control-plane .tdw-layout {
+    height: calc(100dvh - 56px - var(--hr-mobile-nav-height)) !important;
+  }
+
+  .hr-mobile-nav {
+    position: fixed;
+    z-index: 320;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    height: var(--hr-mobile-nav-height);
+    padding: 5px max(8px, env(safe-area-inset-right)) max(5px, env(safe-area-inset-bottom)) max(8px, env(safe-area-inset-left));
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 4px;
+    border-top: 1px solid var(--td3-border);
+    background: var(--td3-chrome);
+    backdrop-filter: blur(18px);
+    box-shadow: 0 -10px 30px rgba(0, 0, 0, .12);
+  }
+
+  .hr-mobile-nav button {
+    min-width: 0;
+    min-height: 48px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 3px;
+    padding: 0 4px;
+    border: 0;
+    border-radius: 11px;
+    color: var(--td3-muted);
+    background: transparent;
+    font: inherit;
+    cursor: pointer;
+    touch-action: manipulation;
+  }
+
+  .hr-mobile-nav button span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 10px;
+    font-weight: 700;
+  }
+
+  .hr-mobile-nav button svg {
+    flex: none;
+  }
+
+  .hr-mobile-nav button.active {
+    color: var(--td3-blue-text);
+    background: var(--td3-blue-soft-2);
+  }
+
+  /* A conversation is a focused drill-in view. Hiding the global nav here gives the transcript back
+     the vertical space while the explicit Conversations back button remains the escape hatch. */
+  .uw-standalone-host:has(.tdw-main.mobile-open) .hr-mobile-nav,
+  .uw-standalone-host:has(.tdw-modal-backdrop) .hr-mobile-nav {
+    display: none;
+  }
+
+  /* Machines behaves as a real mobile page, not a desktop dialog floating wider than the phone. */
+  .uw-manager-backdrop {
+    inset: 0 0 var(--hr-mobile-nav-height) 0 !important;
+    padding: 0 !important;
+    place-items: stretch !important;
+    background: var(--td3-panel-2);
+    backdrop-filter: none;
+  }
+
+  .uw-machine-manager {
+    width: 100% !important;
+    max-width: 100% !important;
+    height: 100% !important;
+    max-height: none !important;
+    min-width: 0;
+    overflow: hidden;
+    border: 0 !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+  }
+
+  .uw-machine-manager-header {
+    min-width: 0;
+    flex: none;
+    gap: 12px;
+    padding: max(14px, env(safe-area-inset-top)) 14px 12px !important;
+  }
+
+  .uw-machine-manager-header > div {
+    min-width: 0;
+  }
+
+  .uw-machine-manager-header h2 {
+    font-size: 20px;
+  }
+
+  .uw-machine-manager-header p {
+    max-width: none;
+    margin-top: 4px;
+    font-size: 12px;
+    line-height: 1.4;
+  }
+
+  .uw-manager-close {
+    width: 40px;
+    height: 40px;
+    flex: none;
+  }
+
+  .uw-machine-manager-body {
+    min-width: 0;
+    min-height: 0;
+    flex: 1;
+    gap: 10px;
+    padding: 12px !important;
+    overflow-x: hidden !important;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+
+  .uw-machine-config-card,
+  .uw-machine-editor,
+  .uw-machine-config-main,
+  .uw-machine-harness-list,
+  .uw-machine-harness {
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
+  }
+
+  .uw-machine-config-card {
+    gap: 12px !important;
+    padding: 13px !important;
+  }
+
+  .uw-machine-config-main > strong,
+  .uw-machine-config-main > span,
+  .uw-machine-config-main > small {
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .uw-machine-harness-list {
+    display: grid !important;
+    grid-template-columns: minmax(0, 1fr) !important;
+    gap: 6px !important;
+    margin-top: 7px;
+    overflow: hidden;
+  }
+
+  .uw-machine-harness {
+    display: grid !important;
+    grid-template-columns: 8px minmax(0, 1fr) !important;
+    align-items: center;
+    gap: 2px 7px !important;
+    padding: 8px 9px !important;
+    overflow: hidden;
+  }
+
+  .uw-machine-harness > i {
+    grid-column: 1;
+    grid-row: 1 / span 2;
+  }
+
+  .uw-machine-harness > strong,
+  .uw-machine-harness > small {
+    grid-column: 2;
+    min-width: 0;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .uw-machine-editor {
+    padding: 14px !important;
+  }
+
+  .uw-machine-editor-grid input {
+    min-width: 0;
+    max-width: 100%;
+    font-size: 16px;
+  }
+
+  .uw-machine-config-actions,
+  .uw-machine-editor-actions {
+    display: grid !important;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+  }
+
+  .uw-machine-editor-actions .uw-manager-button:last-child {
+    grid-column: 1 / -1;
+  }
+
+  .uw-machine-config-actions .uw-manager-button,
+  .uw-machine-editor-actions .uw-manager-button {
+    width: 100%;
+    min-height: 42px;
+  }
+
+  .uw-machine-manager-footer {
+    flex: none;
+    gap: 10px;
+    padding: 10px 12px 12px !important;
+    background: var(--td3-panel-2);
+  }
+
+  .uw-machine-manager-footer > span {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 10px;
+  }
+
+  .uw-machine-manager-footer .uw-manager-button {
+    flex: none;
+    min-height: 42px;
+  }
+
+  /* Settings is another top-level mobile page and shares the same bottom navigation. */
+  .hr-mobile-settings-page {
+    position: fixed;
+    z-index: 210;
+    inset: 0 0 var(--hr-mobile-nav-height) 0;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    color: var(--td3-text);
+    background: var(--td3-panel-2);
+  }
+
+  .hr-mobile-settings-page > header {
+    min-height: 64px;
+    flex: none;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: max(12px, env(safe-area-inset-top)) 14px 10px;
+    border-bottom: 1px solid var(--td3-border);
+  }
+
+  .hr-mobile-settings-page > header span {
+    display: block;
+    color: var(--td3-muted);
+    font-size: 9.5px;
+    font-weight: 800;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+  }
+
+  .hr-mobile-settings-page > header h2 {
+    margin: 1px 0 0;
+    font-size: 20px;
+    letter-spacing: -.02em;
+  }
+
+  .hr-mobile-settings-page > header button {
+    width: 40px;
+    height: 40px;
+    flex: none;
+    border: 1px solid var(--td3-border);
+    border-radius: 10px;
+    color: var(--td3-text-2);
+    background: var(--td3-raise-2);
+    font-size: 22px;
+  }
+
+  .hr-mobile-settings-body {
+    min-height: 0;
+    flex: 1;
+    overflow-y: auto;
+    padding: 16px 12px 28px;
+  }
+
+  .hr-mobile-settings-group {
+    overflow: hidden;
+    border: 1px solid var(--td3-border);
+    border-radius: 14px;
+    background: var(--td3-control);
+  }
+
+  .hr-mobile-settings-group > span {
+    display: block;
+    padding: 10px 12px 6px;
+    color: var(--td3-muted);
+    font-size: 10px;
+    font-weight: 800;
+    letter-spacing: .07em;
+    text-transform: uppercase;
+  }
+
+  .hr-mobile-settings-group label {
+    min-height: 58px;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(126px, auto);
+    align-items: center;
+    gap: 12px;
+    padding: 8px 12px;
+    border-top: 1px solid var(--td3-border-soft);
+  }
+
+  .hr-mobile-settings-group label strong {
+    font-size: 13px;
+  }
+
+  .hr-mobile-settings-group select {
+    max-width: 180px;
+    min-height: 40px;
+    padding-inline: 9px;
+    border: 1px solid var(--td3-border);
+    border-radius: 9px;
+    color: var(--td3-text);
+    background: var(--td3-panel-2);
+    font-size: 16px;
+  }
+
+  .hr-mobile-settings-body > p {
+    margin: 12px 4px 0;
+    color: var(--td3-muted);
+    font-size: 11px;
+    line-height: 1.5;
+  }
+
+  /* The composer button sits inside the text field on phones. The old footer row spent almost an
+     entire line of scarce vertical space on a single action. */
+  .hr-control-plane .tdw-work-thread-conversation .uw-composer-shell {
+    position: relative;
+  }
+
+  .hr-control-plane .tdw-work-thread-conversation .uw-composer-shell textarea {
+    min-height: 58px !important;
+    padding: 12px 58px 12px 13px !important;
+  }
+
+  .hr-control-plane .tdw-work-thread-conversation .uw-composer-footer {
+    position: absolute;
+    right: 8px;
+    bottom: 8px;
+    width: auto;
+    min-height: 42px;
+    padding: 0 !important;
+    border: 0;
+    background: transparent;
+    pointer-events: none;
+  }
+
+  .hr-control-plane .tdw-work-thread-conversation .uw-composer-footer > span,
+  .hr-control-plane .tdw-work-thread-conversation .uw-composer-footer small {
+    display: none !important;
+  }
+
+  .hr-control-plane .tdw-work-thread-conversation .uw-composer-footer > div {
+    gap: 0;
+    pointer-events: auto;
+  }
+
+  .hr-control-plane .tdw-work-thread-conversation .uw-composer-footer .uw-button {
+    width: 42px;
+    min-width: 42px !important;
+    height: 42px;
+    min-height: 42px !important;
+    padding: 0 !important;
+    border-radius: 11px;
+    font-size: 0;
+  }
+
+  .hr-control-plane .tdw-work-thread-conversation .uw-composer-footer .uw-button svg {
+    width: 18px;
+    height: 18px;
+  }
+
+  .hr-control-plane .tdw-work-thread-conversation .uw-composer-footer .uw-button-primary:not(:has(svg))::after {
+    content: "↑";
+    font-size: 20px;
+    font-weight: 800;
+    line-height: 1;
+  }
+}

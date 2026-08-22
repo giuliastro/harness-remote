@@ -1,0 +1,438 @@
+.hr-control-plane {
+  --hr-reading-width: 1040px;
+}
+
+.hr-control-plane .hr-logo {
+  font-size: 14px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+}
+
+.hr-control-plane .hr-brand small {
+  max-width: 280px;
+}
+
+.hr-control-plane .hr-new-conversation {
+  white-space: nowrap;
+}
+
+.hr-control-plane .tdw-thread-column {
+  min-width: 280px;
+}
+
+.hr-control-plane .tdw-thread-card {
+  min-height: 96px;
+}
+
+.hr-control-plane .tdw-thread-status.ready {
+  color: var(--td3-text-2);
+}
+
+.hr-control-plane .tdw-filter-dot.attention {
+  background: var(--td3-red);
+}
+
+.hr-control-plane .tdw-filter-dot.working {
+  background: var(--td3-blue-text);
+}
+
+.hr-control-plane .tdw-filter-dot.all {
+  background: var(--td3-muted);
+}
+
+.hr-welcome {
+  width: min(680px, calc(100% - 40px));
+  gap: 12px;
+}
+
+.hr-welcome > p {
+  max-width: 650px;
+  line-height: 1.6;
+}
+
+.hr-control-plane:has(.tdw-presence-dot.loading) .hr-welcome > p::after {
+  content: "●  Preparing your workspace · connecting machines and loading conversations";
+  display: block;
+  width: max-content;
+  max-width: 100%;
+  min-height: 30px;
+  margin: 14px auto 0;
+  padding: 6px 11px;
+  border: 1px solid var(--td3-border);
+  border-radius: 999px;
+  background: var(--td3-raise-1);
+  color: var(--td3-text-2);
+  font-size: 11px;
+  font-weight: 650;
+  line-height: 1.45;
+  text-align: center;
+  animation: hr-preparing-pulse 1.8s ease-in-out infinite;
+}
+
+.hr-welcome-mark {
+  box-shadow: none;
+}
+
+.hr-welcome-principles {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 7px;
+  margin-top: 2px;
+}
+
+.hr-welcome-principles span {
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  padding: 0 10px;
+  border: 1px solid var(--td3-border);
+  border-radius: 999px;
+  background: var(--td3-raise-1);
+  color: var(--td3-text-2);
+  font-size: 11px;
+  font-weight: 650;
+  letter-spacing: .01em;
+}
+
+.hr-welcome-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.hr-workspace-note {
+  display: grid;
+  gap: 4px;
+  padding: 12px 14px;
+  border: 1px solid var(--td3-border);
+  border-radius: 9px;
+  background: var(--td3-raise-1);
+}
+
+.hr-workspace-note strong {
+  color: var(--td3-text);
+  font-size: 12px;
+}
+
+.hr-workspace-note span {
+  color: var(--td3-text-2);
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.hr-conversation-header {
+  align-items: center;
+}
+
+.hr-conversation-tabs button {
+  min-width: 86px;
+}
+
+.hr-session-panel,
+.hr-changes-panel {
+  width: min(var(--hr-reading-width), calc(100% - 40px));
+  margin: 0 auto;
+  padding: 24px 0 48px;
+}
+
+.hr-session-panel-intro {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 24px;
+  padding-bottom: 18px;
+  border-bottom: 1px solid var(--td3-border);
+}
+
+.hr-session-panel-intro > div {
+  min-width: 0;
+}
+
+.hr-session-panel-intro span {
+  color: var(--td3-muted);
+  font-size: 10px;
+  font-weight: 750;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+}
+
+.hr-session-panel-intro h2 {
+  margin: 5px 0 6px;
+  color: var(--td3-text);
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: -.02em;
+}
+
+.hr-session-panel-intro p {
+  max-width: 700px;
+  margin: 0;
+  color: var(--td3-text-2);
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.hr-session-count {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  flex: 0 0 auto;
+  border: 1px solid var(--td3-border);
+  border-radius: 9px;
+  background: var(--td3-raise-1);
+  color: var(--td3-text);
+  font-size: 13px;
+}
+
+.hr-session-chain {
+  display: grid;
+  padding-top: 20px;
+}
+
+.hr-session-step {
+  position: relative;
+}
+
+.hr-session-transition {
+  position: relative;
+  display: flex;
+  align-items: center;
+  min-height: 38px;
+  padding-left: 27px;
+  color: var(--td3-muted);
+  font-size: 10px;
+  font-weight: 650;
+}
+
+.hr-session-transition::before {
+  content: "";
+  position: absolute;
+  left: 12px;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: var(--td3-border);
+}
+
+.hr-session-transition::after {
+  content: "";
+  position: absolute;
+  left: 9px;
+  top: 50%;
+  width: 7px;
+  height: 7px;
+  margin-top: -3px;
+  border: 1px solid var(--td3-border-strong);
+  border-radius: 50%;
+  background: var(--td3-panel-2);
+}
+
+.hr-session-transition.switched {
+  color: var(--td3-text-2);
+}
+
+.hr-session-transition.switched::after {
+  border-color: var(--td3-blue);
+  background: var(--td3-blue);
+}
+
+.hr-session-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px 24px;
+  padding: 15px 16px;
+  border: 1px solid var(--td3-border);
+  border-radius: 10px;
+  background: var(--td3-panel-2);
+}
+
+.hr-session-card.current {
+  border-color: var(--td3-blue-border);
+  box-shadow: inset 3px 0 0 var(--td3-blue);
+}
+
+.hr-session-agent {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  gap: 10px;
+}
+
+.hr-session-agent-icon {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  flex: 0 0 auto;
+  border: 1px solid var(--td3-border);
+  border-radius: 8px;
+  background: var(--td3-raise-1);
+}
+
+.hr-session-agent-icon img {
+  width: 17px;
+  height: 17px;
+  object-fit: contain;
+}
+
+.hr-session-agent > div,
+.hr-session-meta {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.hr-session-agent strong,
+.hr-session-meta span {
+  overflow: hidden;
+  color: var(--td3-text);
+  font-size: 12px;
+  font-weight: 680;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hr-session-agent small,
+.hr-session-meta small {
+  overflow: hidden;
+  color: var(--td3-muted);
+  font-size: 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hr-session-meta {
+  justify-items: end;
+  align-content: center;
+}
+
+.hr-session-native-details {
+  grid-column: 1 / -1;
+  padding-top: 10px;
+  border-top: 1px solid var(--td3-border);
+}
+
+.hr-session-native-details summary {
+  width: max-content;
+  cursor: pointer;
+  color: var(--td3-muted);
+  font-size: 10px;
+  font-weight: 650;
+}
+
+.hr-session-native-details > div {
+  display: grid;
+  grid-template-columns: 110px minmax(0, 1fr);
+  gap: 12px;
+  margin-top: 8px;
+  color: var(--td3-text-2);
+  font-size: 10px;
+}
+
+.hr-session-native-details code {
+  overflow: hidden;
+  color: var(--td3-text);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hr-session-empty {
+  margin-top: 24px;
+}
+
+.hr-control-plane .tdw-main,
+.hr-conversation-detail,
+.hr-conversation-detail .tdw-detail-body {
+  min-width: 0;
+}
+
+.hr-control-plane .tdw-conversation-toolbar {
+  position: relative;
+  z-index: 4;
+}
+
+.hr-control-plane .tdw-agent-control select,
+.hr-control-plane .tdw-model-trigger {
+  max-width: 260px;
+}
+
+.hr-control-plane .tdw-conversation-event {
+  margin-top: 12px;
+  margin-bottom: 12px;
+}
+
+.hr-control-plane .tdw-conversation-event span {
+  background: var(--td3-raise-1);
+}
+
+@keyframes hr-preparing-pulse {
+  0%, 100% { opacity: .72; }
+  50% { opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hr-control-plane:has(.tdw-presence-dot.loading) .hr-welcome > p::after {
+    animation: none;
+  }
+}
+
+@media (max-width: 900px) {
+  .hr-control-plane .hr-brand small {
+    display: none;
+  }
+
+  .hr-control-plane .tdw-thread-column {
+    min-width: 0;
+  }
+
+  .hr-session-panel,
+  .hr-changes-panel {
+    width: min(100% - 24px, var(--hr-reading-width));
+    padding-top: 16px;
+  }
+
+  .hr-session-card {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 10px;
+  }
+
+  .hr-session-meta {
+    justify-items: start;
+  }
+
+  .hr-session-native-details > div {
+    grid-template-columns: 1fr;
+    gap: 3px;
+  }
+
+  .hr-conversation-tabs button {
+    min-width: 0;
+  }
+}
+
+@media (max-width: 620px) {
+  .hr-welcome {
+    width: calc(100% - 28px);
+  }
+
+  .hr-welcome-actions {
+    width: 100%;
+  }
+
+  .hr-welcome-actions .tdw-button {
+    flex: 1 1 150px;
+    justify-content: center;
+  }
+
+  .hr-session-panel-intro {
+    gap: 12px;
+  }
+
+  .hr-session-panel-intro h2 {
+    font-size: 16px;
+  }
+}

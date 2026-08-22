@@ -10,6 +10,8 @@ import { TaskLauncher } from "./task-launcher.js"
 import { TaskRunController } from "./task-run-controller.js"
 import { TaskRunStore } from "./task-run-store.js"
 import { WorktreeManager } from "./worktree-manager.js"
+import { WorkThreadController } from "./work-thread-controller.js"
+import { createWorkThreadServer } from "./work-thread-server.js"
 
 export class MachineDaemon {
   constructor(identity, { registry = new MachineRegistry(identity) } = {}) {
@@ -24,10 +26,10 @@ export class MachineDaemon {
     return tracked
   }
 
-  registerManagedHttpHost({ id, label, backend = id, capabilities = {}, host, modelCatalog, managed = true }) {
+  registerManagedHttpHost({ id, label, backend = id, capabilities = {}, host, modelCatalog, managed = true, eager = true }) {
     this.registry.registerHost({ id, label, backend, transport: "http", managed, state: "configured", capabilities })
     const tracked = trackManagedHostLifecycle(host, this.registry, id)
-    this.hosts.set(id, { id, kind: "http", host: tracked, modelCatalog, eager: true })
+    this.hosts.set(id, { id, kind: "http", host: tracked, modelCatalog, eager })
     return tracked
   }
 
@@ -78,11 +80,13 @@ export function createMachineDaemonServer({
   createModelServer = createAgentModelServer,
   createLaunchServer = createTaskLaunchServer,
   createFinishServer = createTaskFinishServer,
+  createWorkThreadServerFactory = createWorkThreadServer,
   taskStore,
   projectCatalog,
   worktreeManager,
   taskLauncher,
-  taskRunController
+  taskRunController,
+  workThreadController
 }) {
   const bridgeServer = createServer({ config, acp: primaryAcp, machineRegistry: daemon.registry, serviceOptions })
   const scopedAcpServers = new Map()
@@ -113,8 +117,10 @@ export function createMachineDaemonServer({
   }
   const launcher = taskLauncher ?? new TaskLauncher({ daemon, acpService })
   const runs = taskRunController ?? new TaskRunController({ taskStore: tasks, taskLauncher: launcher, acpService })
+  const threads = workThreadController ?? new WorkThreadController({ taskStore: tasks, taskRunController: runs })
   const innerServer = createRouter({ daemon, config, primaryAgentID, bridgeServer, acpBridgeServer, taskStore: tasks, projectCatalog: projects, worktreeManager: worktrees })
   const launchServer = createLaunchServer({ innerServer, config, taskRunController: runs })
   const modelServer = createModelServer({ innerServer: launchServer, config, daemon, taskStore: tasks })
-  return createFinishServer({ innerServer: modelServer, config, taskStore: tasks, worktreeManager: worktrees, taskRunController: runs })
+  const finishServer = createFinishServer({ innerServer: modelServer, config, taskStore: tasks, worktreeManager: worktrees, taskRunController: runs })
+  return createWorkThreadServerFactory({ innerServer: finishServer, config, controller: threads })
 }

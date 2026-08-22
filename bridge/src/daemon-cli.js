@@ -70,7 +70,7 @@ export function parseDaemonOptions(args, environment = process.env, detect = res
   // harness and the user names it. A daemon is started once per machine and is expected to work out
   // what that machine has: without this, a phone with PI and OpenCode installed announced `omp` as
   // its primary agent and then failed with `spawn omp ENOENT`. Resolve from PATH the way the
-  // launcher already does — it owns the ACP preference order — and let its message explain a
+  // launcher already does - it owns the ACP preference order - and let its message explain a
   // machine with nothing installed rather than starting up and failing later.
   const named = bridgeArgs.includes("--backend") || environment.HARNESS_REMOTE_BACKEND || environment.OMP_BRIDGE_BACKEND
   if (!named) bridgeArgs.push("--backend", detect(args).backend)
@@ -169,14 +169,20 @@ async function main() {
       password: config.password,
       startTimeoutMs: openCodeTimeout
     })
+    managedOpenCode.on("stderr", (line) => process.stderr.write(`[opencode] ${line}\n`))
     const openCodeModels = new HttpAgentModelCatalog({ host: managedOpenCode, agentID: "opencode" })
+    // OpenCode is intentionally lazy like the ACP harnesses. Starting its Bun server during daemon
+    // boot used resources before the user selected it and also surfaced upstream GlobalBus listener
+    // warnings immediately. Model discovery, task launch, or a routed OpenCode request starts it on
+    // first use through the host's idempotent start() path.
     daemon.registerManagedHttpHost({
       id: "opencode",
       label: "OpenCode",
       backend: "opencode",
       capabilities: { sessions: true },
       host: managedOpenCode,
-      modelCatalog: openCodeModels
+      modelCatalog: openCodeModels,
+      eager: false
     })
   }
 
@@ -209,10 +215,10 @@ async function main() {
   process.stdout.write("Active agents:\n")
   for (const host of daemon.snapshot().agents) {
     if (host.id === primaryProfile.id) {
-      process.stdout.write(`  • ${host.label} — primary (${host.transport.toUpperCase()})\n`)
+      process.stdout.write(`  • ${host.label} - primary (${host.transport.toUpperCase()})\n`)
       continue
     }
-    process.stdout.write(`  • ${host.label} — managed ${host.transport.toUpperCase()}, ${host.state}\n`)
+    process.stdout.write(`  • ${host.label} - managed ${host.transport.toUpperCase()}, ${host.state}\n`)
   }
   for (const result of managedResults) {
     if (result.status !== "available") process.stderr.write(`[${result.id}] unavailable: ${result.error?.message ?? "startup failed"}\n`)

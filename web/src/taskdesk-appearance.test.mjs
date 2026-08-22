@@ -11,7 +11,9 @@ const SHEETS = [
   "v3-polish.css",
   "universal-workspace.css",
   "universal-workspace-readable.css",
-  "universal-workspace-readable-fixes.css"
+  "universal-workspace-readable-fixes.css",
+  "conversation-control-plane.css",
+  "conversation-control-plane-overrides.css"
 ]
 
 /** Every colour literal, ignoring the black used for shadows and any hex inside a url() or var name. */

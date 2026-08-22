@@ -1,11 +1,12 @@
 import assert from "node:assert/strict"
+import { EventEmitter } from "node:events"
 import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import path from "node:path"
 import test from "node:test"
-import { AcpAgentModelCatalog, HttpAgentModelCatalog } from "../src/agent-model-catalog.js"
+import { AcpAgentModelCatalog, HttpAgentModelCatalog, modelsFromProvidersResponse } from "../src/agent-model-catalog.js"
 
-class FakeAcp {
+class FakeAcp extends EventEmitter {
   starts = 0
   newCalls = 0
   loadCalls = 0
@@ -30,7 +31,7 @@ class FakeAcp {
   }
 }
 
-test("ACP model discovery creates one durable catalog session then refreshes it", async () => {
+test("ACP model discovery keeps one catalog load per adapter lifetime unless explicitly refreshed", async () => {
   const stateDirectory = await mkdtemp(path.join(tmpdir(), "harness-model-catalog-"))
   try {
     const agent = new FakeAcp()
@@ -38,12 +39,36 @@ test("ACP model discovery creates one durable catalog session then refreshes it"
     const first = await catalog.list({ allowStale: false })
     assert.deepEqual(first.models.map((model) => model.modelID), ["one", "two"])
     assert.equal(agent.newCalls, 1)
+
     agent.models = ["provider/two", "provider/three"]
-    const refreshed = await catalog.list({ allowStale: false })
-    assert.deepEqual(refreshed.models.map((model) => model.modelID), ["two", "three"])
+    const cached = await catalog.list({ allowStale: false })
+    assert.deepEqual(cached.models.map((model) => model.modelID), ["one", "two"])
     assert.equal(agent.newCalls, 1)
+    assert.equal(agent.loadCalls, 0, "opening model pickers must not reload the technical ACP session")
+
+    const refreshed = await catalog.list({ allowStale: false, refresh: true })
+    assert.deepEqual(refreshed.models.map((model) => model.modelID), ["two", "three"])
     assert.equal(agent.loadCalls, 1)
     await assert.rejects(() => catalog.validate({ providerID: "provider", modelID: "one" }), /no longer available/)
+  } finally {
+    await rm(stateDirectory, { recursive: true, force: true })
+  }
+})
+
+test("ACP catalog invalidates its in-memory models when the dedicated adapter exits", async () => {
+  const stateDirectory = await mkdtemp(path.join(tmpdir(), "harness-model-catalog-exit-"))
+  try {
+    const agent = new FakeAcp()
+    const catalog = new AcpAgentModelCatalog({ agent, agentID: "omp", directory: "/repo", stateDirectory })
+    await catalog.list({ allowStale: false })
+    assert.equal(agent.newCalls, 1)
+    assert.equal(agent.loadCalls, 0)
+
+    agent.models = ["provider/three"]
+    agent.emit("exit", new Error("adapter restarted"))
+    const reloaded = await catalog.list({ allowStale: false })
+    assert.deepEqual(reloaded.models.map((model) => model.modelID), ["three"])
+    assert.equal(agent.loadCalls, 1, "a restarted adapter must load the persisted catalog session once")
   } finally {
     await rm(stateDirectory, { recursive: true, force: true })
   }
@@ -102,4 +127,44 @@ test("HTTP model discovery refreshes managed harness each time", async () => {
   models = { two: { id: "two", name: "Two" } }
   assert.deepEqual((await catalog.list()).models.map((model) => model.modelID), ["two"])
   assert.equal(calls, 2)
+})
+
+test("provider catalog keeps one exact selection per model variant and skips disabled models", () => {
+  const result = modelsFromProvidersResponse({
+    providers: [{
+      id: "openai",
+      name: "OpenAI",
+      models: {
+        disabled: { id: "disabled", name: "Disabled", enabled: false },
+        reasoning: {
+          id: "reasoning",
+          name: "Reasoning Model",
+          variants: { low: {}, high: {} },
+          limit: { context: 200_000, output: 32_000 },
+          cost: { input: 2, output: 8 }
+        },
+        free: {
+          id: "free",
+          name: "Free Model",
+          variants: [{ id: "fast" }, { id: "fast" }],
+          cost: [{ input: 0, output: 0 }]
+        }
+      }
+    }],
+    default: { openai: "reasoning" }
+  })
+
+  assert.deepEqual(result.map((model) => `${model.modelID}:${model.variant || "base"}`), [
+    "reasoning:base",
+    "reasoning:low",
+    "reasoning:high",
+    "free:base",
+    "free:fast"
+  ])
+  assert.equal(result.some((model) => model.modelID === "disabled"), false)
+  assert.equal(result.find((model) => model.modelID === "reasoning" && !model.variant)?.isDefault, true)
+  assert.equal(result.find((model) => model.modelID === "reasoning")?.isFree, false)
+  assert.equal(result.find((model) => model.modelID === "reasoning")?.inputCost, 2)
+  assert.equal(result.find((model) => model.modelID === "free")?.isFree, true)
+  assert.equal(result.find((model) => model.modelID === "free")?.inputCost, 0)
 })

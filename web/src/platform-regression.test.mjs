@@ -22,6 +22,7 @@ assert.match(api, /from "\.\/nativeResponse"/, 'Native normalization must come f
 assert.match(api, /normalizeNativeResponseData\(response\.data\) as T/, 'Capacitor responses must use native JSON normalization before reaching API callers')
 assert.match(machineClient, /if \(typeof parsed === "string"\)/, 'native machine discovery must accept a JSON string payload')
 assert.match(machineClient, /parsed = JSON\.parse\(parsed\)/, 'stringified machine discovery payloads must be decoded')
-assert.match(machineClient, /return machineSnapshot\(response\.data\)/, 'Capacitor machine discovery must validate and normalize the native response before the wizard uses it')
+assert.match(machineClient, /remember\(config, machineSnapshot\(response\.data\)\)/, 'Capacitor machine discovery must validate the native response before caching the last-known healthy snapshot')
+assert.match(machineClient, /DISCOVERY_STALE_GRACE_MS = 45_000/, 'machine discovery should retain a short last-known-good grace window for transient mobile transport drops')
 
 console.log('platform selection regression tests passed')

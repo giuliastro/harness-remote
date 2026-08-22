@@ -1,5 +1,6 @@
 import assert from "node:assert/strict"
 import { EventEmitter } from "node:events"
+import { PassThrough } from "node:stream"
 import test from "node:test"
 import { ManagedOpenCodeHost, trackManagedHostLifecycle, waitForOpenCodeHealth } from "../src/opencode-host.js"
 import { MachineRegistry } from "../src/machine-registry.js"
@@ -52,8 +53,28 @@ test("starts OpenCode without placing credentials on argv", async () => {
   assert.equal(invocation.args.includes("secret"), false)
   assert.equal(invocation.options.env.OPENCODE_SERVER_USERNAME, "harness")
   assert.equal(invocation.options.env.OPENCODE_SERVER_PASSWORD, "secret")
-  assert.deepEqual(invocation.options.stdio, ["ignore", "ignore", "inherit"])
+  assert.deepEqual(invocation.options.stdio, ["ignore", "ignore", "pipe"])
   assert.equal(host.processID, 4242)
+})
+
+test("forwards managed OpenCode stderr as line events for parent labeling", async () => {
+  const child = new FakeChild()
+  child.stderr = new PassThrough()
+  const lines = []
+  const host = new ManagedOpenCodeHost({
+    username: "harness",
+    password: "secret",
+    spawnProcess: () => child,
+    waitUntilReady: async () => {}
+  })
+  host.on("stderr", (line) => lines.push(line))
+
+  await host.start()
+  child.stderr.write("MaxListenersExceededWarning: first line\nsecond line\n")
+  child.stderr.end("tail")
+  await new Promise((resolve) => setImmediate(resolve))
+
+  assert.deepEqual(lines, ["MaxListenersExceededWarning: first line", "second line", "tail"])
 })
 
 test("uses cmd.exe for the Windows OpenCode command shim", async () => {

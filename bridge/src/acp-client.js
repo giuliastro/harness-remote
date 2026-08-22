@@ -147,14 +147,27 @@ export class AcpClient extends EventEmitter {
     const id = this.#nextID++
     const message = JSON.stringify({ jsonrpc: "2.0", id, method, params })
     return new Promise((resolve, reject) => {
-      const timer = setTimeout(() => {
+      const pending = {
+        resolve,
+        reject,
+        timer: undefined,
+        method,
+        sessionID: method === "session/prompt" && typeof params?.sessionId === "string" ? params.sessionId : undefined,
+        resetTimeout: undefined
+      }
+      const expire = () => {
         this.#pending.delete(id)
         reject(new Error(`ACP adapter request timed out: ${method}`))
-      }, timeoutMs)
-      this.#pending.set(id, { resolve, reject, timer })
+      }
+      pending.resetTimeout = () => {
+        clearTimeout(pending.timer)
+        pending.timer = setTimeout(expire, timeoutMs)
+      }
+      pending.resetTimeout()
+      this.#pending.set(id, pending)
       this.#child.stdin.write(`${message}\n`, (error) => {
         if (error) {
-          clearTimeout(timer)
+          clearTimeout(pending.timer)
           this.#pending.delete(id)
           reject(error)
         }
@@ -201,6 +214,11 @@ export class AcpClient extends EventEmitter {
       this.emit("protocol-error", new Error("ACP adapter emitted invalid JSON"))
       return
     }
+
+    // A long ACP prompt is alive as long as that same Session keeps producing protocol traffic.
+    // Treat its timeout as an inactivity watchdog, not a wall-clock cap on legitimate long turns.
+    if (typeof message.params?.sessionId === "string") this.#touchSessionActivity(message.params.sessionId)
+
     // A JSON-RPC message carrying both an id and a method is an agent-initiated
     // request. An unanswered request would stall the agent until the prompt
     // timeout, so always reply.
@@ -222,9 +240,16 @@ export class AcpClient extends EventEmitter {
     if (message.method) this.emit("notification", message)
   }
 
+  #touchSessionActivity(sessionID) {
+    for (const pending of this.#pending.values()) {
+      if (pending.method !== "session/prompt" || pending.sessionID !== sessionID) continue
+      pending.resetTimeout?.()
+    }
+  }
+
   /**
    * A tool call stalls without an answer, and answering with an error silently stops the agent
-   * from doing any work — PI reported success while touching no file. Granting matches OMP,
+   * from doing any work. PI reported success while touching no file. Granting matches OMP,
    * whose agent approves its own tool calls and never asks, and there is no way to prompt the
    * user mid-turn on a phone. `allow_once` is preferred over `allow_always` so the grant covers
    * this call rather than writing a lasting permission into the harness's own state.
@@ -252,8 +277,8 @@ export class AcpClient extends EventEmitter {
 
   /**
    * The adapter explains a missing prerequisite on stderr; without this the caller only sees an
-   * exit code. Several lines are kept because a Windows shell error wraps the useful part —
-   * "'bun' is not recognized…" arrives split from the sentence that follows it.
+   * exit code. Several lines are kept because a Windows shell error wraps the useful part:
+   * "'bun' is not recognized..." arrives split from the sentence that follows it.
    */
   #stderrSummary() {
     const lines = this.#stderr.split(/\r?\n/).map((line) => line.trim()).filter(Boolean)

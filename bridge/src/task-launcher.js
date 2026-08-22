@@ -2,6 +2,9 @@ import { taskLaunchError } from "./task-errors.js"
 import { promptModelBody } from "./task-model.js"
 
 const MAX_OUTCOME_CHARS = 6_000
+const DEFAULT_HTTP_RECOVERY_POLL_MS = 750
+const DEFAULT_HTTP_RECOVERY_GRACE_MS = 6_000
+const DEFAULT_HTTP_RECOVERY_TIMEOUT_MS = 30 * 60_000
 
 function basicAuthorization(username, password) {
   if (!username && !password) return undefined
@@ -31,6 +34,61 @@ function openCodeStatus(value) {
   return "unknown"
 }
 
+function canonicalText(value) {
+  return typeof value === "string" ? value.replace(/\r\n/g, "\n").trim() : ""
+}
+
+function messageText(message) {
+  return (Array.isArray(message?.parts) ? message.parts : [])
+    .filter((part) => part?.type === "text" && typeof part.text === "string")
+    .map((part) => part.text)
+    .join("\n")
+    .trim()
+}
+
+function latestUserMatches(messages, prompt) {
+  for (let index = (messages?.length ?? 0) - 1; index >= 0; index -= 1) {
+    const message = messages[index]
+    if (message?.info?.role !== "user") continue
+    return canonicalText(messageText(message)) === canonicalText(prompt)
+  }
+  return false
+}
+
+function readableError(value, depth = 0) {
+  if (depth > 4 || value == null) return ""
+  if (typeof value === "string") {
+    const text = value.trim()
+    if (!text) return ""
+    if ((text.startsWith("{") && text.endsWith("}")) || (text.startsWith("[") && text.endsWith("]"))) {
+      try { return readableError(JSON.parse(text), depth + 1) || text } catch { return text }
+    }
+    return text
+  }
+  if (typeof value !== "object") return ""
+  for (const key of ["message", "error", "detail", "data"]) {
+    const text = readableError(value[key], depth + 1)
+    if (text) return text
+  }
+  return ""
+}
+
+function latestAssistantFailure(messages) {
+  for (let index = (messages?.length ?? 0) - 1; index >= 0; index -= 1) {
+    const message = messages[index]
+    if (message?.info?.role === "user") break
+    if (message?.info?.role !== "assistant") continue
+    return readableError(message.info.error)
+  }
+  return ""
+}
+
+function recoverableHttpTransportError(error) {
+  if (error instanceof TypeError) return true
+  const message = error instanceof Error ? error.message : String(error ?? "")
+  return /fetch failed|network|socket|econnreset|econnrefused|terminated|other side closed/i.test(message)
+}
+
 function acpModelValue(configOptions, model) {
   if (!model) return undefined
   const option = configOptions?.find((item) => item.id === "model")
@@ -47,6 +105,16 @@ function sameModel(left, right) {
   if (!left && !right) return true
   if (!left || !right) return false
   return left.providerID === right.providerID && left.modelID === right.modelID && (left.variant || "") === (right.variant || "")
+}
+
+function missingNativeSession(error) {
+  if (error?.code === "session_unavailable") return true
+  const message = error instanceof Error ? error.message : String(error ?? "")
+  return /\bsession\b.{0,180}\b(not found|unknown|unavailable|does not exist|no longer exists)\b/i.test(message)
+}
+
+function sessionUnavailableError(error) {
+  return taskLaunchError("session_unavailable", "The previous native Session can no longer be resumed", { cause: error })
 }
 
 function runAgentID(task, run = task?.run) {
@@ -81,6 +149,7 @@ function terminalMessageText(message) {
       foundText = true
       continue
     }
+    if (["step-start", "step-finish", "snapshot", "patch"].includes(part?.type)) continue
     if (part?.type !== "reasoning" && part?.type !== "tool") continue
     if (foundText) break
     return ""
@@ -89,16 +158,15 @@ function terminalMessageText(message) {
 }
 
 function latestAssistantOutcome(messages) {
+  const assistantMessages = []
   for (let index = (messages?.length ?? 0) - 1; index >= 0; index -= 1) {
     const message = messages[index]
-    // A Task run owns one user turn. Never fall through to an assistant answer from a previous turn
-    // when the latest turn ended in tool/reasoning activity without a natural-language result.
     if (message?.info?.role === "user") break
-    if (message?.info?.role !== "assistant") continue
-    const text = boundOutcome(terminalMessageText(message))
-    if (text) return text
+    if (message?.info?.role === "assistant") assistantMessages.push(message)
   }
-  return undefined
+  if (!assistantMessages.length) return undefined
+  const parts = assistantMessages.reverse().flatMap((message) => Array.isArray(message.parts) ? message.parts : [])
+  return boundOutcome(terminalMessageText({ parts }))
 }
 
 function outcomeFromResult(result) {
@@ -111,10 +179,22 @@ function outcomeFromResult(result) {
 }
 
 export class TaskLauncher {
-  constructor({ daemon, fetchImpl = fetch, acpService } = {}) {
+  constructor({
+    daemon,
+    fetchImpl = fetch,
+    acpService,
+    httpRecoveryPollMs = DEFAULT_HTTP_RECOVERY_POLL_MS,
+    httpRecoveryGraceMs = DEFAULT_HTTP_RECOVERY_GRACE_MS,
+    httpRecoveryTimeoutMs = DEFAULT_HTTP_RECOVERY_TIMEOUT_MS,
+    sleepImpl = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
+  } = {}) {
     this.daemon = daemon
     this.fetchImpl = fetchImpl
     this.acpService = acpService
+    this.httpRecoveryPollMs = httpRecoveryPollMs
+    this.httpRecoveryGraceMs = httpRecoveryGraceMs
+    this.httpRecoveryTimeoutMs = httpRecoveryTimeoutMs
+    this.sleepImpl = sleepImpl
   }
 
   async #entry(agentID) {
@@ -131,6 +211,65 @@ export class TaskLauncher {
     await this.#entry(agentID)
     if (typeof this.daemon.validateModel !== "function") return
     await this.daemon.validateModel(agentID, model)
+  }
+
+  async #httpSessionMessages(task, run, agentID) {
+    const response = await this.fetchImpl(
+      `${run.base}/session/${encodeURIComponent(run.sessionId)}/message?limit=40&directory=${encodeURIComponent(task.workspace.path)}`,
+      { headers: run.authorization ? { Authorization: run.authorization } : {} }
+    )
+    return responseJSON(response, `Reading ${agentID} session after transport recovery`)
+  }
+
+  async #httpSessionStatus(task, run, agentID) {
+    const response = await this.fetchImpl(
+      `${run.base}/session/status?directory=${encodeURIComponent(task.workspace.path)}`,
+      { headers: run.authorization ? { Authorization: run.authorization } : {} }
+    )
+    const statuses = await responseJSON(response, `Reading ${agentID} status after transport recovery`)
+    return openCodeStatus(statuses?.[run.sessionId])
+  }
+
+  async #recoverHttpPrompt(task, run, agentID, originalError) {
+    const started = Date.now()
+    let accepted = false
+    let sawRunning = false
+    let lastEvidenceError = null
+
+    while (Date.now() - started < this.httpRecoveryTimeoutMs) {
+      let status = "unknown"
+      try {
+        status = await this.#httpSessionStatus(task, run, agentID)
+        sawRunning ||= status === "running"
+      } catch (error) {
+        lastEvidenceError = error
+      }
+
+      try {
+        const messages = await this.#httpSessionMessages(task, run, agentID)
+        accepted ||= latestUserMatches(messages, task.prompt)
+        if (accepted) {
+          const outcome = latestAssistantOutcome(messages)
+          if (outcome) return { outcome }
+          const failure = latestAssistantFailure(messages)
+          if (failure && status !== "running") throw new Error(failure)
+          if (status === "completed") {
+            throw new Error(`${agentID} stopped before producing a final response`)
+          }
+        }
+      } catch (error) {
+        if (accepted && !recoverableHttpTransportError(error)) throw error
+        lastEvidenceError = error
+      }
+
+      if (!accepted && !sawRunning && Date.now() - started >= this.httpRecoveryGraceMs) throw originalError
+      await this.sleepImpl(this.httpRecoveryPollMs)
+    }
+
+    if (accepted || sawRunning) {
+      throw new Error(`${agentID} did not reach a confirmed final response before the recovery timeout`)
+    }
+    throw lastEvidenceError ?? originalError
   }
 
   async createSession(task) {
@@ -187,12 +326,31 @@ export class TaskLauncher {
       if (service) {
         const adopted = await service.adoptTaskSession(previousRun.sessionId, { title: taskSessionTitle(task) })
         if (adopted === false) throw taskLaunchError("session_unavailable", "The previous native Session can no longer be resumed")
+        try {
+          await service.models(previousRun.sessionId)
+        } catch (error) {
+          if (missingNativeSession(error)) throw sessionUnavailableError(error)
+          throw error
+        }
         if (modelChanged && model) await service.setModel(previousRun.sessionId, acpModelWireName(model))
         return { sessionId: previousRun.sessionId, transport: "acp", directory: task.workspace.path }
       }
       await entry.host.start()
+      let configOptions
+      try {
+        const loaded = await entry.host.request("session/load", {
+          sessionId: previousRun.sessionId,
+          cwd: task.workspace.path,
+          mcpServers: []
+        }, 300_000)
+        configOptions = loaded?.configOptions
+      } catch (error) {
+        if (missingNativeSession(error)) throw sessionUnavailableError(error)
+        throw error
+      }
       if (modelChanged && model) {
-        await entry.host.request("session/set_config_option", { sessionId: previousRun.sessionId, configId: "model", value: acpModelWireName(model) })
+        const value = acpModelValue(configOptions, model) || acpModelWireName(model)
+        await entry.host.request("session/set_config_option", { sessionId: previousRun.sessionId, configId: "model", value })
       }
       return { sessionId: previousRun.sessionId, transport: "acp", directory: task.workspace.path }
     }
@@ -236,8 +394,24 @@ export class TaskLauncher {
         headers: { "Content-Type": "application/json", ...(run.authorization ? { Authorization: run.authorization } : {}) },
         body: JSON.stringify({ parts: [{ type: "text", text: task.prompt }], model: promptModelBody(model), variant: model?.variant || undefined })
       }).then((response) => responseJSON(response, `Starting ${agentID} task`))
-        .then((result) => onCompleted?.({ outcome: outcomeFromResult(result) }))
-        .catch((error) => onFailed?.(error))
+        .then((result) => {
+          const failure = readableError(result?.info?.error)
+          if (failure) throw new Error(failure)
+          const outcome = outcomeFromResult(result)
+          if (!outcome) throw new Error(`${agentID} stopped before producing a final response`)
+          onCompleted?.({ outcome })
+        })
+        .catch(async (error) => {
+          if (!recoverableHttpTransportError(error)) {
+            onFailed?.(error)
+            return
+          }
+          try {
+            onCompleted?.(await this.#recoverHttpPrompt(task, run, agentID, error))
+          } catch (recoveryError) {
+            onFailed?.(recoveryError)
+          }
+        })
     }
   }
 

@@ -27,6 +27,13 @@ function latestRunForAgent(task, agentID, { requireSession = false } = {}) {
   return null
 }
 
+function happenedAfter(value, baseline) {
+  const timestamp = Date.parse(value || "")
+  if (!Number.isFinite(timestamp)) return false
+  const previous = Date.parse(baseline || "")
+  return !Number.isFinite(previous) || timestamp > previous
+}
+
 function validateRunOptions(options) {
   if (!options || typeof options !== "object" || Array.isArray(options)) {
     throw taskLaunchError("invalid_request", "Task Run options must be an object")
@@ -83,6 +90,10 @@ function requestedRole(task, options = {}) {
 function completedRun(run, result) {
   const outcome = boundTaskOutcome(result?.outcome)
   return outcome ? { ...run, outcome, outcomeVersion: 2 } : run
+}
+
+function sessionUnavailable(error) {
+  return error?.code === "session_unavailable"
 }
 
 export class TaskRunController {
@@ -207,33 +218,43 @@ export class TaskRunController {
     const model = requestedModel(task, agentID, options)
     await this.taskLauncher.validateModelSelection?.(agentID, model)
     const role = requestedRole(task, options)
-    const reuseSession = options.reuseSession === true
-    const reusableRun = reuseSession ? latestRunForAgent(task, agentID, { requireSession: true }) : null
-    if (reuseSession && !reusableRun) throw taskLaunchError("session_unavailable", "The requested native Session cannot be reused for this Run")
+    const requestedReuseSession = options.reuseSession === true
+    const reusableRun = requestedReuseSession ? latestRunForAgent(task, agentID, { requireSession: true }) : null
+    if (requestedReuseSession && !reusableRun) throw taskLaunchError("session_unavailable", "The requested native Session cannot be reused for this Run")
 
     const context = await this.#contextForTask(task)
     const directNativeContinuation = Boolean(reusableRun && previousRun && reusableRun.id === previousRun.id)
-    const needsHandoffContext = Boolean(previousRun && (!reuseSession || !directNativeContinuation))
-    const effectivePrompt = needsHandoffContext
+    const restoredAfterReusableRun = Boolean(
+      reusableRun && happenedAfter(task.restoredAt, reusableRun.finishedAt || reusableRun.startedAt)
+    )
+    let reuseSession = requestedReuseSession
+    let needsHandoffContext = Boolean(previousRun && (!reuseSession || !directNativeContinuation || restoredAfterReusableRun))
+    let effectivePrompt = needsHandoffContext
       ? formatTaskHandoff(context, { targetAgentId: agentID, role, instruction: userPrompt })
       : userPrompt
 
     const previousRunCount = taskRuns(task).length
-    const run = {
+    const baseRun = {
       id: this.runIDFactory(),
       sequence: previousRunCount + 1,
       agentId: agentID,
       model,
       role,
       contextRevision: Number(context.revision) || 0,
-      ...(needsHandoffContext ? { handoffFromRunId: previousRun?.id ?? null } : {}),
-      ...(reusableRun ? { resumedFromRunId: reusableRun.id ?? null } : {}),
       sessionId: null,
       transport: null,
       directory: task.workspace.path,
       prompt: userPrompt,
       startedAt: this.clock()
     }
+    const runForContinuity = () => ({
+      ...baseRun,
+      ...(needsHandoffContext ? { handoffFromRunId: previousRun?.id ?? null } : {}),
+      ...(reuseSession && reusableRun ? { resumedFromRunId: reusableRun.id ?? null } : {}),
+      ...(restoredAfterReusableRun && reuseSession ? { handoffReason: "workspace_restore", workspaceRestoredAt: task.restoredAt } : {})
+    })
+
+    let run = runForContinuity()
     let current = await this.taskStore.setRunState(taskID, { status: "starting", run })
     const currentForRun = () => ({
       ...current,
@@ -242,12 +263,36 @@ export class TaskRunController {
       prompt: effectivePrompt,
       run: current.run ? { ...current.run, agentId: agentID, model } : current.run
     })
+
     try {
-      const session = reuseSession
-        ? await this.taskLauncher.resumeSession(currentForRun(), reusableRun)
-        : await this.taskLauncher.createSession(currentForRun())
+      let session
+      if (reuseSession) {
+        try {
+          session = await this.taskLauncher.resumeSession(currentForRun(), reusableRun)
+        } catch (error) {
+          // Normal TaskDesk conversation follows the best available continuity path. A persisted
+          // native Session can disappear after a harness restart or history cleanup; that should not
+          // surface as a Session-id error to the product user. Explicit Advanced `mode: resume`
+          // remains strict and still reports the missing Session.
+          if (!sessionUnavailable(error) || options.mode === "resume") throw error
+          reuseSession = false
+          needsHandoffContext = Boolean(previousRun)
+          effectivePrompt = needsHandoffContext
+            ? formatTaskHandoff(context, { targetAgentId: agentID, role, instruction: userPrompt })
+            : userPrompt
+          run = {
+            ...runForContinuity(),
+            ...(previousRun ? { handoffReason: "session_unavailable" } : {})
+          }
+          current = await this.taskStore.setRunState(taskID, { status: "starting", run, expectedRunId: baseRun.id })
+          session = await this.taskLauncher.createSession(currentForRun())
+        }
+      } else {
+        session = await this.taskLauncher.createSession(currentForRun())
+      }
+
       const linkedRun = { ...run, sessionId: session.sessionId, transport: session.transport }
-      current = await this.taskStore.setRunState(taskID, { status: "starting", run: linkedRun, expectedRunId: run.id })
+      current = await this.taskStore.setRunState(taskID, { status: "starting", run: linkedRun, expectedRunId: baseRun.id })
       current = await this.taskStore.setRunState(taskID, { status: "running", run: linkedRun, expectedRunId: linkedRun.id })
       const onFailed = (error) => void this.#terminal(taskID, linkedRun, "failed", error)
       onFailed.onFailed = onFailed
@@ -278,10 +323,10 @@ export class TaskRunController {
       throw taskLaunchError("session_unavailable", "No native Session for the selected harness can be resumed. Start a fresh Run instead.")
     }
     const reuseSession = !explicitFresh && Boolean(reusableRun)
-    if (!explicitFresh && agentID === runAgent(task, task.run) && !reusableRun) {
-      throw taskLaunchError("session_unavailable", "The previous native Session cannot be resumed. Start a fresh Run explicitly instead.")
-    }
 
+    // Ordinary TaskDesk continuation is best-effort continuity. If the harness no longer has a
+    // resumable native Session, launch() creates a fresh Session and transfers persisted Task context.
+    // Only explicit Advanced mode=resume is strict about requiring the old native Session.
     return this.launch(taskID, { ...options, prompt: text, agentId: agentID, reuseSession })
   }
 }

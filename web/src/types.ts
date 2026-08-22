@@ -80,6 +80,12 @@ export type ModelOption = ModelSelection & {
   tools?: boolean
   attachments?: boolean
   isDefault?: boolean
+  /** Pricing metadata is optional because not every harness advertises it. Costs follow the
+   *  provider catalog's token-pricing units. `isFree` is set only when the catalog explicitly says
+   *  so or all advertised token costs are exactly zero; TaskDesk never guesses from a model name. */
+  isFree?: boolean
+  inputCost?: number
+  outputCost?: number
 }
 
 export type Session = {

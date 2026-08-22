@@ -1,0 +1,509 @@
+@import "./taskdesk-workspace-navigation.css";
+
+.tdw-mobile-back {
+  display: none;
+}
+
+@media (max-width: 780px) {
+  /* Mobile is an app-style two-screen flow. Keep a compact project rail on the list screen,
+     then let the selected Task take over the full dynamic viewport. */
+  .tdw-shell {
+    height: 100dvh;
+    min-height: 100dvh;
+    overscroll-behavior: none;
+  }
+
+  .tdw-topbar {
+    height: 56px;
+  }
+
+  .tdw-topbar .tdw-button,
+  .tdw-topbar .tdw-icon-button,
+  .tdw-more-menu button {
+    min-height: 40px;
+    touch-action: manipulation;
+  }
+
+  .tdw-topbar .tdw-icon-button {
+    width: 40px;
+    height: 40px;
+  }
+
+  .tdw-more-menu button {
+    font-size: 13px;
+  }
+
+  .tdw-layout {
+    height: calc(100dvh - 56px) !important;
+    grid-template-columns: minmax(0, 1fr) !important;
+    grid-template-rows: 58px minmax(0, 1fr);
+  }
+
+  /* Projects remain available on phone as a horizontal filter rail instead of disappearing. */
+  .tdw-project-column {
+    grid-column: 1;
+    grid-row: 1;
+    min-width: 0;
+    min-height: 58px;
+    max-height: 58px;
+    display: flex !important;
+    flex-direction: row !important;
+    align-items: center;
+    gap: 6px;
+    padding: 7px 8px;
+    overflow-x: auto;
+    overflow-y: hidden;
+    border-right: 0;
+    border-bottom: 1px solid var(--tdw-border);
+    background: var(--td3-veil);
+    scrollbar-width: none;
+    overscroll-behavior-x: contain;
+  }
+
+  .tdw-project-column::-webkit-scrollbar,
+  .tdw-detail-tabs::-webkit-scrollbar {
+    display: none;
+  }
+
+  .tdw-project-column > .tdw-column-heading,
+  .tdw-project-column > .tdw-project-footer {
+    display: none !important;
+  }
+
+  .tdw-project-column > .tdw-project-row,
+  .tdw-project-list .tdw-project-row {
+    width: auto;
+    min-width: max-content;
+    min-height: 42px;
+    flex: none;
+    grid-template-columns: 24px minmax(0, auto) auto;
+    gap: 6px;
+    margin: 0;
+    padding: 5px 9px;
+    border-color: var(--td3-border-soft);
+    border-radius: 11px;
+    background: var(--td3-raise-1);
+    touch-action: manipulation;
+  }
+
+  .tdw-project-list {
+    min-width: max-content;
+    flex: none;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 0;
+    overflow: visible;
+  }
+
+  .tdw-project-icon {
+    width: 24px;
+    height: 24px;
+    border-radius: 7px;
+  }
+
+  .tdw-project-row strong {
+    font-size: 12px;
+  }
+
+  .tdw-project-row small {
+    display: none;
+  }
+
+  .tdw-project-row b {
+    font-size: 10px;
+  }
+
+  .tdw-thread-column {
+    grid-column: 1 !important;
+    grid-row: 2;
+    min-height: 0;
+  }
+
+  .tdw-thread-column .tdw-column-heading {
+    min-height: 54px;
+    padding: 9px 12px;
+  }
+
+  .tdw-thread-column .tdw-column-heading h2 {
+    font-size: 16px;
+  }
+
+  .tdw-thread-column .tdw-column-heading span {
+    font-size: 10px;
+  }
+
+  .tdw-thread-search {
+    padding: 8px 10px;
+  }
+
+  .tdw-thread-search input {
+    height: 42px;
+    padding-inline: 12px;
+    font-size: 16px;
+  }
+
+  .tdw-thread-list {
+    padding: 8px;
+    overscroll-behavior-y: contain;
+  }
+
+  .tdw-thread-card {
+    min-height: 84px;
+    gap: 10px;
+    margin-bottom: 7px;
+    padding: 12px 11px;
+    border-radius: 12px;
+    touch-action: manipulation;
+  }
+
+  .tdw-thread-state {
+    min-height: 60px;
+  }
+
+  .tdw-thread-title strong {
+    font-size: 14px;
+  }
+
+  .tdw-thread-title time,
+  .tdw-thread-status {
+    font-size: 10px;
+  }
+
+  .tdw-thread-project {
+    font-size: 12px;
+  }
+
+  .tdw-thread-meta {
+    font-size: 11px;
+  }
+
+  /* A selected Task owns the phone screen. The global topbar would otherwise waste 56px above
+     Back + task header + tabs. The explicit .mobile-open state keeps this independent of selection. */
+  .tdw-main {
+    display: none !important;
+  }
+
+  .tdw-main.mobile-open {
+    display: flex !important;
+    position: absolute;
+    inset: 56px 0 0;
+    z-index: 20;
+  }
+
+  .tdw-shell:has(.tdw-main.mobile-open) .tdw-topbar {
+    display: none;
+  }
+
+  .tdw-shell:has(.tdw-main.mobile-open) .tdw-layout {
+    height: 100dvh !important;
+  }
+
+  .tdw-shell:has(.tdw-main.mobile-open) .tdw-main.mobile-open {
+    inset: 0;
+  }
+
+  .tdw-mobile-back {
+    flex: none;
+    min-height: 46px;
+    display: flex;
+    align-items: center;
+    padding: 0 13px;
+    border: 0;
+    border-bottom: 1px solid var(--tdw-border);
+    background: var(--td3-panel-2);
+    color: var(--td3-blue-text);
+    cursor: pointer;
+    font-size: 13px;
+    font-weight: 760;
+    text-align: left;
+    touch-action: manipulation;
+  }
+
+  .tdw-thread-header {
+    min-height: 62px !important;
+    padding: 7px 10px !important;
+    gap: 10px !important;
+  }
+
+  .tdw-thread-heading > span {
+    margin-bottom: 1px;
+    font-size: 8.5px;
+  }
+
+  .tdw-thread-title-edit h1 {
+    font-size: 15px !important;
+  }
+
+  .tdw-thread-title-edit button {
+    min-height: 34px;
+    padding-inline: 8px;
+    font-size: 10px;
+    touch-action: manipulation;
+  }
+
+  .tdw-thread-heading p {
+    display: none;
+  }
+
+  .tdw-live-state {
+    min-height: 30px;
+    padding-inline: 8px;
+    font-size: 9.5px;
+  }
+
+  .tdw-detail-tabs {
+    min-height: 44px;
+    align-items: stretch;
+    gap: 14px;
+    padding: 0 11px;
+    overflow-x: auto;
+    scrollbar-width: none;
+    overscroll-behavior-x: contain;
+  }
+
+  .tdw-detail-tabs button {
+    min-height: 44px;
+    flex: none;
+    font-size: 11px;
+    touch-action: manipulation;
+  }
+
+  .tdw-conversation-toolbar {
+    min-height: 0;
+    padding: 7px 10px;
+    gap: 7px;
+  }
+
+  .tdw-agent-control {
+    width: 100%;
+    display: grid !important;
+    grid-template-columns: minmax(110px, .82fr) minmax(150px, 1.18fr) !important;
+    gap: 8px !important;
+    padding-right: 0 !important;
+  }
+
+  .tdw-agent-control label {
+    min-width: 0;
+    display: flex !important;
+    flex-direction: column;
+    align-items: stretch !important;
+    gap: 3px !important;
+  }
+
+  .tdw-agent-control label > span {
+    font-size: 9px;
+  }
+
+  .tdw-agent-control select,
+  .tdw-model-trigger {
+    min-height: 40px !important;
+    font-size: 13px;
+    touch-action: manipulation;
+  }
+
+  .tdw-agent-control select {
+    width: 100%;
+    max-width: none;
+  }
+
+  .tdw-agent-control .tdw-model-picker.compact {
+    width: 100% !important;
+  }
+
+  .tdw-conversation-state {
+    display: none !important;
+  }
+
+  .tdw-work-thread-conversation .uw-transcript {
+    overscroll-behavior-y: contain;
+  }
+
+  .tdw-work-thread-conversation .uw-composer-shell {
+    width: calc(100% - 16px) !important;
+    margin-bottom: max(8px, env(safe-area-inset-bottom)) !important;
+  }
+
+  .tdw-work-thread-conversation .uw-composer-footer {
+    min-height: 46px;
+    padding-bottom: max(7px, env(safe-area-inset-bottom));
+  }
+
+  .tdw-work-thread-conversation .uw-composer-footer small,
+  .tdw-work-thread-conversation .uw-composer-directory {
+    display: none;
+  }
+
+  .tdw-work-thread-conversation .uw-composer-footer .uw-button {
+    min-height: 40px;
+    min-width: 72px;
+    touch-action: manipulation;
+  }
+
+  .tdw-work-thread-conversation .uw-activity-parts,
+  .tdw-work-thread-conversation .uw-reasoning,
+  .tdw-work-thread-conversation .uw-tool-card,
+  .tdw-work-thread-conversation .uw-tool-card pre {
+    max-width: 100% !important;
+  }
+
+  .tdw-work-thread-conversation .uw-tool-card pre,
+  .tdw-work-thread-conversation .uw-reasoning .uw-markdown {
+    font-size: 12px;
+  }
+
+  .tdw-attention {
+    max-height: 46%;
+    padding: 8px 10px;
+  }
+
+  .tdw-attention-options {
+    grid-template-columns: 1fr !important;
+  }
+
+  .tdw-attention-options button,
+  .tdw-attention-actions .tdw-button {
+    min-height: 42px;
+    touch-action: manipulation;
+  }
+
+  .tdw-changes-panel,
+  .tdw-result-panel,
+  .tdw-history-panel {
+    padding: 12px !important;
+    overscroll-behavior-y: contain;
+  }
+
+  .tdw-diff-file summary {
+    min-height: 44px;
+    touch-action: manipulation;
+  }
+
+  .tdw-diff-file summary strong {
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+
+  .tdw-result-hero p,
+  .tdw-result-actions span,
+  .tdw-history-copy p {
+    font-size: 12px;
+  }
+
+  .tdw-history-item .tdw-button,
+  .tdw-history-heading .tdw-button,
+  .tdw-result-actions .tdw-button {
+    min-height: 42px;
+    touch-action: manipulation;
+  }
+
+  /* New Task behaves like a keyboard-safe bottom sheet. Only the body scrolls, keeping
+     primary actions reachable when the software keyboard reduces the dynamic viewport. */
+  .tdw-modal-backdrop {
+    padding: 0;
+    align-items: end;
+  }
+
+  .tdw-modal {
+    width: 100%;
+    max-height: 94dvh !important;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden !important;
+    border-radius: 18px 18px 0 0;
+  }
+
+  .tdw-modal > header,
+  .tdw-modal > footer {
+    flex: none;
+  }
+
+  .tdw-modal > header > button {
+    width: 42px;
+    height: 42px;
+    touch-action: manipulation;
+  }
+
+  .tdw-modal-body {
+    min-height: 0;
+    overflow-y: auto !important;
+    overflow-x: visible !important;
+    overscroll-behavior-y: contain;
+  }
+
+  .tdw-modal > footer {
+    padding-bottom: max(14px, env(safe-area-inset-bottom));
+    background: var(--td3-panel-2);
+  }
+
+  .tdw-modal select,
+  .tdw-modal textarea,
+  .tdw-modal input {
+    min-height: 44px;
+    font-size: 16px;
+  }
+
+  .tdw-modal > footer .tdw-button {
+    min-height: 42px;
+    touch-action: manipulation;
+  }
+
+  .tdw-model-popover {
+    position: fixed !important;
+    left: 10px !important;
+    right: 10px !important;
+    top: auto !important;
+    bottom: max(10px, env(safe-area-inset-bottom)) !important;
+    width: auto !important;
+    max-height: min(72dvh, calc(100dvh - 20px)) !important;
+    border-radius: 16px !important;
+  }
+
+  .tdw-model-search-wrap input {
+    min-height: 40px;
+    font-size: 16px;
+  }
+
+  .tdw-model-main {
+    min-height: 58px;
+    padding: 10px 11px;
+    touch-action: manipulation;
+  }
+
+  .tdw-model-name strong {
+    font-size: 13px;
+  }
+
+  .tdw-model-copy > small {
+    font-size: 10.5px;
+  }
+
+  .tdw-model-variants button {
+    min-height: 32px;
+    padding-inline: 10px;
+    font-size: 10px;
+    touch-action: manipulation;
+  }
+}
+
+@media (max-width: 430px) {
+  .tdw-top-actions .tdw-button.primary {
+    width: 40px;
+    padding: 0;
+    font-size: 0;
+  }
+
+  .tdw-top-actions .tdw-button.primary svg {
+    width: 18px;
+    height: 18px;
+  }
+
+  .tdw-agent-control {
+    grid-template-columns: minmax(96px, .76fr) minmax(146px, 1.24fr) !important;
+  }
+
+  .tdw-detail-summary-strip,
+  .tdw-result-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+}

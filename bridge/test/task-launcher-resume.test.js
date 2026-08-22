@@ -14,12 +14,16 @@ function task(overrides = {}) {
   }
 }
 
-test("ACP resume adopts the previous native Session instead of creating another one", async () => {
+test("ACP resume adopts and verifies the previous native Session instead of creating another one", async () => {
   const calls = []
   const service = {
     async adoptTaskSession(sessionID, details) {
       calls.push(["adopt", sessionID, details])
       return true
+    },
+    async models(sessionID) {
+      calls.push(["probe", sessionID])
+      return [{ value: "openai/gpt-x" }]
     },
     async setModel(sessionID, model) {
       calls.push(["model", sessionID, model])
@@ -42,6 +46,7 @@ test("ACP resume adopts the previous native Session instead of creating another 
   assert.equal(resumed.transport, "acp")
   assert.deepEqual(calls, [
     ["adopt", "native-1", { title: "Task task-123 · Run 2" }],
+    ["probe", "native-1"],
     ["model", "native-1", "openai/gpt-x"]
   ])
 })

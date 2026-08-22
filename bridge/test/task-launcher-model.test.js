@@ -67,6 +67,12 @@ test("ACP task launch uses the bridge session service so the task remains visibl
     },
     async promptAndWait(sessionID, text) {
       calls.push(["prompt", sessionID, text])
+    },
+    async messages() {
+      return [
+        { info: { role: "user" }, parts: [{ type: "text", text: "Implement the fix" }] },
+        { info: { role: "assistant" }, parts: [{ type: "text", text: "Done." }] }
+      ]
     }
   }
   const daemon = {
@@ -165,7 +171,12 @@ test("managed HTTP task launch sends selected model and variant", async () => {
     if (url.includes("/session?")) {
       return { ok: true, async json() { return { id: "http-session" } } }
     }
-    return { ok: true, async json() { return { info: { id: "message-1" }, parts: [] } } }
+    return {
+      ok: true,
+      async json() {
+        return { info: { id: "message-1" }, parts: [{ type: "text", text: "Done." }] }
+      }
+    }
   }
   const host = {
     readinessHost: "127.0.0.1",
@@ -194,7 +205,7 @@ test("managed HTTP task launch sends selected model and variant", async () => {
   assert.equal(promptBody.variant, "high")
 })
 
-test("managed HTTP task outcome also refuses pre-tool narration without a final answer", async () => {
+test("managed HTTP task reports a clear failure when the agent stops after activity without a final answer", async () => {
   const host = { readinessHost: "127.0.0.1", port: 4096, async start() {} }
   const daemon = {
     hostEntry: () => ({ kind: "http", host }),
@@ -210,22 +221,90 @@ test("managed HTTP task outcome also refuses pre-tool narration without a final 
           info: { id: "message-1" },
           parts: [
             { type: "text", text: "I will inspect this first." },
-            { type: "tool", tool: "Edit", state: { status: "completed" } }
+            { type: "tool", tool: "Edit", state: { status: "completed" } },
+            { type: "step-finish", reason: "stop" }
           ]
         }
       }
     })
   })
-  let completed
+  const failures = []
 
   await launcher.startPrompt(task({ agentId: "opencode" }), {
     sessionId: "http-session",
     base: "http://127.0.0.1:4096",
     authorization: undefined
-  }, { onCompleted: (result) => { completed = result } })
+  }, { onFailed: (error) => failures.push(error.message) })
   await new Promise((resolve) => setImmediate(resolve))
 
-  assert.deepEqual(completed, { outcome: undefined })
+  assert.deepEqual(failures, ["opencode stopped before producing a final response"])
+})
+
+test("managed HTTP task recovers when the waiting fetch fails after OpenCode accepted the prompt", async () => {
+  const host = { readinessHost: "127.0.0.1", port: 4096, async start() {} }
+  const daemon = {
+    hostEntry: () => ({ kind: "http", host }),
+    registry: { host: () => ({ state: "available" }) }
+  }
+  let statusReads = 0
+  let messageReads = 0
+  const fetchImpl = async (url, options = {}) => {
+    if (options.method === "POST" && url.includes("/message?directory=")) throw new TypeError("fetch failed")
+    if (url.includes("/session/status?")) {
+      statusReads += 1
+      return {
+        ok: true,
+        async json() { return { "http-session": { type: statusReads === 1 ? "busy" : "idle" } } }
+      }
+    }
+    if (url.includes("/session/http-session/message?limit=40")) {
+      messageReads += 1
+      return {
+        ok: true,
+        async json() {
+          return messageReads === 1
+            ? [
+                { info: { role: "user" }, parts: [{ type: "text", text: "Implement the fix" }] },
+                { info: { role: "assistant" }, parts: [{ type: "reasoning", text: "Working" }] }
+              ]
+            : [
+                { info: { role: "user" }, parts: [{ type: "text", text: "Implement the fix" }] },
+                { info: { role: "assistant" }, parts: [
+                  { type: "reasoning", text: "Working" },
+                  { type: "step-finish", reason: "stop" },
+                  { type: "text", text: "Recovered final response." }
+                ] }
+              ]
+        }
+      }
+    }
+    throw new Error(`unexpected request ${url}`)
+  }
+  const launcher = new TaskLauncher({
+    daemon,
+    fetchImpl,
+    httpRecoveryPollMs: 0,
+    httpRecoveryGraceMs: 20,
+    httpRecoveryTimeoutMs: 500,
+    sleepImpl: async () => {}
+  })
+  const completed = []
+  const failures = []
+
+  await launcher.startPrompt(task({ agentId: "opencode" }), {
+    sessionId: "http-session",
+    base: "http://127.0.0.1:4096",
+    authorization: undefined
+  }, {
+    onCompleted: (result) => completed.push(result),
+    onFailed: (error) => failures.push(error.message)
+  })
+  await new Promise((resolve) => setTimeout(resolve, 20))
+
+  assert.deepEqual(failures, [])
+  assert.deepEqual(completed, [{ outcome: "Recovered final response." }])
+  assert.ok(statusReads >= 2)
+  assert.ok(messageReads >= 2)
 })
 
 test("managed HTTP task launch reports a provider failure after the prompt is accepted", async () => {

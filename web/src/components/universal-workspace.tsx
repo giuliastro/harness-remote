@@ -39,6 +39,7 @@ import {
   SettingsIcon,
   StopCircleIcon
 } from "../Icons"
+import { TaskDeskConversation } from "./taskdesk-conversation"
 import { TaskDeskMessageContent } from "./taskdesk-message-content"
 
 const REFRESH_INTERVAL_MS = 60_000
@@ -1629,66 +1630,32 @@ export function UniversalWorkspace({
               </div>
 
               {detailTab === "conversation" ? (
-                <>
-                  <div className="uw-transcript" ref={transcriptRef}>
-                    {detailLoading || !detailReady ? (
-                      <div className="uw-empty-panel"><LoadingIcon size={22} /><strong>Loading session…</strong></div>
-                    ) : (
-                      <>
-                        {messageHasMore ? (
-                          <div className="uw-history-loader">
-                            <BeautifulButton disabled={loadingOlderMessages} onClick={() => void loadOlderMessages()}>
-                              {loadingOlderMessages ? <LoadingIcon size={15} /> : null}
-                              {loadingOlderMessages ? "Loading older messages…" : "Load older messages"}
-                            </BeautifulButton>
-                          </div>
-                        ) : null}
-                        {detail.messages.length === 0 && !sessionWaiting ? (
-                          <div className="uw-empty-panel"><ChatIcon size={24} /><strong>This session has no messages yet.</strong></div>
-                        ) : detail.messages.map((message) => (
-                          <MessageBubble
-                            key={message.info.id}
-                            message={message}
-                            agentLabel={selected.agent.label}
-                            agentBackend={selected.agent.backend}
-                          />
-                        ))}
-                      </>
-                    )}
-                    {sessionWaiting ? (
-                      <div className="uw-session-typing" role="status" aria-label="Waiting for agent response">
-                        <span />
-                        <span />
-                        <span />
-                      </div>
-                    ) : null}
-                  </div>
-
-                  <div className="uw-composer-shell">
-                    <textarea
-                      value={composer}
-                      onChange={(event) => setComposer(event.target.value)}
-                      onKeyDown={(event) => {
-                        if (event.key === "Enter" && !event.shiftKey) {
-                          event.preventDefault()
-                          void sendPrompt()
-                        }
-                      }}
-                      placeholder={`Continue this ${selected.agent.label} session…`}
-                      rows={3}
+                <TaskDeskConversation
+                  messages={detail.messages}
+                  agentLabel={selected.agent.label}
+                  agentBackend={selected.agent.backend}
+                  loading={detailLoading}
+                  waiting={sessionWaiting}
+                  ready={detailReady}
+                  hasMore={messageHasMore}
+                  loadingOlder={loadingOlderMessages}
+                  onLoadOlder={loadOlderMessages}
+                  draft={composer}
+                  onDraftChange={setComposer}
+                  onSend={sendPrompt}
+                  sending={sending}
+                  placeholder={`Continue this ${selected.agent.label} session…`}
+                  emptyText="This session has no messages yet."
+                  directory={selected.session.directory}
+                  renderMessage={(message) => (
+                    <MessageBubble
+                      key={message.info.id}
+                      message={message}
+                      agentLabel={selected.agent.label}
+                      agentBackend={selected.agent.backend}
                     />
-                    <div className="uw-composer-footer">
-                      <span className="uw-composer-directory">{selected.session.directory}</span>
-                      <div>
-                        <small>Shift+Enter for newline</small>
-                        <BeautifulButton variant="primary" disabled={!composer.trim() || sending || !detailReady} onClick={() => void sendPrompt()}>
-                          {sending ? <LoadingIcon size={15} /> : "↑"}
-                          {sending ? "Sending" : "Send"}
-                        </BeautifulButton>
-                      </div>
-                    </div>
-                  </div>
-                </>
+                  )}
+                />
               ) : detailLoading || !detailReady ? (
                 <div className="uw-changes-pane">
                   <div className="uw-empty-panel"><LoadingIcon size={22} /><strong>Loading session…</strong></div>

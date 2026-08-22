@@ -1,0 +1,142 @@
+/* Task conversation stabilization. Keep this file limited to layout containment and popover anchoring;
+   conversation semantics live in the shared Session/Task components, not in CSS workarounds. */
+
+.tdw-work-thread-conversation .uw-message {
+  width: min(1280px, 100%);
+}
+
+.tdw-work-thread-conversation .uw-composer-shell {
+  width: min(1280px, calc(100% - 32px));
+}
+
+/* Do not use content-visibility/intrinsic-height guesses in a live transcript. Estimated off-screen
+   heights made scrollHeight move while streaming and caused the scrollbar to jump even when the
+   user had intentionally scrolled away from the bottom. */
+.tdw-work-thread-conversation .uw-message,
+.tdw-work-thread-conversation .tdw-conversation-event {
+  content-visibility: visible;
+  contain-intrinsic-size: none;
+}
+
+.tdw-work-thread-conversation .uw-message-parts,
+.tdw-work-thread-conversation .uw-activity-group,
+.tdw-work-thread-conversation .uw-activity-parts,
+.tdw-work-thread-conversation .uw-reasoning,
+.tdw-work-thread-conversation .uw-reasoning .td3-markdown,
+.tdw-work-thread-conversation .uw-tool-stack,
+.tdw-work-thread-conversation .uw-tool-card {
+  min-width: 0;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+.tdw-work-thread-conversation .uw-activity-group,
+.tdw-work-thread-conversation .uw-activity-parts,
+.tdw-work-thread-conversation .uw-reasoning {
+  overflow: hidden;
+  isolation: isolate;
+}
+
+.tdw-work-thread-conversation .uw-activity-parts > *,
+.tdw-work-thread-conversation .uw-reasoning .td3-markdown > * {
+  min-width: 0;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+.tdw-work-thread-conversation .uw-reasoning a,
+.tdw-work-thread-conversation .uw-activity-parts a {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.tdw-work-thread-conversation .uw-reasoning img,
+.tdw-work-thread-conversation .uw-activity-parts img {
+  max-width: 100%;
+  height: auto;
+}
+
+.tdw-work-thread-conversation .uw-reasoning table,
+.tdw-work-thread-conversation .uw-activity-parts table {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+.tdw-work-thread-conversation .uw-reasoning pre,
+.tdw-work-thread-conversation .uw-activity-parts pre {
+  width: 100%;
+  max-width: 100%;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+/* Working state belongs in the compact chat chrome. Never sweep a colour animation across the
+   transcript or inject an animated block under the assistant name. */
+.tdw-work-thread-conversation .uw-thinking-shimmer,
+.tdw-work-thread-conversation .tdw-turn-working {
+  display: none !important;
+}
+
+.tdw-work-thread-conversation .tdw-conversation-state {
+  min-height: 28px;
+  padding: 4px 9px;
+  border-color: var(--td3-border-soft);
+  background: transparent;
+  box-shadow: none;
+}
+
+.tdw-work-thread-conversation .tdw-conversation-state.working i {
+  animation: tdw-status-pulse 1.5s ease-in-out infinite;
+  box-shadow: none;
+}
+
+.tdw-work-thread-conversation .tdw-conversation-state.attention {
+  border-color: var(--td3-yellow-border);
+  color: var(--td3-yellow-text);
+  background: var(--td3-yellow-soft);
+}
+
+@keyframes tdw-status-pulse {
+  0%, 100% { opacity: .35; transform: scale(.8); }
+  50% { opacity: 1; transform: scale(1); }
+}
+
+/* Anchor the model popover to the whole conversation toolbar so it never crosses the Task drawer. */
+.tdw-conversation-toolbar {
+  position: relative;
+  overflow: visible;
+  z-index: 30;
+}
+
+.tdw-conversation-toolbar .tdw-model-control,
+.tdw-conversation-toolbar .tdw-model-picker {
+  position: static;
+}
+
+.tdw-conversation-toolbar .tdw-model-popover {
+  position: absolute;
+  top: calc(100% + 5px);
+  left: 12px;
+  right: 12px;
+  width: auto;
+  max-height: min(660px, calc(100dvh - 190px));
+  z-index: 500;
+}
+
+@media (max-width: 780px) {
+  .tdw-work-thread-conversation .uw-message { width: 100%; }
+  .tdw-work-thread-conversation .uw-composer-shell { width: calc(100% - 20px); }
+  .tdw-conversation-toolbar .tdw-model-picker { position: relative; }
+  .tdw-conversation-toolbar .tdw-model-popover {
+    position: fixed;
+    left: 10px;
+    right: 10px;
+    top: 72px;
+    width: auto;
+    max-height: calc(100dvh - 92px);
+  }
+}

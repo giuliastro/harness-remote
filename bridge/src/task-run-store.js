@@ -10,6 +10,10 @@ function updateRunHistory(task, run) {
   return runs
 }
 
+function persistedError(error) {
+  return error ? { message: error instanceof Error ? error.message : String(error) } : null
+}
+
 export class TaskRunStore extends TaskStore {
   async setRunState(taskID, { status, run, error = null, expectedRunId }) {
     await this.load()
@@ -29,7 +33,12 @@ export class TaskRunStore extends TaskStore {
     }
 
     const nextRun = structuredClone(run ?? task.run)
-    if (nextRun) nextRun.status = status
+    const nextError = persistedError(error)
+    if (nextRun) {
+      nextRun.status = status
+      if (status === "failed") nextRun.error = nextError
+      else if (Object.prototype.hasOwnProperty.call(nextRun, "error")) delete nextRun.error
+    }
     if ((status === "completed" || status === "failed") && nextRun && !nextRun.finishedAt) {
       nextRun.finishedAt = this.clock()
     }
@@ -42,7 +51,7 @@ export class TaskRunStore extends TaskStore {
       status,
       run: nextRun,
       runs,
-      error: error ? { message: error instanceof Error ? error.message : String(error) } : null,
+      error: nextError,
       finishedAt: status === "starting" ? null : task.finishedAt ?? null,
       updatedAt: this.clock()
     }

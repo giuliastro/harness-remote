@@ -51,15 +51,20 @@ test("older pages prepend without duplicating the cursor boundary", () => {
   assert.equal(merged[2], currentC)
 })
 
-test("Session conversation exposes bounded older-history loading without scroll jumps", () => {
+test("Session conversation exposes bounded older-history loading through the shared conversation core", () => {
   const workspace = readFileSync(new URL("./components/universal-workspace.tsx", import.meta.url), "utf8")
+  const conversation = readFileSync(new URL("./components/taskdesk-conversation.tsx", import.meta.url), "utf8")
 
   assert.match(workspace, /api\.loadMessagePage\(item\.config, item\.session\.id, item\.session\.directory\)/)
   assert.match(workspace, /silent \? mergeLatestMessagePage\(current\.messages, messagePage\.messages\) : messagePage\.messages/)
   assert.match(workspace, /async function loadOlderMessages\(\)/)
   assert.match(workspace, /prependOlderMessagePage\(current\.messages, page\.messages\)/)
-  assert.match(workspace, /messageHasMore \? \(/)
-  assert.match(workspace, /Load older messages/)
-  assert.match(workspace, /previousTop \+ \(transcriptRef\.current\.scrollHeight - previousHeight\)/)
-  assert.match(workspace, /if \(preserveTranscriptPosition\.current\)/)
+  assert.match(workspace, /onLoadOlder=\{loadOlderMessages\}/)
+  assert.match(workspace, /hasMore=\{messageHasMore\}/)
+
+  assert.match(conversation, /Load older messages/)
+  assert.match(conversation, /const previousHeight = transcript\?\.scrollHeight \?\? 0/)
+  assert.match(conversation, /const previousTop = transcript\?\.scrollTop \?\? 0/)
+  assert.match(conversation, /current\.scrollTop = previousTop \+ \(current\.scrollHeight - previousHeight\)/)
+  assert.match(conversation, /preservingOlderRef\.current = true/)
 })
