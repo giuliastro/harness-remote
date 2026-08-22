@@ -42,12 +42,33 @@ export class MachineDaemon {
     return entry.modelCatalog.list(options)
   }
 
-  async validateModel(id, model) {
-    if (!model) return
+  modelDiagnostics(id) {
+    const entry = this.hostEntry(id)
+    if (!entry) return undefined
+    return entry.modelCatalog?.diagnostics?.() ?? {
+      source: "unavailable",
+      cachedModels: 0,
+      refreshedAt: null,
+      ageMs: null,
+      inFlight: false,
+      lastAttemptAt: null,
+      lastError: "Model discovery is not configured"
+    }
+  }
+
+  async resolveModel(id, model) {
+    if (!model) return null
     const entry = this.hostEntry(id)
     if (!entry) throw new Error(`Unknown agent: ${id}`)
     if (!entry.modelCatalog) throw new Error(`Agent ${id} does not expose model discovery`)
+    if (typeof entry.modelCatalog.resolve === "function") return entry.modelCatalog.resolve(model)
     await entry.modelCatalog.validate(model)
+    return model
+  }
+
+  async validateModel(id, model) {
+    if (!model) return
+    await this.resolveModel(id, model)
   }
 
   async startManagedHosts() {
@@ -59,6 +80,21 @@ export class MachineDaemon {
   }
 
   snapshot() { return this.registry.snapshot() }
+
+  diagnostics() {
+    return {
+      state: "running",
+      machine: this.snapshot().machine,
+      agents: this.snapshot().agents.map((agent) => {
+        const entry = this.hostEntry(agent.id)
+        return {
+          ...agent,
+          process: entry?.host?.diagnostics?.() ?? { processID: entry?.host?.processID },
+          modelCatalog: entry?.modelCatalog?.diagnostics?.() ?? null
+        }
+      })
+    }
+  }
 
   close() {
     for (const entry of this.hosts.values()) {
@@ -118,7 +154,23 @@ export function createMachineDaemonServer({
   const launcher = taskLauncher ?? new TaskLauncher({ daemon, acpService })
   const runs = taskRunController ?? new TaskRunController({ taskStore: tasks, taskLauncher: launcher, acpService })
   const threads = workThreadController ?? new WorkThreadController({ taskStore: tasks, taskRunController: runs })
-  const innerServer = createRouter({ daemon, config, primaryAgentID, bridgeServer, acpBridgeServer, taskStore: tasks, projectCatalog: projects, worktreeManager: worktrees })
+  const innerServer = createRouter({
+    daemon,
+    config,
+    primaryAgentID,
+    bridgeServer,
+    acpBridgeServer,
+    taskStore: tasks,
+    projectCatalog: projects,
+    worktreeManager: worktrees,
+    diagnostics: () => ({
+      ...daemon.diagnostics(),
+      services: Object.fromEntries([
+        [primaryAgentID, bridgeServer.acpService?.diagnostics?.()],
+        ...[...scopedAcpServers.entries()].map(([agentID, server]) => [agentID, server.acpService?.diagnostics?.()])
+      ].filter(([, value]) => value))
+    })
+  })
   const launchServer = createLaunchServer({ innerServer, config, taskRunController: runs })
   const modelServer = createModelServer({ innerServer: launchServer, config, daemon, taskStore: tasks })
   const finishServer = createFinishServer({ innerServer: modelServer, config, taskStore: tasks, worktreeManager: worktrees, taskRunController: runs })

@@ -21,6 +21,13 @@ import java.util.concurrent.atomic.AtomicBoolean;
 
 @CapacitorPlugin(name = "LiveEvents")
 public class LiveEventsPlugin extends Plugin {
+    private static final int CONNECT_TIMEOUT_MS = 10000;
+    // The daemon writes an SSE heartbeat every 10 seconds. A 30 second period with no bytes means
+    // the socket is stale after sleep, backgrounding, Wi-Fi handoff or a brief network loss. The
+    // previous infinite read timeout could leave Android permanently blocked in readLine() while the
+    // native Session kept working. Let the existing reconnect loop own that failure instead.
+    private static final int STALL_TIMEOUT_MS = 30000;
+
     private final ExecutorService executor = Executors.newSingleThreadExecutor();
     private final AtomicBoolean stopped = new AtomicBoolean(true);
     private volatile Future<?> task;
@@ -77,8 +84,8 @@ public class LiveEventsPlugin extends Plugin {
                     String encoded = Base64.encodeToString(credentials.getBytes(StandardCharsets.UTF_8), Base64.NO_WRAP);
                     current.setRequestProperty("Authorization", "Basic " + encoded);
                 }
-                current.setConnectTimeout(10000);
-                current.setReadTimeout(0);
+                current.setConnectTimeout(CONNECT_TIMEOUT_MS);
+                current.setReadTimeout(STALL_TIMEOUT_MS);
                 int status = current.getResponseCode();
                 String contentType = current.getContentType();
                 if (status != HttpURLConnection.HTTP_OK || contentType == null || !contentType.toLowerCase().contains("text/event-stream")) {

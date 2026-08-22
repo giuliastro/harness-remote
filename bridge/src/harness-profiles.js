@@ -26,6 +26,9 @@ export const HARNESS_PROFILES = {
     args: ["acp"],
     permissionMode: "allow",
     historyLoader: createOmpHistoryLoader(),
+    // OMP exposes thinking as a real ACP config option. We probe only ids the running adapter
+    // actually advertises; this list is a routing hint, never a source of invented variants.
+    modelVariantConfigIDs: ["thinking"],
     capabilities: {
       ...COMMON_CAPABILITIES,
       models: true,
@@ -56,6 +59,9 @@ export const HARNESS_PROFILES = {
     preferListedTitles: true,
     // Keep the replay tail for the one real session/load used when the bridge takes ownership to prompt.
     replaySettleMs: 250,
+    // Current PI ACP calls this `thinkingLevel`. The aliases are harmless compatibility hints for
+    // adapter versions that rename the wire id; a variant is emitted only when that option exists.
+    modelVariantConfigIDs: ["thinkingLevel", "thinking_level", "thinking"],
     capabilities: {
       ...COMMON_CAPABILITIES,
       models: true,
@@ -81,6 +87,9 @@ export const HARNESS_PROFILES = {
     permissionMode: "allow",
     preserveListedTimestamps: true,
     reloadOnHistoryRefresh: false,
+    // The current adapter exposes model/mode but no low/medium/high reasoning-effort selector.
+    // Keep this empty rather than fabricating OpenCode-style variants.
+    modelVariantConfigIDs: [],
     capabilities: {
       ...COMMON_CAPABILITIES,
       // The adapter advertises a `model` config option like OMP and PI do; its values are bare ids
@@ -119,6 +128,8 @@ export const HARNESS_PROFILES = {
     historyLoader: createCodexHistoryLoader(),
     preserveListedTimestamps: true,
     reloadOnHistoryRefresh: false,
+    // The official adapter exposes reasoning effort independently from model selection.
+    modelVariantConfigIDs: ["reasoning_effort", "reasoningEffort"],
     capabilities: {
       ...COMMON_CAPABILITIES,
       // The adapter advertises model ids as bare ids rather than `provider/model`, which is

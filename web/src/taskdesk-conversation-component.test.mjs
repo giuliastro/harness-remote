@@ -4,6 +4,7 @@ import test from "node:test"
 
 const component = readFileSync(new URL("./components/taskdesk-conversation.tsx", import.meta.url), "utf8")
 const nativeSessions = readFileSync(new URL("./components/universal-workspace.tsx", import.meta.url), "utf8")
+const taskClient = readFileSync(new URL("./taskClient.ts", import.meta.url), "utf8")
 
 test("shared conversation owns transcript ordering and the composer", () => {
   assert.match(component, /messages\.map\(\(message\) =>/)
@@ -51,4 +52,12 @@ test("shared conversation owns working state presentation", () => {
   assert.match(component, /waiting/)
   assert.match(component, /sending/)
   assert.match(component, /Loading conversation/)
+})
+
+test("conversation mutations reconcile ambiguous transport outcomes instead of blindly resending", () => {
+  assert.match(taskClient, /clientRequestId/)
+  assert.match(taskClient, /PENDING_CONTINUE_STORAGE_PREFIX/)
+  assert.match(taskClient, /hasClientRequest\(latest, pending\.clientRequestId\)/)
+  assert.match(taskClient, /\/v1\/work-threads\/\$\{encodeURIComponent\(taskId\)\}/)
+  assert.match(taskClient, /if \(!isActiveTask\(latest\)\) return latest/)
 })

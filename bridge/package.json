@@ -10,6 +10,7 @@
   "scripts": {
     "start": "node src/cli.js",
     "daemon": "node src/daemon-cli.js",
+    "audit:probe": "node scripts/backend-audit-probe.mjs",
     "test": "node --test"
   },
   "engines": {

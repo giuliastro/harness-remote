@@ -21,6 +21,13 @@ export class TaskRunStore extends TaskStore {
     if (index < 0) throw new Error(`Unknown task: ${taskID}`)
     const task = this.tasks[index]
 
+    // A mobile retry can arrive after the first HTTP response was lost. Once a client request id has
+    // been persisted on any Run, starting that same mutation again is a replay, not a new prompt.
+    if (status === "starting" && run?.clientRequestId) {
+      const accepted = (Array.isArray(task.runs) ? task.runs : []).find((entry) => entry?.clientRequestId === run.clientRequestId)
+      if (accepted) return structuredClone(task)
+    }
+
     if (expectedRunId !== undefined && task.run?.id !== expectedRunId) return structuredClone(task)
     if (status === "starting" && !["draft", "starting", "completed", "failed", "cancelled"].includes(task.status)) {
       throw new Error("Task cannot start a new run from its current state")

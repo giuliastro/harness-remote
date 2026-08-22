@@ -6,6 +6,9 @@ import type { ModelOption, ModelSelection, ServerConfig } from "./types"
 
 const BROWSER_MACHINE_REQUEST_TIMEOUT_MS = 12_000
 const LIST_STALE_GRACE_MS = 45_000
+const MODEL_CATALOG_POLL_MS = 750
+const MODEL_CATALOG_LOAD_TIMEOUT_MS = 120_000
+const PENDING_CONTINUE_STORAGE_PREFIX = "harness-remote:pending-continue:"
 
 export type MachineProject = {
   id: string
@@ -29,6 +32,7 @@ export type MachineTaskRun = {
   agentId?: string
   model?: ModelSelection | null
   role?: string
+  clientRequestId?: string
   sessionId?: string | null
   sessionID?: string | null
   status?: string
@@ -127,6 +131,8 @@ export type AgentModelCatalog = {
   stale: boolean
   refreshedAt: string | null
   error?: string
+  loading?: boolean
+  source?: string
 }
 
 export type TaskContinueInput = {
@@ -135,6 +141,7 @@ export type TaskContinueInput = {
   model?: ModelSelection | null
   mode?: "fresh" | "resume"
   fresh?: boolean
+  clientRequestId?: string
 }
 
 export type TaskCheckpointRestoreResponse = {
@@ -148,11 +155,75 @@ type TaskRequestOptions = {
 }
 
 type TimedCache<T> = { value: T; at: number }
+type PendingContinue = { fingerprint: string; clientRequestId: string }
 const projectListCache = new Map<string, TimedCache<MachineProject[]>>()
 const taskListCache = new Map<string, TimedCache<MachineTask[]>>()
+const modelCatalogRequests = new Map<string, Promise<AgentModelCatalog>>()
+const pendingContinueRequests = new Map<string, PendingContinue>()
 
 function cacheKey(config: ServerConfig): string {
   return `${machineBaseUrl(config)}|${config.username || ""}`
+}
+
+function pendingContinueKey(config: ServerConfig, taskId: string): string {
+  return `${cacheKey(config)}|${taskId}`
+}
+
+function pendingContinueStorageKey(key: string): string {
+  return `${PENDING_CONTINUE_STORAGE_PREFIX}${encodeURIComponent(key)}`
+}
+
+function storage(): Storage | null {
+  try { return typeof globalThis.localStorage === "undefined" ? null : globalThis.localStorage } catch { return null }
+}
+
+function readPendingContinue(key: string): PendingContinue | null {
+  const memory = pendingContinueRequests.get(key)
+  if (memory) return memory
+  const store = storage()
+  if (!store) return null
+  try {
+    const parsed = JSON.parse(store.getItem(pendingContinueStorageKey(key)) || "null") as PendingContinue | null
+    if (!parsed || typeof parsed.fingerprint !== "string" || typeof parsed.clientRequestId !== "string") return null
+    pendingContinueRequests.set(key, parsed)
+    return parsed
+  } catch {
+    return null
+  }
+}
+
+function rememberPendingContinue(key: string, pending: PendingContinue): PendingContinue {
+  pendingContinueRequests.set(key, pending)
+  try { storage()?.setItem(pendingContinueStorageKey(key), JSON.stringify(pending)) } catch {}
+  return pending
+}
+
+function clearPendingContinue(key: string): void {
+  pendingContinueRequests.delete(key)
+  try { storage()?.removeItem(pendingContinueStorageKey(key)) } catch {}
+}
+
+function newClientRequestId(): string {
+  return globalThis.crypto?.randomUUID?.() ?? `hr-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`
+}
+
+function continueFingerprint(input: TaskContinueInput): string {
+  return JSON.stringify({
+    prompt: input.prompt,
+    agentId: input.agentId ?? null,
+    model: input.model ?? null,
+    mode: input.mode ?? null,
+    fresh: input.fresh ?? null
+  })
+}
+
+function hasClientRequest(task: MachineTask, clientRequestId: string): boolean {
+  if (task.run?.clientRequestId === clientRequestId) return true
+  return Array.isArray(task.runs) && task.runs.some((run) => run?.clientRequestId === clientRequestId)
+}
+
+function isActiveTask(task: MachineTask): boolean {
+  return task.status === "starting" || task.status === "running"
 }
 
 function readRecent<T>(cache: Map<string, TimedCache<T>>, key: string): T | null {
@@ -271,12 +342,31 @@ function requireModelCatalog(value: unknown, path: string): AgentModelCatalog {
   if (!value || typeof value !== "object" || !Array.isArray((value as AgentModelCatalog).models)) {
     throw new Error(`${path} returned an incompatible response.`)
   }
-  const catalog = value as AgentModelCatalog
+  const catalog = value as AgentModelCatalog & { lastError?: string }
   return {
     models: catalog.models,
     stale: Boolean(catalog.stale),
     refreshedAt: typeof catalog.refreshedAt === "string" ? catalog.refreshedAt : null,
-    ...(typeof catalog.error === "string" ? { error: catalog.error } : {})
+    ...(catalog.loading === true ? { loading: true } : {}),
+    ...(typeof catalog.source === "string" ? { source: catalog.source } : {}),
+    ...(typeof catalog.error === "string" ? { error: catalog.error } : typeof catalog.lastError === "string" ? { error: catalog.lastError } : {})
+  }
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => globalThis.setTimeout(resolve, ms))
+}
+
+async function loadAgentModelCatalog(config: ServerConfig, agentId: string): Promise<AgentModelCatalog> {
+  const path = `/v1/agents/${encodeURIComponent(agentId)}/models?waitMs=4000`
+  const started = Date.now()
+  while (true) {
+    const catalog = requireModelCatalog(await machineRequest<unknown>(config, path), path)
+    if (!catalog.loading) return catalog
+    if (Date.now() - started >= MODEL_CATALOG_LOAD_TIMEOUT_MS) {
+      throw new Error(`${agentId} model discovery is still starting after ${MODEL_CATALOG_LOAD_TIMEOUT_MS / 1000}s.`)
+    }
+    await sleep(MODEL_CATALOG_POLL_MS)
   }
 }
 
@@ -339,8 +429,16 @@ export const taskClient = {
   },
 
   async listAgentModels(config: ServerConfig, agentId: string): Promise<AgentModelCatalog> {
-    const path = `/v1/agents/${encodeURIComponent(agentId)}/models`
-    return requireModelCatalog(await machineRequest<unknown>(config, path), path)
+    const key = `${cacheKey(config)}|${agentId}`
+    const existing = modelCatalogRequests.get(key)
+    if (existing) return existing
+    const operation = loadAgentModelCatalog(config, agentId)
+    let wrapped: Promise<AgentModelCatalog>
+    wrapped = operation.finally(() => {
+      if (modelCatalogRequests.get(key) === wrapped) modelCatalogRequests.delete(key)
+    })
+    modelCatalogRequests.set(key, wrapped)
+    return wrapped
   },
 
   async createTask(config: ServerConfig, input: { projectId: string; agentId: string; prompt: string; model?: ModelSelection }): Promise<MachineTask> {
@@ -355,17 +453,53 @@ export const taskClient = {
     return machineRequest<MachineTask>(config, `/v1/tasks/${encodeURIComponent(taskId)}/launch`, { method: "POST", body: {} })
   },
 
-  continueTask(config: ServerConfig, taskId: string, input: string | TaskContinueInput): Promise<MachineTask> {
+  async continueTask(config: ServerConfig, taskId: string, input: string | TaskContinueInput): Promise<MachineTask> {
     const body = typeof input === "string" ? { prompt: input } : input
-    return machineRequest<MachineTask>(config, `/v1/tasks/${encodeURIComponent(taskId)}/continue`, { method: "POST", body })
+    const key = pendingContinueKey(config, taskId)
+    const fingerprint = continueFingerprint(body)
+    const remembered = readPendingContinue(key)
+    const pending = remembered && remembered.fingerprint === fingerprint
+      ? remembered
+      : rememberPendingContinue(key, {
+          fingerprint,
+          clientRequestId: body.clientRequestId?.trim() || newClientRequestId()
+        })
+    const requestBody: TaskContinueInput = { ...body, clientRequestId: pending.clientRequestId }
+    try {
+      const next = normalizeTaskOutcomes(await machineRequest<MachineTask>(config, `/v1/tasks/${encodeURIComponent(taskId)}/continue`, { method: "POST", body: requestBody }))
+      clearPendingContinue(key)
+      return next
+    } catch (error) {
+      // The POST may have crossed the daemon acceptance boundary even if Android/browser lost its
+      // response. Reconcile before surfacing a transport error. The persisted clientRequestId makes
+      // this unambiguous even when the native Run has already completed.
+      try {
+        const latest = normalizeTaskOutcomes(await machineRequest<MachineTask>(config, `/v1/work-threads/${encodeURIComponent(taskId)}`))
+        if (hasClientRequest(latest, pending.clientRequestId)) {
+          clearPendingContinue(key)
+          return latest
+        }
+      } catch {}
+      throw error
+    }
   },
 
   context(config: ServerConfig, taskId: string): Promise<TaskContext> {
     return machineRequest<TaskContext>(config, `/v1/tasks/${encodeURIComponent(taskId)}/context`)
   },
 
-  cancelWorkThread(config: ServerConfig, taskId: string): Promise<MachineTask> {
-    return machineRequest<MachineTask>(config, `/v1/work-threads/${encodeURIComponent(taskId)}/cancel`, { method: "POST", body: {} })
+  async cancelWorkThread(config: ServerConfig, taskId: string): Promise<MachineTask> {
+    try {
+      return normalizeTaskOutcomes(await machineRequest<MachineTask>(config, `/v1/work-threads/${encodeURIComponent(taskId)}/cancel`, { method: "POST", body: {} }))
+    } catch (error) {
+      // Native abort may have succeeded just before the HTTP response was lost. A terminal
+      // authoritative Work Thread beats a stale red transport error; an active one does not.
+      try {
+        const latest = normalizeTaskOutcomes(await machineRequest<MachineTask>(config, `/v1/work-threads/${encodeURIComponent(taskId)}`))
+        if (!isActiveTask(latest)) return latest
+      } catch {}
+      throw error
+    }
   },
 
   async listCheckpoints(config: ServerConfig, taskId: string): Promise<TaskCheckpoint[]> {

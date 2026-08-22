@@ -62,6 +62,30 @@ export class AcpClient extends EventEmitter {
     return Number.isInteger(this.#child?.pid) ? this.#child.pid : undefined
   }
 
+  diagnostics() {
+    const now = Date.now()
+    const pendingRequests = [...this.#pending.values()].map((pending) => ({
+      method: pending.method,
+      ...(pending.sessionID ? { sessionID: pending.sessionID } : {}),
+      ageMs: Math.max(0, now - pending.startedAt),
+      idleMs: Math.max(0, now - pending.lastActivityAt),
+      timeoutMs: pending.timeoutMs
+    }))
+    const listenerCounts = Object.fromEntries(
+      this.eventNames().map((eventName) => [String(eventName), this.listenerCount(eventName)])
+    )
+    return {
+      state: this.#starting ? "starting" : this.processID ? "running" : "stopped",
+      processID: this.processID,
+      startInFlight: Boolean(this.#starting),
+      pendingRequestCount: pendingRequests.length,
+      oldestPendingMs: pendingRequests.length ? Math.max(...pendingRequests.map((request) => request.ageMs)) : 0,
+      pendingRequests,
+      listenerCount: Object.values(listenerCounts).reduce((total, count) => total + count, 0),
+      listenerCounts
+    }
+  }
+
   async start() {
     if (this.#child) return
     if (this.#starting) return this.#starting
@@ -147,12 +171,16 @@ export class AcpClient extends EventEmitter {
     const id = this.#nextID++
     const message = JSON.stringify({ jsonrpc: "2.0", id, method, params })
     return new Promise((resolve, reject) => {
+      const startedAt = Date.now()
       const pending = {
         resolve,
         reject,
         timer: undefined,
         method,
         sessionID: method === "session/prompt" && typeof params?.sessionId === "string" ? params.sessionId : undefined,
+        startedAt,
+        lastActivityAt: startedAt,
+        timeoutMs,
         resetTimeout: undefined
       }
       const expire = () => {
@@ -160,6 +188,7 @@ export class AcpClient extends EventEmitter {
         reject(new Error(`ACP adapter request timed out: ${method}`))
       }
       pending.resetTimeout = () => {
+        pending.lastActivityAt = Date.now()
         clearTimeout(pending.timer)
         pending.timer = setTimeout(expire, timeoutMs)
       }

@@ -132,7 +132,8 @@ async function main() {
       agent: new AcpClient({ command: launch.command, args: launch.args, permissionMode: profile.permissionMode, preferredAuthMethod: profile.authMethod }),
       agentID: profile.id,
       directory: config.roots?.[0] ?? process.cwd(),
-      stateDirectory: config.stateDirectory
+      stateDirectory: config.stateDirectory,
+      variantConfigIDs: profile.modelVariantConfigIDs
     })
     // Load persisted technical-session ids before the server starts, so they never leak into lists.
     await modelCatalog.preloadState()

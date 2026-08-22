@@ -28,8 +28,40 @@ test("GET agent models returns daemon refresh result", async () => {
     assert.equal(response.status, 200)
     const body = await response.json()
     assert.deepEqual(body.models.map((model) => model.modelID), ["gpt-x"])
-    assert.deepEqual(calls, [{ agentID: "pi", options: { allowStale: true } }])
+    assert.deepEqual(calls, [{ agentID: "pi", options: { allowStale: true, refresh: false } }])
   } finally { await close(server) }
+})
+
+test("cold ACP catalog returns loading before the caller transport budget expires", async () => {
+  let release
+  const pending = new Promise((resolve) => { release = resolve })
+  let calls = 0
+  const daemon = {
+    listModels() {
+      calls += 1
+      return pending
+    },
+    modelDiagnostics() {
+      return { source: "acp-config-options", inFlight: true, refreshedAt: null, lastError: null }
+    }
+  }
+  const innerServer = http.createServer((_request, response) => { response.writeHead(500); response.end("should not be reached") })
+  const server = createAgentModelServer({ innerServer, config: config(), daemon, taskStore: {} })
+  const base = await listen(server)
+  try {
+    const started = Date.now()
+    const response = await fetch(`${base}/v1/agents/pi/models?waitMs=15`, { headers: auth() })
+    assert.equal(response.status, 202)
+    assert.ok(Date.now() - started < 500)
+    assert.equal(response.headers.get("retry-after"), "1")
+    const body = await response.json()
+    assert.equal(body.loading, true)
+    assert.equal(body.source, "acp-config-options")
+    assert.equal(calls, 1)
+  } finally {
+    release({ models: [], stale: false, refreshedAt: null })
+    await close(server)
+  }
 })
 
 test("task launch is rejected when selected model disappeared", async () => {

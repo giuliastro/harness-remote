@@ -55,6 +55,78 @@ test("ACP model discovery keeps one catalog load per adapter lifetime unless exp
   }
 })
 
+test("concurrent ACP model picker opens join one technical catalog operation", async () => {
+  const stateDirectory = await mkdtemp(path.join(tmpdir(), "harness-model-single-flight-"))
+  try {
+    const agent = new FakeAcp()
+    const originalRequest = agent.request.bind(agent)
+    agent.request = async (...args) => {
+      await new Promise((resolve) => setTimeout(resolve, 10))
+      return originalRequest(...args)
+    }
+    const catalog = new AcpAgentModelCatalog({ agent, agentID: "pi", directory: "/repo", stateDirectory })
+    const results = await Promise.all(Array.from({ length: 25 }, () => catalog.list({ allowStale: false })))
+    assert.equal(agent.newCalls, 1)
+    assert.equal(agent.loadCalls, 0)
+    assert.equal(results.every((result) => result.models.length === 2), true)
+    assert.equal(catalog.diagnostics().inFlight, false)
+  } finally {
+    await rm(stateDirectory, { recursive: true, force: true })
+  }
+})
+
+test("ACP variants are emitted only from model-specific config options advertised at runtime", async () => {
+  const stateDirectory = await mkdtemp(path.join(tmpdir(), "harness-model-variants-"))
+  try {
+    let currentModel = "provider/one"
+    const optionsFor = (model = currentModel) => [{
+      id: "model",
+      currentValue: model,
+      options: [
+        { value: "provider/one", name: "One" },
+        { value: "provider/two", name: "Two" }
+      ]
+    }, {
+      id: "thinking",
+      currentValue: model === "provider/one" ? "medium" : "off",
+      options: model === "provider/one"
+        ? [{ value: "low" }, { value: "medium" }, { value: "high" }]
+        : [{ value: "off" }, { value: "high" }]
+    }]
+    const agent = new EventEmitter()
+    agent.start = async () => {}
+    agent.close = () => {}
+    agent.request = async (method, params) => {
+      if (method === "session/new") return { sessionId: "catalog-session", configOptions: optionsFor() }
+      if (method === "session/set_config_option" && params.configId === "model") {
+        currentModel = params.value
+        return { configOptions: optionsFor() }
+      }
+      if (method === "session/set_config_option" && params.configId === "thinking") return { configOptions: optionsFor() }
+      throw new Error(`unexpected ${method}/${params?.configId || ""}`)
+    }
+    const catalog = new AcpAgentModelCatalog({
+      agent,
+      agentID: "omp",
+      directory: "/repo",
+      stateDirectory,
+      variantConfigIDs: ["thinking", "invented-option"]
+    })
+    const result = await catalog.list({ allowStale: false })
+    assert.deepEqual(
+      result.models.map((model) => `${model.modelID}:${model.variant || "base"}`),
+      ["one:base", "two:base", "one:low", "one:medium", "one:high", "two:off", "two:high"]
+    )
+    assert.equal(result.models.filter((model) => model.variant).every((model) => model.variantConfigId === "thinking"), true)
+    assert.equal(result.models.some((model) => model.variantConfigId === "invented-option"), false)
+    assert.equal(currentModel, "provider/one", "catalog probing must restore the technical session model")
+    const selected = await catalog.resolve({ providerID: "provider", modelID: "two", variant: "high" })
+    assert.equal(selected.variantConfigId, "thinking")
+  } finally {
+    await rm(stateDirectory, { recursive: true, force: true })
+  }
+})
+
 test("ACP catalog invalidates its in-memory models when the dedicated adapter exits", async () => {
   const stateDirectory = await mkdtemp(path.join(tmpdir(), "harness-model-catalog-exit-"))
   try {
@@ -111,7 +183,7 @@ test("persisted ACP catalog session is hidden immediately after daemon restart",
   }
 })
 
-test("HTTP model discovery refreshes managed harness each time", async () => {
+test("HTTP model discovery uses a short TTL and explicit refresh invalidates it", async () => {
   let calls = 0
   let models = { one: { id: "one", name: "One" } }
   const host = { host: "127.0.0.1", port: 4096, async start() {} }
@@ -122,10 +194,12 @@ test("HTTP model discovery refreshes managed harness each time", async () => {
       return { providers: [{ id: "openai", name: "OpenAI", models }], default: { openai: Object.keys(models)[0] } }
     }
   })
-  const catalog = new HttpAgentModelCatalog({ host, agentID: "opencode", fetchImpl })
+  const catalog = new HttpAgentModelCatalog({ host, agentID: "opencode", fetchImpl, ttlMs: 30_000 })
   assert.deepEqual((await catalog.list()).models.map((model) => model.modelID), ["one"])
   models = { two: { id: "two", name: "Two" } }
-  assert.deepEqual((await catalog.list()).models.map((model) => model.modelID), ["two"])
+  assert.deepEqual((await catalog.list()).models.map((model) => model.modelID), ["one"], "picker reopen should use the warm catalog")
+  assert.equal(calls, 1)
+  assert.deepEqual((await catalog.list({ refresh: true })).models.map((model) => model.modelID), ["two"])
   assert.equal(calls, 2)
 })
 

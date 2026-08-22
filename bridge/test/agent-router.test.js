@@ -124,7 +124,7 @@ test("known unsupported ACP detail reads return empty data without hitting the b
 
 test("a non-primary ACP agent is dispatched to its own bridge instead of the primary sessions", async () => {
   const primary = new BridgeServer()
-  primary.on("request", (request, response) => response.end("primary"))
+  primary.on("request", (_request, response) => response.end("primary"))
   const pi = new BridgeServer()
   pi.on("request", (request, response) => {
     response.writeHead(200, { "Content-Type": "application/json" })
@@ -256,7 +256,44 @@ test("failed first-use managed HTTP startup returns 503 without proxying", async
   }
 })
 
-test("unavailable and unknown agents fail without contacting a managed host", async () => {
+test("unavailable managed HTTP agents retry their idempotent start path", async () => {
+  const state = { value: "unavailable" }
+  let starts = 0
+  let proxied = 0
+  const managed = {
+    async start() {
+      starts += 1
+      state.value = "available"
+    }
+  }
+  const daemon = {
+    hostEntry(id) { return id === "opencode" ? { id, kind: "http", host: managed } : undefined },
+    registry: { host(id) { return id === "opencode" ? { state: state.value } : undefined } },
+    snapshot() { return { agents: [{ id: "opencode", backend: "opencode", state: state.value }] } }
+  }
+  const server = createAgentRoutingServer({
+    daemon,
+    config: { username: "", password: "", corsOrigins: [] },
+    primaryAgentID: "codex",
+    bridgeServer: new BridgeServer(),
+    proxyRequest: async ({ response }) => {
+      proxied += 1
+      response.writeHead(200)
+      response.end()
+    }
+  })
+  const port = await listen(server)
+  try {
+    const response = await fetch(`http://127.0.0.1:${port}/v1/agents/opencode/session`)
+    assert.equal(response.status, 200)
+    assert.equal(starts, 1)
+    assert.equal(proxied, 1)
+  } finally {
+    await close(server)
+  }
+})
+
+test("unavailable and unknown agents fail without contacting a managed host when restart cannot recover", async () => {
   let proxied = 0
   const managed = { readinessHost: "127.0.0.1", port: 4096 }
   const server = createAgentRoutingServer({
@@ -278,40 +315,60 @@ test("unavailable and unknown agents fail without contacting a managed host", as
   }
 })
 
-test("disconnecting an SSE client closes the managed upstream connection", async () => {
-  let upstreamClosed = false
+test("managed SSE reconnect soak keeps one upstream subscription until daemon shutdown", async () => {
+  let upstreamConnections = 0
+  let activeUpstream = 0
+  let maxActiveUpstream = 0
+  let upstreamClosed = 0
   const upstream = http.createServer((request, response) => {
+    upstreamConnections += 1
+    activeUpstream += 1
+    maxActiveUpstream = Math.max(maxActiveUpstream, activeUpstream)
     response.writeHead(200, { "Content-Type": "text/event-stream" })
-    response.write(": connected\n\n")
-    request.once("close", () => { upstreamClosed = true })
+    response.write(": upstream connected\n\n")
+    request.once("close", () => {
+      activeUpstream -= 1
+      upstreamClosed += 1
+    })
   })
   const upstreamPort = await listen(upstream)
   const server = routedServer({ readinessHost: "127.0.0.1", port: upstreamPort })
   const port = await listen(server)
-  try {
-    await new Promise((resolve, reject) => {
-      const request = http.get(`http://127.0.0.1:${port}/v1/agents/opencode/global/event`, (response) => {
-        response.once("data", () => {
-          request.destroy()
-          resolve()
-        })
-      })
-      request.once("error", (error) => {
-        if (error.code !== "ECONNRESET") reject(error)
+  const connectAndDrop = () => new Promise((resolve, reject) => {
+    const request = http.get(`http://127.0.0.1:${port}/v1/agents/opencode/global/event`, (response) => {
+      response.once("data", () => {
+        request.destroy()
+        resolve()
       })
     })
-    for (let attempt = 0; attempt < 20 && !upstreamClosed; attempt += 1) {
-      await new Promise((resolve) => setTimeout(resolve, 10))
+    request.once("error", (error) => {
+      if (error.code !== "ECONNRESET") reject(error)
+    })
+  })
+  try {
+    await connectAndDrop()
+    for (let attempt = 0; attempt < 50 && upstreamConnections === 0; attempt += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 5))
     }
-    assert.equal(upstreamClosed, true)
+    assert.equal(upstreamConnections, 1)
+
+    for (let index = 0; index < 25; index += 1) await connectAndDrop()
+    await new Promise((resolve) => setTimeout(resolve, 25))
+    assert.equal(upstreamConnections, 1, "downstream reconnects must not multiply OpenCode GlobalBus subscribers")
+    assert.equal(maxActiveUpstream, 1)
+    assert.equal(upstreamClosed, 0, "the daemon owns the upstream stream across phone reconnects")
   } finally {
     await close(server)
+    for (let attempt = 0; attempt < 50 && upstreamClosed === 0; attempt += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 5))
+    }
+    assert.equal(upstreamClosed, 1, "daemon shutdown must release the one upstream listener")
     await close(upstream)
   }
 })
 
 test("an upstream reset is isolated to the proxied request", async () => {
-  const upstream = http.createServer((request, response) => {
+  const upstream = http.createServer((_request, response) => {
     response.writeHead(200, { "Content-Type": "application/json" })
     response.write("{")
     response.socket.destroy()

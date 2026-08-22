@@ -136,6 +136,19 @@ export class ManagedOpenCodeHost extends EventEmitter {
     return Number.isInteger(this.child.pid) ? this.child.pid : undefined
   }
 
+  diagnostics() {
+    const listenerCounts = Object.fromEntries(
+      this.eventNames().map((eventName) => [String(eventName), this.listenerCount(eventName)])
+    )
+    return {
+      state: this.starting ? "starting" : this.processID ? "running" : "stopped",
+      processID: this.processID,
+      startInFlight: Boolean(this.starting),
+      listenerCount: Object.values(listenerCounts).reduce((total, count) => total + count, 0),
+      listenerCounts
+    }
+  }
+
   async start() {
     if (this.child && this.child.exitCode == null && this.child.signalCode == null) return
     if (this.starting) return this.starting

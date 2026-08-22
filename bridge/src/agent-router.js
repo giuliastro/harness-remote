@@ -1,10 +1,11 @@
 import http from "node:http"
 import { allowedOrigin, applyCorsHeaders, matchesCredentials, writeJSON } from "./http-policy.js"
+import { ManagedEventFanout } from "./managed-event-fanout.js"
 import { normalizeTaskModel } from "./task-model.js"
 
 const AGENT_ROUTE = /^\/v1\/agents\/([^/]+)(\/.*)?$/
 const TASK_WORKTREE_ROUTE = /^\/v1\/tasks\/([^/]+)\/worktree$/
-const MACHINE_ROUTES = new Set(["/v1/projects", "/v1/tasks"])
+const MACHINE_ROUTES = new Set(["/v1/projects", "/v1/tasks", "/v1/diagnostics"])
 const HOP_BY_HOP = new Set([
   "connection",
   "keep-alive",
@@ -16,7 +17,9 @@ const HOP_BY_HOP = new Set([
   "upgrade"
 ])
 const STREAMING_PATHS = new Set(["/global/event", "/v1/events"])
-const DEFAULT_PROXY_TIMEOUT_MS = 15_000
+// This is an inactivity watchdog for managed HTTP requests, not a model-turn wall clock. The old
+// 15s value expired before Android's own 30s transport window and manufactured daemon-side 502s.
+const DEFAULT_PROXY_TIMEOUT_MS = 30_000
 
 function proxyHeaders(headers, authorization) {
   const result = {}
@@ -177,7 +180,9 @@ export function proxyManagedHttpRequest({
 async function ensureManagedHttpAvailable(daemon, entry, agentID) {
   const state = daemon.registry.host(agentID)?.state
   if (state === "available") return { ok: true }
-  if (state !== "configured") return { ok: false }
+  // A failed lazy start is recoverable. `unavailable` must not become a permanent circuit breaker:
+  // the next authenticated request is allowed to retry the idempotent managed-host start path.
+  if (state !== "configured" && state !== "unavailable") return { ok: false }
   try {
     await entry.host.start?.()
   } catch (error) {
@@ -197,15 +202,57 @@ export function createAgentRoutingServer({
   taskStore,
   projectCatalog,
   worktreeManager,
+  diagnostics,
   createServer = http.createServer,
   proxyRequest = proxyManagedHttpRequest
 }) {
-  return createServer(async (request, response) => {
+  const activeRequests = new Map()
+  const eventFanouts = new Map()
+  let nextRequestID = 1
+
+  const routerDiagnostics = () => ({
+    inFlightRequests: [...activeRequests.values()].map((entry) => ({
+      ...entry,
+      durationMs: Math.max(0, Date.now() - entry.startedAtEpoch)
+    })).map(({ startedAtEpoch, ...entry }) => entry),
+    eventStreams: Object.fromEntries([...eventFanouts.entries()].map(([key, fanout]) => [key, fanout.diagnostics()]))
+  })
+
+  const server = createServer(async (request, response) => {
     const requestURL = new URL(request.url ?? "/", `http://${request.headers.host ?? "localhost"}`)
+    let trackedRequestID
+    if (requestURL.pathname !== "/v1/diagnostics") {
+      trackedRequestID = nextRequestID++
+      activeRequests.set(trackedRequestID, {
+        id: trackedRequestID,
+        method: request.method ?? "GET",
+        path: requestURL.pathname,
+        startedAt: new Date().toISOString(),
+        startedAtEpoch: Date.now()
+      })
+      let finished = false
+      const finishTracking = () => {
+        if (finished) return
+        finished = true
+        activeRequests.delete(trackedRequestID)
+        response.off("finish", finishTracking)
+        response.off("close", finishTracking)
+      }
+      response.once("finish", finishTracking)
+      response.once("close", finishTracking)
+    }
+
     const worktreeMatch = TASK_WORKTREE_ROUTE.exec(requestURL.pathname)
     if (MACHINE_ROUTES.has(requestURL.pathname) || worktreeMatch) {
       if (!authenticateMachineRequest(request, response, config)) return
       try {
+        if (request.method === "GET" && requestURL.pathname === "/v1/diagnostics") {
+          writeJSON(response, 200, {
+            ...(typeof diagnostics === "function" ? diagnostics() : {}),
+            router: routerDiagnostics()
+          })
+          return
+        }
         if (request.method === "GET" && requestURL.pathname === "/v1/projects") {
           const projects = await projectCatalog()
           writeJSON(response, 200, { projects })
@@ -328,6 +375,21 @@ export function createAgentRoutingServer({
       return
     }
 
+    if (request.method === "GET" && STREAMING_PATHS.has(route.path)) {
+      const key = `${route.agentID}:${route.path}${route.search}`
+      let fanout = eventFanouts.get(key)
+      if (!fanout) {
+        fanout = new ManagedEventFanout({
+          host: entry.host,
+          path: `${route.path}${route.search}`,
+          ensureAvailable: () => ensureManagedHttpAvailable(daemon, entry, route.agentID)
+        })
+        eventFanouts.set(key, fanout)
+      }
+      fanout.subscribe(request, response)
+      return
+    }
+
     try {
       await proxyRequest({ request, response, route, host: entry.host })
     } catch (error) {
@@ -335,4 +397,10 @@ export function createAgentRoutingServer({
       else response.destroy(error instanceof Error ? error : undefined)
     }
   })
+
+  server.on("close", () => {
+    for (const fanout of eventFanouts.values()) fanout.close()
+    eventFanouts.clear()
+  })
+  return server
 }

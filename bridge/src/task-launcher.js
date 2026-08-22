@@ -206,6 +206,20 @@ export class TaskLauncher {
     return entry
   }
 
+  async #resolvedModel(agentID, model) {
+    if (!model || typeof this.daemon.resolveModel !== "function") return model
+    return this.daemon.resolveModel(agentID, model)
+  }
+
+  async #applyAcpVariant(entry, sessionID, resolvedModel) {
+    if (!resolvedModel?.variant || !resolvedModel?.variantConfigId) return
+    await entry.host.request("session/set_config_option", {
+      sessionId: sessionID,
+      configId: resolvedModel.variantConfigId,
+      value: resolvedModel.variant
+    })
+  }
+
   async validateModelSelection(agentID, model) {
     if (!model) return
     await this.#entry(agentID)
@@ -276,6 +290,7 @@ export class TaskLauncher {
     const agentID = runAgentID(task)
     const model = runModel(task)
     const entry = await this.#entry(agentID)
+    const resolvedModel = entry.kind === "acp" ? await this.#resolvedModel(agentID, model) : model
     if (!task.workspace?.path) throw taskLaunchError("workspace_required", "Task workspace is not prepared")
     const title = taskSessionTitle(task)
 
@@ -284,6 +299,7 @@ export class TaskLauncher {
       if (service) {
         const session = await service.createSession({ directory: task.workspace.path, title, model: acpModelWireName(model) })
         if (!session?.id) throw new Error(`Agent ${agentID} did not return a session id`)
+        await this.#applyAcpVariant(entry, session.id, resolvedModel)
         return { sessionId: session.id, transport: "acp", directory: task.workspace.path }
       }
       await entry.host.start()
@@ -291,6 +307,7 @@ export class TaskLauncher {
       if (!result?.sessionId) throw new Error(`Agent ${agentID} did not return a session id`)
       const value = acpModelValue(result.configOptions, model)
       if (value) await entry.host.request("session/set_config_option", { sessionId: result.sessionId, configId: "model", value })
+      await this.#applyAcpVariant(entry, result.sessionId, resolvedModel)
       return { sessionId: result.sessionId, transport: "acp", directory: task.workspace.path }
     }
 
@@ -318,6 +335,7 @@ export class TaskLauncher {
     if (!previousRun?.sessionId) throw taskLaunchError("session_unavailable", "The previous Task session is unavailable")
     if (previousRun.agentId && previousRun.agentId !== agentID) throw taskLaunchError("session_unavailable", "A native Session can only be resumed by the harness that owns it")
     const entry = await this.#entry(agentID)
+    const resolvedModel = entry.kind === "acp" ? await this.#resolvedModel(agentID, model) : model
     if (!task.workspace?.path) throw taskLaunchError("workspace_required", "Task workspace is not prepared")
     const modelChanged = !sameModel(previousRun.model ?? null, model)
 
@@ -332,7 +350,10 @@ export class TaskLauncher {
           if (missingNativeSession(error)) throw sessionUnavailableError(error)
           throw error
         }
-        if (modelChanged && model) await service.setModel(previousRun.sessionId, acpModelWireName(model))
+        if (modelChanged && model) {
+          await service.setModel(previousRun.sessionId, acpModelWireName(model))
+          await this.#applyAcpVariant(entry, previousRun.sessionId, resolvedModel)
+        }
         return { sessionId: previousRun.sessionId, transport: "acp", directory: task.workspace.path }
       }
       await entry.host.start()
@@ -351,6 +372,7 @@ export class TaskLauncher {
       if (modelChanged && model) {
         const value = acpModelValue(configOptions, model) || acpModelWireName(model)
         await entry.host.request("session/set_config_option", { sessionId: previousRun.sessionId, configId: "model", value })
+        await this.#applyAcpVariant(entry, previousRun.sessionId, resolvedModel)
       }
       return { sessionId: previousRun.sessionId, transport: "acp", directory: task.workspace.path }
     }

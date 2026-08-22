@@ -29,23 +29,34 @@ function completedTask() {
   }
 }
 
-test("Continue validates the selected target model before persisting a new Run", async () => {
-  const task = completedTask()
-  let writes = 0
+test("Continue persists an acceptance Run before model validation and fails that same Run when the model disappeared", async () => {
+  let task = completedTask()
+  const writes = []
+  let createCalls = 0
+  let promptCalls = 0
   const error = new Error("Selected model is no longer available: anthropic/removed")
   error.code = "model_unavailable"
   const controller = new TaskRunController({
+    runIDFactory: () => "run-2",
     taskStore: {
       async list() { return [] },
       async get() { return structuredClone(task) },
-      async setRunState() { writes += 1; throw new Error("must not persist") }
+      async setRunState(_taskID, update) {
+        writes.push(structuredClone({ status: update.status, run: update.run, expectedRunId: update.expectedRunId, error: update.error?.message }))
+        const nextRun = { ...(update.run ?? task.run), status: update.status }
+        if (update.error) nextRun.error = { message: update.error.message }
+        task = { ...task, status: update.status, run: nextRun }
+        return structuredClone(task)
+      }
     },
     taskLauncher: {
       async validateModelSelection(agentID, model) {
         assert.equal(agentID, "claude")
         assert.deepEqual(model, { providerID: "anthropic", modelID: "removed" })
         throw error
-      }
+      },
+      async createSession() { createCalls += 1; throw new Error("must not create a Session") },
+      async startPrompt() { promptCalls += 1; throw new Error("must not prompt") }
     }
   })
 
@@ -58,7 +69,19 @@ test("Continue validates the selected target model before persisting a new Run",
     }),
     (failure) => failure.code === "model_unavailable"
   )
-  assert.equal(writes, 0)
+
+  assert.equal(writes.length, 2)
+  assert.equal(writes[0].status, "starting")
+  assert.equal(writes[0].run.id, "run-2")
+  assert.equal(writes[0].run.agentId, "claude")
+  assert.deepEqual(writes[0].run.model, { providerID: "anthropic", modelID: "removed" })
+  assert.equal(writes[0].run.sessionId, null)
+  assert.equal(writes[1].status, "failed")
+  assert.equal(writes[1].run.id, "run-2")
+  assert.equal(writes[1].expectedRunId, "run-2")
+  assert.match(writes[1].error, /no longer available/)
+  assert.equal(createCalls, 0)
+  assert.equal(promptCalls, 0)
 })
 
 test("model_unavailable is a stable handoff conflict instead of a generic server error", () => {
