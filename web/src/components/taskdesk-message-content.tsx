@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState } from "react"
-import ReactMarkdown from "react-markdown"
+import ReactMarkdown, { type Components } from "react-markdown"
 import remarkGfm from "remark-gfm"
+import { copyToClipboard } from "../clipboard"
 import { activityLabel, groupConversationParts, type ConversationPartGroup } from "../conversation-parts"
+import { CheckIcon, CopyIcon } from "../Icons"
 import type { MessageEnvelope, MessagePart } from "../types"
 
 const REMARK_PLUGINS = [remarkGfm]
@@ -12,6 +14,65 @@ type TaskDeskEnvelope = MessageEnvelope & { taskdesk?: { active?: boolean } }
 
 function isInternalProtocolPart(part: MessagePart): boolean {
   return INTERNAL_PROTOCOL_PARTS.has(part.type)
+}
+
+/** Reads the source text back out of a rendered subtree, so a copy carries what the agent wrote
+ *  rather than what Markdown turned it into. Walking the hast node avoids reaching into React
+ *  children, which by this point are elements and no longer strings. */
+function hastText(node: unknown): string {
+  if (!node || typeof node !== "object") return ""
+  const element = node as { type?: string; value?: string; children?: unknown[] }
+  if (element.type === "text") return element.value ?? ""
+  if (!Array.isArray(element.children)) return ""
+  return element.children.map(hastText).join("")
+}
+
+/**
+ * `clipboard.ts` was written for this app's plain-http LAN case, where `navigator.clipboard` is
+ * absent rather than merely refused, and until now only the retired 2.x shell used it: 3.0 shipped
+ * with no way to copy anything out of a conversation at all. Every reference chat client offers this
+ * on both code blocks and whole messages, and for an agent that answers with commands and patches it
+ * is the most common thing to want from a reply.
+ */
+function CopyButton({ text, label }: { text: string; label: string }) {
+  const [copied, setCopied] = useState(false)
+
+  useEffect(() => {
+    if (!copied) return
+    const timer = window.setTimeout(() => setCopied(false), 1600)
+    return () => window.clearTimeout(timer)
+  }, [copied])
+
+  // An empty copy would silently replace whatever the user already had on the clipboard.
+  if (!text.trim()) return null
+
+  return (
+    <button
+      type="button"
+      className={`uw-copy-button${copied ? " copied" : ""}`}
+      // The label carries the state because the icon alone does not: a checkmark is not text.
+      title={copied ? "Copied" : label}
+      aria-label={copied ? "Copied" : label}
+      onClick={() => {
+        void copyToClipboard(text)
+        setCopied(true)
+      }}
+    >
+      {copied ? <CheckIcon size={13} /> : <CopyIcon size={13} />}
+    </button>
+  )
+}
+
+/** Stable identity: rebuilding this per render would remount every code block on every token. */
+const MARKDOWN_COMPONENTS: Components = {
+  pre({ node, children, ...rest }) {
+    return (
+      <div className="uw-code-block">
+        <CopyButton text={hastText(node)} label="Copy code" />
+        <pre {...rest}>{children}</pre>
+      </div>
+    )
+  }
 }
 
 function hasTerminalAssistantText(parts: MessagePart[]): boolean {
@@ -58,7 +119,14 @@ function ToolPartCard({ part }: { part: MessagePart }) {
           {command ? <code>{command.length > 90 ? `${command.slice(0, 90)}…` : command}</code> : null}
           <span className="uw-tool-status">{status}</span>
         </summary>
-        {open && output ? <pre>{output.length > 4_000 ? `${output.slice(0, 4_000)}\n…` : output}</pre> : null}
+        {/* The truncated body is what is on screen, but the copy carries the whole output: a stack
+            trace clipped at 4000 characters is the half you cannot paste anywhere useful. */}
+        {open && output ? (
+          <div className="uw-code-block">
+            <CopyButton text={output} label="Copy output" />
+            <pre>{output.length > 4_000 ? `${output.slice(0, 4_000)}\n…` : output}</pre>
+          </div>
+        ) : null}
       </details>
     </div>
   )
@@ -79,9 +147,16 @@ function ContentGroup({ group }: { group: ContentGroupValue }) {
   return (
     <div className="uw-message-content-group">
       {text ? (
-        <div className="uw-markdown td3-markdown">
-          <ReactMarkdown remarkPlugins={REMARK_PLUGINS}>{text}</ReactMarkdown>
-        </div>
+        <>
+          <div className="uw-markdown td3-markdown">
+            <ReactMarkdown remarkPlugins={REMARK_PLUGINS} components={MARKDOWN_COMPONENTS}>{text}</ReactMarkdown>
+          </div>
+          {/* Below the message rather than floating over it: a hover-revealed control is unreachable
+              on the touch devices this app is mostly used from. */}
+          <div className="uw-message-actions">
+            <CopyButton text={text} label="Copy message" />
+          </div>
+        </>
       ) : null}
       {other.map((part) => <UnsupportedPart key={part.id} part={part} />)}
     </div>
@@ -95,7 +170,7 @@ function ActivityPart({ part }: { part: MessagePart }) {
       <div className={`uw-reasoning${part.type === "text" ? " uw-working-note" : ""}`}>
         <strong>{part.type === "reasoning" ? "Reasoning" : "Working note"}</strong>
         <div className="uw-markdown td3-markdown">
-          <ReactMarkdown remarkPlugins={REMARK_PLUGINS}>{part.text}</ReactMarkdown>
+          <ReactMarkdown remarkPlugins={REMARK_PLUGINS} components={MARKDOWN_COMPONENTS}>{part.text}</ReactMarkdown>
         </div>
       </div>
     )

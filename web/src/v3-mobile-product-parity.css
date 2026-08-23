@@ -99,6 +99,20 @@
     gap: 2px !important;
   }
 
+  /* 28px is fine for a mouse and too small for a thumb. The rest of this shell uses 40px+ on touch,
+     and copying a command out of a reply is a phone-first action, not a desktop-only one. */
+  .hr-control-plane .tdw-work-thread-conversation .uw-copy-button {
+    width: 40px !important;
+    min-width: 40px !important;
+    height: 40px !important;
+    min-height: 40px !important;
+    border-radius: 10px !important;
+  }
+
+  .hr-control-plane .tdw-work-thread-conversation .uw-message-actions {
+    margin-top: 6px !important;
+  }
+
   /* `type="search"` gives the field the WebView's own clear button, which on a phone is the only
      comfortable way to empty a search. It is laid out inside the field, so leave it room and a
      target big enough to hit rather than letting it crowd the text. */

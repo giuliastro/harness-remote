@@ -5,7 +5,9 @@ import path from "node:path"
 import test from "node:test"
 
 const here = path.dirname(fileURLToPath(import.meta.url))
-const read = (name) => readFileSync(path.join(here, name), "utf8")
+/** Normalised: `core.autocrlf` gives a Windows checkout CRLF while the index stays LF, so every
+ *  assertion written with `\n` failed locally and passed in CI. These describe CSS, not line endings. */
+const read = (name) => readFileSync(path.join(here, name), "utf8").replace(/\r\n/g, "\n")
 
 // Every stylesheet the running 3.0 shell loads, directly or through a component import.
 const LIVE_STYLESHEETS = [
@@ -39,15 +41,44 @@ test("every live stylesheet in the floor list still exists", () => {
   for (const name of LIVE_STYLESHEETS) assert.ok(present.has(name), `${name} is missing from the floor list`)
 })
 
-test("agent prose is capped to a readable measure without narrowing code or tables", () => {
+test("both roles share one reading measure, and code and tables keep the full width", () => {
+  // This assertion used to require the opposite for the user role — that a bubble is framed by its
+  // own border and so must not be capped. In practice that was the whole defect: the bubble was the
+  // only element tracking the window, so widening the browser stretched the prompt toward the full
+  // row while the reply stopped at its measure, and the thread grew visibly lopsided the more screen
+  // it was given. One measure for both roles is what Claude and ChatGPT do.
   const css = read("taskdesk-conversation.css")
-  assert.match(css, /\.tdw-work-thread-conversation \.uw-message-agent \.uw-markdown > p,/)
-  assert.match(css, /max-width: 62ch;/)
+  assert.match(css, /--hr-chat-measure: \d+ch;/)
+  assert.match(css, /\.tdw-work-thread-conversation \.uw-markdown > p,/)
+
+  const rule = css.match(/\.tdw-work-thread-conversation \.uw-markdown > p,[\s\S]*?\n\}/)?.[0] || ""
+  assert.match(rule, /max-width: var\(--hr-chat-measure\)/)
   // Only block prose is listed: pre, table and the tool cards must keep the full width.
-  const rule = css.match(/\.tdw-work-thread-conversation \.uw-message-agent \.uw-markdown > p,[\s\S]*?\n\}/)?.[0] || ""
   assert.doesNotMatch(rule, /> pre|> table/)
-  // A user message is framed by its own bubble and must not be capped.
-  assert.doesNotMatch(rule, /uw-message-user/)
+  // Role-agnostic: the selector must not single out either role.
+  assert.doesNotMatch(rule, /uw-message-agent|uw-message-user/)
+
+  // And the bubble is bounded by the same measure plus its own padding and border.
+  assert.match(css, /\.uw-message-user \.uw-message-body \{\n\s*max-width: calc\(var\(--hr-chat-measure\) \+ \d+px\);/)
+
+  // The measure has to stay inside the comfortable range the file documents. This face averages
+  // ~6.79px per character at the transcript size, per the measurement recorded alongside the rule.
+  const measure = Number(css.match(/--hr-chat-measure: (\d+)ch;/)[1])
+  const characters = Math.round(measure * 9.85 / 6.79)
+  assert.ok(characters >= 45 && characters <= 100, `${measure}ch is ~${characters} characters per line`)
+})
+
+test("surplus window width becomes margin instead of a wider prompt", () => {
+  // The row is what the user bubble grew inside. Capping it is the second half of the fix: past this
+  // width a larger monitor adds margin, not line length.
+  const fixes = read("taskdesk-conversation-fixes.css")
+  const row = fixes.match(/\.tdw-work-thread-conversation \.uw-message \{\n\s*width: min\((\d+)px, 100%\);/)
+  assert.ok(row, "the transcript row must carry an explicit maximum width")
+  assert.ok(Number(row[1]) <= 1040, `the row is still ${row[1]}px wide`)
+  // The composer lines up with the column above it rather than running wider than the conversation.
+  const composer = fixes.match(/\.uw-composer-shell \{\n\s*width: min\((\d+)px, calc\(100% - 32px\)\);/)
+  assert.ok(composer, "the composer must track the same column")
+  assert.equal(composer[1], row[1])
 })
 
 test("the activity status label is component copy, not CSS content", () => {

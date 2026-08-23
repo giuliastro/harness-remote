@@ -65,18 +65,86 @@
 }
 
 /* Measured at 1440px and 1920px: the message body gave agent prose a 991px line, ~146 average
-   characters, against a comfortable 45-90. 62ch of this face measures 611px, which lands at ~90.
-   Only agent block prose is capped: tables, code blocks, diffs and tool cards need the full width,
-   and a user message is short and framed by its own bubble, which would look unbalanced with the
-   text stopping short of the border. */
-.tdw-work-thread-conversation .uw-message-agent .uw-markdown > p,
-.tdw-work-thread-conversation .uw-message-agent .uw-markdown > ul,
-.tdw-work-thread-conversation .uw-message-agent .uw-markdown > ol,
-.tdw-work-thread-conversation .uw-message-agent .uw-markdown > blockquote,
-.tdw-work-thread-conversation .uw-message-agent .uw-markdown > h1,
-.tdw-work-thread-conversation .uw-message-agent .uw-markdown > h2,
-.tdw-work-thread-conversation .uw-message-agent .uw-markdown > h3 {
-  max-width: 62ch;
+   characters, against a comfortable 45-90. 66ch of this face measures ~650px, which lands at ~96.
+
+   The measure is deliberately role-agnostic. Capping only the agent left the two halves of the same
+   conversation growing at different rates: widening the window stretched a user bubble toward the
+   full 1240px row while the reply stopped dead at 611px, so the more screen you gave the app the
+   more lopsided the thread looked. Claude and ChatGPT both answer this the same way — one reading
+   column that both roles share, with surplus window width becoming margin rather than longer lines —
+   and that is the behaviour these rules reproduce.
+
+   Only block prose is capped. Tables, code blocks, diffs and tool cards still get the full body
+   width, which for a coding client is the whole point of a wide window. */
+.tdw-work-thread-conversation {
+  --hr-chat-measure: 66ch;
+}
+
+.tdw-work-thread-conversation .uw-markdown > p,
+.tdw-work-thread-conversation .uw-markdown > ul,
+.tdw-work-thread-conversation .uw-markdown > ol,
+.tdw-work-thread-conversation .uw-markdown > blockquote,
+.tdw-work-thread-conversation .uw-markdown > h1,
+.tdw-work-thread-conversation .uw-markdown > h2,
+.tdw-work-thread-conversation .uw-markdown > h3 {
+  max-width: var(--hr-chat-measure);
+}
+
+/* The user bubble is a frame around prose, so it has to stop where the prose does. Left unbounded it
+   was the one element that tracked the window, which is what made the asymmetry so visible. The
+   extra allowance is the bubble's own horizontal padding and border. */
+.tdw-work-thread-conversation .uw-message-user .uw-message-body {
+  max-width: calc(var(--hr-chat-measure) + 28px);
+}
+
+/* Copy. The button sits in the block's own top-right corner rather than floating over the transcript,
+   so it never covers code and never needs a hover to be found. Code blocks keep the full body width:
+   they are not in the reading-measure list above. */
+.tdw-work-thread-conversation .uw-code-block {
+  position: relative;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.tdw-work-thread-conversation .uw-code-block > .uw-copy-button {
+  position: absolute;
+  top: 7px;
+  right: 7px;
+  z-index: 2;
+}
+
+.tdw-work-thread-conversation .uw-message-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 4px;
+}
+
+.tdw-work-thread-conversation .uw-copy-button {
+  width: 28px;
+  height: 28px;
+  min-width: 28px;
+  min-height: 28px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 1px solid var(--td3-border-soft);
+  border-radius: 8px;
+  color: var(--td3-muted);
+  background: var(--td3-raise-1);
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.tdw-work-thread-conversation .uw-copy-button:hover,
+.tdw-work-thread-conversation .uw-copy-button:focus-visible {
+  border-color: var(--td3-border);
+  color: var(--td3-text);
+  background: var(--td3-raise-2);
+}
+
+.tdw-work-thread-conversation .uw-copy-button.copied {
+  border-color: var(--td3-green-soft);
+  color: var(--td3-green-text);
 }
 
 .tdw-work-thread-conversation .uw-message-body > header {

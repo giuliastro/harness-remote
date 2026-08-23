@@ -1,12 +1,17 @@
 /* Task conversation stabilization. Keep this file limited to layout containment and popover anchoring;
    conversation semantics live in the shared Session/Task components, not in CSS workarounds. */
 
+/* 1280px was wider than any reference chat and wider than this transcript needs: it only ever
+   widened the user bubble, since agent prose is held to a reading measure. 1040px matches the row
+   width `work-thread-detail.css` already uses, keeps code blocks and diffs comfortable, and turns
+   the rest of a large monitor into margin the way Claude and ChatGPT do. The composer tracks the
+   same column so the input lines up with the conversation above it. */
 .tdw-work-thread-conversation .uw-message {
-  width: min(1280px, 100%);
+  width: min(1040px, 100%);
 }
 
 .tdw-work-thread-conversation .uw-composer-shell {
-  width: min(1280px, calc(100% - 32px));
+  width: min(1040px, calc(100% - 32px));
 }
 
 /* Do not use content-visibility/intrinsic-height guesses in a live transcript. Estimated off-screen

@@ -2,7 +2,9 @@ import assert from "node:assert/strict"
 import { readFileSync } from "node:fs"
 import test from "node:test"
 
-const read = (name) => readFileSync(new URL(name, import.meta.url), "utf8")
+/** Normalised: `core.autocrlf` gives a Windows checkout CRLF while the index stays LF, so every
+ *  assertion written with `\n` failed locally and passed in CI. These describe source, not endings. */
+const read = (name) => readFileSync(new URL(name, import.meta.url), "utf8").replace(/\r\n/g, "\n")
 const workspace = read("./components/conversation-workspace.tsx")
 const overrides = read("./conversation-control-plane-overrides.css")
 const navigation = read("./taskdesk-workspace-navigation.css")
