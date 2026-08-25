@@ -70,8 +70,12 @@ assert.match(workbenchCss, /prefers-reduced-motion: reduce\)\s*\{[^}]*hr-native-
 // here was a defect: a 390px rail carrying 10-11.5px type, a 900px row that left 585px of the pane
 // unused and never grew, and a table that shrank to 391px - narrower than the prose above it.
 assert.match(workbenchCss, /--hrsf-rail-width: clamp\(300px, 22vw, 356px\)/, 'the Session rail must stay proportionate to its own type')
-assert.match(workbenchCss, /--hrsf-content-width: min\(1180px, 100%\)/, 'the content row must respond to pane width instead of a fixed 900px cap')
-assert.match(workbenchCss, /\.hr-native-session-observer \.tdw-work-thread-conversation \{\s*--hr-chat-measure: min\(100%, 1040px\)/, 'prose must share the column with code, tables and the composer')
+// One column, sized between the two clients this is measured against: ChatGPT's reading column is
+// 96 characters, Claude Code's 132, and 880px at 15px prose is 112. Prose, code, tables and the
+// composer all share it, so nothing beside the paragraph is wider than the paragraph.
+assert.match(workbenchCss, /--hrsf-content-width: min\(880px, 100%\)/, 'the column must stay sized to the reference clients')
+assert.match(workbenchCss, /\.hr-native-session-observer \.tdw-work-thread-conversation \{\s*--hr-chat-measure: 100%/, 'prose must not carry a cap narrower than the column it sits in')
+assert.match(workbenchCss, /\.hr-native-session-observer \.uw-markdown \{\s*font-size: 15px/, 'prose type must match the size the reference clients set')
 // `ch` is the advance of "0" in the resolved font, and Inter is used here only when installed, so a
 // `ch` measure is a different width on every machine. Two people measuring one build disagreed.
 assert.doesNotMatch(workbenchCss, /--hr-chat-measure:[^;]*ch\b/, 'the reading measure must not be expressed in ch')

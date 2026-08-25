@@ -7,10 +7,13 @@
      reads as "small text in a big column" - 390/11.5 was 34, against ~21 for a comparable sidebar.
      Narrowing the rail and raising its type one step (below) lands that ratio at 340/13 = 26. */
   --hrsf-rail-width: clamp(300px, 22vw, 356px);
-  /* The row is the container for tables, code blocks, diffs and tool cards, which is the whole
-     point of a wide window in a coding client. 900px left 585px of a 1485px pane unused and
-     never responded to window width. Prose keeps its own reading measure below. */
-  --hrsf-content-width: min(1180px, 100%);
+  /* One column for everything, sized from the clients this is measured against rather than from a
+     rule of thumb. Prose at 15px: ChatGPT's reading column is 96 characters, Claude Code's is 132.
+     880px lands at 112 - between them - and prose, code, tables and the composer all share it, the
+     way both references do. Surplus window width becomes margin, not longer lines.
+     Earlier attempts missed on both sides: 900px with a separate 66ch prose cap gave 81 characters
+     with a code block twice its width beside it, and removing the cap gave 143. */
+  --hrsf-content-width: min(880px, 100%);
   background: var(--td3-bg);
 }
 
@@ -1152,16 +1155,16 @@
  * sets `--hr-chat-measure` on `.tdw-work-thread-conversation`, so a value inherited from an
  * ancestor loses to that element's own declaration and never applies. */
 .hr-native-session-observer .tdw-work-thread-conversation {
-  --hr-chat-measure: min(100%, 1040px);
+  --hr-chat-measure: 100%;
 }
 
 .hr-native-session-observer .uw-markdown {
-  font-size: 14.5px;
-  line-height: 1.58;
+  font-size: 15px;
+  line-height: 1.6;
 }
 
 .hr-native-session-observer .uw-message-user .uw-message-body {
-  max-width: calc(var(--hr-chat-measure) + 24px);
+  max-width: 100%;
   padding: 8px 11px 9px;
   border: 0;
   border-left: 2px solid var(--td3-blue-text);
