@@ -66,6 +66,22 @@ assert.ok(workbenchCss.includes('.hr-native-machine-heading:active'), 'the machi
 assert.ok(workbenchCss.includes('.hr-native-machine-heading:focus-visible'), 'the machine collapse control must show keyboard focus')
 assert.match(workbenchCss, /prefers-reduced-motion: reduce\)\s*\{[^}]*hr-native-machine-chevron/, 'the collapse chevron must honour reduced motion')
 
+// Measured proportions (scripts/measure-session-first-layout.mjs, viewport 1875px). Each number
+// here was a defect: a 390px rail carrying 10-11.5px type, a 900px row that left 585px of the pane
+// unused and never grew, and a table that shrank to 391px - narrower than the prose above it.
+assert.match(workbenchCss, /--hrsf-rail-width: clamp\(300px, 22vw, 356px\)/, 'the Session rail must stay proportionate to its own type')
+assert.match(workbenchCss, /--hrsf-content-width: min\(1180px, 100%\)/, 'the content row must respond to pane width instead of a fixed 900px cap')
+assert.match(workbenchCss, /\.hr-native-session-observer \.tdw-work-thread-conversation \{\s*--hr-chat-measure: clamp\(58ch, 44vw, 76ch\)/, 'the reading measure must grow with the pane and stay bounded')
+assert.ok(workbenchCss.includes('.hr-native-session-observer .uw-markdown > table {'), 'a table must take the row width rather than shrink to fit')
+assert.match(workbenchCss, /\.hr-native-session-observer \.uw-markdown > table \{[^}]*overflow-x: auto/, 'a wide table must scroll in its own container, never the page body')
+assert.ok(workbenchCss.includes('.hr-native-session-observer .uw-markdown > table th'), 'the v3 renderer had no table styling at all; the header row must be styled')
+// The rail's smallest label was 10px. Nothing in the rail may go back below 11px.
+for (const rule of [/\.hr-native-session-copy strong \{\s*font-size: 13px/, /\.hr-native-session-copy small \{[^}]*font-size: 11px/, /\.hr-native-machine-heading strong \{[^}]*font-size: 13px/]) {
+  assert.match(workbenchCss, rule, `rail type step regressed: ${rule}`)
+}
+// The composer shares the transcript's inset, so its edges land on the message rows' edges.
+assert.match(workbenchCss, /\.hr-native-session-observer \.uw-composer-shell \{[^}]*calc\(100% - 2 \* clamp\(18px, 3vw, 34px\)\)/, 'the composer must align to the transcript column')
+
 // Session-first truth: the native Session is the whole thread, so no native turn may be dropped
 // because no Run prompt claimed it, and the harness's own title may not leak a transport envelope.
 assert.ok(observer.includes('nativeSessionTruth'), 'the native Session surface must render every native turn')

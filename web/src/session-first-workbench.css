@@ -2,8 +2,15 @@
    A coding-agent control surface: dense session supervision, one native transcript, one composer. */
 
 .hr-native-workspace {
-  --hrsf-rail-width: clamp(320px, 27vw, 390px);
-  --hrsf-content-width: 900px;
+  /* Measured at 1875px: the old clamp resolved to 390px and the widest row content reached 237px,
+     so 39% of the rail was margin while its type sat at 10-11.5px. Width per unit of type is what
+     reads as "small text in a big column" - 390/11.5 was 34, against ~21 for a comparable sidebar.
+     Narrowing the rail and raising its type one step (below) lands that ratio at 340/13 = 26. */
+  --hrsf-rail-width: clamp(300px, 22vw, 356px);
+  /* The row is the container for tables, code blocks, diffs and tool cards, which is the whole
+     point of a wide window in a coding client. 900px left 585px of a 1485px pane unused and
+     never responded to window width. Prose keeps its own reading measure below. */
+  --hrsf-content-width: min(1180px, 100%);
   background: var(--td3-bg);
 }
 
@@ -336,20 +343,20 @@
 
 .hr-native-machine-heading strong {
   color: var(--td3-text);
-  font-size: 11px;
+  font-size: 13px;
   font-weight: 780;
 }
 
 .hr-native-machine-heading small {
   color: var(--td3-muted);
-  font-size: 10px;
+  font-size: 11px;
 }
 
 .hr-native-machine-metrics {
   flex: none;
   justify-content: flex-end;
   gap: 6px;
-  font-size: 10px;
+  font-size: 11px;
 }
 
 .hr-native-machine-metrics b {
@@ -453,14 +460,14 @@
 }
 
 .hr-native-project-heading strong {
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 760;
 }
 
 .hr-native-project-heading small {
   max-width: 265px;
   margin-top: 1px;
-  font-size: 10px;
+  font-size: 11px;
 }
 
 .hr-native-project-heading > span:last-child {
@@ -576,7 +583,7 @@
 }
 
 .hr-native-session-copy strong {
-  font-size: 11.5px;
+  font-size: 13px;
   font-weight: 680;
   line-height: 1.25;
 }
@@ -644,13 +651,13 @@
 
 .hr-native-session-copy small {
   margin-top: 3px;
-  font-size: 10px;
+  font-size: 11px;
 }
 
 .hr-native-session-meta {
-  min-width: 62px;
+  min-width: 66px;
   gap: 2px;
-  font-size: 10px;
+  font-size: 11px;
 }
 
 .hr-native-session-status {
@@ -1107,6 +1114,19 @@
   font-size: 11.5px;
 }
 
+/* The base surface pins prose to a flat 66ch, which measured 588px here - about 81 Latin
+   characters, already at the top of the comfortable 65-75 band, and completely unresponsive: a
+   wider window bought no extra text, which is exactly what made the column feel cramped next to a
+   client whose measure grows. This grows with the pane and stops short of the ~130 characters that
+   reference client allows, because past ~95 the eye starts losing the line it is returning to.
+   Tables, code and diffs are not prose and take the full row above. */
+/* Declared on the conversation element itself, not on this wrapper: `taskdesk-conversation.css`
+   sets `--hr-chat-measure` on `.tdw-work-thread-conversation`, so a value inherited from an
+   ancestor loses to that element's own declaration and never applies. */
+.hr-native-session-observer .tdw-work-thread-conversation {
+  --hr-chat-measure: clamp(58ch, 44vw, 76ch);
+}
+
 .hr-native-session-observer .uw-markdown {
   font-size: 14.5px;
   line-height: 1.58;
@@ -1134,6 +1154,55 @@
   padding-inline: 9px;
 }
 
+/* `taskdesk-conversation.css` states the rule this surface never implemented: only block prose is
+   held to the reading measure, while tables, code blocks and diffs take the full body width. Nothing
+   granted them that width, so a shrink-to-fit table rendered at 391px - narrower than the 588px
+   paragraph above it, and the narrowest element on a 1485px pane. Each one is also its own scroll
+   container, so a wide table never makes the page body scroll sideways. */
+.hr-native-session-observer .uw-markdown > table,
+.hr-native-session-observer .uw-markdown > .uw-code-block,
+.hr-native-session-observer .uw-markdown > pre {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+}
+
+.hr-native-session-observer .uw-markdown > table {
+  display: block;
+  overflow-x: auto;
+  border-collapse: collapse;
+  border-spacing: 0;
+  font-size: 13.5px;
+}
+
+.hr-native-session-observer .uw-markdown > table th,
+.hr-native-session-observer .uw-markdown > table td {
+  padding: 7px 11px;
+  border-bottom: 1px solid var(--td3-border-soft);
+  text-align: left;
+  vertical-align: top;
+}
+
+.hr-native-session-observer .uw-markdown > table th {
+  color: var(--td3-text-2);
+  background: var(--td3-raise-1);
+  border-bottom: 1px solid var(--td3-border);
+  font-size: 11.5px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+/* Figures line up only when their digits share an advance, which is the whole reason a coding
+   agent's output ends up in a table in the first place. */
+.hr-native-session-observer .uw-markdown > table td {
+  color: var(--td3-text-2);
+  font-variant-numeric: tabular-nums;
+}
+
+.hr-native-session-observer .uw-markdown > table tr:last-child td {
+  border-bottom: 0;
+}
+
 .hr-native-session-observer .uw-reasoning {
   border-color: var(--td3-border-soft);
   border-radius: 7px;
@@ -1141,7 +1210,9 @@
 }
 
 .hr-native-session-observer .uw-composer-shell {
-  width: min(var(--hrsf-content-width), calc(100% - 48px));
+  /* The same horizontal inset the transcript uses, so the composer's edges land exactly on the
+     message rows' edges instead of overhanging them by the difference between two insets. */
+  width: min(var(--hrsf-content-width), calc(100% - 2 * clamp(18px, 3vw, 34px)));
   margin: 0 auto 12px;
   border-color: var(--td3-border);
   border-radius: 12px;
