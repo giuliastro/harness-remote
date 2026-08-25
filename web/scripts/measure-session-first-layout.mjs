@@ -20,12 +20,14 @@ const STORAGE_KEY = "harness-remote.workspace.machines.v1"
 const DIR = "/home/giulio/Software/harness-remote-session-first-test"
 const OUT = process.argv[2] || "/tmp/shot.png"
 
-const TITLES = [
+const REPEAT = Number(process.env.SESSIONS || 11)
+const BASE_TITLES = [
   "Verifica e pusha modifiche web", "Correggere caricamento sessioni e modelli nativi",
   "Session 01a038e7", "Session 01a038da", "Session 01a038d9",
   "Revisione e test PR", "Mi dici le 6 principali capitali europee?",
   "Task 5b77bfda · Run 3", "e Genova?", "Ciao", "TaskDesk UI audit and polish"
 ]
+const TITLES = Array.from({ length: REPEAT }, (_, i) => BASE_TITLES[i % BASE_TITLES.length])
 const sessions = TITLES.map((title, i) => ({
   id: `s-${i}`, title, directory: DIR,
   time: { created: 1_700_000_000_000 - i * 3.6e6, updated: 1_700_000_000_000 - i * 3.6e6 },
@@ -123,6 +125,23 @@ try {
       charWidth: ch ? Math.round(ch * 100) / 100 : null,
       charsPerLine: ch && p ? Math.round(p.w / ch) : null,
       bodyOverflowX: document.documentElement.scrollWidth - window.innerWidth,
+      chevrons: [...document.querySelectorAll(".hr-native-project-heading, .hr-native-machine-heading")].slice(0, 4).map((head) => {
+        const glyph = head.querySelector(".hr-native-machine-chevron") || head.querySelector("span:last-child i")
+        const hb = head.getBoundingClientRect()
+        const gb = glyph ? glyph.getBoundingClientRect() : null
+        const rail = document.querySelector(".hr-native-workspace-list").getBoundingClientRect()
+        return {
+          kind: head.className.includes("machine") ? "machine" : "project",
+          headRight: Math.round(hb.right),
+          glyphRight: gb ? Math.round(gb.right) : null,
+          glyphWidth: gb ? Math.round(gb.width) : null,
+          railRight: Math.round(rail.right),
+          overflowsHead: gb ? Math.round(gb.right - hb.right) : null,
+          overflowsRail: gb ? Math.round(gb.right - rail.right) : null,
+          headScrollOverflow: Math.round(head.scrollWidth - head.clientWidth),
+          railScrollbar: (() => { const r = document.querySelector(".hr-native-workspace-list"); return Math.round(r.offsetWidth - r.clientWidth) })()
+        }
+      }),
       transcriptPad: (() => { const t = document.querySelector('.hr-native-session-observer .uw-transcript'); return t ? getComputedStyle(t).paddingLeft : null })()
     }
   })

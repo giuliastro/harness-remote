@@ -376,11 +376,26 @@
   font-variant-numeric: tabular-nums;
 }
 
-.hr-native-machine-chevron {
+/* U+2304 was the collapse affordance in both headings. It is a text glyph, so it renders only if
+   the resolved font happens to carry it - on Windows without Inter installed the stack falls through
+   to a face that does not, and the control simply had no visible marker. A real SVG also lets the
+   arrow match the stroke weight of every other icon in the rail. */
+.hr-native-machine-chevron,
+.hr-native-project-chevron {
+  width: 13px;
+  height: 13px;
   flex: none;
-  color: var(--td3-muted);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--td3-text-3);
   font-style: normal;
   transition: transform .14s ease;
+}
+
+.hr-native-machine-chevron svg,
+.hr-native-project-chevron svg {
+  display: block;
 }
 
 .hr-native-machine-group.collapsed .hr-native-machine-chevron {
@@ -498,6 +513,11 @@
 
 .hr-native-project-group.collapsed .hr-native-project-heading > span:last-child i {
   transform: rotate(-90deg);
+}
+
+.hr-native-project-heading:hover .hr-native-project-chevron,
+.hr-native-machine-heading:hover .hr-native-machine-chevron {
+  color: var(--td3-text);
 }
 
 .hr-native-home-list {
@@ -1114,17 +1134,25 @@
   font-size: 11.5px;
 }
 
-/* The base surface pins prose to a flat 66ch, which measured 588px here - about 81 Latin
-   characters, already at the top of the comfortable 65-75 band, and completely unresponsive: a
-   wider window bought no extra text, which is exactly what made the column feel cramped next to a
-   client whose measure grows. This grows with the pane and stops short of the ~130 characters that
-   reference client allows, because past ~95 the eye starts losing the line it is returning to.
-   Tables, code and diffs are not prose and take the full row above. */
-/* Declared on the conversation element itself, not on this wrapper: `taskdesk-conversation.css`
-   sets `--hr-chat-measure` on `.tdw-work-thread-conversation`, so a value inherited from an
-   ancestor loses to that element's own declaration and never applies. */
+/* The reading measure, and deliberately not in `ch`.
+ *
+ * `ch` is the advance of "0" in the *resolved* font, and this app's stack is
+ * `Inter, ..., "Segoe UI Variable Text", ...` with Inter used only when it happens to be installed.
+ * So the same `66ch` produced a 588px column on a machine with Inter and roughly 580px on Windows
+ * without it - the reading measure silently differed per machine, which is why two people measuring
+ * the same build disagreed about how wide it was. Every other cap in this surface is px or %.
+ *
+ * The width itself: every coding client this is compared against - Claude Code, Codex, the rest -
+ * lets prose use the column, and holding it to a 65-75 character band left the paragraph at under
+ * half the width of the code block directly beneath it. That asymmetry is what reads as "cramped",
+ * far more than the line length does. Prose now shares one edge with code, tables and the composer.
+ * Dial this single value back if long lines ever start costing more than the alignment buys.
+ *
+ * Declared on the conversation element itself, not on this wrapper: `taskdesk-conversation.css`
+ * sets `--hr-chat-measure` on `.tdw-work-thread-conversation`, so a value inherited from an
+ * ancestor loses to that element's own declaration and never applies. */
 .hr-native-session-observer .tdw-work-thread-conversation {
-  --hr-chat-measure: clamp(58ch, 44vw, 76ch);
+  --hr-chat-measure: min(100%, 1040px);
 }
 
 .hr-native-session-observer .uw-markdown {

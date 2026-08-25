@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react"
+import { ChevronDownIcon } from "../Icons"
 import type { ModelOption } from "../types"
 import "../model-picker.css"
 
@@ -191,7 +192,7 @@ export function ModelPicker({ models, value, onChange, disabled = false, loading
           {!loading && selected ? <small>{selected.providerName || selected.providerID}{selected.variant ? ` · ${selected.variant}` : ""}</small> : null}
           {empty ? <small>Chosen by the coding agent</small> : null}
         </span>
-        <span className="tdw-model-chevron" aria-hidden="true">⌄</span>
+        <span className="tdw-model-chevron" aria-hidden="true"><ChevronDownIcon size={13} /></span>
       </button>
 
       {open ? (

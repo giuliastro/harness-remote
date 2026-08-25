@@ -71,7 +71,10 @@ assert.match(workbenchCss, /prefers-reduced-motion: reduce\)\s*\{[^}]*hr-native-
 // unused and never grew, and a table that shrank to 391px - narrower than the prose above it.
 assert.match(workbenchCss, /--hrsf-rail-width: clamp\(300px, 22vw, 356px\)/, 'the Session rail must stay proportionate to its own type')
 assert.match(workbenchCss, /--hrsf-content-width: min\(1180px, 100%\)/, 'the content row must respond to pane width instead of a fixed 900px cap')
-assert.match(workbenchCss, /\.hr-native-session-observer \.tdw-work-thread-conversation \{\s*--hr-chat-measure: clamp\(58ch, 44vw, 76ch\)/, 'the reading measure must grow with the pane and stay bounded')
+assert.match(workbenchCss, /\.hr-native-session-observer \.tdw-work-thread-conversation \{\s*--hr-chat-measure: min\(100%, 1040px\)/, 'prose must share the column with code, tables and the composer')
+// `ch` is the advance of "0" in the resolved font, and Inter is used here only when installed, so a
+// `ch` measure is a different width on every machine. Two people measuring one build disagreed.
+assert.doesNotMatch(workbenchCss, /--hr-chat-measure:[^;]*ch\b/, 'the reading measure must not be expressed in ch')
 assert.ok(workbenchCss.includes('.hr-native-session-observer .uw-markdown > table {'), 'a table must take the row width rather than shrink to fit')
 assert.match(workbenchCss, /\.hr-native-session-observer \.uw-markdown > table \{[^}]*overflow-x: auto/, 'a wide table must scroll in its own container, never the page body')
 assert.ok(workbenchCss.includes('.hr-native-session-observer .uw-markdown > table th'), 'the v3 renderer had no table styling at all; the header row must be styled')
@@ -81,6 +84,13 @@ for (const rule of [/\.hr-native-session-copy strong \{\s*font-size: 13px/, /\.h
 }
 // The composer shares the transcript's inset, so its edges land on the message rows' edges.
 assert.match(workbenchCss, /\.hr-native-session-observer \.uw-composer-shell \{[^}]*calc\(100% - 2 \* clamp\(18px, 3vw, 34px\)\)/, 'the composer must align to the transcript column')
+
+// U+2304 rendered only where the resolved font carried it, so on Windows without Inter the collapse
+// controls had no visible marker at all. Both rail headings and the model picker use a real icon.
+for (const [file, source] of [["native-session-home.tsx", home], ["model-picker.tsx", readFileSync(new URL('./components/model-picker.tsx', import.meta.url), 'utf8')]]) {
+  assert.ok(source.includes('<ChevronDownIcon'), `${file} must use a real chevron icon`)
+  assert.equal(source.includes('\u2304'), false, `${file} must not use a text glyph as a control affordance`)
+}
 
 // Session-first truth: the native Session is the whole thread, so no native turn may be dropped
 // because no Run prompt claimed it, and the harness's own title may not leak a transport envelope.

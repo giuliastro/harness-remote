@@ -10,7 +10,7 @@ import {
 import type { MachineAgentHost, MachineSnapshot } from "../types"
 import { nativeSessionDisplayTitle } from "../native-session-title"
 import type { WorkspaceMachine } from "../workspaceMachines"
-import { ChatIcon, LoadingIcon, PlusIcon, SearchIcon, ServerIcon } from "../Icons"
+import { ChatIcon, ChevronDownIcon, LoadingIcon, PlusIcon, SearchIcon, ServerIcon } from "../Icons"
 import "../native-session-home.css"
 
 type Source = {
@@ -639,7 +639,7 @@ export function NativeSessionHome({ sources, onOpen, refreshToken = 0, selectedK
                   {machineAttentionCount ? <b>{machineAttentionCount} attention</b> : null}
                   {workingCount ? <em>{workingCount} live</em> : null}
                   <small>{state === "online" ? sessionCount : state === "loading" ? "…" : "Offline"}</small>
-                  <i className="hr-native-machine-chevron" aria-hidden="true">⌄</i>
+                  <i className="hr-native-machine-chevron" aria-hidden="true"><ChevronDownIcon size={13} /></i>
                 </span>
               </button>
               {machineCollapsed ? null : (
@@ -670,7 +670,7 @@ export function NativeSessionHome({ sources, onOpen, refreshToken = 0, selectedK
                           <strong>{group.name}</strong>
                           <small title={group.directory}>{group.directory || "No working directory"}</small>
                         </span>
-                        <span><b>{group.sessions.length}</b><i aria-hidden="true">⌄</i></span>
+                        <span><b>{group.sessions.length}</b><i className="hr-native-project-chevron" aria-hidden="true"><ChevronDownIcon size={13} /></i></span>
                       </button>
                       {!collapsed ? (
                         <>
