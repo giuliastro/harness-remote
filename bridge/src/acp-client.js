@@ -228,6 +228,21 @@ export class AcpClient extends EventEmitter {
     return result.sessions ?? []
   }
 
+  /**
+   * Newest protocol activity of a `session/prompt` this process still has in flight for the given
+   * session, or `undefined` when there is none. This is the same signal the prompt's own inactivity
+   * watchdog uses, exposed so a caller can tell a genuinely running turn from a bookkeeping flag
+   * that outlived its request.
+   */
+  promptActivityAt(sessionID) {
+    let newest
+    for (const pending of this.#pending.values()) {
+      if (pending.method !== "session/prompt" || pending.sessionID !== sessionID) continue
+      newest = newest === undefined ? pending.lastActivityAt : Math.max(newest, pending.lastActivityAt)
+    }
+    return newest
+  }
+
   close() {
     const child = this.#child
     this.#child = undefined

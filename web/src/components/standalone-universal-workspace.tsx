@@ -13,13 +13,14 @@ import { ChatIcon, LoadingIcon, RefreshIcon, ServerIcon, SettingsIcon } from "..
 import { createTranslator, languageOptions, type LanguageCode } from "../i18n"
 import { discoverMachine, machineAgentStateLabel } from "../machineClient"
 import type { NativeSessionSurfaceTarget } from "../native-session-discovery"
-import type { MachineSnapshot } from "../types"
+import type { MachineSnapshot, Session } from "../types"
 import {
   createWorkspaceMachine,
   type WorkspaceMachine
 } from "../workspaceMachines"
 import { reuseList } from "../workspace-runtime-merge"
 import { useDialogDismiss } from "../useDialogDismiss"
+import { NativeSessionActions } from "./native-session-actions"
 import { NativeSessionHandoffControl } from "./native-session-handoff-control"
 import { NativeSessionHome } from "./native-session-home"
 import { NativeSessionObserver, type NativeSessionVisualState } from "./native-session-observer"
@@ -262,6 +263,10 @@ function NativeSessionsWorkspace({
   const [selected, setSelected] = useState<NativeSessionSurfaceTarget | null>(null)
   const [selectedState, setSelectedState] = useState<NativeSessionVisualState | undefined>(undefined)
   const [mobileDetailOpen, setMobileDetailOpen] = useState(false)
+  // A native metadata mutation happens outside the discovery cycle. Machine polling can legitimately
+  // return an identical snapshot, so the Session list needs an explicit signal to re-read its
+  // Sessions after a rename or delete instead of waiting up to 30s for its own refresh.
+  const [listRevision, setListRevision] = useState(0)
   const refreshGeneration = useRef(0)
 
   useEffect(() => {
@@ -349,6 +354,7 @@ function NativeSessionsWorkspace({
   }
 
   function handleSessionDeleted(key: string) {
+    setListRevision((value) => value + 1)
     if (selected?.key !== key) return
     setSelected(null)
     setSelectedState(undefined)
@@ -356,10 +362,16 @@ function NativeSessionsWorkspace({
     setRevision((value) => value + 1)
   }
 
+  function handleSessionRenamed(session: Session, title: string) {
+    const nextTitle = session.title?.trim() || title
+    setSelected((current) => current ? { ...current, title: nextTitle } : current)
+    setListRevision((value) => value + 1)
+  }
+
   return (
     <section className="tdw-shell hr-control-plane hr-native-workspace" aria-label="Sessions">
       <header className="tdw-topbar hr-topbar">
-        <div className="tdw-brand hr-brand"><span className="tdw-logo hr-logo">H</span><div><strong>Harness Remote</strong><small>Native coding-agent Sessions, anywhere.</small></div></div>
+        <div className="tdw-brand hr-brand"><img className="tdw-logo hr-logo hr-app-icon" src={`${import.meta.env.BASE_URL}icon-192.png`} alt="" width={32} height={32} /><div><strong>Harness Remote</strong><small>Native coding-agent Sessions, anywhere.</small></div></div>
         <div className="tdw-context-path" aria-label="Current workspace context">
           <span>{selectedMachine?.name || "All machines"}</span><b>/</b>
           <strong>{selectedProject || "Native Sessions"}</strong>
@@ -379,7 +391,7 @@ function NativeSessionsWorkspace({
       </header>
       <div className="hr-native-workspace-body">
         <aside className="hr-native-workspace-list">
-          <NativeSessionHome sources={runtimes} onOpen={openSession} onDeleted={handleSessionDeleted} selectedKey={selected?.key} selectedState={selectedState} />
+          <NativeSessionHome sources={runtimes} onOpen={openSession} refreshToken={listRevision} selectedKey={selected?.key} selectedState={selectedState} />
         </aside>
         <main className={`hr-native-workspace-detail${mobileDetailOpen ? " mobile-open" : ""}`}>
           {selected ? (
@@ -417,6 +429,7 @@ function NativeSessionsWorkspace({
                       {Number(selected.cost) > 0 ? <span title="Reported native Session cost">${Number(selected.cost).toFixed(2)}</span> : null}
                     </div>
                   ) : null}
+                  <NativeSessionActions target={selected} onRenamed={handleSessionRenamed} onDeleted={handleSessionDeleted} />
                   <NativeSessionHandoffControl source={selected} agents={selectedRuntime?.snapshot?.agents || []} onOpen={openSession} />
                   <code title={selected.sessionID}>{selected.sessionID}</code>
                 </div>
@@ -492,6 +505,12 @@ export function StandaloneUniversalWorkspace({ machines, onPersistMachines }: Pr
       const modalClose = document.querySelector<HTMLButtonElement>(".tdw-modal-backdrop .tdw-modal header button")
       if (modalClose) {
         modalClose.click()
+        return
+      }
+
+      const sessionActionDismiss = document.querySelector<HTMLButtonElement>(".hr-session-action-panel button[data-dismiss=\"session-actions\"]")
+      if (sessionActionDismiss) {
+        sessionActionDismiss.click()
         return
       }
 

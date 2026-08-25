@@ -1,4 +1,5 @@
 import { api } from "./api"
+import { nativeSessionDisplayTitle } from "./native-session-title"
 import type { BackendKind, MachineAgentHost, MessageEnvelope, ModelSelection, ServerConfig, Session, SessionStatus } from "./types"
 
 export type NativeSessionRecord = {
@@ -63,6 +64,10 @@ export type NativeSessionSurfaceTarget = {
   status?: SessionStatus
   external: boolean
   modelsSupported: boolean
+  /** Native metadata mutations are exposed by the owning harness contract. The chat header shows
+   * Rename/Delete only for a Session whose harness actually implements them. */
+  renameSupported: boolean
+  deleteSupported: boolean
   model: ModelSelection | null
   parentID?: string
   summary?: Session["summary"]
@@ -90,6 +95,47 @@ function supportedBackend(value: string, fallback: BackendKind): BackendKind {
   return value === "opencode" || value === "omp" || value === "pi" || value === "claude" || value === "codex"
     ? value
     : fallback
+}
+
+/** Every status value a harness adapter reports while a turn is still running. */
+const WORKING_STATUS_TYPES = new Set([
+  "busy",
+  "running",
+  "working",
+  "waiting",
+  "retry",
+  "in_progress",
+  "in-progress"
+])
+
+/**
+ * How long a reported "working" status is honoured after the Session last showed activity.
+ *
+ * A live turn advances the Session's own activity time on every chunk, plan update and message, so
+ * a Session that claims to be working while its newest activity is this old is reporting a flag
+ * that outlived its turn, not a harness that is still thinking. Sessions the user had long since
+ * stopped or finished stayed painted as Working until the daemon was restarted.
+ *
+ * The window is far longer than any silent stretch inside a real turn (a long tool call still
+ * streams its own updates, and the ACP prompt watchdog gives up after 300s), so this can only ever
+ * downgrade a status that is genuinely stale.
+ */
+export const WORKING_STATUS_GRACE_MS = 600_000
+
+/**
+ * Presentation guard, not a second source of truth: any status the harness reports is passed
+ * through untouched except a working claim that its own Session activity contradicts.
+ */
+export function corroboratedSessionStatus(
+  session: Session,
+  status: SessionStatus | undefined,
+  now: number = Date.now()
+): SessionStatus | undefined {
+  if (!status) return status
+  if (!WORKING_STATUS_TYPES.has(status.type?.trim().toLowerCase() || "")) return status
+  const activityAt = session.time?.updated || session.time?.created || 0
+  if (!activityAt || now - activityAt < WORKING_STATUS_GRACE_MS) return status
+  return { ...status, type: "idle" }
 }
 
 function supportedStopCapability(value: string | undefined): boolean {
@@ -147,7 +193,7 @@ export function nativeSessionSurfaceTarget(
     machineID,
     sessionID: ref.sessionID,
     directory: ref.directory,
-    title: record.session.title?.trim() || "Untitled Session",
+    title: nativeSessionDisplayTitle(record.session.title),
     agentID: ref.agentID,
     agentLabel: record.agentLabel,
     backend: record.backend,
@@ -160,6 +206,8 @@ export function nativeSessionSurfaceTarget(
     status: record.status,
     external,
     modelsSupported: record.modelsSupported,
+    renameSupported: record.renameSupported,
+    deleteSupported: record.deleteSupported,
     model: sessionModel(record.session),
     parentID: record.session.parentID,
     summary: record.session.summary,
@@ -203,7 +251,7 @@ export async function discoverAgentNativeSessions(
     renameSupported: agent.capabilities?.sessionRename === true,
     deleteSupported: agent.capabilities?.sessionDelete === true,
     session,
-    status: statuses[session.id]
+    status: corroboratedSessionStatus(session, statuses[session.id])
   }))
 }
 

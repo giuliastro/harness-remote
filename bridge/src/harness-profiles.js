@@ -89,6 +89,11 @@ export const HARNESS_PROFILES = {
     permissionMode: "allow",
     preserveListedTimestamps: true,
     reloadOnHistoryRefresh: false,
+    // Claude has no journal reader, so an ACP session/load replay is the only source for a Session
+    // this bridge did not stream itself. The adapter runs over the same npx/stdio pipe PI does and
+    // can resolve the load with replay notifications still queued, which returned an empty or
+    // truncated transcript for a Session the harness itself shows in full. Opt into the settle tail.
+    replaySettleMs: 250,
     // The current adapter exposes model/mode but no low/medium/high reasoning-effort selector.
     // Keep this empty rather than fabricating OpenCode-style variants.
     modelVariantConfigIDs: [],
