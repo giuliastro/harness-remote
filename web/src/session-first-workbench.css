@@ -26,7 +26,6 @@
   overflow: hidden;
   border-radius: 9px;
   background: transparent;
-  box-shadow: 0 4px 14px rgba(0, 0, 0, .22);
   object-fit: contain;
 }
 
@@ -724,7 +723,7 @@
   position: fixed;
   z-index: 55;
   inset: 0;
-  background: rgba(4, 6, 12, .42);
+  background: var(--td3-scrim);
 }
 
 .hr-session-action-panel {
@@ -739,7 +738,7 @@
   border: 1px solid var(--td3-border-strong);
   border-radius: 12px;
   background: var(--td3-panel-2);
-  box-shadow: 0 18px 46px rgba(0, 0, 0, .3);
+  box-shadow: var(--td3-shadow-panel);
   text-align: left;
 }
 
