@@ -82,6 +82,12 @@ type Props = {
    * as if it were the Session's persisted selection.
    */
   deferModelFallback?: boolean
+  /**
+   * Session-first mode. The native Session is the whole thread here, so every native turn is
+   * rendered even when no Run prompt claims it. A durable Task leaves this off: there, unclaimed
+   * native turns belong to the harness rather than to the Task.
+   */
+  nativeSessionTruth?: boolean
 }
 
 function supportedBackend(value: string, fallback: BackendKind): BackendKind {
@@ -274,7 +280,8 @@ export function WorkThreadConversation({
   onWorkspaceRefresh,
   onAttentionChange,
   modelScope,
-  deferModelFallback = false
+  deferModelFallback = false,
+  nativeSessionTruth = false
 }: Props) {
   const draftStorageKey = `${DRAFT_STORAGE_PREFIX}${task.id}`
   const initialAgentID = agentForRun(task, task.run)
@@ -429,8 +436,8 @@ export function WorkThreadConversation({
     [feeds]
   )
   const timeline = useMemo(
-    () => buildWorkThreadTimeline(task, messagesBySession, agentsByID),
-    [conversationSignature, messagesBySession, agentsByID]
+    () => buildWorkThreadTimeline(task, messagesBySession, agentsByID, { includeUnmatchedNativeTurns: nativeSessionTruth }),
+    [conversationSignature, messagesBySession, agentsByID, nativeSessionTruth]
   )
   const currentRunHasAssistantSignal = useMemo(() => {
     const runID = task.run?.id
@@ -765,7 +772,9 @@ export function WorkThreadConversation({
         onStop={working ? stop : undefined}
         stopping={stopping}
         placeholder={`Message ${agentLabel(agents, targetAgentID)}…`}
-        emptyText="Start the conversation. You can continue with another coding agent at any time."
+        emptyText={nativeSessionTruth
+          ? "No native messages recorded in this Session yet. Its harness lists the Session but has persisted no transcript for it — a turn that never started leaves it empty. Send a message to continue it."
+          : "Start the conversation. You can continue with another coding agent at any time."}
         footerHint={hasAttention ? "Your input is required before the agent can continue" : working ? "The agent is working on your last message" : undefined}
         renderMessage={(message) => <WorkThreadBubble key={message.info.id} message={message as WorkThreadMessage} />}
       />

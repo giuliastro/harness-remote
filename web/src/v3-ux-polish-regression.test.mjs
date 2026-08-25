@@ -83,7 +83,12 @@ assert.match(overrides, /prefers-reduced-motion/)
 assert.match(conversation, /taskClient\.listAgentModels\(baseConfig, targetAgentID, modelScope \?\? \{ workThreadId: task\.id \}\)/)
 // The effect must key on the scope's value, never a caller's object identity, or a fresh scope
 // object per render would restart model discovery on every render.
-assert.match(conversation, /\[targetAgentID, task\.id, task\.workspace\.path, baseConfig, modelScopeKey\]/)
+// Assert the rule, not one snapshot of the list: the deps must key on the scope's serialized value
+// and must never carry the caller's `modelScope` object itself. Pinning the exact array made every
+// legitimate addition to the effect's own inputs look like a regression.
+const modelCatalogDeps = /\}, \[targetAgentID, task\.id, task\.workspace\.path, baseConfig, modelScopeKey([^\]]*)\]\)/.exec(conversation)
+assert.ok(modelCatalogDeps, "the model catalog effect must key on targetAgentID, task, workspace, config and modelScopeKey")
+assert.doesNotMatch(modelCatalogDeps[1], /\bmodelScope\b/, "the deps must use modelScopeKey, never the caller's modelScope object")
 assert.match(conversation, /const modelScopeKey = modelScope \?/)
 assert.doesNotMatch(
   read("native-session-v3-adapter.ts"),

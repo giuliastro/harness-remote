@@ -16,6 +16,20 @@
   background: var(--td3-chrome);
 }
 
+/* The brand mark is the real app icon, so the letter tile that used to stand in for it must not
+   paint a coloured square behind the artwork. */
+.hr-native-workspace .hr-logo.hr-app-icon {
+  width: 32px;
+  height: 32px;
+  flex: none;
+  padding: 0;
+  overflow: hidden;
+  border-radius: 9px;
+  background: transparent;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, .22);
+  object-fit: contain;
+}
+
 .hr-native-workspace .hr-brand strong {
   font-size: 13px;
   letter-spacing: -.01em;
@@ -230,29 +244,60 @@
 }
 
 .hr-native-machine-heading {
+  width: 100%;
   min-height: 34px;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 10px;
-  margin: 0 3px 5px;
-  padding: 7px 3px 6px;
+  /* A full-width control cannot carry a horizontal margin without overflowing the Session rail, so
+     the inset the header used to get from its margin now comes from its own padding. */
+  margin: 0 0 5px;
+  padding: 7px 6px 6px;
+  border: 0;
   border-bottom: 1px solid var(--td3-border-soft);
+  border-radius: 0;
+  color: inherit;
+  background: transparent;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
 }
 
-.hr-native-machine-heading > div,
-.hr-native-machine-heading > div > span,
-.hr-native-machine-heading > span {
+.hr-native-machine-heading:hover {
+  border-bottom-color: var(--td3-border);
+}
+
+/* Pressed feedback without moving the row: a transform here would shift the whole machine group. */
+.hr-native-machine-heading:active {
+  background: var(--td3-raise-2);
+}
+
+.hr-native-machine-heading:hover .hr-native-machine-chevron {
+  color: var(--td3-text-2);
+}
+
+/* The heading is now the collapse control for a whole machine, so keyboard focus needs a real
+   indicator rather than the hover tint. */
+.hr-native-machine-heading:focus-visible {
+  border-radius: 6px;
+  outline: 2px solid var(--td3-blue-border);
+  outline-offset: 1px;
+}
+
+.hr-native-machine-identity,
+.hr-native-machine-identity > span,
+.hr-native-machine-metrics {
   min-width: 0;
   display: flex;
   align-items: center;
 }
 
-.hr-native-machine-heading > div {
+.hr-native-machine-identity {
   gap: 7px;
 }
 
-.hr-native-machine-heading > div > i {
+.hr-native-machine-identity > i {
   width: 7px;
   height: 7px;
   flex: none;
@@ -260,24 +305,24 @@
   background: var(--td3-muted);
 }
 
-.hr-native-machine-heading > div > i[data-state="online"] {
+.hr-native-machine-identity > i[data-state="online"] {
   background: var(--td3-green);
   box-shadow: 0 0 0 3px var(--td3-green-soft);
 }
 
-.hr-native-machine-heading > div > i[data-state="loading"] {
+.hr-native-machine-identity > i[data-state="loading"] {
   background: var(--td3-blue-text);
   box-shadow: 0 0 0 3px var(--td3-blue-soft);
   animation: tdw-connect-dot 1.35s ease-in-out infinite;
 }
 
-.hr-native-machine-heading > div > i[data-state="offline"] {
+.hr-native-machine-identity > i[data-state="offline"] {
   background: var(--td3-red);
   box-shadow: 0 0 0 3px var(--td3-red-soft);
 }
 
 
-.hr-native-machine-heading > div > span {
+.hr-native-machine-identity > span {
   align-items: baseline;
   gap: 7px;
   overflow: hidden;
@@ -301,28 +346,43 @@
   font-size: 10px;
 }
 
-.hr-native-machine-heading > span {
+.hr-native-machine-metrics {
   flex: none;
   justify-content: flex-end;
   gap: 6px;
   font-size: 10px;
 }
 
-.hr-native-machine-heading > span b {
+.hr-native-machine-metrics b {
   color: var(--td3-yellow-text);
 }
 
-.hr-native-machine-heading > span em {
+.hr-native-machine-metrics em {
   color: var(--td3-green-text);
   font-style: normal;
   font-weight: 700;
 }
 
-.hr-native-machine-heading > span small {
+.hr-native-machine-metrics small {
   min-width: 20px;
   color: var(--td3-muted);
   text-align: right;
   font-variant-numeric: tabular-nums;
+}
+
+.hr-native-machine-chevron {
+  flex: none;
+  color: var(--td3-muted);
+  font-style: normal;
+  transition: transform .14s ease;
+}
+
+.hr-native-machine-group.collapsed .hr-native-machine-chevron {
+  transform: rotate(-90deg);
+}
+
+.hr-native-machine-group.collapsed .hr-native-machine-heading {
+  margin-bottom: 0;
 }
 .hr-native-machine-empty {
   min-height: 48px;
@@ -643,6 +703,126 @@
   text-overflow: ellipsis;
   white-space: nowrap;
   font-size: 10px;
+}
+
+.hr-session-actions {
+  position: relative;
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.hr-session-action-danger:hover,
+.hr-session-action-danger:focus-visible {
+  color: var(--td3-red-text);
+}
+
+/* The rename/delete panel traps Tab and owns Escape, so it really is modal. Give it the scrim the
+   rest of the shell's dialogs use rather than letting the workspace underneath look operable. */
+.hr-session-action-backdrop {
+  position: fixed;
+  z-index: 55;
+  inset: 0;
+  background: rgba(4, 6, 12, .42);
+}
+
+.hr-session-action-panel {
+  position: absolute;
+  z-index: 60;
+  top: calc(100% + 7px);
+  right: 0;
+  width: min(340px, calc(100vw - 24px));
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--td3-border-strong);
+  border-radius: 12px;
+  background: var(--td3-panel-2);
+  box-shadow: 0 18px 46px rgba(0, 0, 0, .3);
+  text-align: left;
+}
+
+.hr-session-action-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.hr-session-action-heading > div {
+  min-width: 0;
+}
+
+.hr-session-action-heading strong,
+.hr-session-action-heading small {
+  display: block;
+  color: var(--td3-text);
+}
+
+.hr-session-action-heading strong {
+  font-size: 12.5px;
+  overflow-wrap: anywhere;
+}
+
+.hr-session-action-heading small {
+  margin-top: 3px;
+  color: var(--td3-muted);
+  font-size: 10px;
+  line-height: 1.45;
+}
+
+.hr-session-action-field {
+  display: grid;
+  gap: 5px;
+}
+
+.hr-session-action-field > span {
+  color: var(--td3-muted);
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.hr-session-action-field input {
+  width: 100%;
+  min-width: 0;
+  min-height: 38px;
+  padding: 0 10px;
+  border: 1px solid var(--td3-border);
+  border-radius: 9px;
+  color: var(--td3-text);
+  background: var(--td3-control);
+  font: inherit;
+  font-size: 13px;
+}
+
+.hr-session-action-field input:focus-visible {
+  outline: 0;
+  border-color: var(--td3-blue-border);
+  box-shadow: 0 0 0 2px var(--td3-blue-soft);
+}
+
+.hr-session-action-error {
+  padding: 8px 10px;
+  border-radius: 8px;
+  color: var(--td3-red-text);
+  background: var(--td3-red-soft);
+  font-size: 10.5px;
+  line-height: 1.45;
+}
+
+.hr-session-action-buttons {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+/* Deleting a native Session is irreversible from Harness Remote, so the confirming button must not
+   look like the neutral one next to it. */
+.hr-native-workspace .tdw-button.danger {
+  border-color: var(--td3-red-border);
+  color: var(--td3-red-text);
+  background: var(--td3-red-soft);
 }
 
 .hr-native-startup {
@@ -1051,14 +1231,14 @@
     min-height: 38px;
   }
 
-  .hr-native-machine-heading > div > span {
+  .hr-native-machine-identity > span {
     align-items: flex-start;
     flex-direction: column;
     gap: 0;
   }
 
-  .hr-native-machine-heading > span b,
-  .hr-native-machine-heading > span em {
+  .hr-native-machine-metrics b,
+  .hr-native-machine-metrics em {
     display: none;
   }
 
@@ -1113,6 +1293,16 @@
     display: none;
   }
   .hr-native-session-stats { display: none; }
+  .hr-session-action-panel {
+    right: -4px;
+    width: min(340px, calc(100vw - 16px));
+  }
+  /* These two are the only Session mutations reachable from a phone, and 34px misses the platform
+     target guidance the rest of the mobile chrome already follows. */
+  .hr-session-actions > .tdw-icon-button { width: 44px; height: 44px; }
+  .hr-session-actions { gap: 6px; }
+  .hr-session-action-field input { min-height: 44px; font-size: 16px; }
+  .hr-session-action-buttons > .tdw-button { min-height: 44px; }
   .hr-native-session-row[data-depth="1"] { width: calc(100% - 10px); margin-left: 10px; }
   .hr-native-session-row[data-depth="2"] { width: calc(100% - 20px); margin-left: 20px; }
   .hr-native-session-row[data-depth="3"] { width: calc(100% - 30px); margin-left: 30px; }
@@ -1193,7 +1383,8 @@
 
 @media (prefers-reduced-motion: reduce) {
   .hr-native-session-row,
-  .hr-native-workspace-detail {
+  .hr-native-workspace-detail,
+  .hr-native-machine-chevron {
     transition: none !important;
   }
 }

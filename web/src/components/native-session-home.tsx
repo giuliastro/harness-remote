@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useMemo, useState } from "react"
-import { api } from "../api"
 import { listMachineProjects, type MachineProject } from "../machineClient"
 import { canCreateNativeSession, createNativeSessionTarget } from "../native-session-create"
 import {
@@ -8,9 +7,10 @@ import {
   type NativeSessionRecord,
   type NativeSessionSurfaceTarget
 } from "../native-session-discovery"
-import type { MachineAgentHost, MachineSnapshot, ServerConfig } from "../types"
+import type { MachineAgentHost, MachineSnapshot } from "../types"
+import { nativeSessionDisplayTitle } from "../native-session-title"
 import type { WorkspaceMachine } from "../workspaceMachines"
-import { ChatIcon, LoadingIcon, PencilIcon, PlusIcon, RefreshIcon, SearchIcon, ServerIcon, TrashIcon } from "../Icons"
+import { ChatIcon, LoadingIcon, PlusIcon, SearchIcon, ServerIcon } from "../Icons"
 import "../native-session-home.css"
 
 type Source = {
@@ -47,7 +47,9 @@ type SessionPresentationState = "working" | "attention" | "stopped" | "ready"
 type Props = {
   sources: Source[]
   onOpen: (target: NativeSessionSurfaceTarget) => void
-  onDeleted?: (key: string) => void
+  /** Bumped by the shell after a native mutation (rename/delete) so the list re-reads its Sessions
+   * immediately instead of waiting for its own refresh cycle. */
+  refreshToken?: number
   selectedKey?: string
   selectedState?: SessionPresentationState
 }
@@ -103,14 +105,6 @@ function harnessIconUrl(backend: string): string | undefined {
 
 function recordKey(item: RecordWithMachine): string {
   return `${item.machine.id}:${item.record.key}`
-}
-
-function recordConfig(item: RecordWithMachine): ServerConfig {
-  return {
-    ...item.machine.config,
-    backend: item.record.backend,
-    agentId: item.record.agentId
-  }
 }
 
 function sessionActivityCompare(left: RecordWithMachine, right: RecordWithMachine): number {
@@ -235,7 +229,7 @@ function nativeCreateAgents(snapshot: MachineSnapshot): MachineAgentHost[] {
   return snapshot.agents.filter(canCreateNativeSession)
 }
 
-export function NativeSessionHome({ sources, onOpen, onDeleted, selectedKey, selectedState }: Props) {
+export function NativeSessionHome({ sources, onOpen, refreshToken = 0, selectedKey, selectedState }: Props) {
   const [records, setRecords] = useState<RecordWithMachine[]>([])
   const [projectsByMachine, setProjectsByMachine] = useState<Record<string, MachineProject[]>>({})
   const [loading, setLoading] = useState(false)
@@ -243,6 +237,7 @@ export function NativeSessionHome({ sources, onOpen, onDeleted, selectedKey, sel
   const [revision, setRevision] = useState(0)
   const [expandedProjects, setExpandedProjects] = useState<Set<string>>(() => new Set())
   const [collapsedProjects, setCollapsedProjects] = useState<Set<string>>(() => new Set())
+  const [collapsedMachines, setCollapsedMachines] = useState<Set<string>>(() => new Set())
   const [createOpen, setCreateOpen] = useState(false)
   const [createProjectKey, setCreateProjectKey] = useState("")
   const [createAgentID, setCreateAgentID] = useState("")
@@ -254,11 +249,6 @@ export function NativeSessionHome({ sources, onOpen, onDeleted, selectedKey, sel
   const [filter, setFilter] = useState<SessionFilter>("all")
   const [machineFilter, setMachineFilter] = useState("")
   const [agentFilter, setAgentFilter] = useState("")
-  const [renameOpen, setRenameOpen] = useState(false)
-  const [renameTitle, setRenameTitle] = useState("")
-  const [deleteConfirm, setDeleteConfirm] = useState(false)
-  const [mutationBusy, setMutationBusy] = useState(false)
-  const [mutationError, setMutationError] = useState<string | null>(null)
   // The selected Session receives live status before the 30s discovery list refreshes. Keep that
   // last observed state by Session key while the user navigates elsewhere, otherwise the row falls
   // back to its stale discovery snapshot and visibly flips Working <-> Ready. The next successful
@@ -271,12 +261,6 @@ export function NativeSessionHome({ sources, onOpen, onDeleted, selectedKey, sel
       ? current
       : { ...current, [selectedKey]: selectedState })
   }, [selectedKey, selectedState])
-
-  useEffect(() => {
-    setRenameOpen(false)
-    setDeleteConfirm(false)
-    setMutationError(null)
-  }, [selectedKey])
 
   useEffect(() => {
     if (machineFilter && !sources.some(({ machine }) => machine.id === machineFilter)) setMachineFilter("")
@@ -327,7 +311,7 @@ export function NativeSessionHome({ sources, onOpen, onDeleted, selectedKey, sel
       if (!cancelled) setLoading(false)
     })
     return () => { cancelled = true }
-  }, [sources, revision])
+  }, [sources, revision, refreshToken])
 
   useEffect(() => {
     if (!loaded || document.visibilityState !== "visible") return
@@ -343,10 +327,6 @@ export function NativeSessionHome({ sources, onOpen, onDeleted, selectedKey, sel
     return sessionPresentation(item.record)
   }, [presentationOverrides, selectedKey, selectedState])
 
-  const selectedItem = useMemo(
-    () => selectedKey ? records.find((item) => recordKey(item) === selectedKey) : undefined,
-    [records, selectedKey]
-  )
   const groups = useMemo(() => projectGroups(records), [records])
   useEffect(() => {
     if (!selectedKey) return
@@ -358,6 +338,13 @@ export function NativeSessionHome({ sources, onOpen, onDeleted, selectedKey, sel
       if (!current.has(selectedGroup.key)) return current
       const next = new Set(current)
       next.delete(selectedGroup.key)
+      return next
+    })
+    // A collapsed machine must not be able to hide the Session that is currently open.
+    setCollapsedMachines((current) => {
+      if (!current.has(selectedGroup.machine.id)) return current
+      const next = new Set(current)
+      next.delete(selectedGroup.machine.id)
       return next
     })
   }, [groups, selectedKey])
@@ -489,75 +476,13 @@ export function NativeSessionHome({ sources, onOpen, onDeleted, selectedKey, sel
       return next
     })
   }
-
-  function beginRename() {
-    if (!selectedItem?.record.renameSupported || mutationBusy) return
-    setMutationError(null)
-    setDeleteConfirm(false)
-    setRenameTitle(selectedItem.record.session.title?.trim() || "")
-    setRenameOpen(true)
-  }
-
-  async function renameSelectedSession() {
-    if (!selectedItem || mutationBusy) return
-    const title = renameTitle.replace(/[\r\n]+/g, " ").trim()
-    if (!title) {
-      setMutationError("Enter a Session name.")
-      return
-    }
-    setMutationBusy(true)
-    setMutationError(null)
-    try {
-      const updated = await api.renameSession(
-        recordConfig(selectedItem),
-        selectedItem.record.session.id,
-        title,
-        selectedItem.record.session.directory
-      )
-      const nextRecord: NativeSessionRecord = {
-        ...selectedItem.record,
-        session: { ...selectedItem.record.session, ...updated, title: updated.title || title }
-      }
-      setRecords((current) => current.map((item) => recordKey(item) === recordKey(selectedItem)
-        ? { ...item, record: nextRecord }
-        : item))
-      setRenameOpen(false)
-      onOpen(nativeSessionSurfaceTarget(selectedItem.machine.id, selectedItem.machine.config, nextRecord))
-      setRevision((value) => value + 1)
-    } catch (reason) {
-      setMutationError(reason instanceof Error ? reason.message : String(reason))
-    } finally {
-      setMutationBusy(false)
-    }
-  }
-
-  async function deleteSelectedSession() {
-    if (!selectedItem || mutationBusy) return
-    const key = recordKey(selectedItem)
-    setMutationBusy(true)
-    setMutationError(null)
-    try {
-      await api.deleteSession(
-        recordConfig(selectedItem),
-        selectedItem.record.session.id,
-        selectedItem.record.session.directory
-      )
-      setRecords((current) => current.filter((item) => recordKey(item) !== key))
-      setPresentationOverrides((current) => {
-        if (!(key in current)) return current
-        const next = { ...current }
-        delete next[key]
-        return next
-      })
-      setRenameOpen(false)
-      setDeleteConfirm(false)
-      onDeleted?.(key)
-      setRevision((value) => value + 1)
-    } catch (reason) {
-      setMutationError(reason instanceof Error ? reason.message : String(reason))
-    } finally {
-      setMutationBusy(false)
-    }
+  function toggleMachineCollapsed(machineID: string) {
+    setCollapsedMachines((current) => {
+      const next = new Set(current)
+      if (next.has(machineID)) next.delete(machineID)
+      else next.add(machineID)
+      return next
+    })
   }
 
   async function createSession() {
@@ -594,22 +519,12 @@ export function NativeSessionHome({ sources, onOpen, onDeleted, selectedKey, sel
           <h2>Sessions</h2>
           <span>{activeCount ? `${activeCount} working · ${scopedRecords.length} shown` : `${scopedRecords.length} recent`}</span>
         </div>
+        {/* Rename and Delete live in the chat header of the open Session, and refreshing is owned by
+            the workspace top bar plus the automatic discovery cycle. The Session list keeps exactly
+            one action: starting a new native Session. */}
         <div className="hr-native-home-actions">
-          {selectedItem?.record.renameSupported ? (
-            <button type="button" className="tdw-icon-button" onClick={beginRename} disabled={mutationBusy} aria-label="Rename selected Session" title="Rename Session">
-              <PencilIcon size={15} />
-            </button>
-          ) : null}
-          {selectedItem?.record.deleteSupported ? (
-            <button type="button" className="tdw-icon-button" onClick={() => { setMutationError(null); setRenameOpen(false); setDeleteConfirm(true) }} disabled={mutationBusy} aria-label="Delete selected Session" title="Delete Session">
-              <TrashIcon size={15} />
-            </button>
-          ) : null}
           <button type="button" className="tdw-button primary hr-native-new-session" onClick={() => { setCreateError(null); setCreateOpen(true) }} aria-label="New Session">
             <PlusIcon size={15} /> <span>New Session</span>
-          </button>
-          <button type="button" className="tdw-icon-button" onClick={() => setRevision((value) => value + 1)} disabled={loading} aria-label="Refresh Sessions" title="Refresh Sessions">
-            {loading ? <LoadingIcon size={16} /> : <RefreshIcon size={16} />}
           </button>
         </div>
       </div>
@@ -645,37 +560,6 @@ export function NativeSessionHome({ sources, onOpen, onDeleted, selectedKey, sel
               <option value="">All harnesses</option>
               {agentChoices.map((choice) => <option value={choice.id} key={choice.id}>{choice.label} · {choice.count}</option>)}
             </select>
-          </div>
-        </div>
-      ) : null}
-
-      {renameOpen && selectedItem ? (
-        <div className="hr-native-create-panel" role="group" aria-label="Rename native Session">
-          <div className="hr-native-create-heading">
-            <div><strong>Rename Session</strong><small>Changes the native harness Session name, not a Harness Remote alias.</small></div>
-            <button type="button" className="tdw-icon-button" onClick={() => !mutationBusy && setRenameOpen(false)} disabled={mutationBusy} aria-label="Close Rename Session">×</button>
-          </div>
-          <label className="hr-native-create-title">
-            <span>Session name</span>
-            <input value={renameTitle} onChange={(event) => setRenameTitle(event.target.value)} disabled={mutationBusy} maxLength={200} autoFocus onKeyDown={(event) => { if (event.key === "Enter") void renameSelectedSession() }} />
-          </label>
-          {mutationError ? <div className="hr-native-create-error" role="alert">{mutationError}</div> : null}
-          <div className="hr-native-create-actions">
-            <button type="button" className="tdw-button secondary" onClick={() => setRenameOpen(false)} disabled={mutationBusy}>Cancel</button>
-            <button type="button" className="tdw-button primary" onClick={() => void renameSelectedSession()} disabled={mutationBusy || !renameTitle.trim()}>{mutationBusy ? "Renaming..." : "Rename"}</button>
-          </div>
-        </div>
-      ) : null}
-
-      {deleteConfirm && selectedItem ? (
-        <div className="hr-native-create-panel" role="group" aria-label="Delete native Session">
-          <div className="hr-native-create-heading">
-            <div><strong>Delete “{selectedItem.record.session.title || "Untitled Session"}”?</strong><small>This deletes the native Session from {selectedItem.record.agentLabel}. This cannot be undone from Harness Remote.</small></div>
-          </div>
-          {mutationError ? <div className="hr-native-create-error" role="alert">{mutationError}</div> : null}
-          <div className="hr-native-create-actions">
-            <button type="button" className="tdw-button secondary" onClick={() => setDeleteConfirm(false)} disabled={mutationBusy}>Keep Session</button>
-            <button type="button" className="tdw-button danger" onClick={() => void deleteSelectedSession()} disabled={mutationBusy}>{mutationBusy ? "Deleting..." : "Delete Session"}</button>
           </div>
         </div>
       ) : null}
@@ -731,124 +615,143 @@ export function NativeSessionHome({ sources, onOpen, onDeleted, selectedKey, sel
       ) : null}
 
       <div className="hr-native-machine-list">
-        {machineGroups.map(({ machine, label, state, error, projects, sessionCount, workingCount, attentionCount: machineAttentionCount }) => (
-          <section className={`hr-native-machine-group ${state}`} key={machine.id} aria-label={`${label} Sessions`}>
-            <header className="hr-native-machine-heading">
-              <div>
-                <i data-state={state} aria-hidden="true" />
-                <span>
-                  <strong>{label}</strong>
-                  <small title={error || machine.config.host}>{state === "loading" ? "Connecting…" : state === "offline" ? error || "Machine offline" : machine.config.host}</small>
+        {machineGroups.map(({ machine, label, state, error, projects, sessionCount, workingCount, attentionCount: machineAttentionCount }) => {
+          const machineCollapsed = collapsedMachines.has(machine.id)
+          return (
+            <section className={`hr-native-machine-group ${state}${machineCollapsed ? " collapsed" : ""}`} key={machine.id} aria-label={`${label} Sessions`}>
+              {/* A machine is a group header, not a static label: on a multi-machine install the whole
+                  machine has to fold away so the machine being supervised stays on screen. */}
+              <button
+                type="button"
+                className="hr-native-machine-heading"
+                onClick={() => toggleMachineCollapsed(machine.id)}
+                aria-expanded={!machineCollapsed}
+                aria-label={`${machineCollapsed ? "Expand" : "Collapse"} ${label} Sessions`}
+              >
+                <span className="hr-native-machine-identity">
+                  <i data-state={state} aria-hidden="true" />
+                  <span>
+                    <strong>{label}</strong>
+                    <small title={error || machine.config.host}>{state === "loading" ? "Connecting…" : state === "offline" ? error || "Machine offline" : machine.config.host}</small>
+                  </span>
                 </span>
-              </div>
-              <span>
-                {machineAttentionCount ? <b>{machineAttentionCount} attention</b> : null}
-                {workingCount ? <em>{workingCount} live</em> : null}
-                <small>{state === "online" ? sessionCount : state === "loading" ? "…" : "Offline"}</small>
-              </span>
-            </header>
-            {projects.length === 0 ? (
-              <div className="hr-native-machine-empty">
-                {state === "loading" ? <LoadingIcon size={15} /> : <ServerIcon size={15} />}
-                <span>{state === "loading" ? "Discovering Projects and native Sessions…" : state === "offline" ? "This machine is unavailable. Its configuration is still saved." : "No native Sessions discovered on this machine."}</span>
-              </div>
-            ) : null}
+                <span className="hr-native-machine-metrics">
+                  {machineAttentionCount ? <b>{machineAttentionCount} attention</b> : null}
+                  {workingCount ? <em>{workingCount} live</em> : null}
+                  <small>{state === "online" ? sessionCount : state === "loading" ? "…" : "Offline"}</small>
+                  <i className="hr-native-machine-chevron" aria-hidden="true">⌄</i>
+                </span>
+              </button>
+              {machineCollapsed ? null : (
+              <>
+                {projects.length === 0 ? (
+                  <div className="hr-native-machine-empty">
+                    {state === "loading" ? <LoadingIcon size={15} /> : <ServerIcon size={15} />}
+                    <span>{state === "loading" ? "Discovering Projects and native Sessions…" : state === "offline" ? "This machine is unavailable. Its configuration is still saved." : "No native Sessions discovered on this machine."}</span>
+                  </div>
+                ) : null}
 
-            {projects.map((group) => {
-              const expanded = expandedProjects.has(group.key)
-              const collapsed = collapsedProjects.has(group.key)
-              const treeRows = sessionTreeRows(group.sessions)
-              const visibleRows = expanded ? treeRows : treeRows.slice(0, COLLAPSED_PROJECT_SESSION_COUNT)
-              const hiddenCount = Math.max(0, treeRows.length - COLLAPSED_PROJECT_SESSION_COUNT)
-              return (
-                <section className={`hr-native-project-group${collapsed ? " collapsed" : ""}`} key={group.key} aria-label={`${group.name} Sessions`}>
-                  <button
-                    type="button"
-                    className="hr-native-project-heading"
-                    onClick={() => toggleProjectCollapsed(group.key)}
-                    aria-expanded={!collapsed}
-                    aria-label={`${collapsed ? "Expand" : "Collapse"} ${group.name} Sessions`}
-                  >
-                    <span>
-                      <strong>{group.name}</strong>
-                      <small title={group.directory}>{group.directory || "No working directory"}</small>
-                    </span>
-                    <span><b>{group.sessions.length}</b><i aria-hidden="true">⌄</i></span>
-                  </button>
-                  {!collapsed ? (
-                    <>
-                      <div className="hr-native-home-list">
-                        {visibleRows.map(({ item, depth }) => {
-                          const status = presentationForItem(item)
-                          const title = item.record.session.title?.trim() || `Untitled ${item.record.agentLabel} Session`
-                          const normalizedTitle = title.replace(/\s+/g, " ")
-                          const accessibleTitle = normalizedTitle.length > 140 ? `${normalizedTitle.slice(0, 137)}…` : normalizedTitle
-                          const tooltipTitle = normalizedTitle.length > 240 ? `${normalizedTitle.slice(0, 237)}…` : normalizedTitle
-                          const timestamp = item.record.session.time?.updated || item.record.session.time?.created || 0
-                          const summary = item.record.session.summary
-                          const hasChanges = Boolean(summary && (summary.files || summary.additions || summary.deletions))
-                          const nativeAgent = item.record.session.agent?.trim()
-                          const restrictionCount = item.record.session.permission?.filter((rule) => rule.action === "deny").length || 0
-                          const icon = harnessIconUrl(item.record.backend)
-                          const targetKey = recordKey(item)
-                          const selected = targetKey === selectedKey
-                          return (
+                {projects.map((group) => {
+                  const expanded = expandedProjects.has(group.key)
+                  const collapsed = collapsedProjects.has(group.key)
+                  const treeRows = sessionTreeRows(group.sessions)
+                  const visibleRows = expanded ? treeRows : treeRows.slice(0, COLLAPSED_PROJECT_SESSION_COUNT)
+                  const hiddenCount = Math.max(0, treeRows.length - COLLAPSED_PROJECT_SESSION_COUNT)
+                  return (
+                    <section className={`hr-native-project-group${collapsed ? " collapsed" : ""}`} key={group.key} aria-label={`${group.name} Sessions`}>
+                      <button
+                        type="button"
+                        className="hr-native-project-heading"
+                        onClick={() => toggleProjectCollapsed(group.key)}
+                        aria-expanded={!collapsed}
+                        aria-label={`${collapsed ? "Expand" : "Collapse"} ${group.name} Sessions`}
+                      >
+                        <span>
+                          <strong>{group.name}</strong>
+                          <small title={group.directory}>{group.directory || "No working directory"}</small>
+                        </span>
+                        <span><b>{group.sessions.length}</b><i aria-hidden="true">⌄</i></span>
+                      </button>
+                      {!collapsed ? (
+                        <>
+                          <div className="hr-native-home-list">
+                            {visibleRows.map(({ item, depth }) => {
+                              const status = presentationForItem(item)
+                              const title = nativeSessionDisplayTitle(
+                                item.record.session.title,
+                                `Untitled ${item.record.agentLabel} Session`
+                              )
+                              const normalizedTitle = title
+                              const accessibleTitle = normalizedTitle.length > 140 ? `${normalizedTitle.slice(0, 137)}…` : normalizedTitle
+                              const tooltipTitle = normalizedTitle.length > 240 ? `${normalizedTitle.slice(0, 237)}…` : normalizedTitle
+                              const timestamp = item.record.session.time?.updated || item.record.session.time?.created || 0
+                              const summary = item.record.session.summary
+                              const hasChanges = Boolean(summary && (summary.files || summary.additions || summary.deletions))
+                              const nativeAgent = item.record.session.agent?.trim()
+                              const restrictionCount = item.record.session.permission?.filter((rule) => rule.action === "deny").length || 0
+                              const icon = harnessIconUrl(item.record.backend)
+                              const targetKey = recordKey(item)
+                              const selected = targetKey === selectedKey
+                              return (
+                                <button
+                                  type="button"
+                                  className={`hr-native-session-row ${status.state}${selected ? " selected" : ""}${depth ? " child" : ""}`}
+                                  data-depth={Math.min(depth, 3)}
+                                  key={targetKey}
+                                  onClick={() => open(item)}
+                                  aria-current={selected ? "page" : undefined}
+                                  aria-label={`Open ${accessibleTitle}. ${depth ? "Child Session. " : ""}${item.record.agentLabel}.${nativeAgent ? ` Native agent ${nativeAgent}.` : ""}${restrictionCount ? ` ${restrictionCount} restrictions.` : ""} ${status.label}. ${group.name} on ${group.machine.name}.`}
+                                  title={tooltipTitle}
+                                >
+                                  <span className="hr-native-session-harness" aria-hidden="true">
+                                    {icon ? <img src={icon} alt="" /> : <b>{item.record.agentLabel.slice(0, 2).toUpperCase()}</b>}
+                                    <i data-state={status.state} />
+                                  </span>
+                                  <span className="hr-native-session-copy">
+                                    <strong>{title}</strong>
+                                    <small>
+                                      <span>{item.record.agentLabel}{nativeAgent ? ` · ${nativeAgent}` : ""}{item.record.session.external === true ? " · external" : ""}</span>
+                                      {restrictionCount ? <span className="hr-native-session-policy">{restrictionCount} restricted</span> : null}
+                                      {depth ? <span className="hr-native-session-child-label">child</span> : null}
+                                      {hasChanges ? (
+                                        <span className="hr-native-session-changes">
+                                          <b>+{summary?.additions || 0}</b>
+                                          <i>−{summary?.deletions || 0}</i>
+                                          <em>{summary?.files || 0} file{summary?.files === 1 ? "" : "s"}</em>
+                                        </span>
+                                      ) : null}
+                                    </small>
+                                  </span>
+                                  <span className="hr-native-session-meta">
+                                    <span className="hr-native-session-status" data-state={status.state}>{status.label}</span>
+                                    <time dateTime={timestamp ? new Date(timestamp).toISOString() : undefined} title={timestamp ? new Date(timestamp).toLocaleString() : undefined}>
+                                      {relativeTime(timestamp)}
+                                    </time>
+                                  </span>
+                                </button>
+                              )
+                            })}
+                          </div>
+                          {hiddenCount > 0 ? (
                             <button
                               type="button"
-                              className={`hr-native-session-row ${status.state}${selected ? " selected" : ""}${depth ? " child" : ""}`}
-                              data-depth={Math.min(depth, 3)}
-                              key={targetKey}
-                              onClick={() => open(item)}
-                              aria-current={selected ? "page" : undefined}
-                              aria-label={`Open ${accessibleTitle}. ${depth ? "Child Session. " : ""}${item.record.agentLabel}.${nativeAgent ? ` Native agent ${nativeAgent}.` : ""}${restrictionCount ? ` ${restrictionCount} restrictions.` : ""} ${status.label}. ${group.name} on ${group.machine.name}.`}
-                              title={tooltipTitle}
+                              className="hr-native-project-more"
+                              onClick={() => toggleProject(group.key)}
+                              aria-expanded={expanded}
                             >
-                              <span className="hr-native-session-harness" aria-hidden="true">
-                                {icon ? <img src={icon} alt="" /> : <b>{item.record.agentLabel.slice(0, 2).toUpperCase()}</b>}
-                                <i data-state={status.state} />
-                              </span>
-                              <span className="hr-native-session-copy">
-                                <strong>{title}</strong>
-                                <small>
-                                  <span>{item.record.agentLabel}{nativeAgent ? ` · ${nativeAgent}` : ""}{item.record.session.external === true ? " · external" : ""}</span>
-                                  {restrictionCount ? <span className="hr-native-session-policy">{restrictionCount} restricted</span> : null}
-                                  {depth ? <span className="hr-native-session-child-label">child</span> : null}
-                                  {hasChanges ? (
-                                    <span className="hr-native-session-changes">
-                                      <b>+{summary?.additions || 0}</b>
-                                      <i>−{summary?.deletions || 0}</i>
-                                      <em>{summary?.files || 0} file{summary?.files === 1 ? "" : "s"}</em>
-                                    </span>
-                                  ) : null}
-                                </small>
-                              </span>
-                              <span className="hr-native-session-meta">
-                                <span className="hr-native-session-status" data-state={status.state}>{status.label}</span>
-                                <time dateTime={timestamp ? new Date(timestamp).toISOString() : undefined} title={timestamp ? new Date(timestamp).toLocaleString() : undefined}>
-                                  {relativeTime(timestamp)}
-                                </time>
-                              </span>
+                              {expanded ? "Show less" : `Show ${hiddenCount} more`}
                             </button>
-                          )
-                        })}
-                      </div>
-                      {hiddenCount > 0 ? (
-                        <button
-                          type="button"
-                          className="hr-native-project-more"
-                          onClick={() => toggleProject(group.key)}
-                          aria-expanded={expanded}
-                        >
-                          {expanded ? "Show less" : `Show ${hiddenCount} more`}
-                        </button>
-                      ) : null}
-                    </>
-                  ) : null}
-                </section>
-              )
-            })}
-          </section>
-        ))}
+                          ) : null}
+                      </>
+                    ) : null}
+                  </section>
+                )
+              })}
+              </>
+              )}
+            </section>
+          )
+        })}
       </div>
 
       {loaded && records.length > 0 && filteredGroups.length === 0 ? (

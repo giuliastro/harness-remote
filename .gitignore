@@ -15,3 +15,7 @@ web/release-*/
 
 # The bridge has no dependencies; CI runs its tests without installing any.
 bridge/package-lock.json
+
+# Third-party Claude Code skills installed locally (ui-ux-pro-max and friends). Tooling, not
+# product code, and 11MB of vendored data files.
+.claude/skills/
