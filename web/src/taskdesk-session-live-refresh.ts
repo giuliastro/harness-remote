@@ -173,12 +173,13 @@ export function startTaskDeskSessionLiveRefresh({
         throttle("index", 450, onIndex)
         if (selectedEvent) {
           // ACP harnesses commonly use session.updated as the final lifecycle edge after prompt
-          // resolution. At that point OMP's journal is already durable in real testing, so re-read the
-          // selected tail once. This is event-driven convergence, not an OMP-specific grace-period
-          // polling loop, and it also benefits other ACP adapters that do not emit one last message
-          // event after finalizing their native Session.
+          // resolution. Re-read immediately. Real OMP 18.x can resolve that edge a fraction before
+          // the final JSONL bytes are visible, so OMP gets one bounded settle read as well. This is
+          // deliberately one event-driven follow-up, not a polling loop; PI keeps its already-stable
+          // lifecycle unchanged.
           throttle("message", 80, onMessage)
           throttle("detail", 450, onDetail)
+          if (target.config.backend === "omp") settleAfterLifecycle()
         }
         return
       }
