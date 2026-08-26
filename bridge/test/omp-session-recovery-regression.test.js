@@ -5,6 +5,7 @@ import path from "node:path"
 import test from "node:test"
 import { createOmpHistoryLoader } from "../src/omp-session-history.js"
 
+// Keep this regression on the PR head so GitHub validates the exact OMP recovery implementation.
 async function withJournal(records, run) {
   const root = await mkdtemp(path.join(tmpdir(), "harness-remote-omp-recovery-"))
   const sessionID = "session-recovery"
