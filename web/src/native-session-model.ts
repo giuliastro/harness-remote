@@ -87,6 +87,17 @@ export function lastNativeMessageModel(messages: MessageEnvelope[]): ModelSelect
 
 const PAGE_MODEL_BACKENDS = new Set(["omp", "pi", "codex"])
 
+async function currentSessionModel(target: NativeSessionSurfaceTarget): Promise<ModelSelection | null> {
+  const models = await api.listModels(target.config, target.directory, target.sessionID)
+  const current = models.find((candidate) => candidate.isDefault)
+  if (!current) return null
+  return {
+    providerID: current.providerID,
+    modelID: current.modelID,
+    ...(current.variant ? { variant: current.variant } : {})
+  }
+}
+
 /**
  * Recover the last model from native Session state without persisting a second Harness Remote model.
  *
@@ -94,9 +105,9 @@ const PAGE_MODEL_BACKENDS = new Set(["omp", "pi", "codex"])
  * selected on their exact native JSONL branch and Codex reports it from the newest rollout
  * turn_context. Claude has no journal authority of its own here, but its transcript already requires
  * ACP session/load; after that load the adapter's current model config option is available through
- * the normal models endpoint, so reading it adds no parallel Session-first model state. If a harness
- * cannot prove a current model, leave it unset and let its own native default win rather than
- * resurrecting stale browser state.
+ * the normal models endpoint. OMP uses the same session-scoped ACP fallback when an ambiguous tree
+ * had to be replayed before the journal branch could be identified, so a real native model never
+ * degrades to Harness default merely because the first JSONL page could not prove the branch yet.
  */
 export async function resolveNativeSessionTargetModel(
   target: NativeSessionSurfaceTarget
@@ -112,14 +123,8 @@ export async function resolveNativeSessionTargetModel(
       false
     )
     let model = page.model ?? (target.backend === "opencode" ? lastNativeMessageModel(page.messages) : null)
-    if (!model && target.backend === "claude") {
-      const models = await api.listModels(target.config, target.directory, target.sessionID)
-      const current = models.find((candidate) => candidate.isDefault)
-      if (current) model = {
-        providerID: current.providerID,
-        modelID: current.modelID,
-        ...(current.variant ? { variant: current.variant } : {})
-      }
+    if (!model && (target.backend === "claude" || target.backend === "omp")) {
+      model = await currentSessionModel(target)
     }
     return model ? { ...target, model } : target
   } catch {
