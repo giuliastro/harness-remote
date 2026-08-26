@@ -30,6 +30,7 @@ type ProjectionEntry = {
   currentModel: ModelSelection | null
   initialPageCaptured: boolean
   piTailMessages: MessageEnvelope[]
+  ompTailMessages: MessageEnvelope[]
   writerReady: boolean
   writerClaimInFlight: Promise<void> | null
   runs: Map<string, ProjectionRun>
@@ -160,6 +161,105 @@ function visiblePrompt(message: MessageEnvelope): string {
   return canonicalText(value.slice(instructionStart, footerStart >= 0 ? footerStart : undefined))
 }
 
+function lastUserIndex(messages: MessageEnvelope[]): number {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    if (messages[index].info.role === "user") return index
+  }
+  return -1
+}
+
+function ompErrorText(message: MessageEnvelope): string {
+  return canonicalText(message.info.error?.message || "")
+}
+
+function ompStableAssistantText(message: MessageEnvelope): string | null {
+  if (message.info.role !== "assistant" || message.info.error || !message.parts.length) return null
+  if (message.parts.some((part) => part.type !== "text" && part.type !== "reasoning")) return null
+  const text = canonicalText(messageText(message))
+  return text || null
+}
+
+/**
+ * OMP can expose one logical reply with a live ACP id and then a different persisted JSONL id. Keep
+ * that identity repair inside the OMP projection instead of changing the shared message-page merge.
+ * Failed attempts are matched by their error text in order, so a red error already rendered live does
+ * not duplicate when the journal later exposes the same failed sibling. The final normal assistant is
+ * stabilized only when its text is equal or a prefix extension/regression of the live text.
+ */
+function stabilizeOmpTailMessageIDs(previous: MessageEnvelope[], next: MessageEnvelope[]): MessageEnvelope[] {
+  if (!previous.length || !next.length) return next
+  const previousUserIndex = lastUserIndex(previous)
+  const nextUserIndex = lastUserIndex(next)
+  if (previousUserIndex < 0 || nextUserIndex < 0) return next
+  const previousPrompt = visiblePrompt(previous[previousUserIndex])
+  const nextPrompt = visiblePrompt(next[nextUserIndex])
+  if (!previousPrompt || previousPrompt !== nextPrompt) return next
+
+  const previousIDs = new Set(previous.map((message) => message.info.id))
+  const nextIDs = new Set(next.map((message) => message.info.id))
+  const previousTail = previous.slice(previousUserIndex + 1).filter((message) => message.info.role === "assistant")
+  const nextTail = next.slice(nextUserIndex + 1).filter((message) => message.info.role === "assistant")
+  const usedPrevious = new Set<string>()
+  const replacementByIncomingID = new Map<string, string>()
+
+  // Preserve each failed attempt exactly once. If two attempts have the same provider error, pair
+  // them in journal/live order rather than collapsing them into one message.
+  for (const incoming of nextTail) {
+    if (previousIDs.has(incoming.info.id)) continue
+    const error = ompErrorText(incoming)
+    if (!error) continue
+    const candidate = previousTail.find((message) => (
+      !usedPrevious.has(message.info.id)
+      && !nextIDs.has(message.info.id)
+      && ompErrorText(message) === error
+    ))
+    if (!candidate) continue
+    usedPrevious.add(candidate.info.id)
+    replacementByIncomingID.set(incoming.info.id, candidate.info.id)
+  }
+
+  // The successful answer is the last non-error assistant for this user turn. OMP's live stream and
+  // journal can differ only in id and durability prefix, so preserve the browser identity in that
+  // narrow case and leave genuinely divergent sibling answers alone.
+  const incomingFinal = [...nextTail].reverse().find((message) => ompStableAssistantText(message))
+  if (incomingFinal && !previousIDs.has(incomingFinal.info.id)) {
+    const incomingText = ompStableAssistantText(incomingFinal)
+    const candidate = [...previousTail].reverse().find((message) => (
+      !usedPrevious.has(message.info.id)
+      && !nextIDs.has(message.info.id)
+      && ompStableAssistantText(message)
+    ))
+    const candidateText = candidate ? ompStableAssistantText(candidate) : null
+    if (
+      candidate
+      && candidateText
+      && incomingText
+      && (candidateText === incomingText || candidateText.startsWith(incomingText) || incomingText.startsWith(candidateText))
+    ) {
+      usedPrevious.add(candidate.info.id)
+      replacementByIncomingID.set(incomingFinal.info.id, candidate.info.id)
+    }
+  }
+
+  if (!replacementByIncomingID.size) return next
+  return next.map((message) => {
+    const stableID = replacementByIncomingID.get(message.info.id)
+    if (!stableID) return message
+    return {
+      ...message,
+      info: { ...message.info, id: stableID },
+      parts: message.parts.map((part) => ({ ...part, messageID: stableID }))
+    }
+  })
+}
+
+function stabilizeOmpTailPage(entry: ProjectionEntry, page: MessagePage, before?: string): MessagePage {
+  if (entry.target.backend !== "omp" || before) return page
+  const messages = stabilizeOmpTailMessageIDs(entry.ompTailMessages, page.messages)
+  entry.ompTailMessages = messages
+  return messages === page.messages ? page : { ...page, messages }
+}
+
 function nativeAssistantCompleted(message: MessageEnvelope): boolean {
   if (message.info.role !== "assistant") return false
   if (message.info.error || message.info.time?.completed) return true
@@ -168,10 +268,14 @@ function nativeAssistantCompleted(message: MessageEnvelope): boolean {
 }
 
 function sameModel(left: ModelSelection | null, right: ModelSelection | null): boolean {
-  if (!left || !right) return !left && !right
-  return left.providerID === right.providerID
+  return Boolean(left && right
+    && left.providerID === right.providerID
     && left.modelID === right.modelID
-    && (left.variant || "") === (right.variant || "")
+    && (left.variant || "") === (right.variant || ""))
+}
+
+function sameOptionalModel(left: ModelSelection | null, right: ModelSelection | null): boolean {
+  return (!left && !right) || sameModel(left, right)
 }
 
 /**
@@ -179,36 +283,52 @@ function sameModel(left: ModelSelection | null, right: ModelSelection | null): b
  * new native envelope is durable, then return while the reply is still streaming. Every current-tail
  * page can therefore advance the projection from stale/default metadata to the model on the newest
  * native turn.
- *
- * OMP reports the model of its selected JSONL branch as page.model. That is native truth and must be
- * allowed to fill a projection that mounted before model enrichment. While an HR-originated turn is
- * already running, however, an older journal page may still describe the previous model for a few
- * milliseconds; never let that stale page undo a concrete model the user just selected for the turn.
  */
 function reconcileNativeSessionModel(entry: ProjectionEntry, page: MessagePage, before?: string): void {
-  if (before || !["opencode", "codex", "omp"].includes(entry.target.backend)) return
-  const model = page.model ?? (entry.target.backend === "opencode" ? lastNativeMessageModel(page.messages) : null)
-  if (!model) return
-  if (entry.target.backend === "omp" && entry.forcedStatus === "running" && entry.currentModel && !sameModel(entry.currentModel, model)) {
+  if (before) return
+
+  if (entry.target.backend === "omp") {
+    const model = page.model ?? null
+    if (!model) return
+    // OMP's journal may still describe the previous branch model for a few milliseconds after Send.
+    // Never let that lag overwrite the concrete model already chosen for the live HR turn.
+    if (entry.forcedStatus === "running" && entry.currentModel && !sameModel(entry.currentModel, model)) return
+
+    let changed = !sameModel(entry.currentModel, model)
+    entry.currentModel = model
+    const orderedRuns = [...entry.runs.values()].sort((left, right) => left.created - right.created || left.id.localeCompare(right.id))
+    const latestRun = orderedRuns[orderedRuns.length - 1]
+    if (latestRun && !latestRun.model) {
+      latestRun.model = model
+      changed = true
+    } else {
+      const latestUser = [...page.messages].reverse().find((message) => message.info.role === "user" && message.info.id)
+      if (latestUser) {
+        const run = entry.runs.get(`${projectionID(entry.target)}:native-user:${latestUser.info.id}`)
+        if (run && !sameModel(run.model, model)) {
+          run.model = model
+          changed = true
+        }
+      }
+    }
+    if (changed) notify(entry)
     return
   }
 
+  // Preserve the validated #304 behavior byte-for-byte for OpenCode/Codex. The OMP recovery above
+  // must not change their model/run enrichment semantics.
+  if (entry.target.backend !== "opencode" && entry.target.backend !== "codex") return
+  const model = page.model ?? (entry.target.backend === "opencode" ? lastNativeMessageModel(page.messages) : null)
+  if (!model) return
+
   let changed = !sameModel(entry.currentModel, model)
   entry.currentModel = model
-
-  const orderedRuns = [...entry.runs.values()].sort((left, right) => left.created - right.created || left.id.localeCompare(right.id))
-  const latestRun = orderedRuns[orderedRuns.length - 1]
-  if (latestRun && !latestRun.model) {
-    latestRun.model = model
-    changed = true
-  } else {
-    const latestUser = [...page.messages].reverse().find((message) => message.info.role === "user" && message.info.id)
-    if (latestUser) {
-      const run = entry.runs.get(`${projectionID(entry.target)}:native-user:${latestUser.info.id}`)
-      if (run && !sameModel(run.model, model)) {
-        run.model = model
-        changed = true
-      }
+  const latestUser = [...page.messages].reverse().find((message) => message.info.role === "user" && message.info.id)
+  if (latestUser) {
+    const run = entry.runs.get(`${projectionID(entry.target)}:native-user:${latestUser.info.id}`)
+    if (run && !sameModel(run.model, model)) {
+      run.model = model
+      changed = true
     }
   }
   if (changed) notify(entry)
@@ -380,15 +500,29 @@ function captureUserRuns(entry: ProjectionEntry, page: MessagePage, before?: str
   if (changed) notify(entry)
 }
 
+/** Baseline continuation path for every non-OMP native Session. */
+function appendAcceptedRun(entry: ProjectionEntry, prompt: string, model: ModelSelection | null, clientRequestId: string): MachineTask {
+  const id = `${projectionID(entry.target)}:request:${clientRequestId}`
+  if (!entry.runs.has(id)) {
+    const created = Date.now()
+    entry.runs.set(id, { id, prompt: canonicalText(prompt), created, model })
+    entry.updatedAt = created
+  }
+  entry.currentModel = model
+  entry.forcedStatus = "running"
+  entry.statusType = "running"
+  return notify(entry)
+}
+
 function requestRunID(entry: ProjectionEntry, clientRequestId: string): string {
   return `${projectionID(entry.target)}:request:${clientRequestId}`
 }
 
 /**
- * Create the logical continuation boundary before writer acquisition or HTTP prompt delivery starts.
+ * OMP-only: create the logical continuation boundary before writer acquisition or prompt delivery.
  * OMP can emit session.updated while claim/model application is in progress; without a new Run in the
  * projection that event marks the preceding assistant as active and its old Activity flips back to
- * Working. A provisional Run gives the mature timeline the correct current turn immediately.
+ * Working. Other harnesses retain the validated post-accept appendAcceptedRun path above.
  */
 function beginProjectionRun(entry: ProjectionEntry, prompt: string, model: ModelSelection | null): PreparedProjectionRun {
   const normalizedPrompt = canonicalText(prompt)
@@ -397,7 +531,7 @@ function beginProjectionRun(entry: ProjectionEntry, prompt: string, model: Model
   const canReusePending = Boolean(
     unresolved
     && canonicalText(unresolved.text) === normalizedPrompt
-    && sameModel(unresolved.model ?? null, effectiveModel)
+    && sameOptionalModel(unresolved.model ?? null, effectiveModel)
   )
   const created = canReusePending && unresolved ? unresolved.createdAt : Date.now()
   const id = canReusePending && unresolved
@@ -499,6 +633,7 @@ function installAdapter(): void {
     const entry = entryForRead(config, sessionID, directory)
     if (entry) {
       page = stabilizePiTailPage(entry, page, before)
+      page = stabilizeOmpTailPage(entry, page, before)
       captureUserRuns(entry, page, before)
       reconcileOpenCodeTranscriptStatus(entry, page, before)
       reconcileNativeSessionModel(entry, page, before)
@@ -526,12 +661,22 @@ function installAdapter(): void {
     }
 
     // The shared v3 controller emits null while its model picker is still catching up with native
-    // transcript enrichment. For a native Session that is not an explicit new catalog selection,
-    // preserve the model already recovered from the authoritative Session instead of silently
-    // switching the next turn to the harness default. A concrete ModelSelection still wins.
+    // transcript enrichment. Preserve the native model already recovered for this Session unless a
+    // concrete catalog selection was supplied.
     const model = body.model ?? entry.currentModel
-    const prepared = beginProjectionRun(entry, prompt, model ?? null)
 
+    if (entry.target.backend !== "omp") {
+      // Preserve #304 lifecycle semantics for PI, Claude, Codex and OpenCode. OMP alone needs the
+      // provisional boundary because its claim/model setup can emit session.updated before Send.
+      await ensureWriter(entry)
+      const result = await sendNativeSessionPrompt(entry.target, prompt, model)
+      if (result.status !== "accepted") {
+        throw new Error(`Prompt delivery is ${result.status}. Retry the same prompt to reconcile the existing request id.`)
+      }
+      return appendAcceptedRun(entry, prompt, model ?? null, result.clientRequestId)
+    }
+
+    const prepared = beginProjectionRun(entry, prompt, model ?? null)
     try {
       await ensureWriter(entry)
       const result = await sendNativeSessionPrompt(entry.target, prompt, model)
@@ -541,15 +686,14 @@ function installAdapter(): void {
       }
       return promoteProjectionRun(entry, prepared, result.clientRequestId, true)
     } catch (reason) {
-      // A transport failure after dispatch keeps the durable pending request id. Preserve that logical
-      // user turn so retrying cannot reactivate the preceding Activity, but do not claim it is still
-      // Working until native status proves delivery. A claim/HTTP refusal clears the pending record,
-      // which proves no turn exists and allows the provisional boundary to be removed completely.
+      // OMP transport failures after dispatch keep the durable pending request id. Preserve that
+      // logical user turn so retrying cannot reactivate the preceding Activity, but do not claim it
+      // is still Working until native status proves delivery.
       const pending = loadPendingNativeSessionPrompt(entry.target)
       if (
         pending
         && canonicalText(pending.text) === prepared.prompt
-        && sameModel(pending.model ?? null, prepared.model)
+        && sameOptionalModel(pending.model ?? null, prepared.model)
       ) {
         promoteProjectionRun(entry, prepared, pending.clientRequestId, false)
       } else if (entry.runs.has(prepared.id)) {
@@ -596,6 +740,7 @@ export function registerNativeSessionV3Adapter(
       currentModel: target.model,
       initialPageCaptured: false,
       piTailMessages: [],
+      ompTailMessages: [],
       writerReady: !target.requiresExplicitClaim,
       writerClaimInFlight: null,
       runs: new Map(),
