@@ -304,6 +304,8 @@ type TranslationKey =
   | 'sf.handoffPending'
   | 'sf.resizeRail'
   | 'sf.showingCached'
+  | 'sf.loadOlder'
+  | 'sf.loadingOlder'
   | 'sf.brandTagline'
   | 'sf.allMachines'
   | 'sf.nativeSessions'
@@ -767,6 +769,8 @@ const translations: Record<LanguageCode, Partial<Record<TranslationKey, string>>
     'sf.handoffPending': 'The handoff has not been confirmed yet. Retry the same coding agent to reconcile it instead of creating a second Session.',
     'sf.resizeRail': 'Resize the Session list',
     'sf.showingCached': 'Showing the last Sessions read from this machine. They cannot be changed until it answers again.',
+    'sf.loadOlder': 'Older messages',
+    'sf.loadingOlder': 'Loading…',
     'sf.brandTagline': 'Native coding-agent Sessions, anywhere.',
     'sf.allMachines': 'All machines',
     'sf.nativeSessions': 'Native Sessions',
@@ -1230,6 +1234,8 @@ const translations: Record<LanguageCode, Partial<Record<TranslationKey, string>>
     'sf.handoffPending': 'Il passaggio non è ancora confermato. Riprova con lo stesso coding agent per riconciliarlo invece di creare una seconda sessione.',
     'sf.resizeRail': 'Ridimensiona l\'elenco delle sessioni',
     'sf.showingCached': 'Mostrate le ultime sessioni lette da questa macchina. Non sono modificabili finché non risponde di nuovo.',
+    'sf.loadOlder': 'Messaggi precedenti',
+    'sf.loadingOlder': 'Caricamento…',
     'sf.brandTagline': 'Sessioni native dei coding agent, ovunque.',
     'sf.allMachines': 'Tutte le macchine',
     'sf.nativeSessions': 'Sessioni native',
@@ -1645,6 +1651,8 @@ const translations: Record<LanguageCode, Partial<Record<TranslationKey, string>>
     'sf.handoffPending': '交接尚未確認。請以相同的編碼代理重試以進行協調，而不是建立第二個工作階段。',
     'sf.resizeRail': '調整工作階段清單寬度',
     'sf.showingCached': '顯示最後一次從這部機器讀取的工作階段。在它再次回應之前無法變更。',
+    'sf.loadOlder': '較舊的訊息',
+    'sf.loadingOlder': '載入中…',
     'sf.brandTagline': '隨處操作編碼代理的原生工作階段。',
     'sf.allMachines': '所有機器',
     'sf.nativeSessions': '原生工作階段',
@@ -2105,6 +2113,8 @@ const translations: Record<LanguageCode, Partial<Record<TranslationKey, string>>
     'sf.handoffPending': '交接尚未确认。请以相同的编码代理重试以进行协调，而不是创建第二个会话。',
     'sf.resizeRail': '调整会话列表宽度',
     'sf.showingCached': '显示最后一次从该机器读取的会话。在它再次响应之前无法更改。',
+    'sf.loadOlder': '更早的消息',
+    'sf.loadingOlder': '加载中…',
     'sf.brandTagline': '随时随地操作编码代理的原生会话。',
     'sf.allMachines': '所有机器',
     'sf.nativeSessions': '原生会话',

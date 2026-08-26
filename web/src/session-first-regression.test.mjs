@@ -281,3 +281,27 @@ assert.match(workbenchCss, /\.hr-native-startup \{[^}]*display: grid;[^}]*justif
   'the empty state must centre its own children rather than inherit text-align')
 assert.match(workbenchCss, /\.hr-native-startup \{[^}]*width: min\(var\(--hrsf-content-width\)/s,
   'the empty state must occupy the column a transcript will')
+
+// The column stops dead-centring itself on a wide pane: an 880px column centred in a 1440px pane
+// leaves 280px between the Session list and the first character, which reads as text pushed right.
+// Width is unchanged - longer lines are not the fix - only where the column sits.
+assert.match(workbenchCss, /--hrsf-column-inset: clamp\(0px, 6vw, 88px\)/, 'the column needs a bounded leading inset')
+for (const selector of ['uw-message', 'uw-composer-shell', 'uw-history-loader']) {
+  assert.ok(workbenchCss.includes('var(--hrsf-column-inset)'), `${selector} must share the column's inset`)
+}
+
+// Older transcript pages: a real part of the conversation, not a ghost button in the left margin.
+assert.ok(workbenchCss.includes('.hr-native-session-observer .uw-history-loader'),
+  'the history loader must be laid out inside the conversation column')
+assert.match(workbenchCss, /\.uw-history-loader::before[\s\S]{0,200}flex: 1/, 'it must read as a divider across the column')
+assert.ok(conversation.includes('t("sf.loadOlder")'), 'the history loader must speak the chosen language')
+
+// Older pages did load; the view then moved down by the whole height of what arrived, so the new
+// content sat above the fold and the only visible effect was a scroll. The reposition ran in a
+// `requestAnimationFrame` after the await, which can measure before React commits the page, and the
+// follow-to-bottom pass then took the transcript to the end.
+assert.ok(conversation.includes('useLayoutEffect'), 'the reposition must run after the commit that rendered the page')
+assert.ok(conversation.includes('pendingOlderRef'), 'the measurements must be handed to that effect, not captured in a frame callback')
+assert.match(conversation, /nearBottomRef\.current = false[\s\S]{0,200}refreshJumpAffordances/,
+  'reading history must leave follow-to-bottom, or it immediately undoes the reposition')
+assert.ok(conversation.includes('OLDER_JUNCTION_OVERLAP'), 'the view must land on the junction so the new content is on screen')

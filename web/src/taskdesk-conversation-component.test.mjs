@@ -42,7 +42,7 @@ test("shared conversation owns paging and scroll preservation", () => {
   assert.match(component, /hasMore/)
   assert.match(component, /onLoadOlder/)
   assert.match(component, /previousHeight/)
-  assert.match(component, /current\.scrollHeight - previousHeight/)
+  assert.match(component, /element\.scrollHeight - pending\.previousHeight/)
   assert.match(component, /NEAR_BOTTOM_PX/)
   assert.match(component, /nearBottomRef/)
 })

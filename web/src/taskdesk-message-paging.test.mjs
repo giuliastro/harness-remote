@@ -82,9 +82,11 @@ test("Session conversation exposes bounded older-history loading through the sha
   assert.match(workspace, /onLoadOlder=\{loadOlderMessages\}/)
   assert.match(workspace, /hasMore=\{messageHasMore\}/)
 
-  assert.match(conversation, /Load older messages/)
-  assert.match(conversation, /const previousHeight = transcript\?\.scrollHeight \?\? 0/)
-  assert.match(conversation, /const previousTop = transcript\?\.scrollTop \?\? 0/)
-  assert.match(conversation, /current\.scrollTop = previousTop \+ \(current\.scrollHeight - previousHeight\)/)
+  assert.match(conversation, /t\("sf\.loadOlder"\)/)
+  // The reposition moved out of a post-await frame callback and into a layout effect: a frame can
+  // run before React commits the older page, and then it measures the pre-prepend height.
+  assert.match(conversation, /previousHeight: transcript\?\.scrollHeight \?\? 0/)
+  assert.match(conversation, /previousTop: transcript\?\.scrollTop \?\? 0/)
+  assert.match(conversation, /element\.scrollTop = Math\.max\(0, junction - element\.clientHeight \* OLDER_JUNCTION_OVERLAP\)/)
   assert.match(conversation, /preservingOlderRef\.current = true/)
 })

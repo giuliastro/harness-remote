@@ -42,7 +42,7 @@ const transcript = [
     parts: [{ id: "a1t", type: "text", text: `${PROSE}\n\n| Job | Esito | Artefatto |\n| --- | --- | --- |\n| Package windows | success | 98,2 MB (.exe) |\n| Package linux | success | 224 MB (AppImage + deb) |\n| Package macos | success | 495,4 MB (dmg + zip) |\n\n${PROSE}` }] }
 ]
 
-const cors = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "*", "Access-Control-Allow-Methods": "*" }
+const cors = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "*", "Access-Control-Allow-Methods": "*", "Access-Control-Expose-Headers": "X-Has-More, X-Next-Cursor, X-Session-Model" }
 const json = (res, code, body) => {
   const raw = JSON.stringify(body)
   res.writeHead(code, { "Content-Type": "application/json", "Content-Length": Buffer.byteLength(raw), ...cors })
@@ -81,7 +81,24 @@ const daemon = http.createServer((req, res) => {
   }
   if (p === "/v1/agents/claude/session/status") return json(res, 200, Object.fromEntries(sessions.map((s, i) => [s.id, { type: process.env.ATTENTION && i === 1 ? "error" : "idle" }])))
   if (p === "/v1/agents/claude/models") return json(res, 200, { providers: [{ id: "claude", name: "claude", models: { "opus[1m]": { id: "opus[1m]", name: "Opus (1M context)", status: "active" } } }], default: { claude: "opus[1m]" } })
-  if (/^\/v1\/agents\/(claude|codex)\/session\/[^/]+\/message$/.test(p)) { res.setHeader("X-Has-More", "0"); return json(res, 200, p.includes("codex-handoff") ? [] : transcript) }
+  if (/^\/v1\/agents\/(claude|codex)\/session\/[^/]+\/message$/.test(p)) {
+    if (p.includes("codex-handoff")) return json(res, 200, [])
+    const before = url.searchParams.get("before")
+    if (process.env.OLDER) {
+      const page = before ? Number(before.replace("older-", "")) : 0
+      const next = page + 1
+      res.setHeader("X-Has-More", next < 3 ? "1" : "0")
+      if (next < 3) res.setHeader("X-Next-Cursor", `older-${next}`)
+      if (before) {
+        return json(res, 200, [{
+          info: { id: `old-${page}`, role: "assistant", sessionID: "s-0", time: { created: 100 + page } },
+          parts: [{ id: `old-${page}-t`, type: "text", text: `OLDER-PAGE-${page} ${"riga di testo precedente. ".repeat(Number(process.env.OLDER_LINES || 40))}` }]
+        }])
+      }
+      res.setHeader("X-Next-Cursor", "older-1")
+    }
+    return json(res, 200, transcript)
+  }
   const promptRoute = /^\/v1\/agents\/codex\/session\/([^/]+)\/prompt$/.exec(p)
   if (req.method === "POST" && promptRoute) {
     let body = ""
@@ -146,6 +163,39 @@ const run = async () => {
   // Drives the Settings language picker itself. The earlier language check wrote localStorage and
   // dispatched the event by hand, which proved the listener worked but not that the control reaches
   // it - the one thing a "the picker does nothing" report is about.
+  if (process.env.PAGING_CHECK) {
+    const state = () => page.evaluate(() => {
+      const t = document.querySelector(".hr-native-session-observer .uw-transcript")
+      return {
+        messages: document.querySelectorAll(".hr-native-session-observer .uw-message").length,
+        scrollTop: Math.round(t.scrollTop),
+        scrollHeight: Math.round(t.scrollHeight),
+        clientHeight: Math.round(t.clientHeight),
+        // Sample the actual text under the viewport's top and middle: an intersection test passes
+        // for one giant message no matter where the viewport sits.
+        textAtTop: (() => {
+          const p = t.getBoundingClientRect()
+          const probe = document.elementFromPoint(p.left + p.width / 2, p.top + 30)
+          return (probe?.textContent || "").slice(0, 24)
+        })(),
+        textAtMiddle: (() => {
+          const p = t.getBoundingClientRect()
+          const probe = document.elementFromPoint(p.left + p.width / 2, p.top + p.height / 2)
+          return (probe?.textContent || "").slice(0, 24)
+        })()
+      }
+    })
+    const before = await state()
+    await page.locator(".uw-history-loader > button").click()
+    await page.waitForTimeout(1500)
+    const after = await state()
+    console.log(JSON.stringify({ before, after,
+      newMessages: after.messages - before.messages,
+      olderContentUnderViewport: after.textAtTop.includes("OLDER-PAGE") || after.textAtTop.includes("riga di testo") || after.textAtMiddle.includes("riga di testo") }, null, 2))
+    await page.screenshot({ path: OUT })
+    return
+  }
+
   if (process.env.EMPTY_CHECK) {
     // Deselect so the workspace shows its empty state, then check the block reads as one column:
     // the icon centred over the copy rather than parked at the block's left edge.
@@ -319,6 +369,8 @@ const run = async () => {
       prose: p,
       table: box(".hr-native-session-observer .uw-markdown table"),
       composer: box(".hr-native-session-observer .uw-composer-shell") || box(".uw-composer-shell"),
+      historyLoader: box(".hr-native-session-observer .uw-history-loader"),
+      historyButton: box(".hr-native-session-observer .uw-history-loader > button"),
       charWidth: ch ? Math.round(ch * 100) / 100 : null,
       charsPerLine: ch && p ? Math.round(p.w / ch) : null,
       bodyOverflowX: document.documentElement.scrollWidth - window.innerWidth,

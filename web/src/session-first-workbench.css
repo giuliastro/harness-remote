@@ -14,6 +14,11 @@
      Earlier attempts missed on both sides: 900px with a separate 66ch prose cap gave 81 characters
      with a code block twice its width beside it, and removing the cap gave 143. */
   --hrsf-content-width: min(880px, 100%);
+  /* Dead-centring an 880px column in a 1440px pane leaves 280px of nothing between the Session
+     list and the first character, and the eye reads that gap as the text being pushed right. The
+     column keeps its width - longer lines are not the fix - and simply stops floating: it sits a
+     bounded distance from the pane's leading edge and lets the surplus fall on the trailing side. */
+  --hrsf-column-inset: clamp(0px, 6vw, 88px);
   background: var(--td3-bg);
 }
 
@@ -992,7 +997,8 @@
    the empty state occupies exactly the space a transcript will. */
 .hr-native-startup {
   width: min(var(--hrsf-content-width), calc(100% - 36px));
-  justify-self: center;
+  justify-self: start;
+  margin-inline: calc(var(--hrsf-column-inset) + 18px) auto;
   display: grid;
   justify-items: center;
   gap: 6px;
@@ -1255,6 +1261,7 @@
 
 .hr-native-session-observer .uw-message {
   width: min(var(--hrsf-content-width), 100%);
+  margin-inline: var(--hrsf-column-inset) auto;
   grid-template-columns: 28px minmax(0, 1fr);
   gap: 10px;
   margin-bottom: 18px;
@@ -1342,6 +1349,54 @@
   min-width: 0;
 }
 
+/* Older transcript pages. It was a bare ghost button sitting at the transcript's left edge, so it
+   read as a stray control rather than the top of the conversation. It is the same column as the
+   messages now, centred in it, with the rules on either side saying "the conversation continues
+   above here" - which is what it actually does. */
+.hr-native-session-observer .uw-history-loader {
+  width: min(var(--hrsf-content-width), 100%);
+  margin-inline: var(--hrsf-column-inset) auto;
+  margin-bottom: 18px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.hr-native-session-observer .uw-history-loader::before,
+.hr-native-session-observer .uw-history-loader::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--td3-border-soft);
+}
+
+.hr-native-session-observer .uw-history-loader > button {
+  flex: none;
+  min-height: 30px;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 0 13px;
+  border: 1px solid var(--td3-border);
+  border-radius: 999px;
+  color: var(--td3-text-3);
+  background: var(--td3-panel);
+  font: inherit;
+  font-size: 11.5px;
+  cursor: pointer;
+}
+
+.hr-native-session-observer .uw-history-loader > button:hover:not(:disabled) {
+  color: var(--td3-text);
+  border-color: var(--td3-border-strong);
+  background: var(--td3-control-hover);
+}
+
+.hr-native-session-observer .uw-history-loader > button:disabled {
+  cursor: default;
+  opacity: .7;
+}
+
 .hr-native-session-observer .uw-markdown > table {
   display: block;
   overflow-x: auto;
@@ -1388,7 +1443,7 @@
   /* The same horizontal inset the transcript uses, so the composer's edges land exactly on the
      message rows' edges instead of overhanging them by the difference between two insets. */
   width: min(var(--hrsf-content-width), calc(100% - 2 * clamp(18px, 3vw, 34px)));
-  margin: 0 auto 12px;
+  margin: 0 auto 12px calc(var(--hrsf-column-inset) + clamp(18px, 3vw, 34px));
   border-color: var(--td3-border);
   border-radius: 12px;
   background: var(--td3-panel-2);
