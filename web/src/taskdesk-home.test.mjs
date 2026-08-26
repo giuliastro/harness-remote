@@ -79,7 +79,7 @@ test("primary product surface is Machine -> Project -> native Session", () => {
 
   assert.match(shell, /const \[runtimes, setRuntimes\]/)
   assert.match(shell, /state: "loading" \| "online" \| "offline"/)
-  assert.match(shell, /<NativeSessionHome sources=\{runtimes\}/)
+  assert.match(shell, /<NativeSessionHome\s+sources=\{runtimes\}/)
   assert.match(shell, /<NativeSessionObserver/)
   assert.match(home, /hr-native-machine-group/)
   assert.match(home, /hr-native-project-group/)

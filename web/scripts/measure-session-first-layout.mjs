@@ -77,7 +77,7 @@ const daemon = http.createServer((req, res) => {
     handedOff.push(created)
     return json(res, 200, { status: "accepted", result: { target: { machineID: "m1", agentID: "codex", sessionID: created.id, directory: DIR } } })
   }
-  if (p === "/v1/agents/claude/session/status") return json(res, 200, Object.fromEntries(sessions.map((s) => [s.id, { type: "idle" }])))
+  if (p === "/v1/agents/claude/session/status") return json(res, 200, Object.fromEntries(sessions.map((s, i) => [s.id, { type: process.env.ATTENTION && i === 1 ? "error" : "idle" }])))
   if (p === "/v1/agents/claude/models") return json(res, 200, { providers: [{ id: "claude", name: "claude", models: { "opus[1m]": { id: "opus[1m]", name: "Opus (1M context)", status: "active" } } }], default: { claude: "opus[1m]" } })
   if (/^\/v1\/agents\/(claude|codex)\/session\/[^/]+\/message$/.test(p)) { res.setHeader("X-Has-More", "0"); return json(res, 200, p.includes("codex-handoff") ? [] : transcript) }
   const promptRoute = /^\/v1\/agents\/codex\/session\/([^/]+)\/prompt$/.exec(p)
@@ -124,6 +124,43 @@ const run = async () => {
   await page.locator(".hr-native-session-row").first().click()
   await page.locator(".hr-native-session-observer .uw-markdown p").first().waitFor({ timeout: 20_000 })
   await page.waitForTimeout(1200)
+
+  if (process.env.BADGE_CHECK) {
+    await page.waitForTimeout(600)
+    console.log(JSON.stringify(await page.evaluate(() => ({
+      badge: document.querySelector(".hr-mobile-nav-badge")?.textContent ?? null,
+      badgeLabel: document.querySelector(".hr-mobile-nav-badge")?.getAttribute("aria-label") ?? null,
+      attentionFilter: document.querySelectorAll(".hr-native-session-filters button")[2]?.textContent ?? null
+    })), null, 2))
+    await page.screenshot({ path: OUT })
+    return
+  }
+
+  if (process.env.RAIL_CHECK) {
+    const rail = () => page.locator(".hr-native-workspace-list").evaluate((n) => Math.round(n.getBoundingClientRect().width))
+    const before = await rail()
+    const handle = page.locator(".hr-rail-resizer")
+    const box = await handle.boundingBox()
+    await page.mouse.move(box.x + 5, box.y + 200)
+    await page.mouse.down()
+    await page.mouse.move(box.x + 145, box.y + 200, { steps: 8 })
+    await page.mouse.up()
+    await page.waitForTimeout(250)
+    const afterDrag = await rail()
+    const stored = await page.evaluate(() => localStorage.getItem("harness-remote.sessionRailWidth.v1"))
+    await handle.focus()
+    await page.keyboard.press("ArrowLeft")
+    await page.keyboard.press("ArrowLeft")
+    await page.waitForTimeout(200)
+    const afterKeys = await rail()
+    await page.reload()
+    await page.locator(".hr-native-session-row").first().waitFor({ timeout: 20_000 })
+    const afterReload = await rail()
+    console.log(JSON.stringify({ before, afterDrag, stored, afterKeys, afterReload,
+      focusable: await handle.evaluate((n) => n.tabIndex === 0 && n.getAttribute("role") === "separator") }, null, 2))
+    await page.screenshot({ path: OUT })
+    return
+  }
 
   if (process.env.HANDOFF_CHECK) {
     const trigger = page.locator(".hr-session-handoff-trigger")

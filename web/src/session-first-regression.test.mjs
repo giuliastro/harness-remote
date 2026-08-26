@@ -246,3 +246,18 @@ assert.doesNotMatch(
   /\.hr-native-session-observer \.tdw-agent-control > label:first-child \{\s*display: none/,
   'a phantom control must be removed rather than hidden'
 )
+
+// --- D1 / D3 / D4 -----------------------------------------------------------------------------
+// D1: the 2.x shell persisted a draggable sidebar width and this one had a fixed rail.
+assert.ok(standalone.includes('RAIL_WIDTH_STORAGE_KEY'), 'the Session rail width must persist')
+assert.ok(standalone.includes('role="separator"') && standalone.includes('tabIndex={0}'),
+  'the rail divider must be a real separator, operable without a pointer')
+assert.match(standalone, /onKeyDown=\{\(event\) => \{[^}]*ArrowLeft/s, 'arrow keys must resize the rail')
+assert.ok(workbenchCss.includes('.hr-rail-resizer'), 'the rail divider needs its grab area and focus ring')
+
+// D3: `--td3-shadow-panel` and `--td3-scrim` have light-mode variants; a hardcoded black does not.
+assert.equal(workbenchCss.includes('rgba(0, 0, 0'), false, 'shadows and scrims must come from the theme tokens')
+
+// D4: with the chat full-screen on a phone the rail cannot show that a Session needs input.
+assert.ok(standalone.includes('hr-mobile-nav-badge'), 'the mobile Sessions tab must carry the attention count')
+assert.ok(home.includes('onAttentionCountChange'), 'the rail must report the count it already computes')

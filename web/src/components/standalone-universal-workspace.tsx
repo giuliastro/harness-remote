@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react"
 import { App as CapacitorApp } from "@capacitor/app"
 import { Capacitor } from "@capacitor/core"
 import {
@@ -29,6 +29,29 @@ import "../taskdesk-workthreads.css"
 import "../taskdesk-mobile-navigation.css"
 import "../taskdesk-focus-layout.css"
 import "../conversation-control-plane.css"
+
+/** The 2.x shell persisted its sidebar width and this one did not, so a large monitor got the same
+ *  rail as a laptop. Its own key: the two shells have different rails and different defaults. */
+const RAIL_WIDTH_STORAGE_KEY = "harness-remote.sessionRailWidth.v1"
+const RAIL_WIDTH_MIN = 260
+const RAIL_WIDTH_MAX = 620
+/** One arrow press. Wide enough to be worth pressing, small enough to land on an exact width. */
+const RAIL_WIDTH_STEP = 16
+
+function clampRailWidth(value: number): number {
+  return Math.min(RAIL_WIDTH_MAX, Math.max(RAIL_WIDTH_MIN, Math.round(value)))
+}
+
+function loadRailWidth(): number | null {
+  try {
+    const raw = Number(localStorage.getItem(RAIL_WIDTH_STORAGE_KEY))
+    // No stored width means "use the stylesheet's responsive clamp", which is a better default than
+    // any number this module could invent for a window it has not seen yet.
+    return Number.isFinite(raw) && raw > 0 ? clampRailWidth(raw) : null
+  } catch {
+    return null
+  }
+}
 
 type Props = {
   machines: WorkspaceMachine[]
@@ -251,11 +274,13 @@ function compactNumber(value: number): string {
 function NativeSessionsWorkspace({
   machines,
   onManageMachines,
-  onManageSettings
+  onManageSettings,
+  onAttentionCountChange
 }: {
   machines: WorkspaceMachine[]
   onManageMachines: () => void
   onManageSettings: () => void
+  onAttentionCountChange: (count: number) => void
 }) {
   const t = useTranslator()
   const [runtimes, setRuntimes] = useState<NativeMachineRuntime[]>(() =>
@@ -271,7 +296,35 @@ function NativeSessionsWorkspace({
   // return an identical snapshot, so the Session list needs an explicit signal to re-read its
   // Sessions after a rename or delete instead of waiting up to 30s for its own refresh.
   const [listRevision, setListRevision] = useState(0)
+  const [railWidth, setRailWidth] = useState<number | null>(loadRailWidth)
   const refreshGeneration = useRef(0)
+
+  useEffect(() => {
+    if (railWidth === null) return
+    try { localStorage.setItem(RAIL_WIDTH_STORAGE_KEY, String(railWidth)) } catch { /* private mode keeps the session's width */ }
+  }, [railWidth])
+
+  const resizeRail = useCallback((next: number) => {
+    setRailWidth(clampRailWidth(next))
+  }, [])
+
+  const startRailDrag = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
+    event.preventDefault()
+    const origin = event.currentTarget.parentElement?.getBoundingClientRect().left ?? 0
+    const onMove = (move: globalThis.PointerEvent) => resizeRail(move.clientX - origin)
+    const onUp = () => {
+      window.removeEventListener("pointermove", onMove)
+      window.removeEventListener("pointerup", onUp)
+      document.body.style.removeProperty("cursor")
+      document.body.style.removeProperty("user-select")
+    }
+    // Without these the drag selects the transcript text it passes over, and the cursor flickers
+    // back to the default every time the pointer leaves the 10px handle.
+    document.body.style.cursor = "col-resize"
+    document.body.style.userSelect = "none"
+    window.addEventListener("pointermove", onMove)
+    window.addEventListener("pointerup", onUp)
+  }, [resizeRail])
 
   useEffect(() => {
     const generation = ++refreshGeneration.current
@@ -393,10 +446,43 @@ function NativeSessionsWorkspace({
           </button>
         </div>
       </header>
-      <div className="hr-native-workspace-body">
+      <div
+        className="hr-native-workspace-body"
+        style={railWidth === null ? undefined : { ["--hrsf-rail-width" as string]: `${railWidth}px` }}
+      >
         <aside className="hr-native-workspace-list">
-          <NativeSessionHome sources={runtimes} onOpen={openSession} refreshToken={listRevision} selectedKey={selected?.key} selectedState={selectedState} />
+          <NativeSessionHome
+            sources={runtimes}
+            onOpen={openSession}
+            refreshToken={listRevision}
+            onAttentionCountChange={onAttentionCountChange}
+            selectedKey={selected?.key}
+            selectedState={selectedState}
+          />
         </aside>
+        {/* Ported from the 2.x shell, which persisted its sidebar width while this one did not, and
+            made operable without a pointer: a drag-only divider is unreachable by keyboard. */}
+        <div
+          className="hr-rail-resizer"
+          role="separator"
+          aria-orientation="vertical"
+          aria-label={t("sf.resizeRail")}
+          aria-valuenow={railWidth ?? undefined}
+          aria-valuemin={RAIL_WIDTH_MIN}
+          aria-valuemax={RAIL_WIDTH_MAX}
+          tabIndex={0}
+          onPointerDown={startRailDrag}
+          onDoubleClick={() => {
+            setRailWidth(null)
+            try { localStorage.removeItem(RAIL_WIDTH_STORAGE_KEY) } catch { /* nothing to clear */ }
+          }}
+          onKeyDown={(event) => {
+            if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return
+            event.preventDefault()
+            const current = railWidth ?? (event.currentTarget.parentElement?.querySelector(".hr-native-workspace-list")?.getBoundingClientRect().width ?? RAIL_WIDTH_MIN)
+            resizeRail(current + (event.key === "ArrowRight" ? RAIL_WIDTH_STEP : -RAIL_WIDTH_STEP))
+          }}
+        />
         <main className={`hr-native-workspace-detail${mobileDetailOpen ? " mobile-open" : ""}`}>
           {selected ? (
             <>
@@ -483,6 +569,10 @@ function NativeSessionsWorkspace({
 
 export function StandaloneUniversalWorkspace({ machines, onPersistMachines }: Props) {
   const t = useTranslator()
+  // With the chat full-screen on a phone the rail is invisible, so a Session asking for input had
+  // no way of saying so. The counts already existed per machine and per project; only the badge
+  // that carries them out of the rail was missing.
+  const [attentionCount, setAttentionCount] = useState(0)
   const [managerOpen, setManagerOpen] = useState(machines.length === 0)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const mobileSection = managerOpen ? "machines" : settingsOpen ? "settings" : "sessions"
@@ -553,11 +643,11 @@ export function StandaloneUniversalWorkspace({ machines, onPersistMachines }: Pr
 
   return (
     <div className="uw-standalone-host">
-      <NativeSessionsWorkspace machines={machines} onManageMachines={showMachines} onManageSettings={showSettings} />
+      <NativeSessionsWorkspace machines={machines} onManageMachines={showMachines} onManageSettings={showSettings} onAttentionCountChange={setAttentionCount} />
       {managerOpen ? <MachineManager machines={machines} onClose={() => setManagerOpen(false)} onPersist={onPersistMachines} /> : null}
       {settingsOpen ? <MobileSettingsPage onClose={() => setSettingsOpen(false)} /> : null}
       <nav className="hr-mobile-nav" aria-label={t("sf.mainNavigation")}>
-        <button type="button" className={mobileSection === "sessions" ? "active" : ""} onClick={showSessions} aria-current={mobileSection === "sessions" ? "page" : undefined}><ChatIcon size={20} /><span>{t("nav.sessions")}</span></button>
+        <button type="button" className={mobileSection === "sessions" ? "active" : ""} onClick={showSessions} aria-current={mobileSection === "sessions" ? "page" : undefined}><ChatIcon size={20} /><span>{t("nav.sessions")}</span>{attentionCount ? <b className="hr-mobile-nav-badge" aria-label={t("sf.attentionCount", { count: attentionCount })}>{attentionCount > 9 ? "9+" : attentionCount}</b> : null}</button>
         <button type="button" className={mobileSection === "machines" ? "active" : ""} onClick={showMachines} aria-current={mobileSection === "machines" ? "page" : undefined}><ServerIcon size={20} /><span>{t("sf.machines")}</span></button>
         <button type="button" className={mobileSection === "settings" ? "active" : ""} onClick={showSettings} aria-current={mobileSection === "settings" ? "page" : undefined}><SettingsIcon size={20} /><span>{t("nav.settings")}</span></button>
       </nav>

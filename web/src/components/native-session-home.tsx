@@ -52,6 +52,8 @@ type Props = {
   /** Bumped by the shell after a native mutation (rename/delete) so the list re-reads its Sessions
    * immediately instead of waiting for its own refresh cycle. */
   refreshToken?: number
+  /** The rail already counts Sessions needing input; the mobile nav needs that count outside it. */
+  onAttentionCountChange?: (count: number) => void
   selectedKey?: string
   selectedState?: SessionPresentationState
 }
@@ -231,7 +233,7 @@ function nativeCreateAgents(snapshot: MachineSnapshot): MachineAgentHost[] {
   return snapshot.agents.filter(canCreateNativeSession)
 }
 
-export function NativeSessionHome({ sources, onOpen, refreshToken = 0, selectedKey, selectedState }: Props) {
+export function NativeSessionHome({ sources, onOpen, refreshToken = 0, onAttentionCountChange, selectedKey, selectedState }: Props) {
   const t = useTranslator()
   const [records, setRecords] = useState<RecordWithMachine[]>([])
   const [projectsByMachine, setProjectsByMachine] = useState<Record<string, MachineProject[]>>({})
@@ -390,6 +392,10 @@ export function NativeSessionHome({ sources, onOpen, refreshToken = 0, selectedK
     () => scopedRecords.filter((item) => presentationForItem(item).state === "attention").length,
     [presentationForItem, scopedRecords]
   )
+  useEffect(() => {
+    onAttentionCountChange?.(attentionCount)
+  }, [attentionCount, onAttentionCountChange])
+
   const filteredGroups = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase()
     return groups.flatMap((group) => {

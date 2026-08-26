@@ -704,7 +704,7 @@
   border-color: var(--td3-border-soft);
   border-radius: 10px;
   background: var(--td3-raise-1);
-  box-shadow: 0 12px 28px rgba(0, 0, 0, .10);
+  box-shadow: var(--td3-shadow-panel);
 }
 
 .hr-native-workspace-session-header {
@@ -736,6 +736,61 @@
 
 /* Continue-with-another-agent sits beside Rename/Delete in the chat header and reuses their panel
    chrome, because it is the same kind of action: it acts on the Session that is open. */
+/* The rail divider. 10px of grab area over a 1px visual line, the same proportion the 2.x shell
+   used, sitting in the grid gap so it never overlaps either pane's content. */
+.hr-rail-resizer {
+  position: relative;
+  z-index: 4;
+  width: 10px;
+  margin-inline: -5px;
+  cursor: col-resize;
+  touch-action: none;
+  background: transparent;
+}
+
+.hr-rail-resizer::after {
+  content: "";
+  position: absolute;
+  inset-block: 0;
+  left: 50%;
+  width: 2px;
+  transform: translateX(-50%);
+  background: transparent;
+  transition: background .14s ease;
+}
+
+.hr-rail-resizer:hover::after,
+.hr-rail-resizer:active::after,
+.hr-rail-resizer:focus-visible::after {
+  background: var(--td3-blue-border);
+}
+
+.hr-rail-resizer:focus-visible {
+  outline: 2px solid var(--td3-blue-border);
+  outline-offset: -2px;
+}
+
+/* A count the rail cannot show once the chat is full-screen. */
+.hr-mobile-nav-badge {
+  position: absolute;
+  top: 4px;
+  left: calc(50% + 6px);
+  min-width: 16px;
+  padding: 0 4px;
+  border-radius: 9px;
+  color: var(--td3-on-accent);
+  background: var(--td3-red);
+  font-size: 10px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  line-height: 16px;
+  text-align: center;
+}
+
+.hr-mobile-nav button {
+  position: relative;
+}
+
 .hr-session-handoff {
   position: relative;
   flex: none;
@@ -966,7 +1021,7 @@
   display: grid;
   place-items: center;
   padding: 18px;
-  background: rgba(0, 0, 0, .45);
+  background: var(--td3-scrim);
   backdrop-filter: blur(3px);
 }
 
@@ -982,7 +1037,7 @@
   border-radius: 14px;
   color: var(--td3-text);
   background: var(--td3-panel-2);
-  box-shadow: 0 24px 70px rgba(0, 0, 0, .34);
+  box-shadow: var(--td3-shadow-panel);
 }
 
 .hr-session-settings-page > header {
@@ -1293,12 +1348,12 @@
   border-color: var(--td3-border);
   border-radius: 12px;
   background: var(--td3-panel-2);
-  box-shadow: 0 12px 30px rgba(0, 0, 0, .12), inset 0 1px 0 var(--td3-raise-1);
+  box-shadow: var(--td3-shadow-panel), inset 0 1px 0 var(--td3-raise-1);
 }
 
 .hr-native-session-observer .uw-composer-shell:focus-within {
   border-color: var(--td3-blue-border);
-  box-shadow: 0 12px 30px rgba(0, 0, 0, .14), 0 0 0 2px var(--td3-blue-soft);
+  box-shadow: var(--td3-shadow-panel), 0 0 0 2px var(--td3-blue-soft);
 }
 
 .hr-native-session-observer .uw-composer-shell textarea {
