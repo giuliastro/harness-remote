@@ -29,7 +29,7 @@ const {
   loadPendingNativeSessionPrompt,
   clearPendingNativeSessionPrompt
 } = await import('./native-session-prompt.ts')
-const { lastNativeMessageModel } = await import('./native-session-model.ts')
+const { lastNativeMessageModel, resolveNativeSessionTargetModel } = await import('./native-session-model.ts')
 
 function target(overrides = {}) {
   return {
@@ -184,5 +184,73 @@ assert.deepEqual(
   { providerID: 'anthropic', modelID: 'claude-sonnet-4-6', variant: 'high' },
   'a flat OpenCode assistant envelope must inherit the matching immediately preceding user variant'
 )
+
+
+// --- 8. OMP model recovery must never load a long Session just to populate the picker -------------
+const { api } = await import('./api.ts')
+const originalLoadMessagePage = api.loadMessagePage
+const originalListModels = api.listModels
+let sessionScopedModelReads = 0
+api.loadMessagePage = async () => ({ messages: [], hasMore: false })
+api.listModels = async () => {
+  sessionScopedModelReads += 1
+  return []
+}
+const unresolvedOmp = target({
+  key: 'machine:omp:long',
+  agentID: 'omp',
+  backend: 'omp',
+  sessionID: 'long',
+  config: { backend: 'omp', host: '127.0.0.1', port: 4099, username: 'harness', password: 'pw', agentId: 'omp' }
+})
+await resolveNativeSessionTargetModel(unresolvedOmp)
+assert.equal(
+  sessionScopedModelReads,
+  0,
+  'OMP model enrichment must use its JSONL page metadata and never force ACP session/load for config options'
+)
+api.loadMessagePage = originalLoadMessagePage
+api.listModels = originalListModels
+
+// --- 9. Reopening OMP with the same recovered model must not create a fake model change -----------
+const { registerNativeSessionV3Adapter } = await import('./native-session-v3-adapter.ts')
+const { taskClient } = await import('./taskClient.ts')
+const ompTarget = target({
+  key: 'machine:omp:reopen',
+  agentID: 'omp',
+  agentLabel: 'OMP',
+  backend: 'omp',
+  sessionID: 'reopen',
+  model: null,
+  config: { backend: 'omp', host: '127.0.0.1', port: 4099, username: 'harness', password: 'pw', agentId: 'omp' }
+})
+const realLoadPage = api.loadMessagePage
+api.loadMessagePage = async () => ({
+  messages: [{
+    info: { id: 'persisted-user', role: 'user', sessionID: 'reopen', time: { created: 10 } },
+    parts: [{ id: 'persisted-user:text', messageID: 'persisted-user', type: 'text', text: 'first prompt' }]
+  }],
+  hasMore: false,
+  model: MODEL_X
+})
+const projectionUpdates = []
+const registration = registerNativeSessionV3Adapter(ompTarget, (next) => projectionUpdates.push(next))
+await api.loadMessagePage(ompTarget.config, ompTarget.sessionID, ompTarget.directory, undefined, 20, false)
+const enriched = projectionUpdates[projectionUpdates.length - 1]
+assert.deepEqual(enriched.model, MODEL_X)
+assert.deepEqual(enriched.runs[enriched.runs.length - 1].model, MODEL_X, 'the last historical Run must inherit the recovered OMP model')
+
+sent.length = 0
+responder = () => new Response(JSON.stringify({ status: 'accepted' }), { status: 200 })
+const continued = await taskClient.continueTask(ompTarget.config, enriched.id, {
+  prompt: 'continue without changing model',
+  agentId: 'omp',
+  model: MODEL_X
+})
+assert.equal(sent[sent.length - 1].body.model, undefined, 'the same recovered OMP model must not be sent as a model mutation')
+assert.deepEqual(continued.runs[continued.runs.length - 2].model, MODEL_X)
+assert.deepEqual(continued.runs[continued.runs.length - 1].model, MODEL_X)
+registration.dispose()
+api.loadMessagePage = realLoadPage
 
 console.log('native-session model lifecycle regressions: OK')
