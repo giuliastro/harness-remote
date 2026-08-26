@@ -50,14 +50,15 @@ test("OpenCode completion lifecycle reconciles status and the selected transcrip
   assert.doesNotMatch(lifecycle, /send|prompt|continueWorkThread/)
 })
 
-test("ACP session.updated refreshes the selected transcript once without an OMP polling loop", () => {
+test("OMP session.updated gets one bounded journal settle read without a polling loop", () => {
   const refresh = readFileSync(new URL("./taskdesk-session-live-refresh.ts", import.meta.url), "utf8")
   const lifecycle = refresh.match(/if \(event\.type === "session\.updated"\)[\s\S]*?\n      \}/)?.[0] || ""
 
   assert.match(lifecycle, /throttle\("index", [^,]+, onIndex\)/)
   assert.match(lifecycle, /selectedEvent[\s\S]*?throttle\("message", [^,]+, onMessage\)/)
   assert.match(lifecycle, /throttle\("detail", [^,]+, onDetail\)/)
-  assert.doesNotMatch(lifecycle, /setTimeout|350|1800|3200/, "ACP lifecycle convergence must stay event-driven")
+  assert.match(lifecycle, /target\.config\.backend === "omp"[\s\S]*?settleAfterLifecycle\(\)/)
+  assert.doesNotMatch(lifecycle, /setTimeout|350|1800|3200/, "the lifecycle branch must schedule one shared settle read, never its own polling loop")
 })
 
 test("foregrounding the app immediately reconciles durable conversation state", () => {
