@@ -734,6 +734,51 @@
   font-size: 10px;
 }
 
+/* Continue-with-another-agent sits beside Rename/Delete in the chat header and reuses their panel
+   chrome, because it is the same kind of action: it acts on the Session that is open. */
+.hr-session-handoff {
+  position: relative;
+  flex: none;
+  display: flex;
+  align-items: center;
+}
+
+.hr-session-handoff-trigger {
+  min-height: 30px;
+  gap: 6px;
+  padding-inline: 11px;
+  font-size: 11.5px;
+  white-space: nowrap;
+}
+
+.hr-session-handoff .hr-session-action-panel {
+  position: absolute;
+  z-index: 60;
+  top: calc(100% + 7px);
+  right: 0;
+  width: min(340px, calc(100vw - 24px));
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--td3-border-strong);
+  border-radius: 12px;
+  background: var(--td3-panel-2);
+  box-shadow: var(--td3-shadow-panel);
+  text-align: left;
+}
+
+.hr-session-handoff .hr-session-action-field select {
+  width: 100%;
+  min-height: 38px;
+  padding: 0 10px;
+  border: 1px solid var(--td3-border);
+  border-radius: 9px;
+  color: var(--td3-text);
+  background: var(--td3-control);
+  font: inherit;
+  font-size: 13px;
+}
+
 .hr-session-actions {
   position: relative;
   flex: none;

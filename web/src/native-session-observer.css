@@ -19,12 +19,9 @@
   flex: 1;
 }
 
-/* A native Session has one owning harness. Repeating it as a one-option "Continue with" select
-   competes with the model and live state without offering a choice. Cross-agent continuation stays
-   in the explicit header action. */
-.hr-native-session-observer .tdw-agent-control > label:first-child {
-  display: none;
-}
+/* The one-option "Continue with" select is no longer rendered for a native Session - see
+   `work-thread-conversation.tsx`. Hiding a control that still existed left the transport's refusal
+   invisible instead of removing the promise. Cross-agent continuation is the header action. */
 
 .hr-native-session-observer .tdw-model-control {
   width: min(360px, 100%);
@@ -74,10 +71,6 @@
     flex: 1 1 auto !important;
     display: flex !important;
     grid-template-columns: none !important;
-  }
-
-  .hr-native-session-observer .tdw-agent-control > label:first-child {
-    display: none !important;
   }
 
   .hr-native-session-observer .tdw-model-control,

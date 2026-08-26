@@ -724,15 +724,22 @@ export function WorkThreadConversation({
     <div className="tdw-work-thread-conversation">
       <div className="tdw-conversation-toolbar">
         <div className="tdw-agent-control">
-          <label>
-            <span>{t("sf.continueWith")}</span>
-            <select value={targetAgentID} disabled={working || sending} onChange={(event) => {
-              modelSelectionTouchedRef.current = false
-              setTargetAgentID(event.target.value)
-            }}>
-              {agents.map((agent) => <option value={agent.id} key={agent.id}>{agent.label}</option>)}
-            </select>
-          </label>
+          {/* A native Session has exactly one owning harness, and the layer underneath rejects a
+              continuation addressed to a different one. This used to render a one-option select
+              that CSS then hid - a control that promised a choice the transport refuses. Continuing
+              with another agent is a real Session on that harness, offered in the chat header.
+              A Task-backed conversation still chooses among the agents its Runs may use. */}
+          {agents.length > 1 ? (
+            <label>
+              <span>{t("sf.continueWith")}</span>
+              <select value={targetAgentID} disabled={working || sending} onChange={(event) => {
+                modelSelectionTouchedRef.current = false
+                setTargetAgentID(event.target.value)
+              }}>
+                {agents.map((agent) => <option value={agent.id} key={agent.id}>{agent.label}</option>)}
+              </select>
+            </label>
+          ) : null}
           <label className="tdw-model-control">
             <span>{t("sf.model")}</span>
             <ModelPicker compact models={models} value={targetModelKey} onChange={(value) => {

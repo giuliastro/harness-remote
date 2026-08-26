@@ -49,6 +49,9 @@ const json = (res, code, body) => {
   res.end(raw)
 }
 
+let handoffCalls = 0
+const handedOff = []
+const promptBodies = []
 const daemon = http.createServer((req, res) => {
   if (req.method === "OPTIONS") { res.writeHead(204, cors); res.end(); return }
   const url = new URL(req.url || "/", `http://127.0.0.1:${DAEMON_PORT}`)
@@ -57,13 +60,36 @@ const daemon = http.createServer((req, res) => {
     machine: { id: "m1", name: "Giulio-S7", createdAt: new Date().toISOString() },
     agents: [{ id: "claude", label: "Claude Code", backend: "claude", transport: "acp", managed: true, state: "available",
       capabilities: { sessions: true, prompt: true, abort: true, streaming: true, models: true, sessionRename: true, sessionDelete: true },
-      contract: { sessions: { stop: "native-abort" } } }]
+      contract: { sessions: { stop: "native-abort" } } },
+      { id: "codex", label: "Codex CLI", backend: "codex", transport: "acp", managed: true, state: "available",
+        capabilities: { sessions: true, prompt: true, abort: true, streaming: true, models: true, sessionRename: true, sessionDelete: true },
+        contract: { sessions: { stop: "native-abort" } } }]
   })
   if (p === "/v1/projects") return json(res, 200, { projects: [{ id: "p1", machineId: "m1", name: "harness-remote-session-first-test", path: DIR, kind: "git", configured: true }] })
   if (p === "/v1/agents/claude/experimental/session") return json(res, 200, sessions)
+  if (p === "/v1/agents/codex/experimental/session") return json(res, 200, handedOff)
+  if (p === "/v1/agents/codex/session/status") return json(res, 200, Object.fromEntries(handedOff.map((x) => [x.id, { type: "idle" }])))
+  if (p === "/v1/agents/codex/models") return json(res, 200, { providers: [], default: {} })
+  const handoff = /^\/v1\/agents\/claude\/session\/([^/]+)\/handoff$/.exec(p)
+  if (req.method === "POST" && handoff) {
+    handoffCalls += 1
+    const created = { id: "codex-handoff-1", title: "handed off", directory: DIR, time: { created: Date.now(), updated: Date.now() }, summary: { additions: 0, deletions: 0, files: 0 } }
+    handedOff.push(created)
+    return json(res, 200, { status: "accepted", result: { target: { machineID: "m1", agentID: "codex", sessionID: created.id, directory: DIR } } })
+  }
   if (p === "/v1/agents/claude/session/status") return json(res, 200, Object.fromEntries(sessions.map((s) => [s.id, { type: "idle" }])))
   if (p === "/v1/agents/claude/models") return json(res, 200, { providers: [{ id: "claude", name: "claude", models: { "opus[1m]": { id: "opus[1m]", name: "Opus (1M context)", status: "active" } } }], default: { claude: "opus[1m]" } })
-  if (/^\/v1\/agents\/claude\/session\/[^/]+\/message$/.test(p)) { res.setHeader("X-Has-More", "0"); return json(res, 200, transcript) }
+  if (/^\/v1\/agents\/(claude|codex)\/session\/[^/]+\/message$/.test(p)) { res.setHeader("X-Has-More", "0"); return json(res, 200, p.includes("codex-handoff") ? [] : transcript) }
+  const promptRoute = /^\/v1\/agents\/codex\/session\/([^/]+)\/prompt$/.exec(p)
+  if (req.method === "POST" && promptRoute) {
+    let body = ""
+    req.on("data", (c) => { body += c })
+    req.on("end", () => {
+      try { promptBodies.push(JSON.parse(body)) } catch { promptBodies.push({ raw: body }) }
+      json(res, 200, { status: "accepted", clientRequestId: "req-1" })
+    })
+    return
+  }
   if (p.includes("/global/event")) { res.writeHead(200, { "Content-Type": "text/event-stream", ...cors }); res.write(": ok\n\n"); return }
   if (p.includes("/question") || p.includes("/permission")) return json(res, 200, [])
   return json(res, 404, { error: p })
@@ -98,6 +124,34 @@ const run = async () => {
   await page.locator(".hr-native-session-row").first().click()
   await page.locator(".hr-native-session-observer .uw-markdown p").first().waitFor({ timeout: 20_000 })
   await page.waitForTimeout(1200)
+
+  if (process.env.HANDOFF_CHECK) {
+    const trigger = page.locator(".hr-session-handoff-trigger")
+    await trigger.waitFor({ timeout: 15_000 })
+    await trigger.click()
+    const select = page.locator(".hr-session-handoff select")
+    await select.waitFor({ timeout: 10_000 })
+    const options = await select.locator("option").allTextContents()
+    await page.locator(".hr-session-handoff .tdw-button.primary").click()
+    await page.waitForTimeout(1500)
+    const header = await page.locator(".hr-native-session-heading h1").textContent()
+    const eyebrow = await page.locator(".hr-native-session-eyebrow").first().textContent()
+    const composer = page.locator(".uw-composer-shell textarea")
+    await composer.fill("Continua il lavoro sul parser")
+    await page.locator(".uw-composer-footer button", { hasText: /Send|Invia/ }).first().click().catch(() => {})
+    await page.waitForTimeout(1500)
+    const wire = promptBodies.map((b) => (Array.isArray(b?.parts) ? b.parts : []).map((x) => x?.text || "").join("\n") || b?.text || b?.prompt || JSON.stringify(b).slice(0, 200))
+    const visible = await page.locator(".uw-message-user .uw-markdown").allTextContents()
+    console.log(JSON.stringify({ options, handoffCalls, header, eyebrow,
+      composerEnabled: await composer.isEnabled(),
+      promptCount: promptBodies.length,
+      wireCarriesPacket: wire.some((w) => w.includes("You are taking over an existing TaskDesk task.")),
+      wireCarriesSourceTranscript: wire.some((w) => w.includes("non sono completati tutti?")),
+      wireCarriesInstruction: wire.some((w) => w.includes("Continua il lavoro sul parser")),
+      visibleUserMessages: visible }, null, 2))
+    await page.screenshot({ path: OUT })
+    return
+  }
 
   if (process.env.LANG_CHECK) {
     const snap = async () => page.evaluate(() => ({

@@ -297,6 +297,11 @@ type TranslationKey =
   | 'permission.allowAlways'
   | 'permission.deny'
   | 'sf.openSessionAria'
+  | 'sf.continueWithAgent'
+  | 'sf.handoffSubtitle'
+  | 'sf.continueSession'
+  | 'sf.handingOff'
+  | 'sf.handoffPending'
   | 'sf.brandTagline'
   | 'sf.allMachines'
   | 'sf.nativeSessions'
@@ -753,6 +758,11 @@ const translations: Record<LanguageCode, Partial<Record<TranslationKey, string>>
     'sessions.typePathPlaceholder': '/home/you/project or C:\\Projects\\App',
     'sessions.goToPath': 'Go',
     'sf.openSessionAria': 'Open {title}. {agent}. {status}. {project} on {machine}.',
+    'sf.continueWithAgent': 'Continue with another agent',
+    'sf.handoffSubtitle': 'Creates a real Session on the chosen harness and carries this conversation into its first prompt. This Session stays as it is.',
+    'sf.continueSession': 'Continue Session',
+    'sf.handingOff': 'Creating Session…',
+    'sf.handoffPending': 'The handoff has not been confirmed yet. Retry the same coding agent to reconcile it instead of creating a second Session.',
     'sf.brandTagline': 'Native coding-agent Sessions, anywhere.',
     'sf.allMachines': 'All machines',
     'sf.nativeSessions': 'Native Sessions',
@@ -1209,6 +1219,11 @@ const translations: Record<LanguageCode, Partial<Record<TranslationKey, string>>
     'sessions.typePathPlaceholder': '/home/utente/progetto o C:\\Progetti\\App',
     'sessions.goToPath': 'Vai',
     'sf.openSessionAria': 'Apri {title}. {agent}. {status}. {project} su {machine}.',
+    'sf.continueWithAgent': 'Continua con un altro agente',
+    'sf.handoffSubtitle': 'Crea una vera sessione sull\'harness scelto e porta questa conversazione nel suo primo prompt. Questa sessione resta com\'è.',
+    'sf.continueSession': 'Continua la sessione',
+    'sf.handingOff': 'Creazione della sessione…',
+    'sf.handoffPending': 'Il passaggio non è ancora confermato. Riprova con lo stesso coding agent per riconciliarlo invece di creare una seconda sessione.',
     'sf.brandTagline': 'Sessioni native dei coding agent, ovunque.',
     'sf.allMachines': 'Tutte le macchine',
     'sf.nativeSessions': 'Sessioni native',
@@ -1617,6 +1632,11 @@ const translations: Record<LanguageCode, Partial<Record<TranslationKey, string>>
     'permission.allowAlways': '永遠允許',
     'permission.deny': '拒絕',
     'sf.openSessionAria': '開啟 {title}。{agent}。{status}。{machine} 上的 {project}。',
+    'sf.continueWithAgent': '改用其他代理繼續',
+    'sf.handoffSubtitle': '在所選的 harness 上建立真正的工作階段，並將這段對話帶入它的第一個提示。此工作階段維持原狀。',
+    'sf.continueSession': '繼續工作階段',
+    'sf.handingOff': '正在建立工作階段…',
+    'sf.handoffPending': '交接尚未確認。請以相同的編碼代理重試以進行協調，而不是建立第二個工作階段。',
     'sf.brandTagline': '隨處操作編碼代理的原生工作階段。',
     'sf.allMachines': '所有機器',
     'sf.nativeSessions': '原生工作階段',
@@ -2070,6 +2090,11 @@ const translations: Record<LanguageCode, Partial<Record<TranslationKey, string>>
     'permission.allowAlways': '始终允许',
     'permission.deny': '拒绝',
     'sf.openSessionAria': '打开 {title}。{agent}。{status}。{machine} 上的 {project}。',
+    'sf.continueWithAgent': '改用其他代理继续',
+    'sf.handoffSubtitle': '在所选的 harness 上创建真正的会话，并将这段对话带入它的第一个提示。此会话保持原样。',
+    'sf.continueSession': '继续会话',
+    'sf.handingOff': '正在创建会话…',
+    'sf.handoffPending': '交接尚未确认。请以相同的编码代理重试以进行协调，而不是创建第二个会话。',
     'sf.brandTagline': '随时随地操作编码代理的原生会话。',
     'sf.allMachines': '所有机器',
     'sf.nativeSessions': '原生会话',

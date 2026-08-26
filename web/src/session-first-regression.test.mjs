@@ -181,7 +181,8 @@ for (const retiredPath of [
   assert.equal(existsSync(new URL(retiredPath, import.meta.url)), false, `${retiredPath} must not return as a parallel Session-first chat path`)
 }
 
-assert.match(handoff, /export function NativeSessionHandoffControl\(_props: Props\)\s*\{\s*return null\s*\}/, 'cross-agent handoff UI must remain disabled during single-Session stabilization')
+// Cross-agent handoff was stubbed to `return null` during single-Session stabilization. That phase
+// is over: the guards at the end of this file assert the working control instead.
 assert.ok(standalone.includes('<NativeSessionObserver'), 'integrated Sessions workspace must still open native Sessions')
 assert.ok(standalone.includes('<NativeSessionHome'), 'Session-first navigation must remain native discovery based')
 assert.ok(standalone.includes('onDeleted={handleSessionDeleted}'), 'deleting the selected native Session must clear its detail surface')
@@ -224,3 +225,24 @@ for (const [name, source] of [["native-session-home.tsx", home], ["standalone-un
     assert.equal(source.includes(literal), false, `${name} still hard-codes ${literal}`)
   }
 }
+
+// --- E3: continuing with another coding agent -------------------------------------------------
+// A native Session belongs to one harness, so continuing elsewhere means creating a real Session on
+// the target and carrying the conversation into its first prompt. The daemon route and the client
+// call both already existed; only the entry point was stubbed out, which left the feature with no
+// way in while a CSS rule hid the control that promised it.
+assert.ok(handoff.includes('handoffNativeSession('), 'the handoff control must call the real daemon handoff')
+assert.equal(handoff.includes('return null\n}'), false, 'the handoff control must not be a stub')
+assert.ok(handoff.includes('handoffContextPending'), 'the target must know it still owes its context packet')
+assert.ok(handoff.includes('history'), 'the source transcript must travel with the handoff')
+assert.ok(handoff.includes('writerOwned: true'), 'a Session this bridge just created must not ask for a second claim')
+
+// The one-option "Continue with" select is gone from the DOM, not hidden: a control the transport
+// refuses must not be rendered at all.
+assert.ok(workThread.includes('agents.length > 1 ?'), 'the agent select must render only where there is a real choice')
+const observerCss = readFileSync(new URL('./native-session-observer.css', import.meta.url), 'utf8')
+assert.doesNotMatch(
+  observerCss,
+  /\.hr-native-session-observer \.tdw-agent-control > label:first-child \{\s*display: none/,
+  'a phantom control must be removed rather than hidden'
+)
