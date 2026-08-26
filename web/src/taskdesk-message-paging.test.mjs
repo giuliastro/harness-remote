@@ -3,10 +3,10 @@ import { readFileSync } from "node:fs"
 import test from "node:test"
 import { mergeLatestMessagePage, prependOlderMessagePage } from "./message-pages.ts"
 
-function message(id, text = id) {
+function message(id, text = id, role = "assistant", created = 1) {
   return {
-    info: { id, role: "assistant", time: { created: 1, updated: 1 } },
-    parts: [{ id: `${id}-part`, type: "text", text }]
+    info: { id, role, time: { created, updated: created } },
+    parts: [{ id: `${id}:text:0`, messageID: id, type: "text", text }]
   }
 }
 
@@ -50,6 +50,48 @@ test("newest-page reconcile never cuts a streamed assistant reply back to a stal
   const laterJournal = message("reply", "This is the complete answer from the live ACP stream. Persisted.")
   const caughtUp = mergeLatestMessagePage(merged, [laterJournal])
   assert.equal(caughtUp[0], laterJournal, "a journal that catches up and extends the answer remains authoritative")
+})
+
+test("live ACP ids reconcile to persisted journal ids without duplicating the final turn", () => {
+  const liveUser = message("live-user", "same prompt", "user", 1000)
+  const liveAssistant = message("live-assistant", "answer prefix", "assistant", 1100)
+  const journalUser = message("jsonl-user", "same prompt", "user", 1001)
+  const journalAssistant = message("jsonl-assistant", "answer prefix plus final words", "assistant", 1101)
+
+  const merged = mergeLatestMessagePage([liveUser, liveAssistant], [journalUser, journalAssistant])
+  assert.deepEqual(merged.map((entry) => entry.info.id), ["live-user", "live-assistant"])
+  assert.equal(merged[1].parts[0].text, "answer prefix plus final words", "the persisted complete tail must replace the live prefix in place")
+  assert.equal(merged[1].parts[0].messageID, "live-assistant")
+})
+
+test("cross-id stabilization is limited to one unambiguous current turn", () => {
+  const firstUser = message("u1", "repeat", "user", 1_000)
+  const firstAssistant = message("a1", "same answer", "assistant", 1_100)
+  const laterUser = message("u2", "repeat", "user", 60_000)
+  const laterAssistant = message("a2", "same answer", "assistant", 60_100)
+
+  const merged = mergeLatestMessagePage([firstUser, firstAssistant], [laterUser, laterAssistant])
+  assert.deepEqual(
+    merged.map((entry) => entry.info.id),
+    ["u1", "a1", "u2", "a2"],
+    "identical text from a later repeated turn must not be collapsed into historical ids"
+  )
+})
+
+test("cross-id stabilization never hides errors or tool-bearing native messages", () => {
+  const liveUser = message("live-user", "prompt", "user", 1000)
+  const liveAssistant = message("live-assistant", "answer", "assistant", 1100)
+  const journalUser = message("jsonl-user", "prompt", "user", 1001)
+  const journalAssistant = {
+    ...message("jsonl-assistant", "answer", "assistant", 1101),
+    parts: [
+      { id: "jsonl-assistant:text:0", messageID: "jsonl-assistant", type: "text", text: "answer" },
+      { id: "jsonl-assistant:tool:1", messageID: "jsonl-assistant", type: "tool", callID: "call", tool: "x", state: { status: "completed" } }
+    ]
+  }
+
+  const merged = mergeLatestMessagePage([liveUser, liveAssistant], [journalUser, journalAssistant])
+  assert.ok(merged.some((entry) => entry.info.id === "jsonl-assistant"), "a tool-bearing persisted envelope must keep its native identity")
 })
 
 test("a divergent native rewrite is not mistaken for a stale prefix", () => {
