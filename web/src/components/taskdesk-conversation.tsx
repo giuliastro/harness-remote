@@ -1,6 +1,7 @@
 import { memo, useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from "react"
 import type { MessageEnvelope } from "../types"
 import { ChatIcon, JumpToBottomIcon, JumpToTopIcon, LoadingIcon, StopCircleIcon } from "../Icons"
+import { useTranslator } from "../useTranslator"
 import "../taskdesk-conversation.css"
 import "../taskdesk-conversation-fixes.css"
 import { TaskDeskMessageContent } from "./taskdesk-message-content"
@@ -80,6 +81,7 @@ const MessageBubble = memo(function MessageBubble({ message, agentLabel }: { mes
 })
 
 const ThinkingIndicator = memo(function ThinkingIndicator({ agentLabel, workingLabel }: { agentLabel: string; workingLabel?: string }) {
+  const t = useTranslator()
   const [elapsed, setElapsed] = useState(0)
 
   useEffect(() => {
@@ -89,10 +91,10 @@ const ThinkingIndicator = memo(function ThinkingIndicator({ agentLabel, workingL
   }, [])
 
   return (
-    <div className="uw-session-typing" role="status" aria-live="polite" aria-label={`Waiting for ${agentLabel} response`}>
+    <div className="uw-session-typing" role="status" aria-live="polite" aria-label={t("sf.waitingResponse", { agent: agentLabel })}>
       <span className="uw-thinking-orb" aria-hidden="true"><i /><i /><i /></span>
       <span className="uw-thinking-copy">
-        <strong>{workingLabel || `${agentLabel} is working`}</strong>
+        <strong>{workingLabel || t("sf.agentIsWorking", { agent: agentLabel })}</strong>
         <small>{elapsed < 2 ? "Starting…" : `${elapsed}s`}</small>
       </span>
     </div>
@@ -136,6 +138,7 @@ const ConversationTranscript = memo(function ConversationTranscript({
   emptyText = "This conversation has no messages yet.",
   renderMessage
 }: TranscriptProps) {
+  const t = useTranslator()
   const transcriptRef = useRef<HTMLDivElement>(null)
   const nearBottomRef = useRef(true)
   const preservingOlderRef = useRef(false)
@@ -227,7 +230,7 @@ const ConversationTranscript = memo(function ConversationTranscript({
       <div
         className="uw-transcript"
         role="log"
-        aria-label="Conversation transcript"
+        aria-label={t("sf.conversationTranscript")}
         ref={transcriptRef}
         onWheel={(event) => {
           if (event.deltaY < 0) nearBottomRef.current = false
@@ -243,7 +246,7 @@ const ConversationTranscript = memo(function ConversationTranscript({
         }}
       >
         {loading || !ready ? (
-          <div className="uw-empty-panel"><LoadingIcon size={22} /><strong>Loading conversation…</strong></div>
+          <div className="uw-empty-panel"><LoadingIcon size={22} /><strong>{t("sf.loadingConversation")}</strong></div>
         ) : (
           <>
             {hasMore ? (
@@ -267,14 +270,14 @@ const ConversationTranscript = memo(function ConversationTranscript({
       </div>
 
       {jumpAffordances.top || jumpAffordances.bottom ? (
-        <div className="uw-transcript-jumps" aria-label="Conversation navigation">
+        <div className="uw-transcript-jumps" aria-label={t("sf.conversationNavigation")}>
           {jumpAffordances.top ? (
-            <button type="button" className="uw-transcript-jump" onClick={jumpToTop} title="Jump to top" aria-label="Jump to top">
+            <button type="button" className="uw-transcript-jump" onClick={jumpToTop} title={t("app.jumpToTop")} aria-label={t("app.jumpToTop")}>
               <JumpToTopIcon size={18} />
             </button>
           ) : null}
           {jumpAffordances.bottom ? (
-            <button type="button" className="uw-transcript-jump" onClick={jumpToBottom} title="Jump to bottom" aria-label="Jump to bottom">
+            <button type="button" className="uw-transcript-jump" onClick={jumpToBottom} title={t("app.jumpToBottom")} aria-label={t("app.jumpToBottom")}>
               <JumpToBottomIcon size={18} />
             </button>
           ) : null}
@@ -314,13 +317,14 @@ export function TaskDeskConversation({
   footerHint,
   renderMessage
 }: Props) {
+  const t = useTranslator()
   const composerRef = useRef<HTMLTextAreaElement>(null)
   const composerFrameRef = useRef<number | undefined>(undefined)
   const touchFirst = hasTouchFirstPointer()
   const canSend = Boolean(draft.trim() && !sending && !waiting && !sendDisabled && ready)
   // A phone has no Ctrl or Cmd key, so telling a touch user to press Ctrl/Cmd+Enter named the one
   // way to send that they do not have. Enter inserts a newline there; the Send button is the action.
-  const hint = footerHint ?? (touchFirst ? "Enter adds a line. Tap Send to send." : "Enter to send · Shift+Enter for a newline")
+  const hint = footerHint ?? (touchFirst ? t("sf.ctrlEnterToSend") : t("sf.enterToSend"))
 
   useEffect(() => {
     if (composerFrameRef.current !== undefined) window.cancelAnimationFrame(composerFrameRef.current)

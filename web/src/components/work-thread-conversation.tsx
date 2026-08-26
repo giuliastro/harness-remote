@@ -30,6 +30,7 @@ import {
 import { ModelPicker, modelOptionKey } from "./model-picker"
 import { TaskDeskConversation } from "./taskdesk-conversation"
 import { TaskDeskMessageContent } from "./taskdesk-message-content"
+import { useTranslator } from "../useTranslator"
 import { WorkThreadAttention } from "./work-thread-attention"
 
 const INITIAL_PAGE_SIZE = 200
@@ -245,6 +246,7 @@ function ConversationStatePill({
 }
 
 const WorkThreadBubble = memo(function WorkThreadBubble({ message }: { message: WorkThreadMessage }) {
+  const t = useTranslator()
   const meta = message.taskdesk
   if (message.info.role === CONVERSATION_EVENT_ROLE) {
     return (
@@ -254,12 +256,12 @@ const WorkThreadBubble = memo(function WorkThreadBubble({ message }: { message: 
     )
   }
   const isUser = message.info.role === "user"
-  const label = isUser ? "You" : meta?.agentLabel || "Coding agent"
+  const label = isUser ? t("sf.you") : meta?.agentLabel || t("sf.codingAgentGeneric")
   const icon = !isUser ? harnessIconUrl(meta?.agentBackend) : undefined
   return (
     <article className={`uw-message ${isUser ? "uw-message-user" : "uw-message-agent"}`}>
       <div className={`uw-avatar ${isUser ? "uw-avatar-user" : "uw-avatar-agent"}`} aria-hidden="true">
-        {isUser ? "You" : icon ? <img src={icon} alt="" /> : label.slice(0, 2).toUpperCase()}
+        {isUser ? t("sf.you") : icon ? <img src={icon} alt="" /> : label.slice(0, 2).toUpperCase()}
       </div>
       <div className="uw-message-body">
         <header>
@@ -283,6 +285,7 @@ export function WorkThreadConversation({
   deferModelFallback = false,
   nativeSessionTruth = false
 }: Props) {
+  const t = useTranslator()
   const draftStorageKey = `${DRAFT_STORAGE_PREFIX}${task.id}`
   const initialAgentID = agentForRun(task, task.run)
   const initialModelKey = modelKey(lastModelForAgent(task, initialAgentID))
@@ -708,10 +711,10 @@ export function WorkThreadConversation({
   const preparingReply = sending || (working && !currentRunHasAssistantSignal)
   const pendingAgentLabel = sending ? agentLabel(agents, targetAgentID) : currentLabel
   const waitingLabel = hasAttention
-    ? "Waiting for your input"
+    ? t("sf.waitingForInput")
     : preparingReply
-      ? `${pendingAgentLabel} is getting started`
-      : `${currentLabel} is working`
+      ? t("sf.agentGettingStarted", { agent: pendingAgentLabel })
+      : t("sf.agentIsWorking", { agent: currentLabel })
 
   useEffect(() => {
     onAttentionChangeRef.current?.(hasAttention)
@@ -722,7 +725,7 @@ export function WorkThreadConversation({
       <div className="tdw-conversation-toolbar">
         <div className="tdw-agent-control">
           <label>
-            <span>Continue with</span>
+            <span>{t("sf.continueWith")}</span>
             <select value={targetAgentID} disabled={working || sending} onChange={(event) => {
               modelSelectionTouchedRef.current = false
               setTargetAgentID(event.target.value)
@@ -731,12 +734,12 @@ export function WorkThreadConversation({
             </select>
           </label>
           <label className="tdw-model-control">
-            <span>Model</span>
+            <span>{t("sf.model")}</span>
             <ModelPicker compact models={models} value={targetModelKey} onChange={(value) => {
               modelSelectionTouchedRef.current = true
               setTargetModelKey(value)
-            }} disabled={working || sending} loading={modelsLoading} placeholder={deferModelFallback ? "Harness default" : undefined} unavailableHint={modelError || undefined} />
-            {modelError ? <small className="tdw-field-note" title={modelError}>Model catalog unavailable. Continue uses the harness default.</small> : null}
+            }} disabled={working || sending} loading={modelsLoading} placeholder={deferModelFallback ? t("sf.harnessDefault") : undefined} unavailableHint={modelError || undefined} />
+            {modelError ? <small className="tdw-field-note" title={modelError}>{t("sf.modelCatalogUnavailable")}</small> : null}
           </label>
         </div>
         <ConversationStatePill working={working || sending} attention={hasAttention} workingLabel={waitingLabel} startedAt={sending ? undefined : task.run?.startedAt} status={task.status} detail={task.error?.message || undefined} />
@@ -771,11 +774,9 @@ export function WorkThreadConversation({
         sendDisabled={working || hasAttention}
         onStop={working ? stop : undefined}
         stopping={stopping}
-        placeholder={`Message ${agentLabel(agents, targetAgentID)}…`}
-        emptyText={nativeSessionTruth
-          ? "No native messages recorded in this Session yet. Its harness lists the Session but has persisted no transcript for it — a turn that never started leaves it empty. Send a message to continue it."
-          : "Start the conversation. You can continue with another coding agent at any time."}
-        footerHint={hasAttention ? "Your input is required before the agent can continue" : working ? "The agent is working on your last message" : undefined}
+        placeholder={t("sf.messagePlaceholder", { agent: agentLabel(agents, targetAgentID) })}
+        emptyText={nativeSessionTruth ? t("sf.noNativeMessages") : t("sf.startConversation")}
+        footerHint={hasAttention ? t("sf.inputRequired") : working ? t("sf.workingOnMessage") : undefined}
         renderMessage={(message) => <WorkThreadBubble key={message.info.id} message={message as WorkThreadMessage} />}
       />
     </div>

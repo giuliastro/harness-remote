@@ -9,6 +9,7 @@ import {
 import type { AgentModelScope, MachineTask } from "../taskClient"
 import type { MachineAgentHost } from "../types"
 import { LoadingIcon } from "../Icons"
+import { useTranslator } from "../useTranslator"
 import { WorkThreadConversation } from "./work-thread-conversation"
 import "../native-session-observer.css"
 
@@ -57,6 +58,7 @@ function targetForInitialProjection(target: NativeSessionSurfaceTarget): NativeS
  * never has to unlock the transcript with an extra Continue step. Nothing is persisted as a Task or Run.
  */
 export function NativeSessionObserver({ target, onSessionRefresh, onStateChange }: Props) {
+  const t = useTranslator()
   const [task, setTask] = useState<MachineTask | null>(null)
   const taskRef = useRef<MachineTask | null>(null)
   const attentionRef = useRef(false)
@@ -120,7 +122,7 @@ export function NativeSessionObserver({ target, onSessionRefresh, onStateChange 
   }, [target.key, handleTaskUpdate])
 
   if (!task) {
-    return <div className="tdw-detail-loading"><LoadingIcon size={20} /> Loading Session into the v3 controller...</div>
+    return <div className="tdw-detail-loading"><LoadingIcon size={20} /> {t("sf.loadingIntoController")}</div>
   }
 
   return (

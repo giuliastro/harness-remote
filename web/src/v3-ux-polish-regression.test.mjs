@@ -60,7 +60,7 @@ assert.match(mobileParity, /@media \(pointer: coarse\) and \(min-width: 600px\) 
 assert.match(mobileParity, /\.hr-new-conversation-modal \.tdw-modal-body[\s\S]*display: flex !important/)
 
 // The differentiator has to be visible in normal conversation chrome, not hidden in documentation.
-assert.match(conversation, /<span>Continue with<\/span>/)
+assert.match(conversation, /<span>\{t\("sf\.continueWith"\)\}<\/span>/)
 assert.doesNotMatch(detail, /hr-header-state/)
 assert.match(detail, />Sessions <span>\{sessions\.length\}<\/span>/)
 assert.match(detail, /Native continuity/)

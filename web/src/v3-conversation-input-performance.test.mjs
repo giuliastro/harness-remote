@@ -4,6 +4,8 @@ import test from "node:test"
 
 const conversation = readFileSync(new URL("./components/work-thread-conversation.tsx", import.meta.url), "utf8")
 
+const i18n = readFileSync(new URL('./i18n.ts', import.meta.url), 'utf8')
+
 test("the conversation signature is not recomputed on every keystroke", () => {
   // `taskConversationSignature` JSON.stringifies every Run. Rendered unconditionally it ran once per
   // character typed in the composer, which is exactly the long-conversation typing lag it caused.
@@ -52,7 +54,10 @@ test("a model catalog failure never renders as a blocking modal error", () => {
 })
 
 test("the conversation toolbar and the New Conversation modal say the same thing", () => {
-  assert.match(conversation, /Model catalog unavailable\. Continue uses the harness default\./)
+  // The conversation's half of this pair moved into the dictionary; the modal's has not been
+  // translated yet, so assert each where it now lives rather than dropping the pairing.
+  assert.match(conversation, /t\("sf\.modelCatalogUnavailable"\)/)
+  assert.match(i18n, /'sf\.modelCatalogUnavailable': 'Model catalog unavailable\. Continue uses the harness default\.'/)
   assert.match(workspace, /Model catalog unavailable\. The conversation starts on the harness default\./)
   assert.match(conversation, /unavailableHint=\{modelError \|\| undefined\}/)
 })

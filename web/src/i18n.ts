@@ -296,7 +296,166 @@ type TranslationKey =
   | 'permission.allowOnce'
   | 'permission.allowAlways'
   | 'permission.deny'
-
+  | 'sf.openSessionAria'
+  | 'sf.brandTagline'
+  | 'sf.allMachines'
+  | 'sf.nativeSessions'
+  | 'sf.workspaceContext'
+  | 'sf.machines'
+  | 'sf.refresh'
+  | 'sf.refreshingMachines'
+  | 'sf.machineCount'
+  | 'sf.connecting'
+  | 'sf.mainNavigation'
+  | 'sf.recentCount'
+  | 'sf.workingShown'
+  | 'sf.newSession'
+  | 'sf.searchSessions'
+  | 'sf.searchSessionsLabel'
+  | 'sf.filterSessions'
+  | 'sf.filterByMachine'
+  | 'sf.filterByAgent'
+  | 'sf.allMachinesCount'
+  | 'sf.allHarnesses'
+  | 'sf.filterAll'
+  | 'sf.filterLive'
+  | 'sf.filterAttention'
+  | 'sf.expandGroup'
+  | 'sf.collapseGroup'
+  | 'sf.groupSessions'
+  | 'sf.showMore'
+  | 'sf.showLess'
+  | 'sf.noWorkingDirectory'
+  | 'sf.findingSessions'
+  | 'sf.refreshFailed'
+  | 'sf.refreshFailedDetail'
+  | 'sf.retry'
+  | 'sf.noMatch'
+  | 'sf.addMachineHint'
+  | 'sf.machineConnecting'
+  | 'sf.machineOffline'
+  | 'sf.discoveringProjects'
+  | 'sf.machineUnavailableSaved'
+  | 'sf.noSessionsOnMachine'
+  | 'sf.attentionCount'
+  | 'sf.liveCount'
+  | 'sf.offline'
+  | 'sf.statusWorking'
+  | 'sf.statusReady'
+  | 'sf.statusAttention'
+  | 'sf.statusStopped'
+  | 'sf.statusRetrying'
+  | 'sf.statusWaiting'
+  | 'sf.untitledSession'
+  | 'sf.external'
+  | 'sf.restrictedCount'
+  | 'sf.childSession'
+  | 'sf.newSessionSubtitle'
+  | 'sf.closeNewSession'
+  | 'sf.createNativeSession'
+  | 'sf.project'
+  | 'sf.codingAgent'
+  | 'sf.title'
+  | 'sf.optional'
+  | 'sf.newAgentSession'
+  | 'sf.noProjectAvailable'
+  | 'sf.noAgentCanCreate'
+  | 'sf.cancel'
+  | 'sf.createSession'
+  | 'sf.creating'
+  | 'sf.renameSession'
+  | 'sf.renameSubtitle'
+  | 'sf.closeRename'
+  | 'sf.sessionName'
+  | 'sf.enterSessionName'
+  | 'sf.renaming'
+  | 'sf.rename'
+  | 'sf.deleteSessionTitle'
+  | 'sf.deleteSubtitle'
+  | 'sf.closeDelete'
+  | 'sf.keepSession'
+  | 'sf.deleteSession'
+  | 'sf.deleting'
+  | 'sf.backToSessions'
+  | 'sf.createdInHarnessRemote'
+  | 'sf.startedInHarness'
+  | 'sf.sessionStatistics'
+  | 'sf.nativeAgentMode'
+  | 'sf.policySummary'
+  | 'sf.cumulativeTokens'
+  | 'sf.changedFiles'
+  | 'sf.reportedCost'
+  | 'sf.tokensLabel'
+  | 'sf.restrictionsLabel'
+  | 'sf.policyRulesLabel'
+  | 'sf.agentLabel'
+  | 'sf.filesLabel'
+  | 'sf.addFirstMachine'
+  | 'sf.addFirstMachineBody'
+  | 'sf.addMachine'
+  | 'sf.preparing'
+  | 'sf.connectingMachines'
+  | 'sf.connectingBody'
+  | 'sf.configuredMachines'
+  | 'sf.machinesUnavailable'
+  | 'sf.couldNotConnect'
+  | 'sf.offlineBody'
+  | 'sf.manageMachines'
+  | 'sf.openNativeSession'
+  | 'sf.openNativeSessionBody'
+  | 'sf.onlineCount'
+  | 'sf.offlineCount'
+  | 'sf.nativeSessionTruth'
+  | 'sf.noNativeMessages'
+  | 'sf.startConversation'
+  | 'sf.machinesSubtitle'
+  | 'sf.close'
+  | 'sf.noMachinesConfigured'
+  | 'sf.noMachinesBody'
+  | 'sf.checkingAgents'
+  | 'sf.agentsDetected'
+  | 'sf.machineUnavailable'
+  | 'sf.edit'
+  | 'sf.remove'
+  | 'sf.keep'
+  | 'sf.removeQuestion'
+  | 'sf.fieldName'
+  | 'sf.fieldHost'
+  | 'sf.fieldPort'
+  | 'sf.fieldUsername'
+  | 'sf.fieldPassword'
+  | 'sf.machineNamePlaceholder'
+  | 'sf.testConnection'
+  | 'sf.testing'
+  | 'sf.addMachineAction'
+  | 'sf.saveMachine'
+  | 'sf.notADaemon'
+  | 'sf.connectedTo'
+  | 'sf.managerFooter'
+  | 'sf.interface'
+  | 'sf.appearanceShared'
+  | 'sf.continueWith'
+  | 'sf.model'
+  | 'sf.harnessDefault'
+  | 'sf.modelCatalogUnavailable'
+  | 'sf.messagePlaceholder'
+  | 'sf.messageLabel'
+  | 'sf.conversationTranscript'
+  | 'sf.conversationNavigation'
+  | 'sf.loadingConversation'
+  | 'sf.waitingResponse'
+  | 'sf.enterToSend'
+  | 'sf.ctrlEnterToSend'
+  | 'sf.send'
+  | 'sf.stop'
+  | 'sf.you'
+  | 'sf.codingAgentGeneric'
+  | 'sf.agentIsWorking'
+  | 'sf.agentGettingStarted'
+  | 'sf.waitingForInput'
+  | 'sf.inputRequired'
+  | 'sf.workingOnMessage'
+  | 'sf.loadingIntoController'
 const translations: Record<LanguageCode, Partial<Record<TranslationKey, string>>> = {
   en: {
     'app.title': 'Harness Remote',
@@ -592,7 +751,167 @@ const translations: Record<LanguageCode, Partial<Record<TranslationKey, string>>
     'sessions.browseFolders': 'Browse folders',
     'sessions.typePathLabel': 'Open a path',
     'sessions.typePathPlaceholder': '/home/you/project or C:\\Projects\\App',
-    'sessions.goToPath': 'Go'
+    'sessions.goToPath': 'Go',
+    'sf.openSessionAria': 'Open {title}. {agent}. {status}. {project} on {machine}.',
+    'sf.brandTagline': 'Native coding-agent Sessions, anywhere.',
+    'sf.allMachines': 'All machines',
+    'sf.nativeSessions': 'Native Sessions',
+    'sf.workspaceContext': 'Current workspace context',
+    'sf.machines': 'Machines',
+    'sf.refresh': 'Refresh',
+    'sf.refreshingMachines': 'Refreshing machines',
+    'sf.machineCount': '{online}/{total} machines',
+    'sf.connecting': 'Connecting',
+    'sf.mainNavigation': 'Main navigation',
+    'sf.recentCount': '{count} recent',
+    'sf.workingShown': '{working} working · {shown} shown',
+    'sf.newSession': 'New Session',
+    'sf.searchSessions': 'Search sessions',
+    'sf.searchSessionsLabel': 'Search Sessions',
+    'sf.filterSessions': 'Filter Sessions',
+    'sf.filterByMachine': 'Filter by machine',
+    'sf.filterByAgent': 'Filter by coding agent',
+    'sf.allMachinesCount': 'All machines · {count}',
+    'sf.allHarnesses': 'All harnesses',
+    'sf.filterAll': 'All',
+    'sf.filterLive': 'Live',
+    'sf.filterAttention': 'Attention',
+    'sf.expandGroup': 'Expand {name} Sessions',
+    'sf.collapseGroup': 'Collapse {name} Sessions',
+    'sf.groupSessions': '{name} Sessions',
+    'sf.showMore': 'Show {count} more',
+    'sf.showLess': 'Show less',
+    'sf.noWorkingDirectory': 'No working directory',
+    'sf.findingSessions': 'Finding Sessions from your coding agents…',
+    'sf.refreshFailed': 'Session refresh failed.',
+    'sf.refreshFailedDetail': 'Previously loaded Sessions remain available.',
+    'sf.retry': 'Retry',
+    'sf.noMatch': 'No Sessions match this view.',
+    'sf.addMachineHint': 'Add a machine to discover its Projects and native Sessions.',
+    'sf.machineConnecting': 'Connecting…',
+    'sf.machineOffline': 'Machine offline',
+    'sf.discoveringProjects': 'Discovering Projects and native Sessions…',
+    'sf.machineUnavailableSaved': 'This machine is unavailable. Its configuration is still saved.',
+    'sf.noSessionsOnMachine': 'No native Sessions discovered on this machine.',
+    'sf.attentionCount': '{count} attention',
+    'sf.liveCount': '{count} live',
+    'sf.offline': 'Offline',
+    'sf.statusWorking': 'Working',
+    'sf.statusReady': 'Ready',
+    'sf.statusAttention': 'Needs attention',
+    'sf.statusStopped': 'Stopped',
+    'sf.statusRetrying': 'Retrying',
+    'sf.statusWaiting': 'Waiting',
+    'sf.untitledSession': 'Untitled {agent} Session',
+    'sf.external': 'external',
+    'sf.restrictedCount': '{count} restricted',
+    'sf.childSession': 'child',
+    'sf.newSessionSubtitle': 'Start a real native Session in a Project.',
+    'sf.closeNewSession': 'Close New Session',
+    'sf.createNativeSession': 'Create native Session',
+    'sf.project': 'Project',
+    'sf.codingAgent': 'Coding agent',
+    'sf.title': 'Title',
+    'sf.optional': 'optional',
+    'sf.newAgentSession': 'New {agent} Session',
+    'sf.noProjectAvailable': 'No Project is available on the selected machine.',
+    'sf.noAgentCanCreate': 'No installed coding agent can create a native Session on this machine yet.',
+    'sf.cancel': 'Cancel',
+    'sf.createSession': 'Create Session',
+    'sf.creating': 'Creating…',
+    'sf.renameSession': 'Rename Session',
+    'sf.renameSubtitle': 'Changes the native harness Session name, not a Harness Remote alias.',
+    'sf.closeRename': 'Close Rename Session',
+    'sf.sessionName': 'Session name',
+    'sf.enterSessionName': 'Enter a Session name.',
+    'sf.renaming': 'Renaming…',
+    'sf.rename': 'Rename',
+    'sf.deleteSessionTitle': 'Delete “{title}”?',
+    'sf.deleteSubtitle': 'This deletes the native Session from {agent}. This cannot be undone from Harness Remote.',
+    'sf.closeDelete': 'Close Delete Session',
+    'sf.keepSession': 'Keep Session',
+    'sf.deleteSession': 'Delete Session',
+    'sf.deleting': 'Deleting…',
+    'sf.backToSessions': 'Back to Sessions',
+    'sf.createdInHarnessRemote': 'Created in Harness Remote',
+    'sf.startedInHarness': 'Started in the native harness',
+    'sf.sessionStatistics': 'Native Session statistics',
+    'sf.nativeAgentMode': 'Native coding-agent mode',
+    'sf.policySummary': 'Native Session policy summary',
+    'sf.cumulativeTokens': 'Cumulative native Session tokens',
+    'sf.changedFiles': '{count} changed files',
+    'sf.reportedCost': 'Reported native Session cost',
+    'sf.tokensLabel': '{count} tokens',
+    'sf.restrictionsLabel': '{count} restrictions',
+    'sf.policyRulesLabel': '{count} policy rules',
+    'sf.agentLabel': 'Agent {name}',
+    'sf.filesLabel': '{count} files',
+    'sf.addFirstMachine': 'Add your first machine',
+    'sf.addFirstMachineBody': 'Connect the computer that runs Codex, Claude, OpenCode, OMP or PI. Its native Sessions will appear here directly.',
+    'sf.addMachine': 'Add machine',
+    'sf.preparing': 'Preparing Harness Remote',
+    'sf.connectingMachines': 'Connecting to your machines…',
+    'sf.connectingBody': 'Discovering Projects, installed coding agents and native Sessions. An ACP harness may need a few seconds to start.',
+    'sf.configuredMachines': '{count} configured machines',
+    'sf.machinesUnavailable': 'Machines unavailable',
+    'sf.couldNotConnect': 'Harness Remote could not connect',
+    'sf.offlineBody': '{count} configured machines are offline. Check the daemon, network and saved credentials; the configurations remain saved.',
+    'sf.manageMachines': 'Manage machines',
+    'sf.openNativeSession': 'Open a native Session',
+    'sf.openNativeSessionBody': 'Select a Session from the left, or start a new one inside a Project. You will continue the same Session owned by its coding agent.',
+    'sf.onlineCount': '{count} online',
+    'sf.offlineCount': '{count} offline',
+    'sf.nativeSessionTruth': 'Native Session truth',
+    'sf.noNativeMessages': 'No native messages recorded in this Session yet. Its harness lists the Session but has persisted no transcript for it — a turn that never started leaves it empty. Send a message to continue it.',
+    'sf.startConversation': 'Start the conversation. You can continue with another coding agent at any time.',
+    'sf.machinesSubtitle': 'Connect the computers where your repositories, coding agents, credentials and model access already live.',
+    'sf.close': 'Close',
+    'sf.noMachinesConfigured': 'No machines configured',
+    'sf.noMachinesBody': 'Add a Harness Remote daemon to discover its projects and coding agents.',
+    'sf.checkingAgents': 'Checking coding agents…',
+    'sf.agentsDetected': '{count} coding agents detected',
+    'sf.machineUnavailable': 'Machine unavailable',
+    'sf.edit': 'Edit',
+    'sf.remove': 'Remove',
+    'sf.keep': 'Keep',
+    'sf.removeQuestion': 'Remove {name}?',
+    'sf.fieldName': 'Name',
+    'sf.fieldHost': 'Host',
+    'sf.fieldPort': 'Port',
+    'sf.fieldUsername': 'Username',
+    'sf.fieldPassword': 'Password',
+    'sf.machineNamePlaceholder': 'My workstation',
+    'sf.testConnection': 'Test connection',
+    'sf.testing': 'Testing…',
+    'sf.addMachineAction': 'Add machine',
+    'sf.saveMachine': 'Save machine',
+    'sf.notADaemon': 'Connected, but this endpoint is not a Harness machine daemon.',
+    'sf.connectedTo': 'Connected to {name}. {count} coding agents discovered.',
+    'sf.managerFooter': '{machines} machines configured · {agents} coding agents running',
+    'sf.interface': 'Interface',
+    'sf.appearanceShared': 'Appearance and language are shared across Harness Remote on this device.',
+    'sf.continueWith': 'Continue with',
+    'sf.model': 'Model',
+    'sf.harnessDefault': 'Harness default',
+    'sf.modelCatalogUnavailable': 'Model catalog unavailable. Continue uses the harness default.',
+    'sf.messagePlaceholder': 'Message {agent}…',
+    'sf.messageLabel': 'Message {agent}',
+    'sf.conversationTranscript': 'Conversation transcript',
+    'sf.conversationNavigation': 'Conversation navigation',
+    'sf.loadingConversation': 'Loading conversation…',
+    'sf.waitingResponse': 'Waiting for {agent} response',
+    'sf.enterToSend': 'Enter to send · Shift+Enter for a newline',
+    'sf.ctrlEnterToSend': 'Ctrl+Enter to send · Enter for a newline',
+    'sf.send': 'Send',
+    'sf.stop': 'Stop',
+    'sf.you': 'You',
+    'sf.codingAgentGeneric': 'Coding agent',
+    'sf.agentIsWorking': '{agent} is working',
+    'sf.agentGettingStarted': '{agent} is getting started',
+    'sf.waitingForInput': 'Waiting for your input',
+    'sf.inputRequired': 'Your input is required before the agent can continue',
+    'sf.workingOnMessage': 'The agent is working on your last message',
+    'sf.loadingIntoController': 'Loading Session…',
   },
   it: {
     'app.title': 'Harness Remote',
@@ -888,7 +1207,167 @@ const translations: Record<LanguageCode, Partial<Record<TranslationKey, string>>
     'sessions.browseFolders': 'Sfoglia cartelle',
     'sessions.typePathLabel': 'Apri un percorso',
     'sessions.typePathPlaceholder': '/home/utente/progetto o C:\\Progetti\\App',
-    'sessions.goToPath': 'Vai'
+    'sessions.goToPath': 'Vai',
+    'sf.openSessionAria': 'Apri {title}. {agent}. {status}. {project} su {machine}.',
+    'sf.brandTagline': 'Sessioni native dei coding agent, ovunque.',
+    'sf.allMachines': 'Tutte le macchine',
+    'sf.nativeSessions': 'Sessioni native',
+    'sf.workspaceContext': 'Contesto attuale del workspace',
+    'sf.machines': 'Macchine',
+    'sf.refresh': 'Aggiorna',
+    'sf.refreshingMachines': 'Aggiornamento macchine',
+    'sf.machineCount': '{online}/{total} macchine',
+    'sf.connecting': 'Connessione',
+    'sf.mainNavigation': 'Navigazione principale',
+    'sf.recentCount': '{count} recenti',
+    'sf.workingShown': '{working} in lavorazione · {shown} mostrate',
+    'sf.newSession': 'Nuova sessione',
+    'sf.searchSessions': 'Cerca sessioni',
+    'sf.searchSessionsLabel': 'Cerca sessioni',
+    'sf.filterSessions': 'Filtra sessioni',
+    'sf.filterByMachine': 'Filtra per macchina',
+    'sf.filterByAgent': 'Filtra per coding agent',
+    'sf.allMachinesCount': 'Tutte le macchine · {count}',
+    'sf.allHarnesses': 'Tutti gli harness',
+    'sf.filterAll': 'Tutte',
+    'sf.filterLive': 'Attive',
+    'sf.filterAttention': 'Attenzione',
+    'sf.expandGroup': 'Espandi le sessioni di {name}',
+    'sf.collapseGroup': 'Comprimi le sessioni di {name}',
+    'sf.groupSessions': 'Sessioni di {name}',
+    'sf.showMore': 'Mostra altre {count}',
+    'sf.showLess': 'Mostra meno',
+    'sf.noWorkingDirectory': 'Nessuna directory di lavoro',
+    'sf.findingSessions': 'Ricerca delle sessioni nei tuoi coding agent…',
+    'sf.refreshFailed': 'Aggiornamento delle sessioni non riuscito.',
+    'sf.refreshFailedDetail': 'Le sessioni già caricate restano disponibili.',
+    'sf.retry': 'Riprova',
+    'sf.noMatch': 'Nessuna sessione corrisponde a questa vista.',
+    'sf.addMachineHint': 'Aggiungi una macchina per scoprire i suoi progetti e le sessioni native.',
+    'sf.machineConnecting': 'Connessione…',
+    'sf.machineOffline': 'Macchina offline',
+    'sf.discoveringProjects': 'Individuazione di progetti e sessioni native…',
+    'sf.machineUnavailableSaved': 'Questa macchina non è raggiungibile. La sua configurazione resta salvata.',
+    'sf.noSessionsOnMachine': 'Nessuna sessione nativa trovata su questa macchina.',
+    'sf.attentionCount': '{count} da vedere',
+    'sf.liveCount': '{count} attive',
+    'sf.offline': 'Offline',
+    'sf.statusWorking': 'In lavorazione',
+    'sf.statusReady': 'Pronta',
+    'sf.statusAttention': 'Richiede attenzione',
+    'sf.statusStopped': 'Interrotta',
+    'sf.statusRetrying': 'Nuovo tentativo',
+    'sf.statusWaiting': 'In attesa',
+    'sf.untitledSession': 'Sessione {agent} senza titolo',
+    'sf.external': 'esterna',
+    'sf.restrictedCount': '{count} limitazioni',
+    'sf.childSession': 'figlia',
+    'sf.newSessionSubtitle': 'Avvia una vera sessione nativa in un progetto.',
+    'sf.closeNewSession': 'Chiudi Nuova sessione',
+    'sf.createNativeSession': 'Crea sessione nativa',
+    'sf.project': 'Progetto',
+    'sf.codingAgent': 'Coding agent',
+    'sf.title': 'Titolo',
+    'sf.optional': 'facoltativo',
+    'sf.newAgentSession': 'Nuova sessione {agent}',
+    'sf.noProjectAvailable': 'Nessun progetto disponibile sulla macchina selezionata.',
+    'sf.noAgentCanCreate': 'Nessun coding agent installato può ancora creare una sessione nativa su questa macchina.',
+    'sf.cancel': 'Annulla',
+    'sf.createSession': 'Crea sessione',
+    'sf.creating': 'Creazione…',
+    'sf.renameSession': 'Rinomina sessione',
+    'sf.renameSubtitle': 'Cambia il nome della sessione nell\'harness nativo, non un alias di Harness Remote.',
+    'sf.closeRename': 'Chiudi Rinomina sessione',
+    'sf.sessionName': 'Nome della sessione',
+    'sf.enterSessionName': 'Inserisci un nome per la sessione.',
+    'sf.renaming': 'Rinomina…',
+    'sf.rename': 'Rinomina',
+    'sf.deleteSessionTitle': 'Eliminare “{title}”?',
+    'sf.deleteSubtitle': 'Elimina la sessione nativa da {agent}. L\'operazione non è annullabile da Harness Remote.',
+    'sf.closeDelete': 'Chiudi Elimina sessione',
+    'sf.keepSession': 'Mantieni sessione',
+    'sf.deleteSession': 'Elimina sessione',
+    'sf.deleting': 'Eliminazione…',
+    'sf.backToSessions': 'Torna alle sessioni',
+    'sf.createdInHarnessRemote': 'Creata in Harness Remote',
+    'sf.startedInHarness': 'Avviata nell\'harness nativo',
+    'sf.sessionStatistics': 'Statistiche della sessione nativa',
+    'sf.nativeAgentMode': 'Modalità del coding agent nativo',
+    'sf.policySummary': 'Riepilogo dei permessi della sessione',
+    'sf.cumulativeTokens': 'Token cumulativi della sessione',
+    'sf.changedFiles': '{count} file modificati',
+    'sf.reportedCost': 'Costo dichiarato della sessione',
+    'sf.tokensLabel': '{count} token',
+    'sf.restrictionsLabel': '{count} limitazioni',
+    'sf.policyRulesLabel': '{count} regole di permesso',
+    'sf.agentLabel': 'Agente {name}',
+    'sf.filesLabel': '{count} file',
+    'sf.addFirstMachine': 'Aggiungi la tua prima macchina',
+    'sf.addFirstMachineBody': 'Collega il computer su cui girano Codex, Claude, OpenCode, OMP o PI. Le sue sessioni native compariranno qui direttamente.',
+    'sf.addMachine': 'Aggiungi macchina',
+    'sf.preparing': 'Preparazione di Harness Remote',
+    'sf.connectingMachines': 'Connessione alle tue macchine…',
+    'sf.connectingBody': 'Individuazione di progetti, coding agent installati e sessioni native. Un harness ACP può richiedere alcuni secondi per avviarsi.',
+    'sf.configuredMachines': '{count} macchine configurate',
+    'sf.machinesUnavailable': 'Macchine non raggiungibili',
+    'sf.couldNotConnect': 'Harness Remote non è riuscito a connettersi',
+    'sf.offlineBody': '{count} macchine configurate sono offline. Controlla il daemon, la rete e le credenziali salvate; le configurazioni restano salvate.',
+    'sf.manageMachines': 'Gestisci macchine',
+    'sf.openNativeSession': 'Apri una sessione nativa',
+    'sf.openNativeSessionBody': 'Seleziona una sessione a sinistra, o avviane una nuova in un progetto. Continuerai la stessa sessione posseduta dal suo coding agent.',
+    'sf.onlineCount': '{count} online',
+    'sf.offlineCount': '{count} offline',
+    'sf.nativeSessionTruth': 'Verità della sessione nativa',
+    'sf.noNativeMessages': 'Nessun messaggio nativo registrato in questa sessione. Il suo harness la elenca ma non ne ha salvato la trascrizione — un turno che non è mai partito la lascia vuota. Invia un messaggio per continuarla.',
+    'sf.startConversation': 'Inizia la conversazione. Puoi continuare con un altro coding agent in qualsiasi momento.',
+    'sf.machinesSubtitle': 'Collega i computer dove risiedono già i tuoi repository, coding agent, credenziali e accessi ai modelli.',
+    'sf.close': 'Chiudi',
+    'sf.noMachinesConfigured': 'Nessuna macchina configurata',
+    'sf.noMachinesBody': 'Aggiungi un daemon Harness Remote per scoprire i suoi progetti e coding agent.',
+    'sf.checkingAgents': 'Verifica dei coding agent…',
+    'sf.agentsDetected': '{count} coding agent rilevati',
+    'sf.machineUnavailable': 'Macchina non raggiungibile',
+    'sf.edit': 'Modifica',
+    'sf.remove': 'Rimuovi',
+    'sf.keep': 'Mantieni',
+    'sf.removeQuestion': 'Rimuovere {name}?',
+    'sf.fieldName': 'Nome',
+    'sf.fieldHost': 'Host',
+    'sf.fieldPort': 'Porta',
+    'sf.fieldUsername': 'Nome utente',
+    'sf.fieldPassword': 'Password',
+    'sf.machineNamePlaceholder': 'La mia postazione',
+    'sf.testConnection': 'Prova connessione',
+    'sf.testing': 'Prova in corso…',
+    'sf.addMachineAction': 'Aggiungi macchina',
+    'sf.saveMachine': 'Salva macchina',
+    'sf.notADaemon': 'Connessione riuscita, ma questo endpoint non è un daemon Harness.',
+    'sf.connectedTo': 'Connesso a {name}. {count} coding agent trovati.',
+    'sf.managerFooter': '{machines} macchine configurate · {agents} coding agent in esecuzione',
+    'sf.interface': 'Interfaccia',
+    'sf.appearanceShared': 'Aspetto e lingua sono condivisi in tutto Harness Remote su questo dispositivo.',
+    'sf.continueWith': 'Continua con',
+    'sf.model': 'Modello',
+    'sf.harnessDefault': 'Predefinito dell\'harness',
+    'sf.modelCatalogUnavailable': 'Catalogo dei modelli non disponibile. Si continua con il predefinito dell\'harness.',
+    'sf.messagePlaceholder': 'Scrivi a {agent}…',
+    'sf.messageLabel': 'Messaggio per {agent}',
+    'sf.conversationTranscript': 'Trascrizione della conversazione',
+    'sf.conversationNavigation': 'Navigazione della conversazione',
+    'sf.loadingConversation': 'Caricamento della conversazione…',
+    'sf.waitingResponse': 'In attesa della risposta di {agent}',
+    'sf.enterToSend': 'Invio per inviare · Maiusc+Invio per andare a capo',
+    'sf.ctrlEnterToSend': 'Ctrl+Invio per inviare · Invio per andare a capo',
+    'sf.send': 'Invia',
+    'sf.stop': 'Ferma',
+    'sf.you': 'Tu',
+    'sf.codingAgentGeneric': 'Coding agent',
+    'sf.agentIsWorking': '{agent} sta lavorando',
+    'sf.agentGettingStarted': '{agent} sta iniziando',
+    'sf.waitingForInput': 'In attesa di una tua risposta',
+    'sf.inputRequired': 'Serve una tua risposta prima che l\'agente possa continuare',
+    'sf.workingOnMessage': 'L\'agente sta lavorando al tuo ultimo messaggio',
+    'sf.loadingIntoController': 'Caricamento della sessione…',
   },
   'zh-TW': {
     'app.title': 'Harness Remote',
@@ -1136,7 +1615,167 @@ const translations: Record<LanguageCode, Partial<Record<TranslationKey, string>>
     'permission.requested': '請求權限：{permission}',
     'permission.allowOnce': '允許一次',
     'permission.allowAlways': '永遠允許',
-    'permission.deny': '拒絕'
+    'permission.deny': '拒絕',
+    'sf.openSessionAria': '開啟 {title}。{agent}。{status}。{machine} 上的 {project}。',
+    'sf.brandTagline': '隨處操作編碼代理的原生工作階段。',
+    'sf.allMachines': '所有機器',
+    'sf.nativeSessions': '原生工作階段',
+    'sf.workspaceContext': '目前的工作區內容',
+    'sf.machines': '機器',
+    'sf.refresh': '重新整理',
+    'sf.refreshingMachines': '正在重新整理機器',
+    'sf.machineCount': '{online}/{total} 部機器',
+    'sf.connecting': '連線中',
+    'sf.mainNavigation': '主要導覽',
+    'sf.recentCount': '最近 {count} 個',
+    'sf.workingShown': '{working} 執行中 · 顯示 {shown} 個',
+    'sf.newSession': '新增工作階段',
+    'sf.searchSessions': '搜尋工作階段',
+    'sf.searchSessionsLabel': '搜尋工作階段',
+    'sf.filterSessions': '篩選工作階段',
+    'sf.filterByMachine': '依機器篩選',
+    'sf.filterByAgent': '依編碼代理篩選',
+    'sf.allMachinesCount': '所有機器 · {count}',
+    'sf.allHarnesses': '所有 harness',
+    'sf.filterAll': '全部',
+    'sf.filterLive': '進行中',
+    'sf.filterAttention': '需注意',
+    'sf.expandGroup': '展開 {name} 的工作階段',
+    'sf.collapseGroup': '收合 {name} 的工作階段',
+    'sf.groupSessions': '{name} 的工作階段',
+    'sf.showMore': '再顯示 {count} 個',
+    'sf.showLess': '顯示較少',
+    'sf.noWorkingDirectory': '沒有工作目錄',
+    'sf.findingSessions': '正在從編碼代理尋找工作階段…',
+    'sf.refreshFailed': '工作階段重新整理失敗。',
+    'sf.refreshFailedDetail': '先前載入的工作階段仍可使用。',
+    'sf.retry': '重試',
+    'sf.noMatch': '沒有工作階段符合這個檢視。',
+    'sf.addMachineHint': '新增機器以探索其專案與原生工作階段。',
+    'sf.machineConnecting': '連線中…',
+    'sf.machineOffline': '機器離線',
+    'sf.discoveringProjects': '正在探索專案與原生工作階段…',
+    'sf.machineUnavailableSaved': '這部機器無法使用，但設定仍會保留。',
+    'sf.noSessionsOnMachine': '在這部機器上找不到原生工作階段。',
+    'sf.attentionCount': '{count} 需注意',
+    'sf.liveCount': '{count} 進行中',
+    'sf.offline': '離線',
+    'sf.statusWorking': '執行中',
+    'sf.statusReady': '就緒',
+    'sf.statusAttention': '需要注意',
+    'sf.statusStopped': '已停止',
+    'sf.statusRetrying': '重試中',
+    'sf.statusWaiting': '等待中',
+    'sf.untitledSession': '未命名的 {agent} 工作階段',
+    'sf.external': '外部',
+    'sf.restrictedCount': '{count} 項限制',
+    'sf.childSession': '子項',
+    'sf.newSessionSubtitle': '在專案中啟動真正的原生工作階段。',
+    'sf.closeNewSession': '關閉新增工作階段',
+    'sf.createNativeSession': '建立原生工作階段',
+    'sf.project': '專案',
+    'sf.codingAgent': '編碼代理',
+    'sf.title': '標題',
+    'sf.optional': '選填',
+    'sf.newAgentSession': '新增 {agent} 工作階段',
+    'sf.noProjectAvailable': '所選機器上沒有可用的專案。',
+    'sf.noAgentCanCreate': '這部機器上尚無已安裝的編碼代理能建立原生工作階段。',
+    'sf.cancel': '取消',
+    'sf.createSession': '建立工作階段',
+    'sf.creating': '建立中…',
+    'sf.renameSession': '重新命名工作階段',
+    'sf.renameSubtitle': '變更原生 harness 的工作階段名稱，而非 Harness Remote 的別名。',
+    'sf.closeRename': '關閉重新命名',
+    'sf.sessionName': '工作階段名稱',
+    'sf.enterSessionName': '請輸入工作階段名稱。',
+    'sf.renaming': '重新命名中…',
+    'sf.rename': '重新命名',
+    'sf.deleteSessionTitle': '要刪除「{title}」嗎？',
+    'sf.deleteSubtitle': '這會從 {agent} 刪除原生工作階段，且無法從 Harness Remote 復原。',
+    'sf.closeDelete': '關閉刪除工作階段',
+    'sf.keepSession': '保留工作階段',
+    'sf.deleteSession': '刪除工作階段',
+    'sf.deleting': '刪除中…',
+    'sf.backToSessions': '返回工作階段',
+    'sf.createdInHarnessRemote': '在 Harness Remote 建立',
+    'sf.startedInHarness': '在原生 harness 啟動',
+    'sf.sessionStatistics': '原生工作階段統計',
+    'sf.nativeAgentMode': '原生編碼代理模式',
+    'sf.policySummary': '原生工作階段權限摘要',
+    'sf.cumulativeTokens': '原生工作階段累計 token',
+    'sf.changedFiles': '{count} 個已變更檔案',
+    'sf.reportedCost': '回報的原生工作階段費用',
+    'sf.tokensLabel': '{count} 個 token',
+    'sf.restrictionsLabel': '{count} 項限制',
+    'sf.policyRulesLabel': '{count} 條權限規則',
+    'sf.agentLabel': '代理 {name}',
+    'sf.filesLabel': '{count} 個檔案',
+    'sf.addFirstMachine': '新增第一部機器',
+    'sf.addFirstMachineBody': '連線執行 Codex、Claude、OpenCode、OMP 或 PI 的電腦，其原生工作階段會直接顯示在這裡。',
+    'sf.addMachine': '新增機器',
+    'sf.preparing': '正在準備 Harness Remote',
+    'sf.connectingMachines': '正在連線到你的機器…',
+    'sf.connectingBody': '正在探索專案、已安裝的編碼代理與原生工作階段。ACP harness 可能需要幾秒鐘啟動。',
+    'sf.configuredMachines': '已設定 {count} 部機器',
+    'sf.machinesUnavailable': '機器無法使用',
+    'sf.couldNotConnect': 'Harness Remote 無法連線',
+    'sf.offlineBody': '{count} 部已設定的機器離線。請檢查 daemon、網路與已儲存的憑證；設定仍會保留。',
+    'sf.manageMachines': '管理機器',
+    'sf.openNativeSession': '開啟原生工作階段',
+    'sf.openNativeSessionBody': '從左側選擇工作階段，或在專案中啟動新的工作階段。你將延續由其編碼代理擁有的同一個工作階段。',
+    'sf.onlineCount': '{count} 個上線',
+    'sf.offlineCount': '{count} 個離線',
+    'sf.nativeSessionTruth': '原生工作階段真實狀態',
+    'sf.noNativeMessages': '此工作階段尚未記錄任何原生訊息。其 harness 列出了工作階段，但未保存記錄——從未開始的回合會讓它保持空白。傳送訊息以繼續。',
+    'sf.startConversation': '開始對話。你隨時可以改用另一個編碼代理繼續。',
+    'sf.machinesSubtitle': '連線已存放你的程式庫、編碼代理、憑證與模型存取權的電腦。',
+    'sf.close': '關閉',
+    'sf.noMachinesConfigured': '尚未設定機器',
+    'sf.noMachinesBody': '新增 Harness Remote daemon 以探索其專案與編碼代理。',
+    'sf.checkingAgents': '正在檢查編碼代理…',
+    'sf.agentsDetected': '偵測到 {count} 個編碼代理',
+    'sf.machineUnavailable': '機器無法使用',
+    'sf.edit': '編輯',
+    'sf.remove': '移除',
+    'sf.keep': '保留',
+    'sf.removeQuestion': '要移除 {name} 嗎？',
+    'sf.fieldName': '名稱',
+    'sf.fieldHost': '主機',
+    'sf.fieldPort': '連接埠',
+    'sf.fieldUsername': '使用者名稱',
+    'sf.fieldPassword': '密碼',
+    'sf.machineNamePlaceholder': '我的工作站',
+    'sf.testConnection': '測試連線',
+    'sf.testing': '測試中…',
+    'sf.addMachineAction': '新增機器',
+    'sf.saveMachine': '儲存機器',
+    'sf.notADaemon': '已連線，但此端點不是 Harness 機器 daemon。',
+    'sf.connectedTo': '已連線到 {name}，探索到 {count} 個編碼代理。',
+    'sf.managerFooter': '已設定 {machines} 部機器 · {agents} 個編碼代理執行中',
+    'sf.interface': '介面',
+    'sf.appearanceShared': '外觀與語言在此裝置上的 Harness Remote 各處共用。',
+    'sf.continueWith': '改用',
+    'sf.model': '模型',
+    'sf.harnessDefault': 'harness 預設值',
+    'sf.modelCatalogUnavailable': '模型目錄無法使用，將以 harness 預設值繼續。',
+    'sf.messagePlaceholder': '傳送訊息給 {agent}…',
+    'sf.messageLabel': '傳送訊息給 {agent}',
+    'sf.conversationTranscript': '對話記錄',
+    'sf.conversationNavigation': '對話導覽',
+    'sf.loadingConversation': '正在載入對話…',
+    'sf.waitingResponse': '正在等待 {agent} 回覆',
+    'sf.enterToSend': 'Enter 傳送 · Shift+Enter 換行',
+    'sf.ctrlEnterToSend': 'Ctrl+Enter 傳送 · Enter 換行',
+    'sf.send': '傳送',
+    'sf.stop': '停止',
+    'sf.you': '你',
+    'sf.codingAgentGeneric': '編碼代理',
+    'sf.agentIsWorking': '{agent} 正在執行',
+    'sf.agentGettingStarted': '{agent} 正在開始',
+    'sf.waitingForInput': '等待你的輸入',
+    'sf.inputRequired': '代理需要你的輸入才能繼續',
+    'sf.workingOnMessage': '代理正在處理你最後的訊息',
+    'sf.loadingIntoController': '正在載入工作階段…',
   },
   'zh-CN': {
     'app.title': 'Harness Remote',
@@ -1429,7 +2068,167 @@ const translations: Record<LanguageCode, Partial<Record<TranslationKey, string>>
     'permission.requested': '请求权限：{permission}',
     'permission.allowOnce': '允许一次',
     'permission.allowAlways': '始终允许',
-    'permission.deny': '拒绝'
+    'permission.deny': '拒绝',
+    'sf.openSessionAria': '打开 {title}。{agent}。{status}。{machine} 上的 {project}。',
+    'sf.brandTagline': '随时随地操作编码代理的原生会话。',
+    'sf.allMachines': '所有机器',
+    'sf.nativeSessions': '原生会话',
+    'sf.workspaceContext': '当前工作区上下文',
+    'sf.machines': '机器',
+    'sf.refresh': '刷新',
+    'sf.refreshingMachines': '正在刷新机器',
+    'sf.machineCount': '{online}/{total} 台机器',
+    'sf.connecting': '连接中',
+    'sf.mainNavigation': '主导航',
+    'sf.recentCount': '最近 {count} 个',
+    'sf.workingShown': '{working} 执行中 · 显示 {shown} 个',
+    'sf.newSession': '新建会话',
+    'sf.searchSessions': '搜索会话',
+    'sf.searchSessionsLabel': '搜索会话',
+    'sf.filterSessions': '筛选会话',
+    'sf.filterByMachine': '按机器筛选',
+    'sf.filterByAgent': '按编码代理筛选',
+    'sf.allMachinesCount': '所有机器 · {count}',
+    'sf.allHarnesses': '所有 harness',
+    'sf.filterAll': '全部',
+    'sf.filterLive': '进行中',
+    'sf.filterAttention': '需注意',
+    'sf.expandGroup': '展开 {name} 的会话',
+    'sf.collapseGroup': '收起 {name} 的会话',
+    'sf.groupSessions': '{name} 的会话',
+    'sf.showMore': '再显示 {count} 个',
+    'sf.showLess': '收起',
+    'sf.noWorkingDirectory': '没有工作目录',
+    'sf.findingSessions': '正在从编码代理查找会话…',
+    'sf.refreshFailed': '会话刷新失败。',
+    'sf.refreshFailedDetail': '先前加载的会话仍然可用。',
+    'sf.retry': '重试',
+    'sf.noMatch': '没有会话匹配当前视图。',
+    'sf.addMachineHint': '添加机器以发现其项目和原生会话。',
+    'sf.machineConnecting': '连接中…',
+    'sf.machineOffline': '机器离线',
+    'sf.discoveringProjects': '正在发现项目和原生会话…',
+    'sf.machineUnavailableSaved': '该机器不可用，但其配置仍会保留。',
+    'sf.noSessionsOnMachine': '在该机器上未发现原生会话。',
+    'sf.attentionCount': '{count} 需注意',
+    'sf.liveCount': '{count} 进行中',
+    'sf.offline': '离线',
+    'sf.statusWorking': '执行中',
+    'sf.statusReady': '就绪',
+    'sf.statusAttention': '需要注意',
+    'sf.statusStopped': '已停止',
+    'sf.statusRetrying': '重试中',
+    'sf.statusWaiting': '等待中',
+    'sf.untitledSession': '未命名的 {agent} 会话',
+    'sf.external': '外部',
+    'sf.restrictedCount': '{count} 项限制',
+    'sf.childSession': '子项',
+    'sf.newSessionSubtitle': '在项目中启动真正的原生会话。',
+    'sf.closeNewSession': '关闭新建会话',
+    'sf.createNativeSession': '创建原生会话',
+    'sf.project': '项目',
+    'sf.codingAgent': '编码代理',
+    'sf.title': '标题',
+    'sf.optional': '选填',
+    'sf.newAgentSession': '新建 {agent} 会话',
+    'sf.noProjectAvailable': '所选机器上没有可用的项目。',
+    'sf.noAgentCanCreate': '该机器上尚无已安装的编码代理可以创建原生会话。',
+    'sf.cancel': '取消',
+    'sf.createSession': '创建会话',
+    'sf.creating': '创建中…',
+    'sf.renameSession': '重命名会话',
+    'sf.renameSubtitle': '更改原生 harness 的会话名称，而非 Harness Remote 的别名。',
+    'sf.closeRename': '关闭重命名',
+    'sf.sessionName': '会话名称',
+    'sf.enterSessionName': '请输入会话名称。',
+    'sf.renaming': '重命名中…',
+    'sf.rename': '重命名',
+    'sf.deleteSessionTitle': '要删除“{title}”吗？',
+    'sf.deleteSubtitle': '这会从 {agent} 删除原生会话，且无法从 Harness Remote 撤销。',
+    'sf.closeDelete': '关闭删除会话',
+    'sf.keepSession': '保留会话',
+    'sf.deleteSession': '删除会话',
+    'sf.deleting': '删除中…',
+    'sf.backToSessions': '返回会话',
+    'sf.createdInHarnessRemote': '在 Harness Remote 创建',
+    'sf.startedInHarness': '在原生 harness 启动',
+    'sf.sessionStatistics': '原生会话统计',
+    'sf.nativeAgentMode': '原生编码代理模式',
+    'sf.policySummary': '原生会话权限摘要',
+    'sf.cumulativeTokens': '原生会话累计 token',
+    'sf.changedFiles': '{count} 个已更改文件',
+    'sf.reportedCost': '报告的原生会话费用',
+    'sf.tokensLabel': '{count} 个 token',
+    'sf.restrictionsLabel': '{count} 项限制',
+    'sf.policyRulesLabel': '{count} 条权限规则',
+    'sf.agentLabel': '代理 {name}',
+    'sf.filesLabel': '{count} 个文件',
+    'sf.addFirstMachine': '添加第一台机器',
+    'sf.addFirstMachineBody': '连接运行 Codex、Claude、OpenCode、OMP 或 PI 的计算机，其原生会话将直接显示在这里。',
+    'sf.addMachine': '添加机器',
+    'sf.preparing': '正在准备 Harness Remote',
+    'sf.connectingMachines': '正在连接你的机器…',
+    'sf.connectingBody': '正在发现项目、已安装的编码代理和原生会话。ACP harness 可能需要几秒钟启动。',
+    'sf.configuredMachines': '已配置 {count} 台机器',
+    'sf.machinesUnavailable': '机器不可用',
+    'sf.couldNotConnect': 'Harness Remote 无法连接',
+    'sf.offlineBody': '{count} 台已配置的机器离线。请检查 daemon、网络和已保存的凭据；配置仍会保留。',
+    'sf.manageMachines': '管理机器',
+    'sf.openNativeSession': '打开原生会话',
+    'sf.openNativeSessionBody': '从左侧选择会话，或在项目中启动新会话。你将继续由其编码代理拥有的同一个会话。',
+    'sf.onlineCount': '{count} 个在线',
+    'sf.offlineCount': '{count} 个离线',
+    'sf.nativeSessionTruth': '原生会话真实状态',
+    'sf.noNativeMessages': '此会话尚未记录任何原生消息。其 harness 列出了会话，但未保存记录——从未开始的回合会让它保持空白。发送消息以继续。',
+    'sf.startConversation': '开始对话。你随时可以改用另一个编码代理继续。',
+    'sf.machinesSubtitle': '连接已存放你的代码库、编码代理、凭据和模型访问权限的计算机。',
+    'sf.close': '关闭',
+    'sf.noMachinesConfigured': '尚未配置机器',
+    'sf.noMachinesBody': '添加 Harness Remote daemon 以发现其项目和编码代理。',
+    'sf.checkingAgents': '正在检查编码代理…',
+    'sf.agentsDetected': '检测到 {count} 个编码代理',
+    'sf.machineUnavailable': '机器不可用',
+    'sf.edit': '编辑',
+    'sf.remove': '移除',
+    'sf.keep': '保留',
+    'sf.removeQuestion': '要移除 {name} 吗？',
+    'sf.fieldName': '名称',
+    'sf.fieldHost': '主机',
+    'sf.fieldPort': '端口',
+    'sf.fieldUsername': '用户名',
+    'sf.fieldPassword': '密码',
+    'sf.machineNamePlaceholder': '我的工作站',
+    'sf.testConnection': '测试连接',
+    'sf.testing': '测试中…',
+    'sf.addMachineAction': '添加机器',
+    'sf.saveMachine': '保存机器',
+    'sf.notADaemon': '已连接，但此端点不是 Harness 机器 daemon。',
+    'sf.connectedTo': '已连接到 {name}，发现 {count} 个编码代理。',
+    'sf.managerFooter': '已配置 {machines} 台机器 · {agents} 个编码代理运行中',
+    'sf.interface': '界面',
+    'sf.appearanceShared': '外观和语言在此设备上的 Harness Remote 各处共享。',
+    'sf.continueWith': '改用',
+    'sf.model': '模型',
+    'sf.harnessDefault': 'harness 默认值',
+    'sf.modelCatalogUnavailable': '模型目录不可用，将以 harness 默认值继续。',
+    'sf.messagePlaceholder': '发送消息给 {agent}…',
+    'sf.messageLabel': '发送消息给 {agent}',
+    'sf.conversationTranscript': '对话记录',
+    'sf.conversationNavigation': '对话导航',
+    'sf.loadingConversation': '正在加载对话…',
+    'sf.waitingResponse': '正在等待 {agent} 回复',
+    'sf.enterToSend': 'Enter 发送 · Shift+Enter 换行',
+    'sf.ctrlEnterToSend': 'Ctrl+Enter 发送 · Enter 换行',
+    'sf.send': '发送',
+    'sf.stop': '停止',
+    'sf.you': '你',
+    'sf.codingAgentGeneric': '编码代理',
+    'sf.agentIsWorking': '{agent} 正在执行',
+    'sf.agentGettingStarted': '{agent} 正在开始',
+    'sf.waitingForInput': '等待你的输入',
+    'sf.inputRequired': '代理需要你的输入才能继续',
+    'sf.workingOnMessage': '代理正在处理你最后的消息',
+    'sf.loadingIntoController': '正在加载会话…',
   }
 }
 

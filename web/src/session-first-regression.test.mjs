@@ -38,18 +38,18 @@ assert.ok(create.includes('agent.backend === "opencode" && agent.transport === "
 assert.ok(create.includes('writerOwned: true'), 'a freshly created native Session must enter the v3 controller as already writable')
 assert.equal(create.includes('createTask('), false, 'native create must not create a Task')
 assert.equal(create.includes('Conversation'), true, 'native create comments must explicitly document the no-Conversation boundary')
-assert.ok(home.includes('aria-label="New Session"'), 'Session Home must expose New Session')
+assert.ok(home.includes('t("sf.newSession")'), 'Session Home must expose New Session')
 assert.ok(home.includes('createNativeSessionTarget'), 'Session Home must create a real native Session rather than a Task')
 assert.ok(home.includes('canCreateNativeSession'), 'Session Home must expose only harness transports that passed native create parity')
-assert.ok(home.includes('aria-label="Filter by machine"') && home.includes('All machines ·'), 'multi-machine navigation must offer an explicit All/single-machine filter')
+assert.ok(home.includes('t("sf.filterByMachine")') && home.includes('sf.allMachinesCount'), 'multi-machine navigation must offer an explicit All/single-machine filter')
 assert.ok(sessionActions.includes('api.renameSession(') && sessionActions.includes('api.deleteSession('), 'the chat header must mutate the real native Session for rename/delete')
 assert.ok(sessionActions.includes('api.renameSession(target.config, target.sessionID'), 'a native metadata mutation must be routed to the harness that owns the open Session')
-assert.ok(sessionActions.includes('Keep Session') && sessionActions.includes('Delete Session'), 'native deletion must use an inline confirmation instead of a blocking browser dialog')
+assert.ok(sessionActions.includes('sf.keepSession') && sessionActions.includes('sf.deleteSession'), 'native deletion must use an inline confirmation instead of a blocking browser dialog')
 assert.ok(sessionActions.includes('target.renameSupported') && sessionActions.includes('target.deleteSupported'), 'Rename/Delete must stay hidden for a harness that does not implement them')
 assert.equal(home.includes('api.renameSession(') || home.includes('api.deleteSession('), false, 'the Session list must not own a second rename/delete path')
 assert.ok(standalone.includes('<NativeSessionActions target={selected}'), 'Rename/Delete must act on the Session open in the chat header')
 assert.ok(standalone.includes('refreshToken={listRevision}'), 'a native rename/delete must refresh the Session list instead of waiting for its own cycle')
-assert.equal(home.includes('aria-label="Refresh Sessions"'), false, 'the Session list must not duplicate the workspace refresh control')
+assert.equal(home.includes('sf.refreshSessions') || home.includes('aria-label="Refresh Sessions"'), false, 'the Session list must not duplicate the workspace refresh control')
 assert.ok(home.includes('toggleMachineCollapsed'), 'machine groups in the Session list must be collapsible')
 assert.ok(home.includes('aria-expanded={!machineCollapsed}'), 'a collapsible machine group must announce its state')
 // The brand mark is the real app artwork, at the small size the 32px mark actually needs: the
@@ -187,3 +187,40 @@ assert.ok(standalone.includes('<NativeSessionHome'), 'Session-first navigation m
 assert.ok(standalone.includes('onDeleted={handleSessionDeleted}'), 'deleting the selected native Session must clear its detail surface')
 
 console.log('session-first v3-first architecture guards passed')
+
+// --- B1: the Session-first surface speaks every language the picker offers --------------------
+// The picker offered four languages and only the page it lived on used them, so choosing one
+// changed a handful of labels and left the product in English.
+const i18nSource = readFileSync(new URL('./i18n.ts', import.meta.url), 'utf8')
+const translator = readFileSync(new URL('./useTranslator.ts', import.meta.url), 'utf8')
+
+assert.ok(translator.includes('APP_PREFERENCES_CHANGED_EVENT'), 'the translator hook must follow the persisted language live')
+for (const [name, source] of [
+  ["native-session-home.tsx", home],
+  ["standalone-universal-workspace.tsx", standalone],
+  ["native-session-actions.tsx", sessionActions],
+  ["work-thread-conversation.tsx", workThread],
+  ["taskdesk-conversation.tsx", conversation]
+]) {
+  assert.ok(source.includes('useTranslator'), `${name} must render through the translator`)
+}
+
+// Every language carries every Session-first key: a missing one silently falls back to English,
+// which is the failure this section exists to prevent.
+const sfKeys = [...i18nSource.matchAll(/^  \| '(sf\.[^']+)'$/gm)].map((match) => match[1])
+assert.ok(sfKeys.length > 100, `expected the Session-first key set, found ${sfKeys.length}`)
+for (const language of ['en', 'it', "'zh-TW'", "'zh-CN'"]) {
+  const marker = language.startsWith("'") ? `\n  ${language}: {` : `\n  ${language}: {`
+  const start = i18nSource.indexOf(marker)
+  assert.ok(start > 0, `dictionary ${language} not found`)
+  const block = i18nSource.slice(start, i18nSource.indexOf('\n  }', start))
+  const missing = sfKeys.filter((key) => !block.includes(`'${key}':`))
+  assert.equal(missing.length, 0, `${language} is missing ${missing.length} Session-first keys: ${missing.slice(0, 5)}`)
+}
+
+// Strings that used to be hard-coded in the rail and the chat must not come back.
+for (const [name, source] of [["native-session-home.tsx", home], ["standalone-universal-workspace.tsx", standalone]]) {
+  for (const literal of ['"Search sessions"', '"New Session"', '"All harnesses"', '"Machine offline"']) {
+    assert.equal(source.includes(literal), false, `${name} still hard-codes ${literal}`)
+  }
+}

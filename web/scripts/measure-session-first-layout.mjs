@@ -82,7 +82,7 @@ async function ready(url) {
 }
 
 let browser
-try {
+const run = async () => {
   await new Promise((r) => daemon.listen(DAEMON_PORT, "127.0.0.1", r))
   await ready(APP)
   browser = await chromium.launch({ headless: true, ...(process.env.CHROMIUM_PATH ? { executablePath: process.env.CHROMIUM_PATH } : {}) })
@@ -98,6 +98,33 @@ try {
   await page.locator(".hr-native-session-row").first().click()
   await page.locator(".hr-native-session-observer .uw-markdown p").first().waitFor({ timeout: 20_000 })
   await page.waitForTimeout(1200)
+
+  if (process.env.LANG_CHECK) {
+    const snap = async () => page.evaluate(() => ({
+      heading: document.querySelector(".hr-native-home-heading h2")?.textContent,
+      count: document.querySelector(".hr-native-home-heading span")?.textContent,
+      newSession: document.querySelector(".hr-native-new-session span")?.textContent,
+      search: document.querySelector(".hr-native-session-search input")?.getAttribute("placeholder"),
+      filters: [...document.querySelectorAll(".hr-native-session-filters button")].map((b) => b.textContent),
+      status: document.querySelector(".hr-native-session-status")?.textContent,
+      composer: document.querySelector(".uw-composer-shell textarea")?.getAttribute("placeholder"),
+      hint: document.querySelector("#uw-composer-hint")?.textContent,
+      lang: document.documentElement.lang
+    }))
+    const report = {}
+    for (const code of ["en", "it", "zh-TW", "zh-CN"]) {
+      await page.evaluate((value) => {
+        localStorage.setItem("opencode.remote.language", value)
+        document.documentElement.lang = value
+        window.dispatchEvent(new Event("harness-remote:preferences-changed"))
+      }, code)
+      await page.waitForTimeout(200)
+      report[code] = await snap()
+    }
+    console.log(JSON.stringify(report, null, 2))
+    await page.screenshot({ path: OUT })
+    return
+  }
 
   const m = await page.evaluate(() => {
     const box = (s) => { const e = document.querySelector(s); if (!e) return null
@@ -147,7 +174,8 @@ try {
   })
   console.log(JSON.stringify(m, null, 2))
   await page.screenshot({ path: OUT, fullPage: false })
-} finally {
+}
+try { await run() } finally {
   if (browser) await browser.close()
   try { process.kill(-preview.pid, "SIGTERM") } catch {}
   try { daemon.close() } catch {}

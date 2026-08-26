@@ -4,6 +4,7 @@ import { LoadingIcon, PencilIcon, TrashIcon } from "../Icons"
 import type { NativeSessionSurfaceTarget } from "../native-session-discovery"
 import type { Session } from "../types"
 import { useDialogDismiss } from "../useDialogDismiss"
+import { useTranslator } from "../useTranslator"
 
 /**
  * Rename and Delete belong to the Session that is open, not to the navigation list.
@@ -20,6 +21,7 @@ type Props = {
 }
 
 export function NativeSessionActions({ target, onRenamed, onDeleted }: Props) {
+  const t = useTranslator()
   const [mode, setMode] = useState<"rename" | "delete" | null>(null)
   const [title, setTitle] = useState("")
   const [busy, setBusy] = useState(false)
@@ -65,7 +67,7 @@ export function NativeSessionActions({ target, onRenamed, onDeleted }: Props) {
     if (busy) return
     const nextTitle = title.replace(/[\r\n]+/g, " ").trim()
     if (!nextTitle) {
-      setError("Enter a Session name.")
+      setError(t("sf.enterSessionName"))
       return
     }
     setBusy(true)
@@ -105,8 +107,8 @@ export function NativeSessionActions({ target, onRenamed, onDeleted }: Props) {
           onClick={beginRename}
           disabled={busy}
           aria-expanded={mode === "rename"}
-          aria-label="Rename Session"
-          title="Rename Session"
+          aria-label={t("sf.renameSession")}
+          title={t("sf.renameSession")}
         >
           <PencilIcon size={15} />
         </button>
@@ -118,8 +120,8 @@ export function NativeSessionActions({ target, onRenamed, onDeleted }: Props) {
           onClick={beginDelete}
           disabled={busy}
           aria-expanded={mode === "delete"}
-          aria-label="Delete Session"
-          title="Delete Session"
+          aria-label={t("sf.deleteSession")}
+          title={t("sf.deleteSession")}
         >
           <TrashIcon size={15} />
         </button>
@@ -128,16 +130,16 @@ export function NativeSessionActions({ target, onRenamed, onDeleted }: Props) {
       {mode ? <div className="hr-session-action-backdrop" role="presentation" onMouseDown={close} /> : null}
 
       {mode === "rename" ? (
-        <div className="hr-session-action-panel" role="dialog" aria-modal="true" aria-label="Rename Session" ref={renameRef}>
+        <div className="hr-session-action-panel" role="dialog" aria-modal="true" aria-label={t("sf.renameSession")} ref={renameRef}>
           <div className="hr-session-action-heading">
             <div>
-              <strong>Rename Session</strong>
-              <small>Changes the native harness Session name, not a Harness Remote alias.</small>
+              <strong>{t("sf.renameSession")}</strong>
+              <small>{t("sf.renameSubtitle")}</small>
             </div>
-            <button type="button" className="tdw-icon-button" data-dismiss="session-actions" onClick={close} disabled={busy} aria-label="Close Rename Session">×</button>
+            <button type="button" className="tdw-icon-button" data-dismiss="session-actions" onClick={close} disabled={busy} aria-label={t("sf.closeRename")}>×</button>
           </div>
           <label className="hr-session-action-field">
-            <span>Session name</span>
+            <span>{t("sf.sessionName")}</span>
             <input
               value={title}
               onChange={(event) => setTitle(event.target.value)}
@@ -149,30 +151,30 @@ export function NativeSessionActions({ target, onRenamed, onDeleted }: Props) {
           </label>
           {error ? <div className="hr-session-action-error" role="alert">{error}</div> : null}
           <div className="hr-session-action-buttons">
-            <button type="button" className="tdw-button secondary" onClick={close} disabled={busy}>Cancel</button>
+            <button type="button" className="tdw-button secondary" onClick={close} disabled={busy}>{t("sf.cancel")}</button>
             <button type="button" className="tdw-button primary" onClick={() => void renameSession()} disabled={busy || !title.trim()}>
               {busy ? <LoadingIcon size={15} /> : null}
-              {busy ? "Renaming..." : "Rename"}
+              {busy ? t("sf.renaming") : t("sf.rename")}
             </button>
           </div>
         </div>
       ) : null}
 
       {mode === "delete" ? (
-        <div className="hr-session-action-panel" role="dialog" aria-modal="true" aria-label="Delete Session" ref={deleteRef}>
+        <div className="hr-session-action-panel" role="dialog" aria-modal="true" aria-label={t("sf.deleteSession")} ref={deleteRef}>
           <div className="hr-session-action-heading">
             <div>
-              <strong>Delete “{target.title}”?</strong>
-              <small>This deletes the native Session from {target.agentLabel}. This cannot be undone from Harness Remote.</small>
+              <strong>{t("sf.deleteSessionTitle", { title: target.title })}</strong>
+              <small>{t("sf.deleteSubtitle", { agent: target.agentLabel })}</small>
             </div>
-            <button type="button" className="tdw-icon-button" data-dismiss="session-actions" onClick={close} disabled={busy} aria-label="Close Delete Session">×</button>
+            <button type="button" className="tdw-icon-button" data-dismiss="session-actions" onClick={close} disabled={busy} aria-label={t("sf.closeDelete")}>×</button>
           </div>
           {error ? <div className="hr-session-action-error" role="alert">{error}</div> : null}
           <div className="hr-session-action-buttons">
-            <button type="button" className="tdw-button secondary" data-autofocus onClick={close} disabled={busy}>Keep Session</button>
+            <button type="button" className="tdw-button secondary" data-autofocus onClick={close} disabled={busy}>{t("sf.keepSession")}</button>
             <button type="button" className="tdw-button danger" onClick={() => void deleteSession()} disabled={busy}>
               {busy ? <LoadingIcon size={15} /> : null}
-              {busy ? "Deleting..." : "Delete Session"}
+              {busy ? t("sf.deleting") : t("sf.deleteSession")}
             </button>
           </div>
         </div>

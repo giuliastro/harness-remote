@@ -52,8 +52,8 @@ test("long conversations retain v2-style jump-to-top and jump-to-bottom affordan
   assert.match(component, /function jumpAffordancesFor/)
   assert.match(component, /JumpToTopIcon/)
   assert.match(component, /JumpToBottomIcon/)
-  assert.match(component, /aria-label="Jump to top"/)
-  assert.match(component, /aria-label="Jump to bottom"/)
+  assert.match(component, /aria-label=\{t\("app\.jumpToTop"\)\}/)
+  assert.match(component, /aria-label=\{t\("app\.jumpToBottom"\)\}/)
   assert.match(component, /scrollTo\(\{ top: 0, behavior: "smooth" \}\)/)
   assert.match(component, /scrollTo\(\{ top: current\.scrollHeight, behavior: "smooth" \}\)/)
 })
@@ -62,7 +62,7 @@ test("shared conversation owns working state presentation", () => {
   assert.match(component, /uw-session-typing/)
   assert.match(component, /waiting/)
   assert.match(component, /sending/)
-  assert.match(component, /Loading conversation/)
+  assert.match(component, /t\("sf\.loadingConversation"\)/)
 })
 
 test("conversation mutations reconcile ambiguous transport outcomes instead of blindly resending", () => {
