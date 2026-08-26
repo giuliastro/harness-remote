@@ -171,7 +171,15 @@ export function startTaskDeskSessionLiveRefresh({
 
       if (event.type === "session.updated") {
         throttle("index", 450, onIndex)
-        if (selectedEvent) throttle("detail", 450, onDetail)
+        if (selectedEvent) {
+          // ACP harnesses commonly use session.updated as the final lifecycle edge after prompt
+          // resolution. At that point OMP's journal is already durable in real testing, so re-read the
+          // selected tail once. This is event-driven convergence, not an OMP-specific grace-period
+          // polling loop, and it also benefits other ACP adapters that do not emit one last message
+          // event after finalizing their native Session.
+          throttle("message", 80, onMessage)
+          throttle("detail", 450, onDetail)
+        }
         return
       }
 
