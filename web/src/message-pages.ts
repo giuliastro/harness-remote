@@ -1,11 +1,11 @@
 import type { MessageEnvelope } from "./types"
 
 function sameEnvelope(left: MessageEnvelope, right: MessageEnvelope): boolean {
-  return left.info.id === right.info.id
-    && left.info.role === right.info.role
-    && left.info.time?.created === right.info.time?.created
-    && left.info.time?.completed === right.info.time?.completed
-    && left.info.error?.message === right.info.error?.message
+  if (left === right) return true
+  if (left.info.id !== right.info.id) return false
+  // Message pages arrive as freshly parsed JSON even when nothing changed. Preserve the existing
+  // object when the wire payload is identical so long transcripts do not re-render on every poll.
+  return JSON.stringify(left.info) === JSON.stringify(right.info)
     && JSON.stringify(left.parts) === JSON.stringify(right.parts)
 }
 
@@ -93,11 +93,10 @@ function regressesAssistantText(current: MessageEnvelope, incoming: MessageEnvel
  */
 export function mergeLatestMessagePage(existing: MessageEnvelope[], latest: MessageEnvelope[]): MessageEnvelope[] {
   if (!existing.length) return latest
-  if (!latest.length) return existing
 
   const stabilizedLatest = stabilizeTrailingAssistantIdentity(existing, latest)
-  const existingIDs = new Set(existing.map((message) => message.info.id))
   const latestByID = new Map(stabilizedLatest.map((message) => [message.info.id, message]))
+  const existingIDs = new Set(existing.map((message) => message.info.id))
   let changed = false
 
   const merged = existing.map((message) => {
@@ -106,20 +105,18 @@ export function mergeLatestMessagePage(existing: MessageEnvelope[], latest: Mess
     changed = true
     return incoming
   })
-
   for (const message of stabilizedLatest) {
     if (existingIDs.has(message.info.id)) continue
     merged.push(message)
     changed = true
   }
-
   return changed ? merged : existing
 }
 
+/** Add an older page once, keeping the current tail and its object identities intact. */
 export function prependOlderMessagePage(existing: MessageEnvelope[], older: MessageEnvelope[]): MessageEnvelope[] {
-  if (!older.length) return existing
   if (!existing.length) return older
   const existingIDs = new Set(existing.map((message) => message.info.id))
-  const prepend = older.filter((message) => !existingIDs.has(message.info.id))
-  return prepend.length ? [...prepend, ...existing] : existing
+  const additions = older.filter((message) => !existingIDs.has(message.info.id))
+  return additions.length ? [...additions, ...existing] : existing
 }
