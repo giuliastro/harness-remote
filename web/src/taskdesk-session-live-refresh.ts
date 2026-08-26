@@ -73,10 +73,10 @@ export function startTaskDeskSessionLiveRefresh({
   }
 
   /**
-   * OpenCode may publish the lifecycle edge before the final assistant envelope is readable through
-   * `/session/:id/message`. Keep one bounded, coalesced settle read after the latest status edge so
+   * A harness may publish its lifecycle edge before the final assistant envelope is durable through
+   * `/session/:id/message`. Keep one bounded, coalesced settle read after the latest lifecycle edge so
    * the already-mounted Session gets a second authoritative chance without permanent fast polling.
-   * A later busy/idle status simply moves this one timer; it never creates an unbounded retry loop.
+   * A later lifecycle event simply moves this one timer; it never creates an unbounded retry loop.
    */
   const settleAfterLifecycle = () => {
     if (closed || !getSelected()) return
@@ -169,9 +169,16 @@ export function startTaskDeskSessionLiveRefresh({
         return
       }
 
+      // ACP-backed harnesses use session.updated for both the busy edge and the final idle edge. The
+      // final edge may be the only signal after the last streamed chunk, so treating it as index-only
+      // can leave the mounted transcript on a stale prefix until navigation forces a fresh read.
       if (event.type === "session.updated") {
         throttle("index", 450, onIndex)
-        if (selectedEvent) throttle("detail", 450, onDetail)
+        if (selectedEvent) {
+          throttle("message", 80, onMessage)
+          throttle("detail", 450, onDetail)
+          settleAfterLifecycle()
+        }
         return
       }
 
