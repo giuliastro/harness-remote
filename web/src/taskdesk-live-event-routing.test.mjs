@@ -60,6 +60,18 @@ test("ACP session.updated lifecycle also reconciles the selected transcript tail
   assert.doesNotMatch(lifecycle, /send|prompt|continueWorkThread/)
 })
 
+test("OMP alone gets a bounded multi-read lifecycle convergence window", () => {
+  const refresh = readFileSync(new URL("./taskdesk-session-live-refresh.ts", import.meta.url), "utf8")
+
+  assert.match(refresh, /const DEFAULT_LIFECYCLE_SETTLE_DELAYS_MS = \[900\] as const/)
+  assert.match(refresh, /const OMP_LIFECYCLE_SETTLE_DELAYS_MS = \[350, 900, 1_800, 3_200\] as const/)
+  assert.match(refresh, /target\?\.config\.backend === "omp"[\s\S]*?OMP_LIFECYCLE_SETTLE_DELAYS_MS[\s\S]*?DEFAULT_LIFECYCLE_SETTLE_DELAYS_MS/)
+  assert.match(refresh, /selectedNow\.targetKey !== selectedAtSchedule\.targetKey/)
+  assert.match(refresh, /selectedNow\.sessionID !== selectedAtSchedule\.sessionID/)
+  assert.match(refresh, /if \(!finalAttempt\) scheduleAttempt\(index \+ 1\)/)
+  assert.doesNotMatch(refresh, /setInterval\([\s\S]*?OMP_LIFECYCLE_SETTLE/)
+})
+
 test("foregrounding the app immediately reconciles durable conversation state", () => {
   const refresh = readFileSync(new URL("./taskdesk-session-live-refresh.ts", import.meta.url), "utf8")
 
