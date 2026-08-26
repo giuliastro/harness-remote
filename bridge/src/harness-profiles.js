@@ -26,6 +26,11 @@ export const HARNESS_PROFILES = {
     args: ["acp"],
     permissionMode: "allow",
     historyLoader: createOmpHistoryLoader(),
+    // OMP 18.x exposes /rename through ACP and persists the title in its own session storage.
+    // Keep title ownership in OMP instead of a Harness Remote-only snapshot, exactly as the
+    // Session-first surface already expects from native session/list metadata.
+    nativeRenameCommand: "rename",
+    preferListedTitles: true,
     // OMP exposes thinking as a real ACP config option. We probe only ids the running adapter
     // actually advertises; this list is a routing hint, never a source of invented variants.
     modelVariantConfigIDs: ["thinking"],
