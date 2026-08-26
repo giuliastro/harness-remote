@@ -41,8 +41,13 @@ test("composer keystrokes do not walk or rerender the long transcript", () => {
 test("shared conversation owns paging and scroll preservation", () => {
   assert.match(component, /hasMore/)
   assert.match(component, /onLoadOlder/)
-  assert.match(component, /previousHeight/)
-  assert.match(component, /current\.scrollHeight - previousHeight/)
+  // The checkpoint intentionally reveals prepended history from the top-relative position. An older
+  // regression still required the superseded height-compensation algorithm even though the frozen
+  // checkpoint's companion test explicitly forbids `previousHeight`.
+  assert.match(component, /previousTop/)
+  assert.match(component, /preservingOlderRef/)
+  assert.match(component, /current\.scrollTop = Math\.max\(0, Math\.min\(previousTop/)
+  assert.doesNotMatch(component, /previousHeight/)
   assert.match(component, /NEAR_BOTTOM_PX/)
   assert.match(component, /nearBottomRef/)
 })
