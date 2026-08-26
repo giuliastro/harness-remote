@@ -122,6 +122,24 @@ function sameModel(left?: MachineTaskRun | null, right?: MachineTaskRun | null):
   return a.providerID === b.providerID && a.modelID === b.modelID && (a.variant || "") === (b.variant || "")
 }
 
+function isNativeSessionProjectionRun(run?: MachineTaskRun | null): boolean {
+  return Boolean(run?.id?.startsWith("native-session-v3:"))
+}
+
+/**
+ * A native Session Run currently carries the model that was recovered or requested, but it does not
+ * persist provenance saying that the person explicitly changed the picker. Comparing adjacent native
+ * Run metadata therefore confuses asynchronous model recovery/default enrichment with user intent.
+ * Synthetic lifecycle text must fail closed: until explicit provenance exists, do not claim that a
+ * native Session changed model. The requested model is still applied normally; only the unprovable
+ * chat annotation is suppressed. Legacy Task Runs retain their established comparison behavior.
+ */
+function shouldAnnounceModelChange(previous: MachineTaskRun, run: MachineTaskRun): boolean {
+  if (!previous.model || !run.model || sameModel(previous, run)) return false
+  if (isNativeSessionProjectionRun(previous) || isNativeSessionProjectionRun(run)) return false
+  return true
+}
+
 function eventText(runs: MachineTaskRun[], index: number, agents: WorkThreadAgentMeta): string | null {
   if (index === 0) return null
   const run = runs[index]
@@ -135,7 +153,7 @@ function eventText(runs: MachineTaskRun[], index: number, agents: WorkThreadAgen
     return `Continued with ${label}${model ? ` · ${model}` : ""} · context transferred`
   }
 
-  if (!sameModel(previous, run) && model) {
+  if (model && shouldAnnounceModelChange(previous, run)) {
     return `Model changed to ${model} · continuing with ${label}`
   }
 
