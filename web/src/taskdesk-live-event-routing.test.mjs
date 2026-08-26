@@ -50,6 +50,16 @@ test("OpenCode completion lifecycle reconciles status and the selected transcrip
   assert.doesNotMatch(lifecycle, /send|prompt|continueWorkThread/)
 })
 
+test("ACP session.updated lifecycle also reconciles the selected transcript tail", () => {
+  const refresh = readFileSync(new URL("./taskdesk-session-live-refresh.ts", import.meta.url), "utf8")
+  const lifecycle = refresh.match(/if \(event\.type === "session\.updated"\) \{[\s\S]*?\n      \}/)?.[0] || ""
+
+  assert.match(lifecycle, /throttle\("index", [^,]+, onIndex\)/)
+  assert.match(lifecycle, /selectedEvent[\s\S]*?throttle\("message", [^,]+, onMessage\)/)
+  assert.match(lifecycle, /settleAfterLifecycle\(\)/)
+  assert.doesNotMatch(lifecycle, /send|prompt|continueWorkThread/)
+})
+
 test("foregrounding the app immediately reconciles durable conversation state", () => {
   const refresh = readFileSync(new URL("./taskdesk-session-live-refresh.ts", import.meta.url), "utf8")
 
