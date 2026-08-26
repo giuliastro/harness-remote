@@ -122,6 +122,7 @@ export const HARNESS_PROFILES = {
     // explicitly and invoke its published binary instead of relying on npx package-spec inference.
     args: ["--yes", "--package=@agentclientprotocol/codex-acp@1.1.14", "codex-acp"],
     adapterCommand: "codex-acp",
+    permissionMode: "allow",
     // The adapter offers `api-key` before `chat-gpt`; the former demands CODEX_API_KEY or
     // OPENAI_API_KEY, while a `codex login` leaves ChatGPT credentials the `chat-gpt` method
     // reads from disk. Prefer the login, exactly like the generic default already avoids
