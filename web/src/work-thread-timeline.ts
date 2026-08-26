@@ -135,7 +135,10 @@ function eventText(runs: MachineTaskRun[], index: number, agents: WorkThreadAgen
     return `Continued with ${label}${model ? ` · ${model}` : ""} · context transferred`
   }
 
-  if (!sameModel(previous, run) && model) {
+  // Native/default model discovery is asynchronous enrichment, not evidence that the user changed
+  // model. A lifecycle notice is truthful only when both adjacent Runs persisted explicit model
+  // selections and those selections differ.
+  if (previous.model && run.model && !sameModel(previous, run) && model) {
     return `Model changed to ${model} · continuing with ${label}`
   }
 
