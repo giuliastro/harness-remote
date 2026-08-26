@@ -197,6 +197,35 @@ test("changing only the model is visible in the conversation timeline", () => {
   ])
 })
 
+test("discovering the harness default does not fabricate a model-change event", () => {
+  const first = run({ sessionId: "same-session", model: null })
+  const second = run({
+    id: "run-2",
+    sequence: 2,
+    model: { providerID: "openai", modelID: "gpt-test" },
+    prompt: "Continue on the model this Session already uses",
+    sessionId: "same-session",
+    startedAt: "2026-08-21T10:02:00.000Z",
+    finishedAt: "2026-08-21T10:03:00.000Z"
+  })
+  const value = task({ run: second, runs: [first, second] })
+  const timeline = buildWorkThreadTimeline(value, {
+    "same-session": [
+      message("same-session", "u1", "user", 1, first.prompt),
+      message("same-session", "a1", "assistant", 2, "First answer"),
+      message("same-session", "u2", "user", 3, second.prompt),
+      message("same-session", "a2", "assistant", 4, "Second answer")
+    ]
+  }, agents)
+
+  assert.deepEqual(timeline.map(textOf), [
+    "Initial request",
+    "First answer",
+    second.prompt,
+    "Second answer"
+  ])
+})
+
 test("unrelated native-session turns are not absorbed into the Task", () => {
   const first = run()
   const value = task({ run: first, runs: [first] })
