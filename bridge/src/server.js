@@ -176,6 +176,7 @@ function providersResponse(models, fallbackProviderID) {
 export function createBridgeServer({ config, acp, serviceOptions, machineRegistry }) {
   const backend = config.backend ?? "omp"
   const profile = harnessProfile(backend)
+  const historyLoader = serviceOptions?.historyLoader ?? profile.historyLoader
   const serviceAcp = new AcpPromptEchoFilter(acp)
   const service = new AcpService(serviceAcp, {
     ...serviceOptions,
@@ -384,11 +385,33 @@ export function createBridgeServer({ config, acp, serviceOptions, machineRegistr
             return
           }
           if (limit !== undefined || url.searchParams.has("before")) {
-            const page = await service.messagePage(sessionID, {
+            const before = url.searchParams.get("before") || undefined
+            const refresh = url.searchParams.get("refresh") === "1"
+            let page = await service.messagePage(sessionID, {
               limit: limit ?? 100,
-              before: url.searchParams.get("before") || undefined,
-              refresh: url.searchParams.get("refresh") === "1"
+              before,
+              refresh
             })
+
+            // OMP's ACP replay knows the native selected branch but omits persistent ids, red failed
+            // attempts and some model metadata. When the JSONL tree is ambiguous, the history loader
+            // deliberately asks for this replay rather than trusting the optional undo extension or
+            // guessing the newest leaf. Once ACP has replayed the branch, immediately map it back to
+            // JSONL and serve the stable journal page in this same read: no Send/reopen side effect is
+            // required just to make an existing Session become visible.
+            if (
+              backend === "omp"
+              && !before
+              && typeof historyLoader?.reconcileReplay === "function"
+              && (refresh || historyLoader.needsReplay?.(sessionID))
+            ) {
+              const selectedLeaf = await historyLoader.reconcileReplay(sessionID, page.messages)
+              if (selectedLeaf !== undefined && typeof historyLoader.page === "function") {
+                const journalPage = await historyLoader.page(sessionID, { limit: limit ?? 100 })
+                if (journalPage && Array.isArray(journalPage.messages)) page = journalPage
+              }
+            }
+
             if (page.before) response.setHeader("X-Next-Cursor", page.before)
             response.setHeader("X-Has-More", page.hasMore ? "1" : "0")
             if (page.model) response.setHeader("X-Session-Model", encodeURIComponent(JSON.stringify(page.model)))
