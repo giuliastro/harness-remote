@@ -35,7 +35,11 @@ test("ambiguous OMP history uses native ACP replay instead of guessing a termina
       replayMessage("acp-user", "user", "Question", 1),
       replayMessage("acp-assistant", "assistant", "Answer", 2)
     ])
-    assert.equal(selected, "assistant-1", "ACP replay chooses the branch OMP itself resumed")
+    assert.equal(
+      selected,
+      "tool-1",
+      "the selected native branch may terminate in a non-conversational record after the assistant reply"
+    )
     assert.equal(loadHistory.needsReplay(sessionID), false)
 
     const page = await loadHistory.page(sessionID, { limit: 10 })
