@@ -132,7 +132,6 @@ export function NativeSessionObserver({ target, onSessionRefresh, onStateChange 
         agents={[agent]}
         modelScope={NATIVE_SESSION_MODEL_SCOPE}
         deferModelFallback
-        nativeSessionTruth
         onTaskUpdate={handleTaskUpdate}
         onWorkspaceRefresh={onSessionRefresh}
         onAttentionChange={handleAttentionChange}

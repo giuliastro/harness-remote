@@ -42,7 +42,6 @@ export class AcpPromptEchoFilter extends EventEmitter {
 
   start(...args) { return this.#acp.start(...args) }
   listSessions(...args) { return this.#acp.listSessions(...args) }
-  promptActivityAt(...args) { return this.#acp.promptActivityAt?.(...args) }
   notify(...args) { return this.#acp.notify(...args) }
   close(...args) { return this.#acp.close?.(...args) }
 

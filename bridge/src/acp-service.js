@@ -223,21 +223,6 @@ export function isHarnessInjectedText(text) {
   return HARNESS_INJECTED_BLOCK.test(text)
 }
 
-/**
- * How long a session may stay flagged active with no live `session/prompt` and no protocol activity
- * before its reported status stops claiming the harness is working.
- *
- * `session/prompt` runs under a 300s inactivity watchdog, so a real turn either produces traffic or
- * is rejected well inside this window. Anything still flagged after it is bookkeeping that outlived
- * its turn - an adapter that resolved without settling the request, a restart that raced the
- * cleanup - and reporting it as Working left finished sessions permanently mislabelled in the list.
- * It is deliberately longer than that watchdog so a legitimately slow turn is never downgraded.
- */
-const REPORTED_BUSY_STALE_MS = 360_000
-
-/** Upper bound on the replay settle tail, so a continuously streaming adapter cannot stall a load. */
-const REPLAY_DRAIN_MAX_MS = 5_000
-
 // The app groups the picker by source and offers a skill-only filter, so the
 // `skill:` prefix OMP puts on skill commands has to survive as structured data
 // rather than staying buried in the name.
@@ -285,8 +270,6 @@ export class AcpService {
   #deletedSessions = new Set()
   #queues = new Map()
   #active = new Set()
-  /** When each session was flagged active, so a flag with no live request can still be trusted briefly. */
-  #activeSince = new Map()
   #listeners = new Set()
   #turnGenerations = new Map()
   #cancelledSessions = new Set()
@@ -350,7 +333,7 @@ export class AcpService {
       .filter((session) => !this.#deletedSessions.has(session.sessionId))
       .map((session) => sessionView(
         session,
-        this.#reportedBusy(session.sessionId) ? "busy" : "idle",
+        this.#isBusy(session.sessionId) ? "busy" : "idle",
         this.#titleFor(session.sessionId),
         Boolean(this.#historyLoader && !this.#ownedSessions.has(session.sessionId))
       ))
@@ -467,14 +450,14 @@ export class AcpService {
       const messagesBefore = structuredClone(this.#messages.get(sessionID) ?? [])
       const todosBefore = structuredClone(this.#todos.get(sessionID) ?? [])
       const wasActive = this.#active.has(sessionID)
-      if (!wasActive) this.#markActive(sessionID)
+      if (!wasActive) this.#active.add(sessionID)
       try {
         await this.#acp.request("session/prompt", {
           sessionId: sessionID,
           prompt: [{ type: "text", text: `/${this.#nativeRenameCommand} ${normalized}` }]
         }, 300_000)
       } finally {
-        if (!wasActive) this.#clearActive(sessionID)
+        if (!wasActive) this.#active.delete(sessionID)
         this.#messages.set(sessionID, messagesBefore)
         this.#todos.set(sessionID, todosBefore)
         this.#chunkMessageIDs.delete(`${sessionID}:user`)
@@ -488,7 +471,7 @@ export class AcpService {
       this.#emit("session.updated", sessionID)
       return sessionView(
         session,
-        this.#reportedBusy(sessionID) ? "busy" : "idle",
+        this.#isBusy(sessionID) ? "busy" : "idle",
         this.#titleFor(sessionID),
         Boolean(this.#historyLoader && !this.#ownedSessions.has(sessionID))
       )
@@ -499,7 +482,7 @@ export class AcpService {
     this.#emit("session.updated", sessionID)
     return sessionView(
       this.#sessions.get(sessionID),
-      this.#reportedBusy(sessionID) ? "busy" : "idle",
+      this.#isBusy(sessionID) ? "busy" : "idle",
       normalized,
       Boolean(this.#historyLoader && !this.#ownedSessions.has(sessionID))
     )
@@ -667,7 +650,7 @@ export class AcpService {
 
     const beforeState = this.#authoritativeActionStates.get(sessionID)
     this.#ownedSessions.add(sessionID)
-    this.#markActive(sessionID)
+    this.#active.add(sessionID)
     this.#emit("session.updated", sessionID)
     let applied = null
     let authoritativeState
@@ -692,7 +675,7 @@ export class AcpService {
       this.#emit("message.updated", sessionID)
       this.#persistSnapshot(sessionID)
     } finally {
-      this.#clearActive(sessionID)
+      this.#active.delete(sessionID)
       this.#emit("session.updated", sessionID)
     }
     return {
@@ -869,7 +852,7 @@ export class AcpService {
     this.#cancelledSessions.delete(sessionID)
     this.#promptedSessions.add(sessionID)
     if (!recorded) this.#recordPrompt(sessionID, text, attachments)
-    this.#markActive(sessionID)
+    this.#active.add(sessionID)
     this.#chunkMessageIDs.delete(`${sessionID}:assistant`)
     this.#emit("session.updated", sessionID)
     void this.#acp.request("session/prompt", {
@@ -885,7 +868,7 @@ export class AcpService {
       }
     }).finally(() => {
       if (this.#turnGenerations.get(sessionID) !== generation) return
-      this.#clearActive(sessionID)
+      this.#active.delete(sessionID)
       this.#chunkMessageIDs.delete(`${sessionID}:assistant`)
       this.#emit("session.updated", sessionID)
       this.#persistSnapshot(sessionID)
@@ -951,7 +934,7 @@ export class AcpService {
     }
     this.#turnGenerations.set(sessionID, (this.#turnGenerations.get(sessionID) ?? 0) + 1)
     this.#cancelledSessions.add(sessionID)
-    this.#clearActive(sessionID)
+    this.#active.delete(sessionID)
     this.#chunkMessageIDs.delete(`${sessionID}:assistant`)
     this.#acp.notify("session/cancel", { sessionId: sessionID })
     this.#emit("session.updated", sessionID)
@@ -959,7 +942,7 @@ export class AcpService {
   }
 
   status(sessionID) {
-    return { type: this.#reportedBusy(sessionID) ? "busy" : "idle" }
+    return { type: this.#isBusy(sessionID) ? "busy" : "idle" }
   }
 
   async flushSnapshots() {
@@ -1019,58 +1002,8 @@ export class AcpService {
   }
 
   /** A queued prompt is still outstanding work, so the session must not read as idle between turns. */
-  /**
-   * Keep waiting while the replay is still producing content, then stop as soon as one settle
-   * interval passes with nothing new. Bounded, so a harness that streams continuously cannot hold
-   * the load open.
-   */
-  async #drainReplay(sessionID) {
-    const deadline = Date.now() + REPLAY_DRAIN_MAX_MS
-    let signature = this.#replaySignature(sessionID)
-    for (;;) {
-      await new Promise((resolve) => setTimeout(resolve, this.#replaySettleMs))
-      const next = this.#replaySignature(sessionID)
-      if (next === signature || Date.now() >= deadline) return
-      signature = next
-    }
-  }
-
-  #replaySignature(sessionID) {
-    const messages = this.#messages.get(sessionID) ?? []
-    let parts = 0
-    let text = 0
-    for (const message of messages) {
-      parts += message.parts?.length ?? 0
-      for (const part of message.parts ?? []) text += typeof part.text === "string" ? part.text.length : 0
-    }
-    return `${messages.length}:${parts}:${text}`
-  }
-
-  #markActive(sessionID) {
-    if (!this.#active.has(sessionID)) this.#activeSince.set(sessionID, Date.now())
-    this.#active.add(sessionID)
-  }
-
-  #clearActive(sessionID) {
-    this.#active.delete(sessionID)
-    this.#activeSince.delete(sessionID)
-  }
-
   #isBusy(sessionID) {
     return this.#active.has(sessionID) || Boolean(this.#queues.get(sessionID)?.length)
-  }
-
-  /**
-   * What the app is told. `#isBusy` stays the internal bookkeeping answer - it gates queueing,
-   * transcript merging and cache protection, and must keep believing its own flag - but a status
-   * the UI paints as "Working" has to be corroborated by a turn that is actually alive.
-   */
-  #reportedBusy(sessionID) {
-    if (this.#queues.get(sessionID)?.length) return true
-    if (!this.#active.has(sessionID)) return false
-    const activityAt = this.#acp.promptActivityAt?.(sessionID) ?? this.#activeSince.get(sessionID)
-    if (activityAt === undefined) return true
-    return Date.now() - activityAt < REPORTED_BUSY_STALE_MS
   }
 
   /**
@@ -1190,13 +1123,13 @@ export class AcpService {
       const result = await this.#acp.request("session/load", { sessionId: sessionID, cwd: session.cwd, mcpServers: [] }, 300_000)
       this.#acpOpenSessions.add(sessionID)
       if (this.#historyLoader?.claimOnLoad) this.#ownedSessions.add(sessionID)
-      // An adapter can resolve session/load just before its final replay notifications drain from
-      // stdout, especially through an npx/cmd pipe. Anything still in that pipe when #replaying is
-      // cleared is rejected as unsolicited live output, so the transcript comes back truncated - or,
-      // for a harness whose only history source is this replay, completely empty. Profiles opt into
-      // a settle tail, and the tail follows the data: it keeps waiting while replay content is still
-      // arriving instead of assuming one fixed interval is enough for every transcript size.
-      if (this.#replaySettleMs > 0) await this.#drainReplay(sessionID)
+      // PI can resolve session/load just before its final replay notifications drain from stdout,
+      // especially through the Windows cmd/npx pipe. Profiles can opt into a short replay tail so
+      // those assistant chunks remain historical output instead of being rejected as unsolicited
+      // live output. Other ACP harnesses keep the zero-delay default.
+      if (this.#replaySettleMs > 0) {
+        await new Promise((resolve) => setTimeout(resolve, this.#replaySettleMs))
+      }
       this.#rememberConfigOptions(sessionID, result.configOptions)
       const replayedMessages = mergeFragmentedPiSnapshot(this.#messages.get(sessionID) ?? [])
       this.#messages.set(sessionID, replaceHistory ? replayedMessages : mergeReplay(previousMessages, replayedMessages))

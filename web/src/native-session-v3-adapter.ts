@@ -1,7 +1,7 @@
 import { api, type MessagePage } from "./api"
 import { probeNativeSessionContinuation } from "./native-session-continuation"
 import { lastNativeMessageModel } from "./native-session-model"
-import { WORKING_STATUS_GRACE_MS, type NativeSessionSurfaceTarget } from "./native-session-discovery"
+import type { NativeSessionSurfaceTarget } from "./native-session-discovery"
 import { sendNativeSessionPrompt } from "./native-session-prompt"
 import { stopNativeSession } from "./native-session-stop"
 import {
@@ -379,13 +379,8 @@ async function refreshStatus(entry: ProjectionEntry): Promise<void> {
 
   try {
     const statuses = await api.listStatuses(entry.target.config)
-    const reported = statuses[entry.target.sessionID]?.type
-    if (typeof reported === "string" && reported) {
-      // Same corroboration discovery applies to the list: a working claim is honoured only while
-      // this Session is still producing activity, so the open Session and its row can never
-      // disagree about whether the harness is busy.
-      const stale = nativeSessionIsWorking(reported) && Date.now() - entry.updatedAt > WORKING_STATUS_GRACE_MS
-      const next = stale ? "idle" : reported
+    const next = statuses[entry.target.sessionID]?.type
+    if (typeof next === "string" && next) {
       entry.statusType = next
       if (!nativeSessionIsWorking(next)) entry.forcedStatus = null
     }

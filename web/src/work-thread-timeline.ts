@@ -163,14 +163,7 @@ function nativeTurns(messages: MessageEnvelope[]): NativeTurn[] {
   return turns
 }
 
-type SessionTurnMatch = {
-  /** Every native turn in the Session, in transcript order. */
-  turns: NativeTurn[]
-  /** One entry per requested Run prompt, `null` when no native turn carries that prompt. */
-  matched: Array<NativeTurn | null>
-}
-
-function turnsForRunPrompts(messages: MessageEnvelope[], prompts: string[]): SessionTurnMatch {
+function turnsForRunPrompts(messages: MessageEnvelope[], prompts: string[]): Array<NativeTurn | null> {
   const turns = nativeTurns(messages)
   const matchesByPrompt = new Map<string, NativeTurn[]>()
 
@@ -184,7 +177,7 @@ function turnsForRunPrompts(messages: MessageEnvelope[], prompts: string[]): Ses
   }
 
   const usedByPrompt = new Map<string, number>()
-  const matched = prompts.map((prompt) => {
+  return prompts.map((prompt) => {
     const key = canonicalText(prompt)
     if (!key) return null
     const candidates = matchesByPrompt.get(key) ?? []
@@ -192,7 +185,6 @@ function turnsForRunPrompts(messages: MessageEnvelope[], prompts: string[]): Ses
     usedByPrompt.set(key, ordinal + 1)
     return candidates[ordinal] ?? null
   })
-  return { turns, matched }
 }
 
 function assistantParts(messages: MessageEnvelope[], aggregateID: string): MessagePart[] {
@@ -315,105 +307,10 @@ function assistantForRun({
   }
 }
 
-/**
- * A native Session shown as itself must never lose a turn.
- *
- * Run-to-turn matching is what keeps a durable TaskDesk Task from absorbing conversation the user
- * had directly in the harness, and that rule stays. But the same matching silently discarded every
- * native turn it could not attribute to a Run, and in Session-first mode the native Session *is*
- * the thread, so there is nothing else left to show: a Session whose only user turn carries an
- * empty `USER INSTRUCTION` (a TaskDesk handoff packet with no instruction), or whose replay starts
- * with assistant output, rendered as a completely blank conversation while the harness itself
- * showed the full transcript.
- *
- * These entries are built from the native envelopes directly, so they carry the harness's own turn
- * boundaries. The transport envelope of a handoff packet is still stripped: what the user never
- * wrote is announced as a lifecycle line rather than quoted back at them as their own message.
- */
-function unmatchedNativeTurnEntries({
-  task,
-  session,
-  turns,
-  agentID,
-  agentLabel,
-  agentBackend
-}: {
-  task: MachineTask
-  session: string
-  turns: NativeTurn[]
-  agentID: string
-  agentLabel?: string
-  agentBackend?: string
-}): WorkThreadMessage[] {
-  const entries: WorkThreadMessage[] = []
-  for (const turn of turns) {
-    const anchor = turn.user || turn.messages[0]
-    if (!anchor) continue
-    const base = `work-thread:${task.id}:native:${session}:${anchor.info.id}`
-    const meta: WorkThreadMessageMeta = { kind: "native", agentId: agentID, agentLabel, agentBackend }
-
-    if (turn.user) {
-      const created = Number(turn.user.info.time?.created) || 0
-      const raw = canonicalText(textParts(turn.user.parts))
-      const visible = userInstructionFromNative(raw)
-      const attachments = (turn.user.parts ?? []).filter((part) => part.type !== "text")
-      if (visible || attachments.length) {
-        const id = `${base}:user`
-        entries.push({
-          info: { id, role: "user", sessionID: session, time: { created } },
-          parts: [
-            ...(visible ? [{ id: `${id}:text`, messageID: id, type: "text", text: visible }] : []),
-            ...attachments.map((part, index) => ({ ...part, id: `${id}:part:${index}`, messageID: id }))
-          ],
-          taskdesk: meta
-        })
-      } else if (raw) {
-        // The turn exists and carried only transport context. Saying so keeps the reply attached to
-        // something visible instead of appearing to come out of nowhere.
-        entries.push(syntheticMessage({
-          id: `${base}:context`,
-          role: CONVERSATION_EVENT_ROLE,
-          sessionID: session,
-          created,
-          text: "Context transferred by TaskDesk · no user instruction was recorded for this turn",
-          meta: { kind: "event", agentId: agentID, agentLabel, agentBackend }
-        }))
-      }
-    }
-
-    const assistants = turn.messages.filter((message) => message.info.role === "assistant")
-    if (!assistants.length) continue
-    const id = `${base}:assistant`
-    const error = terminalNativeAssistantError(assistants)
-    entries.push({
-      info: {
-        id,
-        role: "assistant",
-        sessionID: session,
-        time: { created: Number(assistants[0].info.time?.created) || Number(anchor.info.time?.created) || 0 },
-        ...(error ? { error } : {})
-      },
-      parts: assistantParts(assistants, id),
-      taskdesk: meta
-    })
-  }
-  return entries
-}
-
-export type WorkThreadTimelineOptions = {
-  /**
-   * Session-first mode. Render every native turn, including the ones no Run prompt matched, because
-   * the native Session is the whole thread. A durable TaskDesk Task leaves this off so conversation
-   * that does not belong to the Task is not absorbed into it.
-   */
-  includeUnmatchedNativeTurns?: boolean
-}
-
 export function buildWorkThreadTimeline(
   task: MachineTask,
   messagesBySession: Record<string, MessageEnvelope[]>,
-  agents: WorkThreadAgentMeta,
-  options: WorkThreadTimelineOptions = {}
+  agents: WorkThreadAgentMeta
 ): WorkThreadMessage[] {
   const runs = runsFor(task)
   if (runs.length === 0) {
@@ -438,15 +335,10 @@ export function buildWorkThreadTimeline(
   })
 
   const turnByRunIndex = new Map<number, NativeTurn | null>()
-  const unmatchedTurnsBySession = new Map<string, NativeTurn[]>()
   for (const [session, indexes] of runIndexesBySession) {
     const prompts = indexes.map((index) => (runs[index].prompt || (index === 0 ? task.prompt : "")).trim())
-    const { turns, matched } = turnsForRunPrompts(messagesBySession[session] ?? [], prompts)
+    const matched = turnsForRunPrompts(messagesBySession[session] ?? [], prompts)
     indexes.forEach((runIndex, ordinal) => turnByRunIndex.set(runIndex, matched[ordinal] ?? null))
-    if (!options.includeUnmatchedNativeTurns) continue
-    const claimed = new Set(matched.filter((turn): turn is NativeTurn => Boolean(turn)))
-    const unmatched = turns.filter((turn) => !claimed.has(turn))
-    if (unmatched.length) unmatchedTurnsBySession.set(session, unmatched)
   }
 
   const timeline: WorkThreadMessage[] = []
@@ -494,28 +386,5 @@ export function buildWorkThreadTimeline(
     if (assistant) timeline.push(assistant)
   })
 
-  if (unmatchedTurnsBySession.size === 0) return timeline
-
-  // Only Session-first mode reaches here, and only when the native Session really does carry turns
-  // no Run claimed. Merging by native/Run start time keeps a recovered turn in its true position;
-  // the sort is stable, so a timeline with nothing to merge is byte-for-byte what it was before.
-  const ordered = timeline.map((entry, index) => ({ entry, index, at: Number(entry.info.time?.created) || 0 }))
-  for (const [session, turns] of unmatchedTurnsBySession) {
-    const runIndex = runIndexesBySession.get(session)?.[0] ?? 0
-    const agentID = runs[runIndex]?.agentId || task.agentId
-    const agent = agents[agentID]
-    for (const entry of unmatchedNativeTurnEntries({
-      task,
-      session,
-      turns,
-      agentID,
-      agentLabel: agent?.label,
-      agentBackend: agent?.backend
-    })) {
-      ordered.push({ entry, index: ordered.length, at: Number(entry.info.time?.created) || 0 })
-    }
-  }
-  return ordered
-    .sort((left, right) => left.at - right.at || left.index - right.index)
-    .map((item) => item.entry)
+  return timeline
 }

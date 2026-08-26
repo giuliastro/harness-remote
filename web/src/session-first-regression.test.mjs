@@ -10,7 +10,6 @@ const adapter = readFileSync(new URL('./native-session-v3-adapter.ts', import.me
 const modelRecovery = readFileSync(new URL('./native-session-model.ts', import.meta.url), 'utf8')
 const observer = readFileSync(new URL('./components/native-session-observer.tsx', import.meta.url), 'utf8')
 const home = readFileSync(new URL('./components/native-session-home.tsx', import.meta.url), 'utf8')
-const sessionActions = readFileSync(new URL('./components/native-session-actions.tsx', import.meta.url), 'utf8')
 const workThread = readFileSync(new URL('./components/work-thread-conversation.tsx', import.meta.url), 'utf8')
 const liveRefresh = readFileSync(new URL('./taskdesk-session-live-refresh.ts', import.meta.url), 'utf8')
 const timeline = readFileSync(new URL('./work-thread-timeline.ts', import.meta.url), 'utf8')
@@ -42,36 +41,8 @@ assert.ok(home.includes('aria-label="New Session"'), 'Session Home must expose N
 assert.ok(home.includes('createNativeSessionTarget'), 'Session Home must create a real native Session rather than a Task')
 assert.ok(home.includes('canCreateNativeSession'), 'Session Home must expose only harness transports that passed native create parity')
 assert.ok(home.includes('aria-label="Filter by machine"') && home.includes('All machines ·'), 'multi-machine navigation must offer an explicit All/single-machine filter')
-assert.ok(sessionActions.includes('api.renameSession(') && sessionActions.includes('api.deleteSession('), 'the chat header must mutate the real native Session for rename/delete')
-assert.ok(sessionActions.includes('api.renameSession(target.config, target.sessionID'), 'a native metadata mutation must be routed to the harness that owns the open Session')
-assert.ok(sessionActions.includes('Keep Session') && sessionActions.includes('Delete Session'), 'native deletion must use an inline confirmation instead of a blocking browser dialog')
-assert.ok(sessionActions.includes('target.renameSupported') && sessionActions.includes('target.deleteSupported'), 'Rename/Delete must stay hidden for a harness that does not implement them')
-assert.equal(home.includes('api.renameSession(') || home.includes('api.deleteSession('), false, 'the Session list must not own a second rename/delete path')
-assert.ok(standalone.includes('<NativeSessionActions target={selected}'), 'Rename/Delete must act on the Session open in the chat header')
-assert.ok(standalone.includes('refreshToken={listRevision}'), 'a native rename/delete must refresh the Session list instead of waiting for its own cycle')
-assert.equal(home.includes('aria-label="Refresh Sessions"'), false, 'the Session list must not duplicate the workspace refresh control')
-assert.ok(home.includes('toggleMachineCollapsed'), 'machine groups in the Session list must be collapsible')
-assert.ok(home.includes('aria-expanded={!machineCollapsed}'), 'a collapsible machine group must announce its state')
-// The brand mark is the real app artwork, at the small size the 32px mark actually needs: the
-// 593KB app-icon.png was downscaled by the browser on every load for no visible gain.
-assert.ok(standalone.includes('icon-192.png'), 'the workspace brand mark must be the real app icon')
-assert.ok(!standalone.includes('>H<'), 'the letter placeholder must not remain as the brand mark')
-
-// UI/UX polish guards for the Session-first chrome. Each of these was a real defect in the first
-// pass of these controls, so they are asserted rather than left to a later visual review.
-const workbenchCss = readFileSync(new URL('./session-first-workbench.css', import.meta.url), 'utf8')
-assert.ok(sessionActions.includes('hr-session-action-backdrop'), 'a Tab-trapping aria-modal panel must render the scrim its modality claims')
-assert.ok(workbenchCss.includes('.hr-session-actions > .tdw-icon-button { width: 44px; height: 44px; }'), 'the only phone-reachable Session mutations must meet the platform touch target')
-assert.ok(workbenchCss.includes('.hr-native-machine-heading:active'), 'the machine collapse control must give pressed feedback')
-assert.ok(workbenchCss.includes('.hr-native-machine-heading:focus-visible'), 'the machine collapse control must show keyboard focus')
-assert.match(workbenchCss, /prefers-reduced-motion: reduce\)\s*\{[^}]*hr-native-machine-chevron/, 'the collapse chevron must honour reduced motion')
-
-// Session-first truth: the native Session is the whole thread, so no native turn may be dropped
-// because no Run prompt claimed it, and the harness's own title may not leak a transport envelope.
-assert.ok(observer.includes('nativeSessionTruth'), 'the native Session surface must render every native turn')
-assert.ok(timeline.includes('unmatchedNativeTurnEntries'), 'the timeline must be able to render native turns no Run matched')
-assert.ok(discovery.includes('corroboratedSessionStatus'), 'a reported working status must be corroborated by real Session activity')
-assert.ok(discovery.includes('nativeSessionDisplayTitle'), 'a Session titled with a handoff packet must be shown by its instruction')
+assert.ok(home.includes('api.renameSession(') && home.includes('api.deleteSession('), 'Session Home must mutate the real native Session for rename/delete')
+assert.ok(home.includes('Keep Session') && home.includes('Delete Session'), 'native deletion must use an inline confirmation instead of a blocking browser dialog')
 
 assert.ok(prompt.includes('clientRequestId'), 'native prompts must retain durable mutation identity')
 assert.ok(prompt.includes('loadPendingNativeSessionPrompt'), 'lost-response retries must reuse the unresolved request id')
