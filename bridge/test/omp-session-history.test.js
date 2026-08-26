@@ -5,7 +5,14 @@ import path from "node:path"
 import test from "node:test"
 import { createOmpHistoryLoader } from "../src/omp-session-history.js"
 
-test("reads only the authoritative branch from an OMP session transcript", async () => {
+function replayMessage(id, role, text, created = 1) {
+  return {
+    info: { id, role, sessionID: "replay", time: { created } },
+    parts: [{ id: `${id}:text:0`, messageID: id, type: "text", text }]
+  }
+}
+
+test("ambiguous OMP history uses native ACP replay instead of guessing a terminal sibling", async () => {
   const root = await mkdtemp(path.join(tmpdir(), "harness-remote-omp-history-"))
   const nested = path.join(root, "workspace")
   await mkdir(nested)
@@ -20,24 +27,54 @@ test("reads only the authoritative branch from an OMP session transcript", async
 
   try {
     const loadHistory = createOmpHistoryLoader(root)
+    assert.deepEqual(await loadHistory(sessionID), [], "two terminal siblings must not be resolved by append order")
+    assert.equal(loadHistory.needsReplay(sessionID), true)
+    assert.equal(await loadHistory.page(sessionID, { limit: 10 }), undefined, "paged history must fall back to native ACP branch replay")
+
+    const selected = await loadHistory.reconcileReplay(sessionID, [
+      replayMessage("acp-user", "user", "Question", 1),
+      replayMessage("acp-assistant", "assistant", "Answer", 2)
+    ])
+    assert.equal(selected, "assistant-1", "ACP replay chooses the branch OMP itself resumed")
+    assert.equal(loadHistory.needsReplay(sessionID), false)
+
+    const page = await loadHistory.page(sessionID, { limit: 10 })
+    assert.deepEqual(page.messages.map((message) => [message.info.id, message.info.role]), [
+      ["user-1", "user"],
+      ["assistant-1", "assistant"]
+    ])
+    assert.deepEqual(page.messages[1].parts.map((part) => [part.type, part.text]), [
+      ["reasoning", "hidden"],
+      ["text", "Answer"]
+    ])
+  } finally {
+    await rm(root, { recursive: true, force: true })
+  }
+})
+
+test("an optional OMP undo leaf is only a hint when the journal is ambiguous", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "harness-remote-omp-stale-leaf-"))
+  const sessionID = "session-stale-leaf"
+  const records = [
+    { type: "message", id: "u1", parentId: null, timestamp: "2026-07-26T10:00:00.000Z", message: { role: "user", content: "Question" } },
+    { type: "message", id: "old-a", parentId: "u1", timestamp: "2026-07-26T10:00:01.000Z", message: { role: "assistant", content: "Old branch" } },
+    { type: "message", id: "new-a", parentId: "u1", timestamp: "2026-07-26T10:00:02.000Z", message: { role: "assistant", content: "Selected branch" } }
+  ]
+  await writeFile(path.join(root, `2026-07-26_${sessionID}.jsonl`), `${records.map((record) => JSON.stringify(record)).join("\n")}\n`)
+
+  try {
+    const loadHistory = createOmpHistoryLoader(root)
     assert.deepEqual(
-      (await loadHistory(sessionID)).map((message) => message.parts.at(-1)?.text),
-      ["Question", "Answer"],
-      "without the optional extension, the newest terminal branch stays readable"
+      await loadHistory(sessionID, { activeSessionLeaf: "old-a" }),
+      [],
+      "a stale extension leaf must not override native branch replay"
     )
-
-    const messages = await loadHistory(sessionID, { activeSessionLeaf: "assistant-1" })
-    assert.deepEqual(messages.map((message) => [message.info.role, message.parts.map((part) => [part.type, part.text])]), [
-      ["user", [["text", "Question"]]],
-      ["assistant", [["reasoning", "hidden"], ["text", "Answer"]]]
-    ], "the latest active branch must exclude abandoned siblings")
-
-    const undone = await loadHistory(sessionID, { activeSessionLeaf: "user-1" })
-    assert.deepEqual(undone.map((message) => message.parts[0].text), ["Question"])
-    await assert.rejects(
-      loadHistory(sessionID, { activeSessionLeaf: "missing-leaf" }),
-      /active session leaf is missing/
-    )
+    const selected = await loadHistory.reconcileReplay(sessionID, [
+      replayMessage("u", "user", "Question"),
+      replayMessage("a", "assistant", "Selected branch", 2)
+    ])
+    assert.equal(selected, "new-a")
+    assert.deepEqual((await loadHistory.page(sessionID, { limit: 10 })).messages.map((message) => message.parts[0].text), ["Question", "Selected branch"])
   } finally {
     await rm(root, { recursive: true, force: true })
   }
@@ -55,12 +92,13 @@ test("uses a journal's only terminal leaf when the optional OMP extension is abs
   try {
     const loadHistory = createOmpHistoryLoader(root)
     assert.deepEqual((await loadHistory(sessionID)).map((message) => message.parts[0].text), ["Question", "Answer"])
+    assert.equal(loadHistory.needsReplay(sessionID), false, "a linear journal stays read-only and needs no ACP load")
   } finally {
     await rm(root, { recursive: true, force: true })
   }
 })
 
-test("reports the last model selected on the inferred OMP journal branch", async () => {
+test("reports the last model selected on the confirmed OMP journal branch", async () => {
   const root = await mkdtemp(path.join(tmpdir(), "harness-remote-omp-model-history-"))
   const sessionID = "session-model"
   const records = [
@@ -80,7 +118,40 @@ test("reports the last model selected on the inferred OMP journal branch", async
   }
 })
 
-test("pages only the authoritative OMP branch and ignores later abandoned records", async () => {
+test("failed sibling attempts remain visible while abandoned successful siblings stay excluded", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "harness-remote-omp-errors-"))
+  const sessionID = "session-errors"
+  const records = [
+    { type: "message", id: "u0", parentId: null, timestamp: "2026-07-26T10:00:00.000Z", message: { role: "user", content: "u0" } },
+    { type: "message", id: "a0", parentId: "u0", timestamp: "2026-07-26T10:00:01.000Z", message: { role: "assistant", content: "a0" } },
+    { type: "message", id: "u1", parentId: "a0", timestamp: "2026-07-26T10:00:02.000Z", message: { role: "user", content: "retry me" } },
+    { type: "message", id: "failed", parentId: "u1", timestamp: "2026-07-26T10:00:03.000Z", message: { role: "assistant", errorMessage: "Interrupted by user", content: [] } },
+    { type: "message", id: "abandoned-success", parentId: "u1", timestamp: "2026-07-26T10:00:04.000Z", message: { role: "assistant", content: "wrong answer" } },
+    { type: "message", id: "selected-success", parentId: "u1", timestamp: "2026-07-26T10:00:05.000Z", message: { role: "assistant", provider: "openai-codex", model: "gpt-5.6-terra", content: "right answer" } }
+  ]
+  await writeFile(path.join(root, `2026-07-26_${sessionID}.jsonl`), `${records.map((record) => JSON.stringify(record)).join("\n")}\n`)
+
+  try {
+    const loadHistory = createOmpHistoryLoader(root)
+    assert.equal(await loadHistory.page(sessionID, { limit: 10 }), undefined)
+    assert.equal(await loadHistory.reconcileReplay(sessionID, [
+      replayMessage("r0", "user", "u0"),
+      replayMessage("r1", "assistant", "a0", 2),
+      replayMessage("r2", "user", "retry me", 3),
+      replayMessage("r3", "assistant", "right answer", 4)
+    ]), "selected-success")
+
+    const page = await loadHistory.page(sessionID, { limit: 10 })
+    assert.deepEqual(page.messages.map((message) => message.info.id), ["u0", "a0", "u1", "failed", "selected-success"])
+    assert.equal(page.messages.find((message) => message.info.id === "failed")?.info.error?.message, "Interrupted by user")
+    assert.ok(!page.messages.some((message) => message.info.id === "abandoned-success"))
+    assert.deepEqual(page.model, { providerID: "openai-codex", modelID: "gpt-5.6-terra" })
+  } finally {
+    await rm(root, { recursive: true, force: true })
+  }
+})
+
+test("confirmed branch paging is stable and carries its branch in the cursor", async () => {
   const root = await mkdtemp(path.join(tmpdir(), "harness-remote-omp-page-"))
   const sessionID = "session-page"
   const records = [
@@ -97,33 +168,26 @@ test("pages only the authoritative OMP branch and ignores later abandoned record
 
   try {
     const loadHistory = createOmpHistoryLoader(root)
-    const first = await loadHistory.page(sessionID, { activeSessionLeaf: "a2", limit: 2 })
+    assert.equal(await loadHistory.page(sessionID, { limit: 2 }), undefined)
+    await loadHistory.reconcileReplay(sessionID, [
+      replayMessage("x0", "user", "u0"), replayMessage("x1", "assistant", "a0", 2),
+      replayMessage("x2", "user", "u1", 3), replayMessage("x3", "assistant", "a1", 4),
+      replayMessage("x4", "user", "u2", 5), replayMessage("x5", "assistant", "a2", 6)
+    ])
+
+    const first = await loadHistory.page(sessionID, { limit: 2 })
     assert.deepEqual(first.messages.map((message) => message.parts[0].text), ["u2", "a2"])
     assert.equal(first.hasMore, true)
     assert.ok(first.before)
 
-    const second = await loadHistory.page(sessionID, { activeSessionLeaf: "a2", before: first.before, limit: 2 })
+    const second = await loadHistory.page(sessionID, { before: first.before, limit: 2 })
     assert.deepEqual(second.messages.map((message) => message.parts[0].text), ["u1", "a1"])
     assert.equal(second.hasMore, true)
 
-    const third = await loadHistory.page(sessionID, { activeSessionLeaf: "a2", before: second.before, limit: 2 })
+    const third = await loadHistory.page(sessionID, { before: second.before, limit: 2 })
     assert.deepEqual(third.messages.map((message) => message.parts[0].text), ["u0", "a0"])
     assert.equal(third.hasMore, false)
     assert.equal(third.before, null)
-
-    const all = [...third.messages, ...second.messages, ...first.messages]
-    assert.equal(new Set(all.map((message) => message.info.id)).size, 6)
-    assert.ok(all.every((message) => !message.parts.some((part) => part.text?.startsWith("abandoned"))))
-
-    const rootPage = await loadHistory.page(sessionID, { activeSessionLeaf: null, limit: 2 })
-    assert.deepEqual(rootPage, { messages: [], before: null, hasMore: false })
-    const inferred = await loadHistory.page(sessionID, { limit: 2 })
-    assert.deepEqual(inferred.messages.map((message) => message.parts[0].text), ["abandoned-u", "abandoned-a"])
-    assert.equal(inferred.hasMore, true)
-    await assert.rejects(
-      loadHistory.page(sessionID, { activeSessionLeaf: "missing-leaf", limit: 2 }),
-      /active session leaf is missing/
-    )
   } finally {
     await rm(root, { recursive: true, force: true })
   }
@@ -132,22 +196,14 @@ test("pages only the authoritative OMP branch and ignores later abandoned record
 test("replays a persisted image so an attachment survives reopening the session", async () => {
   const root = await mkdtemp(path.join(tmpdir(), "harness-remote-omp-image-"))
   const sessionID = "session-image"
-  // OMP re-encodes what it receives and stores no filename, so the mime must come from the
-  // record rather than from what the app originally uploaded.
   const data = "UklGRpwAAABXRUJQVlA4IJAAAAAQDQCd"
   const records = [
     {
-      type: "message",
-      id: "user-1",
-      parentId: null,
-      timestamp: "2026-08-08T10:00:00.000Z",
+      type: "message", id: "user-1", parentId: null, timestamp: "2026-08-08T10:00:00.000Z",
       message: { role: "user", content: [{ type: "text", text: "what colour is this?" }, { type: "image", data, mimeType: "image/webp" }] }
     },
     {
-      type: "message",
-      id: "assistant-1",
-      parentId: "user-1",
-      timestamp: "2026-08-08T10:00:01.000Z",
+      type: "message", id: "assistant-1", parentId: "user-1", timestamp: "2026-08-08T10:00:01.000Z",
       message: { role: "assistant", content: [{ type: "text", text: "Magenta" }] }
     }
   ]
@@ -155,17 +211,14 @@ test("replays a persisted image so an attachment survives reopening the session"
 
   try {
     const loadHistory = createOmpHistoryLoader(root)
-    const messages = await loadHistory(sessionID, { activeSessionLeaf: "assistant-1" })
+    const messages = await loadHistory(sessionID)
     const user = messages.find((message) => message.info.role === "user")
-    assert.deepEqual(user.parts.map((part) => part.type), ["text", "file"], "the image must replay beside its caption")
-
+    assert.deepEqual(user.parts.map((part) => part.type), ["text", "file"])
     const file = user.parts[1]
-    assert.equal(file.mime, "image/webp", "the stored mime must be used, not the uploaded one")
+    assert.equal(file.mime, "image/webp")
     assert.equal(file.url, `data:image/webp;base64,${data}`)
     assert.equal(file.messageID, "user-1")
-
-    const withoutData = await loadHistory(sessionID, { activeSessionLeaf: "assistant-1" })
-    assert.equal(withoutData.length, 2, "replay must stay stable across calls")
+    assert.equal((await loadHistory(sessionID)).length, 2, "replay must stay stable across calls")
   } finally {
     await rm(root, { recursive: true, force: true })
   }
@@ -174,20 +227,15 @@ test("replays a persisted image so an attachment survives reopening the session"
 test("ignores an image record carrying no payload", async () => {
   const root = await mkdtemp(path.join(tmpdir(), "harness-remote-omp-image-empty-"))
   const sessionID = "session-empty-image"
-  const records = [
-    {
-      type: "message",
-      id: "user-1",
-      parentId: null,
-      timestamp: "2026-08-08T10:00:00.000Z",
-      message: { role: "user", content: [{ type: "text", text: "look" }, { type: "image", mimeType: "image/png" }] }
-    }
-  ]
+  const records = [{
+    type: "message", id: "user-1", parentId: null, timestamp: "2026-08-08T10:00:00.000Z",
+    message: { role: "user", content: [{ type: "text", text: "look" }, { type: "image", mimeType: "image/png" }] }
+  }]
   await writeFile(path.join(root, `2026-08-08_${sessionID}.jsonl`), `${records.map((record) => JSON.stringify(record)).join("\n")}\n`)
 
   try {
     const loadHistory = createOmpHistoryLoader(root)
-    const messages = await loadHistory(sessionID, { activeSessionLeaf: "user-1" })
+    const messages = await loadHistory(sessionID)
     assert.deepEqual(messages[0].parts.map((part) => part.type), ["text"], "an empty image must not become a broken thumbnail")
   } finally {
     await rm(root, { recursive: true, force: true })
