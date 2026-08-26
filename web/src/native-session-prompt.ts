@@ -15,15 +15,6 @@ export type PendingNativeSessionPrompt = {
 }
 
 const STORAGE_PREFIX = "harness-remote.native-session-prompt.v1"
-/**
- * How long an unresolved delivery may keep blocking a different prompt for the same Session.
- *
- * The record exists so a retry after a lost response converges on the same daemon ledger entry
- * instead of duplicating a turn. It must not become permanent: the native transcript is the real
- * authority, and an ambiguous record that never expires made one failed delivery brick the Session
- * for every later prompt - which is exactly what a model change produces, because a new model makes
- * the next request differ from the stored one.
- */
 const PENDING_DELIVERY_TTL_MS = 10 * 60 * 1000
 const HANDOFF_SENT_PREFIX = "harness-remote.native-session-handoff-context.v1"
 const HANDOFF_CONTEXT_MAX_CHARS = 12_000
@@ -57,6 +48,22 @@ function sameModel(left?: ModelSelection | null, right?: ModelSelection | null):
   if (!left && !right) return true
   if (!left || !right) return false
   return left.providerID === right.providerID && left.modelID === right.modelID && (left.variant || "") === (right.variant || "")
+}
+
+/**
+ * A selected model is session state, not a per-message command. Re-sending the same selection on
+ * every prompt makes OMP append/report a model-change transition even when nothing changed. Keep the
+ * model on the durable pending request for idempotency, but omit the ACP mutation when discovery has
+ * already proven that exact provider/model/variant is active on the native Session.
+ */
+export function nativePromptModelForWire(
+  targetModel: ModelSelection | null | undefined,
+  requestedModel: ModelSelection | null | undefined
+): ModelSelection | null {
+  const current = normalizeModel(targetModel)
+  const requested = normalizeModel(requestedModel)
+  if (!requested || sameModel(current, requested)) return null
+  return requested
 }
 
 function messageText(message: MessageEnvelope): string {
@@ -95,8 +102,6 @@ function wirePrompt(target: NativeSessionSurfaceTarget, visibleText: string): st
   if (!target.history?.length || handoffAlreadySent(target)) return visibleText
   const context = transferredContext(target)
   if (!context) return visibleText
-  // Keep the mature v3 packet markers. native-session-turns strips this technical envelope back to
-  // USER INSTRUCTION for display, so the harness gets context while the user sees only what they wrote.
   return [
     "You are taking over an existing TaskDesk task.",
     "",
@@ -156,14 +161,6 @@ function errorDetail(body: unknown, status: number): string {
   return `HTTP ${status}`
 }
 
-/**
- * Send one prompt to the exact existing native Session with a durable client request id.
- *
- * The pending id, visible text, wire text and model selection are written before network I/O. A retry
- * therefore converges on the daemon ledger even after a lost HTTP response. For the first prompt of
- * an explicit cross-agent handoff, wireText carries bounded v3-style context while text remains the
- * user's actual instruction for draft recovery and UI fidelity.
- */
 export async function sendNativeSessionPrompt(
   target: NativeSessionSurfaceTarget,
   text: string,
@@ -174,7 +171,6 @@ export async function sendNativeSessionPrompt(
   const requestedModel = normalizeModel(model)
 
   const stored = loadPendingNativeSessionPrompt(target)
-  // A record whose retry window has passed is superseded rather than blocking forever.
   const existing = stored && Date.now() - stored.createdAt <= PENDING_DELIVERY_TTL_MS ? stored : null
   if (stored && !existing) clearPendingNativeSessionPrompt(target)
   if (existing && (existing.text !== normalized || !sameModel(existing.model, requestedModel))) {
@@ -190,20 +186,19 @@ export async function sendNativeSessionPrompt(
   persistPending(target, pending)
 
   const path = `/session/${encodeURIComponent(target.sessionID)}/prompt`
+  const wireModel = nativePromptModelForWire(target.model, pending.model)
   const body = {
     clientRequestId: pending.clientRequestId,
     text: pending.wireText || pending.text,
     directory: target.directory,
-    model: pending.model ? { providerID: pending.model.providerID, modelID: pending.model.modelID } : undefined,
-    variant: pending.model?.variant || undefined
+    model: wireModel ? { providerID: wireModel.providerID, modelID: wireModel.modelID } : undefined,
+    variant: wireModel?.variant || undefined
   }
 
   let status: NativeSessionPromptStatus
   if (isDesktopPlatform()) {
     const result = await desktopRequestResult(target.config, { path, method: "POST", body })
     if (!result.ok) {
-      // The desktop transport distinguishes a daemon answer from a transport failure, so only an
-      // `http` outcome proves the mutation was refused rather than possibly dispatched.
       if (result.error.code === "http" && Number(result.error.status) >= 400) {
         clearPendingNativeSessionPrompt(target)
       }
