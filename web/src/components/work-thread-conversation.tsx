@@ -90,6 +90,20 @@ type Props = {
    * native turns belong to the harness rather than to the Task.
    */
   nativeSessionTruth?: boolean
+  /**
+   * Continue this conversation with a different coding agent.
+   *
+   * A native Session belongs to one harness and the transport rejects a prompt addressed to another,
+   * so this is not a Run on a second agent: the caller creates a real Session on the chosen harness
+   * and carries this conversation into its first prompt. Absent when there is nowhere to continue to,
+   * which is also what hides the selector.
+   */
+  onContinueWithAgent?: (input: {
+    agentId: string
+    prompt: string
+    attachments?: AttachmentPart[]
+    model?: ModelSelection | null
+  }) => Promise<void>
 }
 
 function supportedBackend(value: string, fallback: BackendKind): BackendKind {
@@ -284,7 +298,8 @@ export function WorkThreadConversation({
   onAttentionChange,
   modelScope,
   deferModelFallback = false,
-  nativeSessionTruth = false
+  nativeSessionTruth = false,
+  onContinueWithAgent
 }: Props) {
   const t = useTranslator()
   const draftStorageKey = `${DRAFT_STORAGE_PREFIX}${task.id}`
@@ -362,6 +377,8 @@ export function WorkThreadConversation({
 
   useEffect(() => { feedsRef.current = feeds }, [feeds])
   useEffect(() => { targetAgentIDRef.current = targetAgentID }, [targetAgentID])
+  const continueWithAgentRef = useRef(onContinueWithAgent)
+  continueWithAgentRef.current = onContinueWithAgent
   useEffect(() => {
     const timer = window.setTimeout(() => persistDraft(draftStorageKey, draftRef.current), DRAFT_PERSIST_DEBOUNCE_MS)
     return () => window.clearTimeout(timer)
@@ -672,6 +689,19 @@ export function WorkThreadConversation({
     setDraft("")
     setAttachments([])
     try {
+      // Choosing another harness in the header is the whole gesture: this message is what starts the
+      // conversation there. Nothing is sent to this Session - it stays exactly as it is.
+      const continueElsewhere = continueWithAgentRef.current
+      if (continueElsewhere && targetAgentID !== currentAgentID) {
+        await continueElsewhere({
+          agentId: targetAgentID,
+          prompt: text,
+          attachments: staged,
+          model: selectedModel ? { providerID: selectedModel.providerID, modelID: selectedModel.modelID, variant: selectedModel.variant } : null
+        })
+        localStorage.removeItem(draftStorageKey)
+        return
+      }
       const latest = await taskClient.getWorkThread(baseConfig, task.id)
       if (isActive(latest)) {
         onTaskUpdateRef.current(latest)
@@ -720,6 +750,7 @@ export function WorkThreadConversation({
   }
 
   const currentLabel = agentLabel(agents, currentAgentID)
+  const continuingElsewhere = Boolean(onContinueWithAgent) && targetAgentID !== currentAgentID
   const hasAttention = questions.length > 0 || permissions.length > 0
   const preparingReply = sending || (working && !currentRunHasAssistantSignal)
   const pendingAgentLabel = sending ? agentLabel(agents, targetAgentID) : currentLabel
@@ -738,19 +769,31 @@ export function WorkThreadConversation({
       <div className="tdw-conversation-toolbar">
         <div className="tdw-agent-control">
           {/* A native Session has exactly one owning harness, and the layer underneath rejects a
-              continuation addressed to a different one. This used to render a one-option select
-              that CSS then hid - a control that promised a choice the transport refuses. Continuing
-              with another agent is a real Session on that harness, offered in the chat header.
-              A Task-backed conversation still chooses among the agents its Runs may use. */}
+              continuation addressed to a different one - so on a native Session this offers the
+              machine's other harnesses, and choosing one moves the conversation there on the next
+              message. A Task-backed conversation still chooses among the agents its Runs may use. */}
           {agents.length > 1 ? (
-            <label>
+            <label className="tdw-agent-choice">
               <span>{t("sf.continueWith")}</span>
-              <select value={targetAgentID} disabled={working || sending} onChange={(event) => {
-                modelSelectionTouchedRef.current = false
-                setTargetAgentID(event.target.value)
-              }}>
+              <select
+                value={targetAgentID}
+                disabled={working || sending}
+                aria-describedby={continuingElsewhere ? "tdw-continue-elsewhere" : undefined}
+                onChange={(event) => {
+                  modelSelectionTouchedRef.current = false
+                  setTargetAgentID(event.target.value)
+                }}
+              >
                 {agents.map((agent) => <option value={agent.id} key={agent.id}>{agent.label}</option>)}
               </select>
+              {/* Choosing another harness has no effect until the next message, and that message
+                  lands somewhere else. Saying so here is what a button labelled "Continue with
+                  another agent" never managed to explain. */}
+              {continuingElsewhere ? (
+                <small className="tdw-field-note" id="tdw-continue-elsewhere">
+                  {t("sf.continuesInNewSession", { agent: agentLabel(agents, targetAgentID) })}
+                </small>
+              ) : null}
             </label>
           ) : null}
           <label className="tdw-model-control">

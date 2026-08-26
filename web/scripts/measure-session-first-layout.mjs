@@ -54,6 +54,7 @@ let handoffCalls = 0
 const handedOff = []
 const promptBodies = []
 const searchQueries = []
+const renameBodies = []
 const daemon = http.createServer((req, res) => {
   if (req.method === "OPTIONS") { res.writeHead(204, cors); res.end(); return }
   const url = new URL(req.url || "/", `http://127.0.0.1:${DAEMON_PORT}`)
@@ -112,6 +113,20 @@ const daemon = http.createServer((req, res) => {
       res.setHeader("X-Next-Cursor", "older-1")
     }
     return json(res, 200, transcript)
+  }
+  const renameRoute = /^\/v1\/agents\/(?:claude|codex)\/session\/([^/]+)$/.exec(p)
+  if (req.method === "PATCH" && renameRoute) {
+    let body = ""
+    req.on("data", (c) => { body += c })
+    req.on("end", () => {
+      let parsed = {}
+      try { parsed = JSON.parse(body) } catch {}
+      renameBodies.push(parsed)
+      const session = sessions.find((s) => s.id === renameRoute[1])
+      if (session && typeof parsed.title === "string") session.title = parsed.title
+      json(res, 200, session || { id: renameRoute[1], title: parsed.title })
+    })
+    return
   }
   const claimRoute = /^\/v1\/agents\/(?:claude|codex)\/session\/([^/]+)\/claim$/.exec(p)
   if (req.method === "POST" && claimRoute) return json(res, 200, { claimed: true, sessionID: claimRoute[1] })
@@ -404,35 +419,54 @@ const run = async () => {
     return
   }
 
+  // The older-messages button. Twice it left the viewport below the page it had just loaded - once by
+  // anchoring the reading position exactly (a press looked like nothing happened), once by landing on
+  // the junction (a press scrolled *towards the end* of the conversation). So this drives it from the
+  // one position that exposes both: scrolled to the bottom of a transcript taller than the viewport.
   if (process.env.PAGING_CHECK) {
     const state = () => page.evaluate(() => {
       const t = document.querySelector(".hr-native-session-observer .uw-transcript")
+      const box = t.getBoundingClientRect()
+      const at = (y) => (document.elementFromPoint(box.left + box.width / 2, y)?.textContent || "").replace(/\s+/g, " ").slice(0, 26)
       return {
         messages: document.querySelectorAll(".hr-native-session-observer .uw-message").length,
         scrollTop: Math.round(t.scrollTop),
         scrollHeight: Math.round(t.scrollHeight),
         clientHeight: Math.round(t.clientHeight),
-        // Sample the actual text under the viewport's top and middle: an intersection test passes
-        // for one giant message no matter where the viewport sits.
-        textAtTop: (() => {
-          const p = t.getBoundingClientRect()
-          const probe = document.elementFromPoint(p.left + p.width / 2, p.top + 30)
-          return (probe?.textContent || "").slice(0, 24)
-        })(),
-        textAtMiddle: (() => {
-          const p = t.getBoundingClientRect()
-          const probe = document.elementFromPoint(p.left + p.width / 2, p.top + p.height / 2)
-          return (probe?.textContent || "").slice(0, 24)
-        })()
+        // Sample the real text under the viewport's top and middle: an intersection test passes for
+        // one giant message no matter where the viewport sits.
+        textAtTop: at(box.top + 30),
+        textAtMiddle: at(box.top + box.height / 2),
+        // The DOM order is the other half of the claim: an older page has to be inserted under the
+        // button and above what was already there, not appended at the end.
+        order: [...document.querySelectorAll(".hr-native-session-observer .uw-transcript > *")]
+          .map((node) => `${node.className.split(" ")[0]}:${(node.textContent || "").replace(/\s+/g, " ").slice(0, 60)}`)
       }
     })
+
+    // Start where a reader of a long conversation actually is: at the end.
+    await page.evaluate(() => {
+      const t = document.querySelector(".hr-native-session-observer .uw-transcript")
+      t.scrollTop = t.scrollHeight
+    })
+    await page.waitForTimeout(400)
     const before = await state()
     await page.locator(".uw-history-loader > button").click()
-    await page.waitForTimeout(1500)
+    await page.waitForTimeout(2000)
     const after = await state()
-    console.log(JSON.stringify({ before, after,
+
+    console.log(JSON.stringify({
+      before, after,
       newMessages: after.messages - before.messages,
-      olderContentUnderViewport: after.textAtTop.includes("OLDER-PAGE") || after.textAtTop.includes("riga di testo") || after.textAtMiddle.includes("riga di testo") }, null, 2))
+      transcriptWasScrollable: before.scrollHeight > before.clientHeight + 8,
+      startedAtTheEnd: before.scrollTop > 0,
+      // The three things that were wrong, each stated as what must now be true.
+      landedAtTopOfHistory: after.scrollTop === 0,
+      olderPageIsOnScreen: after.textAtTop.includes("Older messages") || after.textAtTop.includes("OLDER-PAGE") || after.textAtMiddle.includes("OLDER-PAGE"),
+      olderPageInsertedUnderTheButton: after.order[0]?.startsWith("uw-history-loader") && after.order[1]?.includes("OLDER-PAGE"),
+      // And the loader is still there, so the reader can keep going back.
+      loaderStillOffered: await page.locator(".uw-history-loader > button").count() === 1
+    }, null, 2))
     await page.screenshot({ path: OUT })
     return
   }
@@ -532,30 +566,124 @@ const run = async () => {
     return
   }
 
+  // Continuing with another coding agent, now driven the way it is actually offered: the header's
+  // own agent selector plus the next message. There is no separate button any more - it said nothing
+  // about when it applied and duplicated a choice this control already presents.
   if (process.env.HANDOFF_CHECK) {
-    const trigger = page.locator(".hr-session-handoff-trigger")
-    await trigger.waitFor({ timeout: 15_000 })
-    await trigger.click()
-    const select = page.locator(".hr-session-handoff select")
-    await select.waitFor({ timeout: 10_000 })
+    const select = page.locator(".tdw-agent-choice select")
+    await select.waitFor({ timeout: 15_000 })
     const options = await select.locator("option").allTextContents()
-    await page.locator(".hr-session-handoff .tdw-button.primary").click()
-    await page.waitForTimeout(1500)
-    const header = await page.locator(".hr-native-session-heading h1").textContent()
-    const eyebrow = await page.locator(".hr-native-session-eyebrow").first().textContent()
+    const noteBefore = await page.locator("#tdw-continue-elsewhere").count()
+    // The removed button must not come back under another name.
+    const strayButtons = await page.locator(".hr-session-handoff, .hr-session-handoff-trigger").count()
+
+    await select.selectOption({ label: "Codex CLI" })
+    await page.waitForTimeout(400)
+    // Choosing has no effect on its own, and the hint has to say so before the message is written.
+    const note = await page.locator("#tdw-continue-elsewhere").textContent().catch(() => null)
+    const describedBy = await select.getAttribute("aria-describedby")
+    const handoffsBeforeSend = handoffCalls
+    // The behavioural checks below all passed once while the toolbar had collapsed to "Co…" and
+    // "Harn…": the agent label had been given the container's own class and was constraining both.
+    // A control whose own label does not fit is broken however correctly it behaves.
+    const toolbar = await page.evaluate(() => {
+      const fits = (node) => node && node.scrollWidth <= node.clientWidth + 1
+      const box = (selector) => {
+        const node = document.querySelector(selector)
+        return node ? { width: Math.round(node.getBoundingClientRect().width), fits: fits(node) } : null
+      }
+      const row = document.querySelector(".hr-native-session-observer .tdw-conversation-toolbar")
+      return {
+        rowWidth: Math.round(row.getBoundingClientRect().width),
+        // One line each, no mid-word ellipsis.
+        agentLabel: box(".tdw-agent-choice > span"),
+        agentSelect: box(".tdw-agent-choice select"),
+        modelLabel: box(".tdw-model-control > span"),
+        rowScrollsSideways: row.scrollWidth > row.clientWidth + 1
+      }
+    })
+    await page.screenshot({ path: OUT })
+
     const composer = page.locator(".uw-composer-shell textarea")
     await composer.fill("Continua il lavoro sul parser")
-    await page.locator(".uw-composer-footer button", { hasText: /Send|Invia/ }).first().click().catch(() => {})
-    await page.waitForTimeout(1500)
+    await page.locator(".uw-composer-footer .uw-button-primary").first().click()
+    await page.waitForTimeout(2500)
+
     const wire = promptBodies.map((b) => (Array.isArray(b?.parts) ? b.parts : []).map((x) => x?.text || "").join("\n") || b?.text || b?.prompt || JSON.stringify(b).slice(0, 200))
-    const visible = await page.locator(".uw-message-user .uw-markdown").allTextContents()
-    console.log(JSON.stringify({ options, handoffCalls, header, eyebrow,
-      composerEnabled: await composer.isEnabled(),
+    console.log(JSON.stringify({
+      options,
+      strayButtons,
+      hintOnlyWhenSwitching: noteBefore === 0 && Boolean(note),
+      hint: note,
+      hintReachableFromTheSelect: describedBy === "tdw-continue-elsewhere",
+      toolbar,
+      toolbarLabelsFit: Boolean(toolbar.agentLabel?.fits && toolbar.agentSelect?.fits && toolbar.modelLabel?.fits) && !toolbar.rowScrollsSideways,
+      handoffsBeforeSend,
+      handoffCalls,
+      // One Session created, by the message - not by the selection.
+      createdOnlyOnSend: handoffsBeforeSend === 0 && handoffCalls === 1,
+      eyebrow: await page.locator(".hr-native-session-eyebrow").first().textContent(),
       promptCount: promptBodies.length,
       wireCarriesPacket: wire.some((w) => w.includes("You are taking over an existing TaskDesk task.")),
       wireCarriesSourceTranscript: wire.some((w) => w.includes("non sono completati tutti?")),
-      wireCarriesInstruction: wire.some((w) => w.includes("Continua il lavoro sul parser")),
-      visibleUserMessages: visible }, null, 2))
+      wireCarriesInstruction: wire.some((w) => w.includes("Continua il lavoro sul parser"))
+    }, null, 2))
+    return
+  }
+
+  // Renaming happens on the title itself. The modal it replaced put an input inside a panel anchored
+  // to an icon button, where it overflowed; this checks the field stays inside the header instead.
+  if (process.env.RENAME_CHECK) {
+    const heading = page.locator(".hr-session-title-edit")
+    await heading.waitFor({ timeout: 15_000 })
+    const before = (await heading.textContent() || "").trim()
+    const modalTriggers = await page.locator(".hr-session-actions .tdw-icon-button").count()
+    await heading.click()
+    const input = page.locator(".hr-session-title-input")
+    await input.waitFor({ timeout: 5_000 })
+
+    const geometry = await page.evaluate(() => {
+      const field = document.querySelector(".hr-session-title-input").getBoundingClientRect()
+      const header = document.querySelector(".hr-native-workspace-session-header").getBoundingClientRect()
+      const h1 = document.querySelector("h1.hr-session-title").getBoundingClientRect()
+      const style = getComputedStyle(document.querySelector(".hr-session-title-input"))
+      return {
+        fieldWidth: Math.round(field.width),
+        headerWidth: Math.round(header.width),
+        // The one thing the modal got wrong.
+        insideItsContainer: field.right <= header.right + 1 && field.left >= header.left - 8,
+        // "In place" has to be literal: same size, same line as the heading it replaced.
+        fontSize: style.fontSize,
+        sameLineAsHeading: Math.abs((field.top + field.height / 2) - (h1.top + h1.height / 2)) < 6,
+        focused: document.activeElement === document.querySelector(".hr-session-title-input"),
+        // No dialog, no backdrop, nothing to dismiss.
+        dialogs: document.querySelectorAll(".hr-session-action-panel, .hr-session-action-backdrop").length
+      }
+    })
+
+    // Escape abandons; the title must come back unchanged and nothing must be sent.
+    await page.keyboard.press("Escape")
+    await page.waitForTimeout(300)
+    const afterEscape = (await page.locator(".hr-session-title-edit").textContent() || "").trim()
+    const renamesAfterEscape = renameBodies.length
+
+    await page.locator(".hr-session-title-edit").click()
+    await page.locator(".hr-session-title-input").fill("Verifica firma del pacchetto")
+    await page.keyboard.press("Enter")
+    await page.waitForTimeout(1200)
+
+    console.log(JSON.stringify({
+      before,
+      // Only Delete is left as an icon button in the header.
+      headerIconButtons: modalTriggers,
+      geometry,
+      escapeKeepsTheName: afterEscape === before,
+      renamesAfterEscape,
+      renamesSent: renameBodies.length,
+      sentTitle: renameBodies.at(-1)?.title ?? null,
+      titleAfterCommit: (await page.locator(".hr-session-title-edit").textContent() || "").trim(),
+      backInReadMode: await page.locator(".hr-session-title-input").count() === 0
+    }, null, 2))
     await page.screenshot({ path: OUT })
     return
   }

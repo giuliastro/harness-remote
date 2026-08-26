@@ -38,11 +38,15 @@ test("composer keystrokes do not walk or rerender the long transcript", () => {
   assert.match(nativeSessions, /const MessageBubble = memo\(function MessageBubble/)
 })
 
-test("shared conversation owns paging and scroll preservation", () => {
+test("shared conversation owns paging and where an older page leaves the reader", () => {
   assert.match(component, /hasMore/)
   assert.match(component, /onLoadOlder/)
-  assert.match(component, /previousHeight/)
-  assert.match(component, /element\.scrollHeight - pending\.previousHeight/)
+  // Not "scroll preservation": preserving the position exactly is right for infinite scroll and
+  // wrong for a button - the new content ends up above the fold and the press looks like a no-op.
+  // The older page is inserted under the button, so the view goes there.
+  assert.match(component, /pendingOlderRef/)
+  assert.match(component, /previousCount/)
+  assert.match(component, /element\.scrollTop = 0/)
   assert.match(component, /NEAR_BOTTOM_PX/)
   assert.match(component, /nearBottomRef/)
 })

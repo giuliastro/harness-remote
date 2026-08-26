@@ -23,7 +23,7 @@ import { useDialogDismiss } from "../useDialogDismiss"
 import { CommandPalette, type PaletteCommand } from "./shell"
 import { useTranslator } from "../useTranslator"
 import { NativeSessionActions } from "./native-session-actions"
-import { NativeSessionHandoffControl } from "./native-session-handoff-control"
+import { NativeSessionTitleEditor } from "./native-session-title-editor"
 import { NativeSessionHome, type SessionDirectoryEntry } from "./native-session-home"
 import { NativeSessionObserver, type NativeSessionVisualState } from "./native-session-observer"
 import "../taskdesk-workthreads.css"
@@ -561,7 +561,11 @@ function NativeSessionsWorkspace({
                     <i aria-hidden="true">/</i>
                     <strong>{selectedProject}</strong>
                   </div>
-                  <h1>{selected.title}</h1>
+                  <NativeSessionTitleEditor
+                    target={selected}
+                    machineOnline={selectedRuntime?.state === "online"}
+                    onRenamed={handleSessionRenamed}
+                  />
                   <small title={selected.directory}>
                     {selected.external ? t("sf.startedInHarness") : t("sf.createdInHarnessRemote")}
                     {selected.directory ? ` · ${selected.directory}` : ""}
@@ -583,13 +587,18 @@ function NativeSessionsWorkspace({
                       {Number(selected.cost) > 0 ? <span title={t("sf.reportedCost")}>${Number(selected.cost).toFixed(2)}</span> : null}
                     </div>
                   ) : null}
-                  <NativeSessionActions target={selected} machineOnline={selectedRuntime?.state === "online"} onRenamed={handleSessionRenamed} onDeleted={handleSessionDeleted} />
-                  <NativeSessionHandoffControl source={selected} agents={selectedRuntime?.snapshot?.agents || []} onOpen={openSession} />
+                  <NativeSessionActions target={selected} machineOnline={selectedRuntime?.state === "online"} onDeleted={handleSessionDeleted} />
                   <code title={selected.sessionID}>{selected.sessionID}</code>
                 </div>
               </header>
               <div className="hr-native-workspace-chat">
-                <NativeSessionObserver key={selected.key} target={selected} onStateChange={setSelectedState} />
+                <NativeSessionObserver
+                  key={selected.key}
+                  target={selected}
+                  agents={selectedRuntime?.snapshot?.agents || []}
+                  onStateChange={setSelectedState}
+                  onContinued={openSession}
+                />
               </div>
             </>
           ) : machines.length === 0 ? (

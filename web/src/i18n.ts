@@ -297,11 +297,6 @@ type TranslationKey =
   | 'permission.allowAlways'
   | 'permission.deny'
   | 'sf.openSessionAria'
-  | 'sf.continueWithAgent'
-  | 'sf.handoffSubtitle'
-  | 'sf.continueSession'
-  | 'sf.handingOff'
-  | 'sf.handoffPending'
   | 'sf.resizeRail'
   | 'sf.showingCached'
   | 'sf.loadOlder'
@@ -376,7 +371,6 @@ type TranslationKey =
   | 'sf.closeNewSession'
   | 'sf.createNativeSession'
   | 'sf.project'
-  | 'sf.codingAgent'
   | 'sf.title'
   | 'sf.optional'
   | 'sf.newAgentSession'
@@ -386,12 +380,9 @@ type TranslationKey =
   | 'sf.createSession'
   | 'sf.creating'
   | 'sf.renameSession'
-  | 'sf.renameSubtitle'
-  | 'sf.closeRename'
+  | 'sf.renameSessionInline'
   | 'sf.sessionName'
   | 'sf.enterSessionName'
-  | 'sf.renaming'
-  | 'sf.rename'
   | 'sf.deleteSessionTitle'
   | 'sf.deleteSubtitle'
   | 'sf.closeDelete'
@@ -457,6 +448,7 @@ type TranslationKey =
   | 'sf.interface'
   | 'sf.appearanceShared'
   | 'sf.continueWith'
+  | 'sf.continuesInNewSession'
   | 'sf.model'
   | 'sf.harnessDefault'
   | 'sf.modelCatalogUnavailable'
@@ -775,11 +767,6 @@ const translations: Record<LanguageCode, Partial<Record<TranslationKey, string>>
     'sessions.typePathPlaceholder': '/home/you/project or C:\\Projects\\App',
     'sessions.goToPath': 'Go',
     'sf.openSessionAria': 'Open {title}. {agent}. {status}. {project} on {machine}.',
-    'sf.continueWithAgent': 'Continue with another agent',
-    'sf.handoffSubtitle': 'Creates a real Session on the chosen harness and carries this conversation into its first prompt. This Session stays as it is.',
-    'sf.continueSession': 'Continue Session',
-    'sf.handingOff': 'Creating Session…',
-    'sf.handoffPending': 'The handoff has not been confirmed yet. Retry the same coding agent to reconcile it instead of creating a second Session.',
     'sf.resizeRail': 'Resize the Session list',
     'sf.showingCached': 'Showing the last Sessions read from this machine. They cannot be changed until it answers again.',
     'sf.loadOlder': 'Older messages',
@@ -854,7 +841,6 @@ const translations: Record<LanguageCode, Partial<Record<TranslationKey, string>>
     'sf.closeNewSession': 'Close New Session',
     'sf.createNativeSession': 'Create native Session',
     'sf.project': 'Project',
-    'sf.codingAgent': 'Coding agent',
     'sf.title': 'Title',
     'sf.optional': 'optional',
     'sf.newAgentSession': 'New {agent} Session',
@@ -864,12 +850,9 @@ const translations: Record<LanguageCode, Partial<Record<TranslationKey, string>>
     'sf.createSession': 'Create Session',
     'sf.creating': 'Creating…',
     'sf.renameSession': 'Rename Session',
-    'sf.renameSubtitle': 'Changes the native harness Session name, not a Harness Remote alias.',
-    'sf.closeRename': 'Close Rename Session',
+    'sf.renameSessionInline': 'Rename this Session, currently {title}',
     'sf.sessionName': 'Session name',
     'sf.enterSessionName': 'Enter a Session name.',
-    'sf.renaming': 'Renaming…',
-    'sf.rename': 'Rename',
     'sf.deleteSessionTitle': 'Delete “{title}”?',
     'sf.deleteSubtitle': 'This deletes the native Session from {agent}. This cannot be undone from Harness Remote.',
     'sf.closeDelete': 'Close Delete Session',
@@ -935,6 +918,7 @@ const translations: Record<LanguageCode, Partial<Record<TranslationKey, string>>
     'sf.interface': 'Interface',
     'sf.appearanceShared': 'Appearance and language are shared across Harness Remote on this device.',
     'sf.continueWith': 'Continue with',
+    'sf.continuesInNewSession': 'Next message continues on {agent}, with this conversation.',
     'sf.model': 'Model',
     'sf.harnessDefault': 'Harness default',
     'sf.modelCatalogUnavailable': 'Model catalog unavailable. Continue uses the harness default.',
@@ -1253,11 +1237,6 @@ const translations: Record<LanguageCode, Partial<Record<TranslationKey, string>>
     'sessions.typePathPlaceholder': '/home/utente/progetto o C:\\Progetti\\App',
     'sessions.goToPath': 'Vai',
     'sf.openSessionAria': 'Apri {title}. {agent}. {status}. {project} su {machine}.',
-    'sf.continueWithAgent': 'Continua con un altro agente',
-    'sf.handoffSubtitle': 'Crea una vera sessione sull\'harness scelto e porta questa conversazione nel suo primo prompt. Questa sessione resta com\'è.',
-    'sf.continueSession': 'Continua la sessione',
-    'sf.handingOff': 'Creazione della sessione…',
-    'sf.handoffPending': 'Il passaggio non è ancora confermato. Riprova con lo stesso coding agent per riconciliarlo invece di creare una seconda sessione.',
     'sf.resizeRail': 'Ridimensiona l\'elenco delle sessioni',
     'sf.showingCached': 'Mostrate le ultime sessioni lette da questa macchina. Non sono modificabili finché non risponde di nuovo.',
     'sf.loadOlder': 'Messaggi precedenti',
@@ -1332,7 +1311,6 @@ const translations: Record<LanguageCode, Partial<Record<TranslationKey, string>>
     'sf.closeNewSession': 'Chiudi Nuova sessione',
     'sf.createNativeSession': 'Crea sessione nativa',
     'sf.project': 'Progetto',
-    'sf.codingAgent': 'Coding agent',
     'sf.title': 'Titolo',
     'sf.optional': 'facoltativo',
     'sf.newAgentSession': 'Nuova sessione {agent}',
@@ -1342,12 +1320,9 @@ const translations: Record<LanguageCode, Partial<Record<TranslationKey, string>>
     'sf.createSession': 'Crea sessione',
     'sf.creating': 'Creazione…',
     'sf.renameSession': 'Rinomina sessione',
-    'sf.renameSubtitle': 'Cambia il nome della sessione nell\'harness nativo, non un alias di Harness Remote.',
-    'sf.closeRename': 'Chiudi Rinomina sessione',
+    'sf.renameSessionInline': 'Rinomina questa sessione, ora {title}',
     'sf.sessionName': 'Nome della sessione',
     'sf.enterSessionName': 'Inserisci un nome per la sessione.',
-    'sf.renaming': 'Rinomina…',
-    'sf.rename': 'Rinomina',
     'sf.deleteSessionTitle': 'Eliminare “{title}”?',
     'sf.deleteSubtitle': 'Elimina la sessione nativa da {agent}. L\'operazione non è annullabile da Harness Remote.',
     'sf.closeDelete': 'Chiudi Elimina sessione',
@@ -1413,6 +1388,7 @@ const translations: Record<LanguageCode, Partial<Record<TranslationKey, string>>
     'sf.interface': 'Interfaccia',
     'sf.appearanceShared': 'Aspetto e lingua sono condivisi in tutto Harness Remote su questo dispositivo.',
     'sf.continueWith': 'Continua con',
+    'sf.continuesInNewSession': 'Il prossimo messaggio continua su {agent}, con questa conversazione.',
     'sf.model': 'Modello',
     'sf.harnessDefault': 'Predefinito dell\'harness',
     'sf.modelCatalogUnavailable': 'Catalogo dei modelli non disponibile. Si continua con il predefinito dell\'harness.',
@@ -1683,11 +1659,6 @@ const translations: Record<LanguageCode, Partial<Record<TranslationKey, string>>
     'permission.allowAlways': '永遠允許',
     'permission.deny': '拒絕',
     'sf.openSessionAria': '開啟 {title}。{agent}。{status}。{machine} 上的 {project}。',
-    'sf.continueWithAgent': '改用其他代理繼續',
-    'sf.handoffSubtitle': '在所選的 harness 上建立真正的工作階段，並將這段對話帶入它的第一個提示。此工作階段維持原狀。',
-    'sf.continueSession': '繼續工作階段',
-    'sf.handingOff': '正在建立工作階段…',
-    'sf.handoffPending': '交接尚未確認。請以相同的編碼代理重試以進行協調，而不是建立第二個工作階段。',
     'sf.resizeRail': '調整工作階段清單寬度',
     'sf.showingCached': '顯示最後一次從這部機器讀取的工作階段。在它再次回應之前無法變更。',
     'sf.loadOlder': '較舊的訊息',
@@ -1762,7 +1733,6 @@ const translations: Record<LanguageCode, Partial<Record<TranslationKey, string>>
     'sf.closeNewSession': '關閉新增工作階段',
     'sf.createNativeSession': '建立原生工作階段',
     'sf.project': '專案',
-    'sf.codingAgent': '編碼代理',
     'sf.title': '標題',
     'sf.optional': '選填',
     'sf.newAgentSession': '新增 {agent} 工作階段',
@@ -1772,12 +1742,9 @@ const translations: Record<LanguageCode, Partial<Record<TranslationKey, string>>
     'sf.createSession': '建立工作階段',
     'sf.creating': '建立中…',
     'sf.renameSession': '重新命名工作階段',
-    'sf.renameSubtitle': '變更原生 harness 的工作階段名稱，而非 Harness Remote 的別名。',
-    'sf.closeRename': '關閉重新命名',
+    'sf.renameSessionInline': '重新命名這個工作階段，目前是 {title}',
     'sf.sessionName': '工作階段名稱',
     'sf.enterSessionName': '請輸入工作階段名稱。',
-    'sf.renaming': '重新命名中…',
-    'sf.rename': '重新命名',
     'sf.deleteSessionTitle': '要刪除「{title}」嗎？',
     'sf.deleteSubtitle': '這會從 {agent} 刪除原生工作階段，且無法從 Harness Remote 復原。',
     'sf.closeDelete': '關閉刪除工作階段',
@@ -1843,6 +1810,7 @@ const translations: Record<LanguageCode, Partial<Record<TranslationKey, string>>
     'sf.interface': '介面',
     'sf.appearanceShared': '外觀與語言在此裝置上的 Harness Remote 各處共用。',
     'sf.continueWith': '改用',
+    'sf.continuesInNewSession': '下一則訊息在 {agent} 上繼續，並帶上這段對話。',
     'sf.model': '模型',
     'sf.harnessDefault': 'harness 預設值',
     'sf.modelCatalogUnavailable': '模型目錄無法使用，將以 harness 預設值繼續。',
@@ -2158,11 +2126,6 @@ const translations: Record<LanguageCode, Partial<Record<TranslationKey, string>>
     'permission.allowAlways': '始终允许',
     'permission.deny': '拒绝',
     'sf.openSessionAria': '打开 {title}。{agent}。{status}。{machine} 上的 {project}。',
-    'sf.continueWithAgent': '改用其他代理继续',
-    'sf.handoffSubtitle': '在所选的 harness 上创建真正的会话，并将这段对话带入它的第一个提示。此会话保持原样。',
-    'sf.continueSession': '继续会话',
-    'sf.handingOff': '正在创建会话…',
-    'sf.handoffPending': '交接尚未确认。请以相同的编码代理重试以进行协调，而不是创建第二个会话。',
     'sf.resizeRail': '调整会话列表宽度',
     'sf.showingCached': '显示最后一次从该机器读取的会话。在它再次响应之前无法更改。',
     'sf.loadOlder': '更早的消息',
@@ -2237,7 +2200,6 @@ const translations: Record<LanguageCode, Partial<Record<TranslationKey, string>>
     'sf.closeNewSession': '关闭新建会话',
     'sf.createNativeSession': '创建原生会话',
     'sf.project': '项目',
-    'sf.codingAgent': '编码代理',
     'sf.title': '标题',
     'sf.optional': '选填',
     'sf.newAgentSession': '新建 {agent} 会话',
@@ -2247,12 +2209,9 @@ const translations: Record<LanguageCode, Partial<Record<TranslationKey, string>>
     'sf.createSession': '创建会话',
     'sf.creating': '创建中…',
     'sf.renameSession': '重命名会话',
-    'sf.renameSubtitle': '更改原生 harness 的会话名称，而非 Harness Remote 的别名。',
-    'sf.closeRename': '关闭重命名',
+    'sf.renameSessionInline': '重命名此会话，当前为 {title}',
     'sf.sessionName': '会话名称',
     'sf.enterSessionName': '请输入会话名称。',
-    'sf.renaming': '重命名中…',
-    'sf.rename': '重命名',
     'sf.deleteSessionTitle': '要删除“{title}”吗？',
     'sf.deleteSubtitle': '这会从 {agent} 删除原生会话，且无法从 Harness Remote 撤销。',
     'sf.closeDelete': '关闭删除会话',
@@ -2318,6 +2277,7 @@ const translations: Record<LanguageCode, Partial<Record<TranslationKey, string>>
     'sf.interface': '界面',
     'sf.appearanceShared': '外观和语言在此设备上的 Harness Remote 各处共享。',
     'sf.continueWith': '改用',
+    'sf.continuesInNewSession': '下一条消息在 {agent} 上继续，并带上这段对话。',
     'sf.model': '模型',
     'sf.harnessDefault': 'harness 默认值',
     'sf.modelCatalogUnavailable': '模型目录不可用，将以 harness 默认值继续。',

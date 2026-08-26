@@ -83,10 +83,19 @@ test("Session conversation exposes bounded older-history loading through the sha
   assert.match(workspace, /hasMore=\{messageHasMore\}/)
 
   assert.match(conversation, /t\("sf\.loadOlder"\)/)
-  // The reposition moved out of a post-await frame callback and into a layout effect: a frame can
-  // run before React commits the older page, and then it measures the pre-prepend height.
-  assert.match(conversation, /previousHeight: transcript\?\.scrollHeight \?\? 0/)
-  assert.match(conversation, /previousTop: transcript\?\.scrollTop \?\? 0/)
-  assert.match(conversation, /element\.scrollTop = Math\.max\(0, junction - element\.clientHeight \* OLDER_JUNCTION_OVERLAP\)/)
+  // The reposition runs in a layout effect, after the commit that rendered the page: a post-await
+  // frame callback can run before React commits it and then measures the state before the prepend.
+  assert.match(conversation, /useLayoutEffect/)
+  assert.match(conversation, /pendingOlderRef\.current = \{ previousCount: messages\.length \}/)
+  assert.match(conversation, /if \(messages\.length <= pending\.previousCount\) return/)
+  // The older page is inserted under the button and above what was already there, so the view goes
+  // there. Two earlier attempts left the viewport below it: anchoring the reading position exactly
+  // made the press look like nothing happened, and landing on the junction between old and new
+  // scrolled the reader towards the *end* of the conversation.
+  assert.match(conversation, /element\.scrollTop = 0/)
+  assert.doesNotMatch(conversation, /OLDER_JUNCTION_OVERLAP|previousHeight|previousTop/)
   assert.match(conversation, /preservingOlderRef\.current = true/)
+  // Follow-to-bottom must stay out of the way until the page has actually rendered. A 400ms release
+  // lost that race on a slow machine, and the press then looked like a scroll to the end.
+  assert.match(conversation, /OLDER_GUARD_TIMEOUT_MS = 20_000/)
 })

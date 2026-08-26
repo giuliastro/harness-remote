@@ -200,7 +200,11 @@ test("conversation UI preserves stable autoscroll memoized rows and mobile keybo
 
   assert.match(source, /const MessageBubble = memo/)
   assert.match(source, /NEAR_BOTTOM_PX = 96/)
-  assert.match(source, /previousHeight/)
+  // The older-page reposition is keyed on the message count, not on the transcript's height: a page
+  // can render before its images and tool cards settle, so height both fires early and, on a page
+  // shorter than a later re-layout, not at all.
+  assert.match(source, /previousCount/)
+  assert.doesNotMatch(source, /previousHeight/)
   assert.match(source, /\[messages, loading, ready, sending\]/)
   assert.match(source, /window\.requestAnimationFrame/)
   assert.match(mobileCss, /env\(safe-area-inset-bottom/)

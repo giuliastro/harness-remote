@@ -8,7 +8,12 @@ import "../taskdesk-conversation-fixes.css"
 import { TaskDeskMessageContent } from "./taskdesk-message-content"
 
 /** How much of the viewport shows newly loaded older content, the rest being where you were. */
-const OLDER_JUNCTION_OVERLAP = 0.85
+/**
+ * How long the guard that keeps follow-to-bottom out of the way survives if the older page never
+ * arrives. It only has to outlast a slow request; the guard is normally released by the render that
+ * shows the page, not by this timer.
+ */
+const OLDER_GUARD_TIMEOUT_MS = 20_000
 
 const NEAR_BOTTOM_PX = 96
 const COMPOSER_MAX_HEIGHT_PX = 180
@@ -155,7 +160,7 @@ const ConversationTranscript = memo(function ConversationTranscript({
   const scrollFrameRef = useRef<number | undefined>(undefined)
   const previousSendingRef = useRef(false)
   /** Set while an older page is in flight, read by the layout effect that repositions the view. */
-  const pendingOlderRef = useRef<{ previousHeight: number; previousTop: number } | null>(null)
+  const pendingOlderRef = useRef<{ previousCount: number } | null>(null)
   const [jumpAffordances, setJumpAffordances] = useState<JumpAffordances>({ top: false, bottom: false })
   loadOlderRef.current = onLoadOlder
 
@@ -188,24 +193,28 @@ const ConversationTranscript = memo(function ConversationTranscript({
     })
   }, [messages, loading, ready, sending])
 
-  // Runs after the commit that rendered the older page, so `scrollHeight` is the real one.
+  // Runs after the commit that rendered the older page, so the measurements are the real ones.
   useLayoutEffect(() => {
     const pending = pendingOlderRef.current
     const element = transcriptRef.current
     if (!pending || !element) return
-    const grown = element.scrollHeight - pending.previousHeight
-    // A commit that has not rendered the page yet reports no growth; wait for the one that does.
-    if (grown <= 0) return
+    // Keyed on the message count, not on height: a page can render before its images and tool cards
+    // settle, so height alone both fires early and, on a page shorter than a re-layout, not at all.
+    if (messages.length <= pending.previousCount) return
     pendingOlderRef.current = null
-    // Preserving the reading position exactly is right for infinite scroll and wrong for a button:
-    // it moves the viewport down by the whole height of what arrived, leaving the new content above
-    // the fold. Land on the junction instead - the last screenful of what was just loaded, ending
-    // where the reader already was - so "did it load?" is answered on screen.
-    const junction = pending.previousTop + grown
-    element.scrollTop = Math.max(0, junction - element.clientHeight * OLDER_JUNCTION_OVERLAP)
+    // The older page is inserted directly under the button, above everything that was already
+    // there. So the view goes there: to the top, where the newly revealed history begins, with the
+    // button still in place to go back further.
+    //
+    // Two earlier attempts were wrong in the same way - they left the viewport below the new
+    // content. Anchoring the reading position exactly (right for infinite scroll) makes a button
+    // press look like nothing happened, and landing on the junction between old and new scrolls the
+    // reader *towards the end of the conversation*, which is the opposite of "show me what came
+    // before".
+    element.scrollTop = 0
     // Reading older history is not following the tail. Without this the follow-to-bottom pass runs
     // in the same commit - passive effects come after layout effects - and takes the transcript
-    // straight to the end, which is the whole reason the button looked like it only scrolled.
+    // straight to the end.
     nearBottomRef.current = false
     refreshJumpAffordances(element)
     preservingOlderRef.current = false
@@ -224,17 +233,10 @@ const ConversationTranscript = memo(function ConversationTranscript({
   async function loadOlder() {
     const requestOlder = loadOlderRef.current
     if (!requestOlder || !hasMore || loadingOlder) return
-    const transcript = transcriptRef.current
-    // Hand the measurements to the layout effect below rather than repositioning here. A
+    // Hand the decision to the layout effect below rather than repositioning here. A
     // `requestAnimationFrame` after the await can run before React commits the new messages, so it
-    // measures the pre-prepend height: with a short older page the arithmetic happened to land
-    // somewhere sensible, and with a page taller than the viewport it saw no growth at all and let
-    // the follow-to-bottom pass take the transcript to the end - which is why pressing the button
-    // looked like it only scrolled the text down.
-    pendingOlderRef.current = {
-      previousHeight: transcript?.scrollHeight ?? 0,
-      previousTop: transcript?.scrollTop ?? 0
-    }
+    // measures the state before the page was prepended.
+    pendingOlderRef.current = { previousCount: messages.length }
     preservingOlderRef.current = true
     try {
       await requestOlder()
@@ -243,13 +245,14 @@ const ConversationTranscript = memo(function ConversationTranscript({
       preservingOlderRef.current = false
       throw error
     }
-    // An older page that adds nothing renders no growth, so the layout effect never fires. Release
-    // the guard rather than leaving follow-to-bottom disabled for the rest of the Session.
+    // The parent fetches, then re-renders: on a slow machine the messages can arrive well after this
+    // resolves. The old 400ms release beat them to it, follow-to-bottom took over, and pressing the
+    // button looked like a scroll to the end of the conversation. This is only a leak guard now.
     window.setTimeout(() => {
       if (!pendingOlderRef.current) return
       pendingOlderRef.current = null
       preservingOlderRef.current = false
-    }, 400)
+    }, OLDER_GUARD_TIMEOUT_MS)
   }
 
   function jumpToTop() {

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import { continuationCandidates, continueNativeSessionWithAgent } from "../native-session-continue-with-agent"
 import type { NativeSessionSurfaceTarget } from "../native-session-discovery"
 import { resolveNativeSessionTargetModel } from "../native-session-model"
 import {
@@ -7,7 +8,8 @@ import {
   registerNativeSessionV3Adapter
 } from "../native-session-v3-adapter"
 import type { AgentModelScope, MachineTask } from "../taskClient"
-import type { MachineAgentHost } from "../types"
+import type { AttachmentPart } from "../attachments"
+import type { MachineAgentHost, ModelSelection } from "../types"
 import { LoadingIcon } from "../Icons"
 import { useTranslator } from "../useTranslator"
 import { WorkThreadConversation } from "./work-thread-conversation"
@@ -15,8 +17,13 @@ import "../native-session-observer.css"
 
 type Props = {
   target: NativeSessionSurfaceTarget
+  /** Every harness on this Session's machine. The other ones are what the header's agent selector
+   *  offers: choosing one continues the conversation there on the next message. */
+  agents?: MachineAgentHost[]
   onSessionRefresh?: () => void
   onStateChange?: (state: NativeSessionVisualState) => void
+  /** The Session a continuation created, for the shell to open. */
+  onContinued?: (target: NativeSessionSurfaceTarget) => void
 }
 export type NativeSessionVisualState = "working" | "attention" | "stopped" | "ready"
 
@@ -57,7 +64,7 @@ function targetForInitialProjection(target: NativeSessionSurfaceTarget): NativeS
  * Writer acquisition is deferred to the first mutation by native-session-v3-adapter, so the user
  * never has to unlock the transcript with an extra Continue step. Nothing is persisted as a Task or Run.
  */
-export function NativeSessionObserver({ target, onSessionRefresh, onStateChange }: Props) {
+export function NativeSessionObserver({ target, agents = [], onSessionRefresh, onStateChange, onContinued }: Props) {
   const t = useTranslator()
   const [task, setTask] = useState<MachineTask | null>(null)
   const taskRef = useRef<MachineTask | null>(null)
@@ -92,6 +99,24 @@ export function NativeSessionObserver({ target, onSessionRefresh, onStateChange 
       attachments: target.attachmentsSupported
     }
   }), [target.agentID, target.agentLabel, target.backend, target.transport, target.canStop, target.modelsSupported, target.attachmentsSupported])
+
+  // The other harnesses on this machine. Offering them in the header's own selector is what
+  // replaced the separate "Continue with another agent" button: the choice is where the model
+  // choice already is, and it only means anything on the next message.
+  const candidates = useMemo(() => continuationCandidates(target, agents), [target, agents])
+  const conversationAgents = useMemo(() => [agent, ...candidates], [agent, candidates])
+
+  const continueWithAgent = useCallback(async (input: { agentId: string; prompt: string; attachments?: AttachmentPart[]; model?: ModelSelection | null }) => {
+    const chosen = candidates.find((candidate) => candidate.id === input.agentId)
+    if (!chosen) throw new Error(`${input.agentId} cannot host a continuation of this Session`)
+    const created = await continueNativeSessionWithAgent(target, {
+      agent: chosen,
+      prompt: input.prompt,
+      attachments: input.attachments,
+      model: input.model ?? null
+    })
+    onContinued?.(created)
+  }, [candidates, target, onContinued])
 
   useEffect(() => {
     let disposed = false
@@ -132,7 +157,8 @@ export function NativeSessionObserver({ target, onSessionRefresh, onStateChange 
         key={target.key}
         task={task}
         baseConfig={target.config}
-        agents={[agent]}
+        agents={conversationAgents}
+        onContinueWithAgent={candidates.length ? continueWithAgent : undefined}
         modelScope={NATIVE_SESSION_MODEL_SCOPE}
         deferModelFallback
         nativeSessionTruth

@@ -270,7 +270,10 @@ export function TaskDeskMessageContent({ message }: { message: MessageEnvelope }
   const visibleParts = message.parts.filter((part) => !isInternalProtocolPart(part))
   const groups = groupConversationParts(visibleParts, {
     forceActivity: liveAssistant,
-    forceRunning: liveAssistant
+    forceRunning: liveAssistant,
+    // Only the active Run's message is live. Any other assistant turn is over, whatever its parts
+    // still claim - which is what stopped Claude's replayed Activity sections saying "Working".
+    turnCompleted: message.info.role === "assistant" && !liveAssistant
   })
   const hasFinalText = hasTerminalAssistantText(message.parts)
   const turnError = liveAssistant || hasFinalText ? "" : messageErrorText(message)

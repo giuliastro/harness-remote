@@ -1054,6 +1054,28 @@ export class AcpService {
   #clearActive(sessionID) {
     this.#active.delete(sessionID)
     this.#activeSince.delete(sessionID)
+    this.#closeOpenReasoning(sessionID)
+  }
+
+  /**
+   * A reasoning part is closed by the next part in the same message, which means a turn whose last
+   * part is a thought leaves one open forever. The UI reads "started and never ended" as "still
+   * thinking", so the Activity section of a finished turn said Working - most visibly on Claude,
+   * whose turns often end on a thought. The turn is over here, so the thought is too.
+   */
+  #closeOpenReasoning(sessionID) {
+    const messages = this.#messages.get(sessionID)
+    if (!messages?.length) return
+    const now = Date.now()
+    // Every message, not just the last: a thought is closed by the next part in its own message, so
+    // each turn that ended on one left its own open. Called only when no turn is running, so there
+    // is no thought here that is still being written.
+    for (const message of messages) {
+      if (message?.info?.role !== "assistant") continue
+      for (const part of message.parts) {
+        if (part.type === "reasoning" && part.time?.start && !part.time.end) part.time.end = now
+      }
+    }
   }
 
   #isBusy(sessionID) {
@@ -1213,6 +1235,9 @@ export class AcpService {
       throw error
     } finally {
       this.#replaying.delete(sessionID)
+      // A replayed Session was never active here, so nothing else would ever close the thought its
+      // last turn ended on. Every turn in a replay is finished by definition.
+      this.#closeOpenReasoning(sessionID)
     }
   }
 

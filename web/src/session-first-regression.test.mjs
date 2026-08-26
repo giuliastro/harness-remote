@@ -16,7 +16,8 @@ const liveRefresh = readFileSync(new URL('./taskdesk-session-live-refresh.ts', i
 const timeline = readFileSync(new URL('./work-thread-timeline.ts', import.meta.url), 'utf8')
 const conversation = readFileSync(new URL('./components/taskdesk-conversation.tsx', import.meta.url), 'utf8')
 const messageContent = readFileSync(new URL('./components/taskdesk-message-content.tsx', import.meta.url), 'utf8')
-const handoff = readFileSync(new URL('./components/native-session-handoff-control.tsx', import.meta.url), 'utf8')
+const continueWith = readFileSync(new URL('./native-session-continue-with-agent.ts', import.meta.url), 'utf8')
+const titleEditor = readFileSync(new URL('./components/native-session-title-editor.tsx', import.meta.url), 'utf8')
 const standalone = readFileSync(new URL('./components/standalone-universal-workspace.tsx', import.meta.url), 'utf8')
 const daemon = readFileSync(new URL('../../bridge/src/machine-daemon.js', import.meta.url), 'utf8')
 const daemonCli = readFileSync(new URL('../../bridge/src/daemon-cli.js', import.meta.url), 'utf8')
@@ -42,10 +43,13 @@ assert.ok(home.includes('t("sf.newSession")'), 'Session Home must expose New Ses
 assert.ok(home.includes('createNativeSessionTarget'), 'Session Home must create a real native Session rather than a Task')
 assert.ok(home.includes('canCreateNativeSession'), 'Session Home must expose only harness transports that passed native create parity')
 assert.ok(home.includes('t("sf.filterByMachine")') && home.includes('sf.allMachinesCount'), 'multi-machine navigation must offer an explicit All/single-machine filter')
-assert.ok(sessionActions.includes('api.renameSession(') && sessionActions.includes('api.deleteSession('), 'the chat header must mutate the real native Session for rename/delete')
-assert.ok(sessionActions.includes('api.renameSession(target.config, target.sessionID'), 'a native metadata mutation must be routed to the harness that owns the open Session')
+// Rename lives on the title, delete in the actions row; both mutate the real native Session
+// through the harness that owns it. See the rename section further down.
+assert.ok(titleEditor.includes('api.renameSession(target.config, target.sessionID'), 'a native rename must be routed to the harness that owns the open Session')
+assert.ok(sessionActions.includes('api.deleteSession(target.config, target.sessionID'), 'and so must a delete')
 assert.ok(sessionActions.includes('sf.keepSession') && sessionActions.includes('sf.deleteSession'), 'native deletion must use an inline confirmation instead of a blocking browser dialog')
-assert.ok(sessionActions.includes('target.renameSupported') && sessionActions.includes('target.deleteSupported'), 'Rename/Delete must stay hidden for a harness that does not implement them')
+assert.ok(titleEditor.includes('target.renameSupported'), 'the title must stay read-only for a harness that cannot rename')
+assert.ok(sessionActions.includes('target.deleteSupported'), 'and Delete must stay hidden for one that cannot delete')
 assert.equal(home.includes('api.renameSession(') || home.includes('api.deleteSession('), false, 'the Session list must not own a second rename/delete path')
 assert.ok(standalone.includes('<NativeSessionActions target={selected}'), 'Rename/Delete must act on the Session open in the chat header')
 assert.ok(standalone.includes('refreshToken={listRevision}'), 'a native rename/delete must refresh the Session list instead of waiting for its own cycle')
@@ -176,13 +180,14 @@ for (const retiredPath of [
   './conversation-turn-state.ts',
   './conversation-turn-state.test.mjs',
   './components/model-selection-control.tsx',
-  './native-session-handoff.css'
+  './native-session-handoff.css',
+  './components/native-session-handoff-control.tsx'
 ]) {
   assert.equal(existsSync(new URL(retiredPath, import.meta.url)), false, `${retiredPath} must not return as a parallel Session-first chat path`)
 }
 
-// Cross-agent handoff was stubbed to `return null` during single-Session stabilization. That phase
-// is over: the guards at the end of this file assert the working control instead.
+// Cross-agent continuation is asserted in the E3 section below; it is now the header's agent
+// selector rather than a button of its own.
 assert.ok(standalone.includes('<NativeSessionObserver'), 'integrated Sessions workspace must still open native Sessions')
 assert.ok(standalone.includes('<NativeSessionHome'), 'Session-first navigation must remain native discovery based')
 assert.ok(standalone.includes('onDeleted={handleSessionDeleted}'), 'deleting the selected native Session must clear its detail surface')
@@ -228,24 +233,67 @@ for (const [name, source] of [["native-session-home.tsx", home], ["standalone-un
 
 // --- E3: continuing with another coding agent -------------------------------------------------
 // A native Session belongs to one harness, so continuing elsewhere means creating a real Session on
-// the target and carrying the conversation into its first prompt. The daemon route and the client
-// call both already existed; only the entry point was stubbed out, which left the feature with no
-// way in while a CSS rule hid the control that promised it.
-assert.ok(handoff.includes('handoffNativeSession('), 'the handoff control must call the real daemon handoff')
-assert.equal(handoff.includes('return null\n}'), false, 'the handoff control must not be a stub')
-assert.ok(handoff.includes('handoffContextPending'), 'the target must know it still owes its context packet')
-assert.ok(handoff.includes('history'), 'the source transcript must travel with the handoff')
-assert.ok(handoff.includes('writerOwned: true'), 'a Session this bridge just created must not ask for a second claim')
+// the target and carrying the conversation into its first prompt.
+//
+// This was a "Continue with another agent" button in the chat header, and the button was the
+// problem: it named an operation without saying when it applied, and it duplicated a choice the
+// header already presents next to the model. It is now what the header's agent selector does.
+assert.equal(existsSync(new URL('./components/native-session-handoff-control.tsx', import.meta.url)), false,
+  'the separate handoff button must not come back: the header selector is the entry point')
+assert.equal(standalone.includes('NativeSessionHandoffControl'), false, 'and the shell must not mount it')
+assert.equal(workbenchCss.includes('.hr-session-handoff'), false, 'nor style it')
 
-// The one-option "Continue with" select is gone from the DOM, not hidden: a control the transport
-// refuses must not be rendered at all.
+assert.ok(continueWith.includes('handoffNativeSession('), 'continuing must call the real daemon handoff')
+assert.ok(continueWith.includes('handoffContextPending'), 'the target must know it still owes its context packet')
+assert.ok(continueWith.includes('sourceHistory'), 'the source transcript must travel with the continuation')
+assert.ok(continueWith.includes('writerOwned: true'), 'a Session this bridge just created must not ask for a second claim')
+// The user already wrote the message. A continuation that lands on an empty Session is
+// indistinguishable from having lost it.
+assert.match(continueWith, /sendNativeSessionPrompt\(target, prompt, model, attachments\)/,
+  'the message must travel with the continuation, not wait to be retyped')
+
+// The selector only offers harnesses that could actually host the conversation, and only the next
+// message acts on the choice - nothing happens when it changes.
+assert.ok(observer.includes('continuationCandidates'), 'the observer must offer the machine\'s other harnesses')
+assert.match(observer, /agents=\{conversationAgents\}/, 'and pass them to the chat header')
+assert.match(observer, /onContinueWithAgent=\{candidates\.length \? continueWithAgent : undefined\}/,
+  'with nowhere to continue to, the selector must not appear at all')
 assert.ok(workThread.includes('agents.length > 1 ?'), 'the agent select must render only where there is a real choice')
+assert.match(workThread, /if \(continueElsewhere && targetAgentID !== currentAgentID\)/,
+  'sending with another agent selected must continue there instead of prompting this Session')
+assert.ok(workThread.includes('sf.continuesInNewSession'),
+  'the selector must say that the next message lands on a new Session, which the button never explained')
+assert.ok(workThread.includes('aria-describedby={continuingElsewhere ? "tdw-continue-elsewhere" : undefined}'),
+  'and that explanation must be reachable from the control it belongs to')
 const observerCss = readFileSync(new URL('./native-session-observer.css', import.meta.url), 'utf8')
 assert.doesNotMatch(
   observerCss,
   /\.hr-native-session-observer \.tdw-agent-control > label:first-child \{\s*display: none/,
   'a phantom control must be removed rather than hidden'
 )
+// The label carried the container's own class, which constrained both and collapsed the toolbar to
+// "Co…" and "Harn…" while every behavioural check still passed.
+assert.equal(workThread.includes('<label className="tdw-agent-control">'), false,
+  'the agent label must not reuse the toolbar container class it lives inside')
+
+// --- Renaming happens on the title ------------------------------------------------------------
+// A modal with a heading, a subtitle, a labelled field and two buttons, to change one line of text,
+// anchored to an icon button in the corner - which is how its input came to overflow the panel.
+assert.ok(titleEditor.includes('api.renameSession'), 'the title itself must perform the rename')
+assert.match(titleEditor, /if \(event\.key === "Enter"\)/, 'Enter commits')
+assert.match(titleEditor, /else if \(event\.key === "Escape"\) \{ event\.preventDefault\(\); cancel\(\) \}/, 'Escape abandons')
+assert.match(titleEditor, /onBlur=\{\(\) => void commit\(\)\}/, 'and leaving the field commits rather than losing the edit')
+assert.ok(titleEditor.includes('abandonRef'), 'Escape must not then commit through the blur it causes')
+assert.ok(titleEditor.includes('aria-describedby={error ? "hr-session-title-error" : undefined}'),
+  'a rename that fails must say so next to the field, not somewhere else')
+assert.ok(standalone.includes('<NativeSessionTitleEditor'), 'the header must mount the editable title')
+assert.equal(standalone.includes('<h1>{selected.title}</h1>'), false, 'and not a read-only heading beside a pencil')
+// Delete keeps its confirmation. It is the one action in this header that cannot be undone.
+assert.equal(sessionActions.includes('renameSession'), false, 'rename must have left the actions row entirely')
+assert.equal(sessionActions.includes('PencilIcon'), false, 'including its trigger')
+assert.ok(sessionActions.includes('sf.deleteSessionTitle'), 'deleting still asks first')
+assert.match(workbenchCss, /\.hr-session-title-input \{[^}]*font-size: inherit/s,
+  'the field must be the size of the heading it replaces, or the edit is not in place')
 
 // --- D1 / D3 / D4 -----------------------------------------------------------------------------
 // D1: the 2.x shell persisted a draggable sidebar width and this one had a fixed rail.
@@ -296,15 +344,41 @@ assert.ok(workbenchCss.includes('.hr-native-session-observer .uw-history-loader'
 assert.match(workbenchCss, /\.uw-history-loader::before[\s\S]{0,200}flex: 1/, 'it must read as a divider across the column')
 assert.ok(conversation.includes('t("sf.loadOlder")'), 'the history loader must speak the chosen language')
 
-// Older pages did load; the view then moved down by the whole height of what arrived, so the new
-// content sat above the fold and the only visible effect was a scroll. The reposition ran in a
-// `requestAnimationFrame` after the await, which can measure before React commits the page, and the
-// follow-to-bottom pass then took the transcript to the end.
+// Older pages always loaded and were always inserted in the right place - under the button, above
+// what was there. What was wrong twice over was where the view ended up. Anchoring the reading
+// position exactly is right for infinite scroll and wrong for a button: the press looks like nothing
+// happened. Landing on the junction between old and new is worse - it scrolls the reader towards the
+// *end* of the conversation, which is the opposite of "show me what came before".
 assert.ok(conversation.includes('useLayoutEffect'), 'the reposition must run after the commit that rendered the page')
 assert.ok(conversation.includes('pendingOlderRef'), 'the measurements must be handed to that effect, not captured in a frame callback')
+assert.match(conversation, /if \(messages\.length <= pending\.previousCount\) return/,
+  'the effect must wait for the render that added the page, keyed on the count rather than a height that settles late')
 assert.match(conversation, /nearBottomRef\.current = false[\s\S]{0,200}refreshJumpAffordances/,
   'reading history must leave follow-to-bottom, or it immediately undoes the reposition')
-assert.ok(conversation.includes('OLDER_JUNCTION_OVERLAP'), 'the view must land on the junction so the new content is on screen')
+assert.match(conversation, /element\.scrollTop = 0/, 'the view must land at the top, where the revealed history begins')
+assert.doesNotMatch(conversation, /OLDER_JUNCTION_OVERLAP/, 'and never below what it just revealed')
+// A 400ms release lost the race against a parent that fetches and then re-renders, and
+// follow-to-bottom then took the transcript to the end - the "it only scrolls" report.
+assert.match(conversation, /OLDER_GUARD_TIMEOUT_MS = 20_000/, 'the guard must outlast a slow older page')
+// Geometry is asserted by `PAGING_CHECK=1 OLDER=1 VH=520 npm run measure:session-first`, from the
+// position that exposes both failures: scrolled to the end of a transcript taller than the viewport.
+
+// --- The Activity section of a finished turn ---------------------------------------------------
+// It said "Working" on conversations that had ended days ago. Both rules that make an Activity group
+// running read progress off part metadata - a tool state that never reached a terminal value, a
+// reasoning part with a start and no end - and on a finished turn that metadata is not progress, it
+// is a gap in what the harness wrote. Claude leaves exactly that gap: a thought is closed by the
+// next part in the same message, so a turn whose last part is a thought never closes it.
+const parts = readFileSync(new URL('./conversation-parts.ts', import.meta.url), 'utf8')
+assert.match(parts, /turnCompleted\?: boolean/, 'grouping must be able to know the turn is over')
+assert.match(parts, /if \(turnCompleted\) return "completed"/, 'nothing can still be running inside a turn that ended')
+assert.match(messageContent, /turnCompleted: message\.info\.role === "assistant" && !liveAssistant/,
+  'only the active Run\'s message is live; every other assistant turn is over whatever its parts claim')
+// And the bridge stops producing the gap, so new transcripts do not depend on the client healing them.
+const acpService = readFileSync(new URL('../../bridge/src/acp-service.js', import.meta.url), 'utf8')
+assert.match(acpService, /#closeOpenReasoning\(sessionID\)/, 'a turn that ends must close the thought it ended on')
+assert.match(acpService, /#replaying\.delete\(sessionID\)\s*\n\s*\/\/[\s\S]{0,200}#closeOpenReasoning/,
+  'a replayed Session was never active here, so nothing else would ever close its thoughts')
 
 // --- A2: images in the composer ---------------------------------------------------------------
 // The bridge server already validated and forwarded attachments, and `attachments.ts` already

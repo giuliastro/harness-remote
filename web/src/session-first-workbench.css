@@ -969,49 +969,6 @@
   }
 }
 
-.hr-session-handoff {
-  position: relative;
-  flex: none;
-  display: flex;
-  align-items: center;
-}
-
-.hr-session-handoff-trigger {
-  min-height: 30px;
-  gap: 6px;
-  padding-inline: 11px;
-  font-size: 11.5px;
-  white-space: nowrap;
-}
-
-.hr-session-handoff .hr-session-action-panel {
-  position: absolute;
-  z-index: 60;
-  top: calc(100% + 7px);
-  right: 0;
-  width: min(340px, calc(100vw - 24px));
-  display: grid;
-  gap: 10px;
-  padding: 12px;
-  border: 1px solid var(--td3-border-strong);
-  border-radius: 12px;
-  background: var(--td3-panel-2);
-  box-shadow: var(--td3-shadow-panel);
-  text-align: left;
-}
-
-.hr-session-handoff .hr-session-action-field select {
-  width: 100%;
-  min-height: 38px;
-  padding: 0 10px;
-  border: 1px solid var(--td3-border);
-  border-radius: 9px;
-  color: var(--td3-text);
-  background: var(--td3-control);
-  font: inherit;
-  font-size: 13px;
-}
-
 .hr-session-actions {
   position: relative;
   flex: none;
@@ -1077,36 +1034,6 @@
   color: var(--td3-muted);
   font-size: 10px;
   line-height: 1.45;
-}
-
-.hr-session-action-field {
-  display: grid;
-  gap: 5px;
-}
-
-.hr-session-action-field > span {
-  color: var(--td3-muted);
-  font-size: 10px;
-  font-weight: 700;
-}
-
-.hr-session-action-field input {
-  width: 100%;
-  min-width: 0;
-  min-height: 38px;
-  padding: 0 10px;
-  border: 1px solid var(--td3-border);
-  border-radius: 9px;
-  color: var(--td3-text);
-  background: var(--td3-control);
-  font: inherit;
-  font-size: 13px;
-}
-
-.hr-session-action-field input:focus-visible {
-  outline: 0;
-  border-color: var(--td3-blue-border);
-  box-shadow: 0 0 0 2px var(--td3-blue-soft);
 }
 
 .hr-session-action-error {
@@ -1806,8 +1733,9 @@
      target guidance the rest of the mobile chrome already follows. */
   .hr-session-actions > .tdw-icon-button { width: 44px; height: 44px; }
   .hr-session-actions { gap: 6px; }
-  .hr-session-action-field input { min-height: 44px; font-size: 16px; }
-  .hr-session-action-buttons > .tdw-button { min-height: 44px; }
+    .hr-session-action-buttons > .tdw-button { min-height: 44px; }
+  .hr-session-title-edit { min-height: 44px; }
+  .hr-session-title-input { min-height: 44px; font-size: 16px; }
   .hr-native-session-row[data-depth="1"] { width: calc(100% - 10px); margin-left: 10px; }
   .hr-native-session-row[data-depth="2"] { width: calc(100% - 20px); margin-left: 20px; }
   .hr-native-session-row[data-depth="3"] { width: calc(100% - 30px); margin-left: 30px; }
@@ -1892,4 +1820,100 @@
   .hr-native-machine-chevron {
     transition: none !important;
   }
+}
+
+/* Renaming a Session, where the Session's name is.
+   The modal this replaced spent a heading, a subtitle, a labelled field and two buttons on one line
+   of text, and it hung off an icon button in the corner rather than the title it renamed - which is
+   also how its input came to overflow the panel it lived in. */
+.hr-native-workspace-session-header h1.hr-session-title {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.hr-session-title-edit {
+  min-width: 0;
+  max-width: 100%;
+  min-height: 26px;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  margin: 0 -6px;
+  padding: 0 6px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  color: inherit;
+  background: none;
+  font: inherit;
+  letter-spacing: inherit;
+  text-align: left;
+  cursor: text;
+}
+
+.hr-session-title-edit > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The pencil is the only thing that says the heading is editable, so it is always present - just
+   quiet until the title is hovered or focused. Fading it in on hover alone would hide the
+   affordance from every keyboard and touch user. */
+.hr-session-title-edit > svg {
+  flex: none;
+  opacity: .45;
+  transition: opacity 120ms ease;
+}
+
+.hr-session-title-edit:hover,
+.hr-session-title-edit:focus-visible {
+  border-color: var(--td3-border);
+  background: var(--td3-raise-1);
+}
+
+.hr-session-title-edit:hover > svg,
+.hr-session-title-edit:focus-visible > svg {
+  opacity: 1;
+}
+
+.hr-session-title-edit:focus-visible {
+  outline: 0;
+  border-color: var(--td3-blue-border);
+  box-shadow: 0 0 0 2px var(--td3-blue-soft);
+}
+
+/* Same size, weight and position as the heading it replaces, so the edit happens in place rather
+   than moving the title to a different control. */
+.hr-session-title-input {
+  flex: 1 1 260px;
+  min-width: 0;
+  max-width: 100%;
+  min-height: 30px;
+  margin: 0 -7px;
+  padding: 0 6px;
+  border: 1px solid var(--td3-blue-border);
+  border-radius: 8px;
+  color: var(--td3-text);
+  background: var(--td3-control);
+  font: inherit;
+  font-size: inherit;
+  letter-spacing: inherit;
+}
+
+.hr-session-title-input:focus-visible {
+  outline: 0;
+  box-shadow: 0 0 0 2px var(--td3-blue-soft);
+}
+
+/* Beside the field it belongs to, not in a summary somewhere else. */
+.hr-session-title-error {
+  flex: 1 0 100%;
+  color: var(--td3-red-text);
+  font-size: 10.5px;
+  font-weight: 500;
+  letter-spacing: 0;
 }

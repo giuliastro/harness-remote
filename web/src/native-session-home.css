@@ -99,8 +99,13 @@
 }
 
 
+/* The native Session id. A percentage of the actions row collapsed it to one character once the
+   row stopped carrying a wide button, so it is bounded in its own terms and keeps enough of the id
+   to be recognisable; the full value stays in the tooltip. */
 .hr-native-workspace-session-header code {
-  max-width: 34%;
+  flex: none;
+  min-width: 0;
+  max-width: 168px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
