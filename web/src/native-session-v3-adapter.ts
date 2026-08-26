@@ -449,7 +449,10 @@ function installAdapter(): void {
       throw new Error("Cross-agent continuation is disabled until single-Session parity is validated")
     }
     await ensureWriter(entry)
-    const model = body.model === undefined ? entry.currentModel : body.model
+    // A blank picker in Session-first means "no explicit override yet", not "discard the model the
+    // native Session already proved it is using". Preserve the recovered native model until the user
+    // actually chooses another concrete model; a concrete body.model still wins immediately.
+    const model = body.model ?? entry.currentModel
     const result = await sendNativeSessionPrompt(entry.target, prompt, model)
     if (result.status !== "accepted") {
       throw new Error(`Prompt delivery is ${result.status}. Retry the same prompt to reconcile the existing request id.`)
