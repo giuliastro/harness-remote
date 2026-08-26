@@ -14,8 +14,6 @@ function messageParts(content, messageID) {
     if (item?.type === "thinking" && typeof item.thinking === "string" && item.thinking) {
       return [{ id: `${messageID}:reasoning:${index}`, messageID, type: "reasoning", text: item.thinking }]
     }
-    // OMP stores what it re-encoded and keeps no filename, so the mime comes from the record
-    // and the app renders the thumbnail without a label.
     if (item?.type === "image" && typeof item.data === "string" && item.data) {
       const mime = typeof item.mimeType === "string" && item.mimeType ? item.mimeType : "image/png"
       return [{
@@ -30,12 +28,6 @@ function messageParts(content, messageID) {
   })
 }
 
-/**
- * A turn that failed is journalled as an assistant message with no content and the provider's own
- * sentence in `errorMessage`. Skipping those for having no parts made a rate-limited or unpaid
- * session look like it had simply lost its replies: the transcript showed the prompts and nothing
- * back, with no way to tell a failure from a missing message.
- */
 function messageError(message) {
   const detail = typeof message?.errorMessage === "string" ? message.errorMessage.trim() : ""
   if (!detail) return undefined
@@ -80,13 +72,24 @@ function decodeVisiblePageCursor(value) {
   }
 }
 
+function isBranchEntry(record) {
+  // OMP 18.x physically starts every JSONL with a fixed-width `title` slot and then a logical
+  // `session` header. The header has the Session id but is metadata, not a node in the parentId tree.
+  // Treating it as a node creates a fake second terminal leaf for every otherwise-linear Session.
+  return Boolean(
+    record
+    && typeof record.id === "string"
+    && Object.prototype.hasOwnProperty.call(record, "parentId")
+  )
+}
+
 async function readOmpRecords(file) {
   const records = []
   const lines = createInterface({ input: createReadStream(file), crlfDelay: Infinity })
   for await (const line of lines) {
     try {
       const record = JSON.parse(line)
-      if (typeof record?.id === "string") records.push(record)
+      if (isBranchEntry(record)) records.push(record)
     } catch {
       // One malformed journal line must not make a valid preceding transcript unavailable.
     }
@@ -137,13 +140,45 @@ function conversationalRecord(record) {
   return record?.type === "message" && (record.message?.role === "user" || record.message?.role === "assistant")
 }
 
+function conversationTip(entries, leaf) {
+  const visited = new Set()
+  let entry = entries.get(leaf)
+  while (entry && !visited.has(entry.id)) {
+    if (conversationalRecord(entry)) return entry.id
+    visited.add(entry.id)
+    entry = typeof entry.parentId === "string" ? entries.get(entry.parentId) : undefined
+  }
+  return null
+}
+
+/**
+ * Return the one terminal leaf that represents a single conversational line, ignoring metadata-only
+ * terminal siblings such as session_exit/title changes. This is deliberately stricter than "latest
+ * leaf": sibling assistant attempts remain ambiguous and require OMP's own ACP replay.
+ */
+function linearTerminalLeaf(records, { descendantOf } = {}) {
+  const entries = new Map(records.map((record) => [record.id, record]))
+  const leaves = terminalLeaves(records).filter((leaf) => !descendantOf || isDescendantOrSame(entries, leaf, descendantOf))
+  if (leaves.length === 0) return null
+  if (leaves.length === 1) return leaves[0]
+
+  const tips = leaves.map((leaf, index) => ({ leaf, index, tip: conversationTip(entries, leaf) }))
+  const conversationalTips = [...new Set(tips.map((candidate) => candidate.tip).filter(Boolean))]
+  if (conversationalTips.length === 0) return tips[tips.length - 1].leaf
+
+  const deepest = conversationalTips.filter((candidate) =>
+    conversationalTips.every((other) => isDescendantOrSame(entries, candidate, other))
+  )
+  if (deepest.length !== 1) return undefined
+
+  const matching = tips.filter((candidate) => candidate.tip === deepest[0])
+  return matching[matching.length - 1]?.leaf
+}
+
 /**
  * The selected OMP branch is the conversation truth, but a failed attempt is still user-visible
- * history: OMP can retry the same user node by creating a successful sibling, which would otherwise
- * make the earlier red error disappear the moment the Session is reopened. Preserve only assistant
- * failures attached to user prompts that are on the selected branch, and only failures journalled no
- * later than the selected leaf. Normal assistant siblings remain excluded, so this cannot resurrect
- * an abandoned answer or create the duplicate replies seen after failed turns.
+ * history. Preserve failed assistant siblings attached to selected user prompts while excluding
+ * successful abandoned siblings.
  */
 function visibleBranchRecords(records, selectedLeaf) {
   const branch = selectedBranchRecords(records, selectedLeaf)
@@ -169,9 +204,6 @@ function visibleBranchRecords(records, selectedLeaf) {
     }
   }
 
-  // Journal append order is the real chronological order across sibling attempts. Filtering the
-  // original records instead of appending the failures after the branch keeps error -> retry ->
-  // success in the same order OMP actually wrote it.
   return records.filter((record, index) => index <= selectedLeafIndex && visibleIDs.has(record.id))
 }
 
@@ -218,11 +250,6 @@ function modelSelectionFromWireName(value) {
   return modelSelection(value.slice(0, separator), value.slice(separator + 1))
 }
 
-/**
- * Resolve the model selected for the visible branch. A failed assistant attempt is valid model
- * evidence even when OMP then retries the same user node as a sibling: ignoring it can make a Session
- * that just answered with the chosen model reopen as Harness default after an earlier red error.
- */
 function branchModel(records, selectedLeaf) {
   let selected
   for (const record of visibleBranchRecords(records, selectedLeaf)) {
@@ -245,12 +272,6 @@ function canonicalText(value) {
   return typeof value === "string" ? value.replace(/\r\n/g, "\n").trim() : ""
 }
 
-/**
- * ACP can replay one logical assistant turn as one envelope while OMP journals several adjacent
- * assistant records. Branch matching therefore compares coalesced conversational turns rather than
- * transport message ids or raw record counts. Reasoning is deliberately ignored: text/file content
- * and user/assistant boundaries are the stable overlap between ACP replay and the JSONL journal.
- */
 function replayTurns(messages) {
   const turns = []
   for (const message of Array.isArray(messages) ? messages : []) {
@@ -267,7 +288,7 @@ function replayTurns(messages) {
       .join(",")
     if (!text && !files) continue
 
-    const previous = turns.at(-1)
+    const previous = turns[turns.length - 1]
     if (previous?.role === role) {
       previous.text += text
       previous.files += files
@@ -295,35 +316,15 @@ function endsWithTurns(full, suffix) {
   return suffix.every((value, index) => value === full[offset + index])
 }
 
-/*
- * How long a directory listing may be reused before another lookup miss rescans.
- *
- * Short enough that a Session created moments ago is still found, long enough that opening many
- * Sessions in a row does not walk the tree once per Session.
- */
-const OMP_SESSION_LISTING_TTL_MS = 1_000
-
 export function createOmpHistoryLoader(sessionRoot = path.join(homedir(), ".omp", "agent", "sessions")) {
   const sessionFiles = new Map()
   const confirmedSelections = new Map()
   const leafHints = new Map()
   const replayNeeded = new Set()
   let listing = []
-  let listedAt = 0
   let listingInFlight
   let listingScans = 0
 
-  /*
-   * The recursive walk already enumerates every Session file, so keep what it read.
-   *
-   * Discarding it meant each new Session opened paid its own full walk of the OMP session tree, so a
-   * machine with a lot of history spent O(Sessions) tree walks just to find files it had already
-   * seen - which is what made opening Sessions progressively slower. The listing is retained instead
-   * and searched in memory; only a miss against a stale listing walks the tree again.
-   *
-   * Session ids may themselves contain underscores, so files are matched by suffix rather than by
-   * trying to recover an id from a file name.
-   */
   async function refreshListing() {
     if (listingInFlight) return listingInFlight
     listingInFlight = (async () => {
@@ -333,11 +334,9 @@ export function createOmpHistoryLoader(sessionRoot = path.join(homedir(), ".omp"
         listing = entries
           .filter((candidate) => candidate.isFile() && candidate.name.endsWith(".jsonl"))
           .map((candidate) => ({ name: candidate.name, file: path.join(candidate.parentPath ?? candidate.path, candidate.name) }))
-        listedAt = Date.now()
       } catch (error) {
         if (error?.code === "ENOENT") {
           listing = []
-          listedAt = Date.now()
           return
         }
         throw error
@@ -356,7 +355,11 @@ export function createOmpHistoryLoader(sessionRoot = path.join(homedir(), ".omp"
     const find = () => listing.find((candidate) => candidate.name.endsWith(suffix))?.file
 
     let file = find()
-    if (!file && Date.now() - listedAt >= OMP_SESSION_LISTING_TTL_MS) {
+    if (!file) {
+      // Do not cache a negative lookup. OMP creates the JSONL lazily: session/new can return before
+      // the file exists, and the first prompt can create it milliseconds after a prior directory scan.
+      // PI already rescans on an unknown Session; OMP must do the same or the first completed answer
+      // remains invisible until a later reopen happens to outlive the old listing cache.
       await refreshListing()
       file = find()
     }
@@ -380,71 +383,67 @@ export function createOmpHistoryLoader(sessionRoot = path.join(homedir(), ".omp"
     return leaf
   }
 
+  function requireReplay(sessionID) {
+    replayNeeded.add(sessionID)
+    return undefined
+  }
+
   function confirmedSelection(records, sessionID) {
     const state = confirmedSelections.get(sessionID)
     if (!state) return undefined
     if (records.length < state.recordCount) {
       confirmedSelections.delete(sessionID)
-      replayNeeded.add(sessionID)
-      return undefined
+      return requireReplay(sessionID)
     }
-
     if (state.leaf !== null && !records.some((record) => record.id === state.leaf)) {
       confirmedSelections.delete(sessionID)
-      replayNeeded.add(sessionID)
-      return undefined
+      return requireReplay(sessionID)
     }
-
     if (records.length === state.recordCount) return state.leaf
 
-    // Any newly appended user/assistant record can represent a new turn, retry, interruption or
-    // sibling branch. Do not guess which one OMP selected. A metadata-only append (model/session_exit)
-    // cannot change visible conversation truth and may advance the cached leaf safely.
-    if (records.slice(state.recordCount).some(conversationalRecord)) {
-      replayNeeded.add(sessionID)
-      return undefined
+    if (state.leaf === null) {
+      const selected = linearTerminalLeaf(records)
+      return selected === undefined ? requireReplay(sessionID) : confirm(sessionID, selected, records.length)
     }
 
-    if (state.leaf === null) return confirm(sessionID, null, records.length)
-
+    // PI's normal lifecycle is linear and OMP is the same until the user actually branches/retries.
+    // A user -> assistant continuation that uniquely descends from the already-confirmed leaf is safe
+    // to advance directly. Only genuinely competing conversational descendants need session/load.
     const entries = new Map(records.map((record) => [record.id, record]))
-    const descendants = terminalLeaves(records).filter((leaf) => isDescendantOrSame(entries, leaf, state.leaf))
-    const nextLeaf = descendants.length === 1 ? descendants[0] : state.leaf
-    return confirm(sessionID, nextLeaf, records.length)
+    const newConversation = records.slice(state.recordCount).filter(conversationalRecord)
+    if (newConversation.some((record) => !isDescendantOrSame(entries, record.id, state.leaf))) {
+      return requireReplay(sessionID)
+    }
+    const selected = linearTerminalLeaf(records, { descendantOf: state.leaf })
+    return selected === undefined ? requireReplay(sessionID) : confirm(sessionID, selected, records.length)
   }
 
   function selectionWithoutReplay(records, sessionID, activeSessionLeaf) {
     rememberHint(sessionID, records, activeSessionLeaf)
     const known = confirmedSelection(records, sessionID)
     if (known !== undefined) return known
+    if (confirmedSelections.has(sessionID) && replayNeeded.has(sessionID)) return undefined
 
-    const leaves = terminalLeaves(records)
-    if (leaves.length === 0) return confirm(sessionID, null, records.length)
-    if (leaves.length === 1) return confirm(sessionID, leaves[0], records.length)
+    const selected = linearTerminalLeaf(records)
+    if (selected !== undefined) return confirm(sessionID, selected, records.length)
 
-    // The undo/redo extension is optional and may be absent or stale. In an ambiguous tree it is a
-    // hint, not permission to replace OMP's native branch choice. Fall through to ACP session/load,
-    // which replays the branch OMP itself currently considers active.
-    replayNeeded.add(sessionID)
-    return undefined
+    // omp-undo-redo remains optional. Its leaf can help disambiguate candidates after native replay,
+    // but it never becomes a prerequisite or sole authority for an ambiguous conversation tree.
+    return requireReplay(sessionID)
   }
 
   function chooseReplayCandidate(records, sessionID, replayedMessages) {
     const replay = replayTurns(replayedMessages)
     if (!replay.length) return undefined
     const entries = new Map(records.map((record) => [record.id, record]))
-    const candidates = records.map((record, index) => ({
-      leaf: record.id,
+    const candidates = terminalLeaves(records).map((leaf, index) => ({
+      leaf,
       index,
-      turns: branchReplayTurns(records, sessionID, record.id)
+      turns: branchReplayTurns(records, sessionID, leaf)
     }))
 
     let matched = candidates.filter((candidate) => sameTurns(candidate.turns, replay))
-    if (!matched.length) {
-      // Some OMP ACP versions replay only a recent suffix. Accept that only when it still identifies
-      // one branch unambiguously; never use a longest/latest heuristic to pick among siblings.
-      matched = candidates.filter((candidate) => endsWithTurns(candidate.turns, replay))
-    }
+    if (!matched.length) matched = candidates.filter((candidate) => endsWithTurns(candidate.turns, replay))
     if (!matched.length) return undefined
 
     const hint = leafHints.get(sessionID)
@@ -458,13 +457,13 @@ export function createOmpHistoryLoader(sessionRoot = path.join(homedir(), ".omp"
       const related = matched.filter((candidate) => comparableOnOneBranch(entries, candidate.leaf, prior))
       if (related.length === 1) return related[0].leaf
       if (related.length > 1 && related.every((candidate) => related.every((other) => comparableOnOneBranch(entries, candidate.leaf, other.leaf)))) {
-        return related.sort((left, right) => right.index - left.index)[0].leaf
+        return related[related.length - 1].leaf
       }
     }
 
     if (matched.length === 1) return matched[0].leaf
     if (matched.every((candidate) => matched.every((other) => comparableOnOneBranch(entries, candidate.leaf, other.leaf)))) {
-      return matched.sort((left, right) => right.index - left.index)[0].leaf
+      return matched[matched.length - 1].leaf
     }
     return undefined
   }
@@ -478,11 +477,6 @@ export function createOmpHistoryLoader(sessionRoot = path.join(homedir(), ".omp"
     return visibleBranchMessages(records, sessionID, selectedLeaf)
   }
 
-  /**
-   * Reconcile an ACP replay with the JSONL tree. ACP owns branch selection; JSONL then restores the
-   * persistent ids, red failed attempts, model changes and paging information ACP omits. This is the
-   * v2 behavior made explicit instead of relying on a Send to incidentally warm AcpService first.
-   */
   loadOmpHistory.reconcileReplay = async (sessionID, replayedMessages) => {
     const file = await locateSession(sessionID)
     if (!file) return undefined
@@ -495,19 +489,15 @@ export function createOmpHistoryLoader(sessionRoot = path.join(homedir(), ".omp"
 
   loadOmpHistory.needsReplay = (sessionID) => replayNeeded.has(sessionID)
 
-  /** How often the session tree was walked, and how many files that walk is currently serving. */
   loadOmpHistory.diagnostics = () => ({
     source: "omp-session-jsonl+native-acp-branch",
     listingScans,
     listedFiles: listing.length,
     resolvedSessions: sessionFiles.size,
     confirmedBranches: confirmedSelections.size,
-    replayNeeded: replayNeeded.size,
-    listingAgeMs: listedAt ? Date.now() - listedAt : null
+    replayNeeded: replayNeeded.size
   })
 
-  // The extension is deliberately optional. The loader handles unambiguous journals directly and
-  // requests ACP replay only when native branch truth is actually needed.
   loadOmpHistory.pageRequiresActiveLeaf = false
   loadOmpHistory.deferAcpReplayWithoutActiveLeaf = false
   loadOmpHistory.page = async (sessionID, options = {}) => {
