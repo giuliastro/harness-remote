@@ -18,7 +18,12 @@ export type SelectedLiveSession = {
 type Timer = ReturnType<typeof setTimeout>
 
 const FOREGROUND_DEDUP_MS = 500
-const LIFECYCLE_SETTLE_MS = 900
+const DEFAULT_LIFECYCLE_SETTLE_DELAYS_MS = [900] as const
+// OMP can emit its final session.updated before the JSONL writer has made the last assistant words
+// durable. One follow-up read was therefore occasionally still too early, leaving the mounted reply
+// truncated until navigation forced a fresh load. Keep a short, finite convergence window for OMP
+// only; all other harnesses retain the single existing settle read.
+const OMP_LIFECYCLE_SETTLE_DELAYS_MS = [350, 900, 1_800, 3_200] as const
 
 function isAttentionEvent(type: string): boolean {
   return type.startsWith("permission.") || type.startsWith("question.")
@@ -54,6 +59,7 @@ export function startTaskDeskSessionLiveRefresh({
   let detailTimer: Timer | undefined
   let foregroundTimer: Timer | undefined
   let lifecycleSettleTimer: Timer | undefined
+  let lifecycleSettleGeneration = 0
   let lastForegroundRefreshAt = 0
   let appStateHandle: PluginListenerHandle | undefined
 
@@ -74,19 +80,42 @@ export function startTaskDeskSessionLiveRefresh({
 
   /**
    * A harness may publish its lifecycle edge before the final assistant envelope is durable through
-   * `/session/:id/message`. Keep one bounded, coalesced settle read after the latest lifecycle edge so
-   * the already-mounted Session gets a second authoritative chance without permanent fast polling.
-   * A later lifecycle event simply moves this one timer; it never creates an unbounded retry loop.
+   * `/session/:id/message`. Keep bounded, coalesced settle reads after the latest lifecycle edge so
+   * the already-mounted Session gets another authoritative chance without permanent fast polling.
+   *
+   * OMP gets a few additional reads because its JSONL durability can lag the ACP lifecycle edge by
+   * more than the original 900ms. The selected Session identity is captured so leaving that Session
+   * cancels the old convergence chain instead of refreshing whichever Session was opened next.
    */
   const settleAfterLifecycle = () => {
-    if (closed || !getSelected()) return
+    const selectedAtSchedule = getSelected()
+    if (closed || !selectedAtSchedule) return
     if (lifecycleSettleTimer !== undefined) clearTimeout(lifecycleSettleTimer)
-    lifecycleSettleTimer = setTimeout(() => {
-      lifecycleSettleTimer = undefined
-      if (closed || !getSelected()) return
-      onMessage()
-      onIndex()
-    }, LIFECYCLE_SETTLE_MS)
+    const generation = ++lifecycleSettleGeneration
+    const target = targets.find((candidate) => candidate.key === selectedAtSchedule.targetKey)
+    const delays = target?.config.backend === "omp"
+      ? OMP_LIFECYCLE_SETTLE_DELAYS_MS
+      : DEFAULT_LIFECYCLE_SETTLE_DELAYS_MS
+
+    const scheduleAttempt = (index: number) => {
+      lifecycleSettleTimer = setTimeout(() => {
+        lifecycleSettleTimer = undefined
+        if (closed || lifecycleSettleGeneration !== generation) return
+        const selectedNow = getSelected()
+        if (
+          !selectedNow
+          || selectedNow.targetKey !== selectedAtSchedule.targetKey
+          || selectedNow.sessionID !== selectedAtSchedule.sessionID
+        ) return
+
+        onMessage()
+        const finalAttempt = index === delays.length - 1
+        if (finalAttempt) onIndex()
+        if (!finalAttempt) scheduleAttempt(index + 1)
+      }, delays[index])
+    }
+
+    scheduleAttempt(0)
   }
 
   const reconcileAfterForeground = () => {
@@ -146,8 +175,8 @@ export function startTaskDeskSessionLiveRefresh({
 
       // OpenCode's authoritative turn lifecycle is session.status. The deprecated session.idle event
       // is still accepted because older OpenCode releases emit it. The immediate tail read covers the
-      // normal case; the one bounded settle read covers real servers where transcript durability lags
-      // the lifecycle edge and no convenient final message.updated is emitted.
+      // normal case; the bounded settle read covers real servers where transcript durability lags the
+      // lifecycle edge and no convenient final message.updated is emitted.
       if (event.type === "session.status" || event.type === "session.idle") {
         throttle("index", 120, onIndex)
         if (selectedEvent) {
@@ -209,6 +238,7 @@ export function startTaskDeskSessionLiveRefresh({
     close() {
       if (closed) return
       closed = true
+      lifecycleSettleGeneration += 1
       if (messageTimer !== undefined) clearTimeout(messageTimer)
       if (indexTimer !== undefined) clearTimeout(indexTimer)
       if (detailTimer !== undefined) clearTimeout(detailTimer)
