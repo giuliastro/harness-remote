@@ -467,7 +467,7 @@ async function assertCreateContract(browser, viewport, mobile) {
   await page.getByRole("button", { name: "New Session" }).click()
   const panel = page.getByRole("group", { name: "Create native Session" })
   await panel.waitFor({ state: "visible" })
-  await panel.getByRole("combobox").nth(1).selectOption("opencode")
+  await panel.getByLabel("Coding agent").selectOption("opencode")
   await panel.getByPlaceholder("New OpenCode Session").fill(CREATE_TITLE)
   await page.getByRole("button", { name: "Create Session" }).click()
 
