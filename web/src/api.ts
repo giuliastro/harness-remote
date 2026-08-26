@@ -25,6 +25,7 @@ import type {
   Session,
   SessionStatus,
   TodoItem,
+  TranscriptSearchResponse,
   VcsStatus
 } from "./types"
 
@@ -267,6 +268,17 @@ export const api = {
 
   listStatuses(config: ServerConfig, directory?: string) {
     return request<Record<string, SessionStatus>>(config, withDirectory("/session/status", directory))
+  },
+
+  /**
+   * Full-text search across one harness's Sessions on one machine.
+   *
+   * The daemon reads the harness's own on-disk journals; nothing here asks an agent to replay a
+   * Session, so searching never contends for the writer lock. `unsearched` names the Sessions with
+   * no journal to read, which the UI has to show rather than pass off as misses.
+   */
+  searchTranscripts(config: ServerConfig, query: string, directory?: string) {
+    return request<TranscriptSearchResponse>(config, withDirectory(`/session/search?q=${encodeURIComponent(query)}`, directory))
   },
 
   loadPath(config: ServerConfig, directory?: string) {

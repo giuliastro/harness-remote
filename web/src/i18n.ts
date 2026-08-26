@@ -310,6 +310,10 @@ type TranslationKey =
   | 'sf.attachedImages'
   | 'sf.removeAttachment'
   | 'sf.attachmentLimit'
+  | 'sf.searchingTranscripts'
+  | 'sf.transcriptCoverage'
+  | 'sf.transcriptCoveragePartial'
+  | 'sf.transcriptMatchCount'
   | 'sf.palettePlaceholder'
   | 'sf.paletteEmpty'
   | 'sf.paletteNavigate'
@@ -784,6 +788,10 @@ const translations: Record<LanguageCode, Partial<Record<TranslationKey, string>>
     'sf.attachedImages': 'Attached images',
     'sf.removeAttachment': 'Remove {name}',
     'sf.attachmentLimit': 'At most {count} images per message.',
+    'sf.searchingTranscripts': 'Searching transcripts…',
+    'sf.transcriptCoverage': 'Searched {count} transcripts · {matches} with matches',
+    'sf.transcriptCoveragePartial': 'Searched {count} transcripts · {skipped} could not be read',
+    'sf.transcriptMatchCount': '{count} in the transcript',
     'sf.palettePlaceholder': 'Search Sessions and actions…',
     'sf.paletteEmpty': 'Nothing matches',
     'sf.paletteNavigate': '↑↓ to move',
@@ -1258,6 +1266,10 @@ const translations: Record<LanguageCode, Partial<Record<TranslationKey, string>>
     'sf.attachedImages': 'Immagini allegate',
     'sf.removeAttachment': 'Rimuovi {name}',
     'sf.attachmentLimit': 'Massimo {count} immagini per messaggio.',
+    'sf.searchingTranscripts': 'Ricerca nelle trascrizioni…',
+    'sf.transcriptCoverage': 'Cercato in {count} trascrizioni · {matches} con risultati',
+    'sf.transcriptCoveragePartial': 'Cercato in {count} trascrizioni · {skipped} non leggibili',
+    'sf.transcriptMatchCount': '{count} nella trascrizione',
     'sf.palettePlaceholder': 'Cerca sessioni e azioni…',
     'sf.paletteEmpty': 'Nessun risultato',
     'sf.paletteNavigate': '↑↓ per spostarti',
@@ -1684,6 +1696,10 @@ const translations: Record<LanguageCode, Partial<Record<TranslationKey, string>>
     'sf.attachedImages': '已附加的圖片',
     'sf.removeAttachment': '移除 {name}',
     'sf.attachmentLimit': '每則訊息最多 {count} 張圖片。',
+    'sf.searchingTranscripts': '正在搜尋對話記錄…',
+    'sf.transcriptCoverage': '已搜尋 {count} 份記錄 · {matches} 份有結果',
+    'sf.transcriptCoveragePartial': '已搜尋 {count} 份記錄 · {skipped} 份無法讀取',
+    'sf.transcriptMatchCount': '記錄中 {count} 處',
     'sf.palettePlaceholder': '搜尋工作階段與動作…',
     'sf.paletteEmpty': '沒有符合的項目',
     'sf.paletteNavigate': '↑↓ 移動',
@@ -2155,6 +2171,10 @@ const translations: Record<LanguageCode, Partial<Record<TranslationKey, string>>
     'sf.attachedImages': '已附加的图片',
     'sf.removeAttachment': '移除 {name}',
     'sf.attachmentLimit': '每条消息最多 {count} 张图片。',
+    'sf.searchingTranscripts': '正在搜索对话记录…',
+    'sf.transcriptCoverage': '已搜索 {count} 份记录 · {matches} 份有结果',
+    'sf.transcriptCoveragePartial': '已搜索 {count} 份记录 · {skipped} 份无法读取',
+    'sf.transcriptMatchCount': '记录中 {count} 处',
     'sf.palettePlaceholder': '搜索会话和操作…',
     'sf.paletteEmpty': '没有匹配项',
     'sf.paletteNavigate': '↑↓ 移动',

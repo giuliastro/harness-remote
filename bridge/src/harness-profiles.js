@@ -1,3 +1,5 @@
+import { homedir } from "node:os"
+import path from "node:path"
 import { findExecutable } from "./launcher.js"
 import { createCodexHistoryLoader } from "./codex-session-history.js"
 import { createOmpHistoryLoader } from "./omp-session-history.js"
@@ -16,6 +18,32 @@ const COMMON_CAPABILITIES = {
   permissions: false,
   sessionRename: false,
   sessionDelete: false
+}
+
+/**
+ * Where each harness keeps the append-only JSONL it writes as a Session runs. Transcript search
+ * reads these directly, because asking the agent to replay a Session is a single-writer operation
+ * and searching must never contend for the lock that decides who owns a Session.
+ *
+ * Claude Code has no `historyLoader` - its transcript is reconstructed from an ACP replay - but it
+ * writes the same kind of journal, so it is searchable on the same terms as the other three.
+ */
+export function transcriptRoot(backend) {
+  switch (backend) {
+    case "omp":
+      return path.join(homedir(), ".omp", "agent", "sessions")
+    // Mirrors `pi-session-history.js`: PI's own environment overrides decide where its journals go,
+    // and a search that ignored them would silently find nothing on a configured machine.
+    case "pi":
+      return process.env.PI_CODING_AGENT_SESSION_DIR
+        || path.join(process.env.PI_CODING_AGENT_DIR || path.join(homedir(), ".pi", "agent"), "sessions")
+    case "claude":
+      return path.join(process.env.CLAUDE_CONFIG_DIR || path.join(homedir(), ".claude"), "projects")
+    case "codex":
+      return path.join(process.env.CODEX_HOME || path.join(homedir(), ".codex"), "sessions")
+    default:
+      return undefined
+  }
 }
 
 export const HARNESS_PROFILES = {

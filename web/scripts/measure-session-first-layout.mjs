@@ -53,6 +53,7 @@ let offline = false
 let handoffCalls = 0
 const handedOff = []
 const promptBodies = []
+const searchQueries = []
 const daemon = http.createServer((req, res) => {
   if (req.method === "OPTIONS") { res.writeHead(204, cors); res.end(); return }
   const url = new URL(req.url || "/", `http://127.0.0.1:${DAEMON_PORT}`)
@@ -78,6 +79,19 @@ const daemon = http.createServer((req, res) => {
     const created = { id: "codex-handoff-1", title: "handed off", directory: DIR, time: { created: Date.now(), updated: Date.now() }, summary: { additions: 0, deletions: 0, files: 0 } }
     handedOff.push(created)
     return json(res, 200, { status: "accepted", result: { target: { machineID: "m1", agentID: "codex", sessionID: created.id, directory: DIR } } })
+  }
+  // A4: the daemon's transcript search. Only `s-6` and `s-9` "contain" the phrase, and `s-3` has no
+  // journal, so the response can be checked for coverage as well as for hits.
+  if (/^\/v1\/agents\/(claude|codex)\/session\/search$/.test(p)) {
+    searchQueries.push(url.searchParams.get("q") || "")
+    if (p.includes("codex")) return json(res, 200, { query: url.searchParams.get("q"), results: [], scanned: 0, unsearched: [], truncated: false })
+    const q = (url.searchParams.get("q") || "").toLowerCase()
+    const hit = (id, count, snippet) => ({ sessionID: id, title: "", directory: DIR, updated: 0, count, matches: [{ role: "assistant", snippet }] })
+    const results = q.includes("capitali") ? [] : q.includes("firma") ? [
+      hit("s-6", 3, "ho rigenerato la firma del pacchetto deb e ora passa"),
+      hit("s-9", 1, "la firma di macOS resta da verificare")
+    ] : []
+    return json(res, 200, { query: q, results, scanned: sessions.length - 1, unsearched: ["s-3"], truncated: false })
   }
   if (p === "/v1/agents/claude/session/status") return json(res, 200, Object.fromEntries(sessions.map((s, i) => [s.id, { type: process.env.ATTENTION && i === 1 ? "error" : "idle" }])))
   if (p === "/v1/agents/claude/models") return json(res, 200, { providers: [{ id: "claude", name: "claude", models: { "opus[1m]": { id: "opus[1m]", name: "Opus (1M context)", status: "active" } } }], default: { claude: "opus[1m]" } })
@@ -170,6 +184,112 @@ const run = async () => {
   // Cmd/Ctrl+K has to reach the Sessions themselves, not just open a box: the palette is the only
   // way to reach the 400th Session without scrolling, so the check types a title, presses Enter and
   // compares the chosen row's label against the Session the detail pane then shows.
+  // A4: the rail's query has to reach inside the conversations. `s-6` and `s-9` match only in their
+  // transcripts - their titles contain nothing like the phrase - so if they appear in the list, the
+  // search reached the transcript. The coverage line is checked too: a search that hides its own
+  // bounds teaches the user that a phrase was never said.
+  // The lifecycle notice ("Model changed to ...", "Continued with ...") centred itself in the whole
+  // transcript rather than in the message column, so on a wide pane it sat right of the bubbles above
+  // and below it. What is under test is purely a CSS rule keyed on the class, so the notice is placed
+  // into the live transcript as the timeline places it - a sibling of the messages - and the three
+  // centres are compared.
+  if (process.env.NOTICE_CHECK) {
+    await page.evaluate(() => {
+      const first = document.querySelector(".hr-native-session-observer .uw-message")
+      const notice = document.createElement("div")
+      notice.className = "tdw-conversation-event"
+      const span = document.createElement("span")
+      span.textContent = "Model changed to gpt-5.6-sol · medium · continuing with Codex CLI"
+      notice.append(span)
+      first.after(notice)
+    })
+    await page.waitForTimeout(400)
+    console.log(JSON.stringify(await page.evaluate(() => {
+      const centre = (node) => {
+        const box = node.getBoundingClientRect()
+        return { centre: Math.round(box.left + box.width / 2), left: Math.round(box.left), width: Math.round(box.width) }
+      }
+      const message = centre(document.querySelector(".hr-native-session-observer .uw-message"))
+      const notice = centre(document.querySelector(".hr-native-session-observer .tdw-conversation-event"))
+      const pill = centre(document.querySelector(".hr-native-session-observer .tdw-conversation-event > span"))
+      const composer = centre(document.querySelector(".hr-native-session-observer .uw-composer-shell"))
+      return {
+        message, notice, pill, composer,
+        pillOffsetFromMessageCentre: Math.abs(pill.centre - message.centre),
+        noticeSharesMessageColumn: notice.left === message.left && Math.abs(notice.width - message.width) <= 1,
+        // The pill still has to look like a pill, not a full-width bar.
+        pillNarrowerThanColumn: pill.width < message.width,
+        // The leading dot has to stay inside the pill: as an item of the centring container it both
+        // sat outside the border and pushed the text off the column's axis.
+        dotInsidePill: (() => {
+          const span = document.querySelector(".hr-native-session-observer .tdw-conversation-event > span")
+          const dot = getComputedStyle(span, "::before")
+          const container = getComputedStyle(document.querySelector(".hr-native-session-observer .tdw-conversation-event"), "::before")
+          return dot.content === '""' && container.display === "none"
+        })(),
+        pillBackground: getComputedStyle(document.querySelector(".hr-native-session-observer .tdw-conversation-event > span")).backgroundColor
+      }
+    }), null, 2))
+    await page.screenshot({ path: OUT })
+    return
+  }
+
+  if (process.env.SEARCH_CHECK) {
+    const field = page.locator(".hr-native-session-search input")
+    const titles = () => page.locator(".hr-native-session-row .hr-native-session-copy > strong").allTextContents()
+    const beforeRows = (await titles()).length
+
+    // A title-only query first, to prove the two paths are distinguishable.
+    await field.fill("capitali")
+    await page.waitForTimeout(1400)
+    const titleOnly = await titles()
+
+    await field.fill("firma")
+    await page.waitForTimeout(1600)
+    const afterRows = await titles()
+    const snippets = await page.locator(".hr-native-session-snippet").allTextContents()
+    const counts = await page.locator(".hr-native-session-transcript-count").allTextContents()
+    const coverage = await page.locator(".hr-native-search-coverage").textContent().catch(() => null)
+    // The snippet has to stay inside the row: a two-line clamp that leaks turns the rail into a
+    // transcript and pushes every other Session off screen.
+    const geometry = await page.evaluate(() => {
+      const snippet = document.querySelector(".hr-native-session-snippet")
+      if (!snippet) return null
+      const row = snippet.closest(".hr-native-session-row").getBoundingClientRect()
+      const rail = document.querySelector(".hr-native-workspace-list").getBoundingClientRect()
+      const box = snippet.getBoundingClientRect()
+      return {
+        rowHeight: Math.round(row.height),
+        snippetLines: Math.round(box.height / parseFloat(getComputedStyle(snippet).lineHeight)),
+        withinRow: box.bottom <= row.bottom + 1 && box.right <= row.right + 1,
+        withinRail: box.right <= rail.right + 1
+      }
+    })
+
+    await page.screenshot({ path: OUT })
+
+    // Clearing the field must put the full list back, not leave the search's result set behind.
+    await field.fill("")
+    await page.waitForTimeout(900)
+    const cleared = (await titles()).length
+
+    console.log(JSON.stringify({
+      beforeRows,
+      titleOnlyMatches: titleOnly,
+      queriesSentToDaemon: searchQueries,
+      // Two characters is a keystroke: it must never cost a journal read per Session.
+      shortQueryNotSent: !searchQueries.includes("ca") && !searchQueries.includes("fi"),
+      rowsForTranscriptQuery: afterRows,
+      transcriptOnlyRowsShown: afterRows.includes("Mi dici le 6 principali capitali europee?") && afterRows.includes("Ciao"),
+      snippets,
+      counts,
+      coverage,
+      geometry,
+      clearedBackToFullList: cleared === beforeRows
+    }, null, 2))
+    return
+  }
+
   if (process.env.PALETTE_CHECK) {
     await page.keyboard.press("Control+k")
     await page.locator(".palette").waitFor({ timeout: 10_000 })

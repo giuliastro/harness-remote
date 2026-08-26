@@ -673,6 +673,61 @@
   font-weight: 700;
 }
 
+/* Transcript search (A4). The rail's query reaches inside the conversations, so a row can be in
+   the list for a reason its title does not show. The snippet is that reason, and the count next to
+   the harness name says how strong the match is. */
+.hr-native-session-transcript-count {
+  flex: none;
+  padding: 1px 5px;
+  border-radius: 999px;
+  color: var(--td3-blue-text);
+  background: var(--td3-blue-soft);
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.hr-native-session-snippet {
+  /* Two lines: enough to recognise the passage, never enough to turn the rail into a transcript. */
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  margin-top: 3px;
+  padding-left: 6px;
+  overflow: hidden;
+  border-left: 2px solid var(--td3-blue-border);
+  color: var(--td3-muted);
+  /* The row keeps its own single line; the snippet is the one place in the rail that wraps, because
+     a passage cut after five words is not recognisable. */
+  white-space: normal;
+  overflow-wrap: anywhere;
+  text-align: left;
+  font-size: 10.5px;
+  font-style: normal;
+  line-height: 1.35;
+  quotes: none;
+}
+
+/* What the query reached. A search that hides its own bounds teaches the user that a phrase was
+   never said, which is the one answer this must never give by accident. */
+.hr-native-search-coverage {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  margin: 0;
+  padding: 0 2px;
+  color: var(--td3-muted);
+  font-size: 10.5px;
+}
+
+.hr-native-search-coverage span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .hr-native-session-policy {
   flex: none;
   padding: 1px 5px;
@@ -1433,6 +1488,66 @@
   width: 100%;
   max-width: 100%;
   min-width: 0;
+}
+
+/* Lifecycle notices ("Model changed to ...", "Continued with ..."). The base rule centres the pill
+   with `margin: auto` in whatever box contains it, which is the whole transcript - so on a wide pane
+   it landed right of the message column's own centre, visibly out of line with the bubbles above and
+   below it.
+
+   The element itself becomes the column and the pill moves into its span, which is the only way to
+   centre a fit-content pill on a column that is not centred in its own container. The control plane's
+   leading dot moves with it, so it stays inside the pill instead of becoming a second item the
+   centring has to make room for. */
+.hr-native-session-observer .tdw-conversation-event {
+  width: min(var(--hrsf-content-width), 100%);
+  max-width: none;
+  margin-inline: var(--hrsf-column-inset) auto;
+  display: flex;
+  justify-content: center;
+  padding: 0;
+  border: 0;
+  background: none;
+}
+
+.hr-native-session-observer .tdw-conversation-event::before {
+  display: none;
+}
+
+.hr-native-session-observer .tdw-conversation-event > span {
+  max-width: 100%;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 10px 6px 8px;
+  border: 1px solid var(--td3-blue-border-soft);
+  border-radius: 999px;
+  color: var(--td3-text-3);
+  background: var(--td3-blue-soft-2);
+  text-align: center;
+  font-size: 10px;
+  font-weight: 650;
+}
+
+.hr-native-session-observer .tdw-conversation-event > span::before {
+  content: "";
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--td3-blue-text);
+  box-shadow: 0 0 0 3px var(--td3-blue-soft);
+}
+
+.hr-native-session-observer .tdw-conversation-event.error > span {
+  color: var(--td3-red-text);
+  border-color: var(--td3-red-border);
+  background: var(--td3-red-soft);
+}
+
+.hr-native-session-observer .tdw-conversation-event.error > span::before {
+  background: var(--td3-red-text);
+  box-shadow: 0 0 0 3px var(--td3-red-soft);
 }
 
 /* Older transcript pages. It was a bare ghost button sitting at the transcript's left edge, so it

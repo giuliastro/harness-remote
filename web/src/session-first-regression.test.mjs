@@ -361,3 +361,83 @@ for (const key of ['sf.palettePlaceholder', 'sf.paletteEmpty', 'sf.paletteNaviga
 // types a title that only exists behind the rail's "show more", presses Enter, and requires the
 // detail pane to show that exact Session - then Escape to close, and ArrowDown/ArrowUp to move
 // focus between rows.
+
+// --- A4: search that reaches the transcripts ---------------------------------------------------
+// The rail's query matched titles, projects and machines - never a word that was said. Searching by
+// asking each harness to replay its Sessions is not an option: replay is a single-writer operation,
+// so it would contend for the lock that decides who owns a Session, and one query over a few hundred
+// Sessions would be hundreds of `session/load` calls. Every harness already writes its own JSONL
+// journal, and that file is readable without touching the agent.
+const transcriptSearch = readFileSync(new URL('../../bridge/src/session-transcript-search.js', import.meta.url), 'utf8')
+const bridgeServer = readFileSync(new URL('../../bridge/src/server.js', import.meta.url), 'utf8')
+const profiles = readFileSync(new URL('../../bridge/src/harness-profiles.js', import.meta.url), 'utf8')
+const clientSearch = readFileSync(new URL('./native-session-search.ts', import.meta.url), 'utf8')
+const apiClient = readFileSync(new URL('./api.ts', import.meta.url), 'utf8')
+
+// Asserted on its imports rather than its prose: a searcher that can only reach `node:fs` cannot
+// reach an agent, whatever a future edit adds to the body.
+assert.deepEqual(
+  [...transcriptSearch.matchAll(/^import .* from "([^"]+)"$/gm)].map((match) => match[1]).sort(),
+  ['node:fs', 'node:fs/promises', 'node:path', 'node:readline'],
+  'transcript search must reach the journal the harness wrote and nothing else - never the agent')
+assert.ok(profiles.includes('export function transcriptRoot'), 'each harness must declare where its journals live')
+// The env overrides are not decoration: on a configured machine the journals are not under $HOME.
+for (const variable of ['PI_CODING_AGENT_SESSION_DIR', 'PI_CODING_AGENT_DIR', 'CLAUDE_CONFIG_DIR', 'CODEX_HOME']) {
+  assert.ok(profiles.includes(variable), `${variable} must be honoured or a configured machine searches the wrong directory`)
+}
+// Claude Code has no `historyLoader` - its transcript comes from an ACP replay - but it writes the
+// same kind of journal, so it must be searchable on the same terms as the other three.
+assert.match(profiles, /case "claude":[\s\S]{0,200}"projects"/, 'Claude Sessions must be searchable from disk too')
+
+// A search that silently covers part of the history teaches the user that a phrase was never said.
+for (const field of ['unsearched', 'truncated', 'scanned']) {
+  assert.ok(transcriptSearch.includes(field), `the searcher must report ${field} so coverage is never implied`)
+  assert.ok(bridgeServer.includes(field), `the route must pass ${field} through`)
+  assert.ok(clientSearch.includes(field), `the client must keep ${field}`)
+  assert.ok(home.includes(`transcriptSearch.${field}`) || home.includes(field), `the rail must state ${field}`)
+}
+assert.ok(home.includes('sf.transcriptCoveragePartial'), 'a partial search must say so in the rail, not look complete')
+
+// A match has to be something that was said. Searching for a project name once matched every line of
+// every journal through `cwd`, and a base64 screenshot matched almost any short query by coincidence.
+assert.ok(transcriptSearch.includes('NOISE_KEYS'), 'machine identity must not be searchable text')
+assert.match(transcriptSearch, /const match = matchFromLine\(line, needle\)\s*\n\s*if \(!match\) continue\s*\n\s*count \+= 1/,
+  'a line that cannot produce a snippet is not a match, so it must not be counted as one either')
+assert.ok(transcriptSearch.includes('looksLikeBlob'), 'an encoded blob is not prose')
+assert.ok(transcriptSearch.includes('skipFragment'), 'reading a tail starts mid-record; that fragment is not a match')
+
+// The route is a literal in the same namespace as `/session/<id>`, whose pattern accepts any segment.
+assert.ok(bridgeServer.indexOf('/session/search') < bridgeServer.indexOf('const sessionMatch'),
+  'the literal search route must be matched before the Session-id route that would swallow it')
+assert.ok(apiClient.includes('searchTranscripts'), 'the client needs the route')
+assert.match(clientSearch, /TRANSCRIPT_SEARCH_MIN_CHARS = 3/, 'two characters is a keystroke, not a query')
+assert.match(home, /TRANSCRIPT_SEARCH_DEBOUNCE_MS/, 'one journal read per Session must not be paid for every character typed')
+// One machine asleep, or one daemon too old to know the route, must not take the whole result down.
+assert.match(clientSearch, /\.catch\(\(\) => null\)/, 'a failed agent contributes nothing rather than failing the search')
+assert.match(clientSearch, /if \(!outcome\) \{ truncated = true; continue \}/, 'and it is counted as missing coverage')
+
+// The point of the feature: a Session whose title says nothing about the query is still in the list.
+assert.ok(home.includes('return transcriptHits.has(recordKey(item))'), 'a transcript match must pass the rail filter')
+assert.ok(home.includes('hr-native-session-snippet'), 'the row must show why it is in the list')
+assert.match(workbenchCss, /\.hr-native-session-snippet \{[^}]*line-clamp: 2/s, 'the snippet is two lines, not a transcript in the rail')
+assert.match(workbenchCss, /\.hr-native-session-snippet \{[^}]*white-space: normal/s,
+  'the rail keeps one line per row; the snippet is the one thing that wraps, or it is unrecognisable')
+// Behaviour is asserted by `SEARCH_CHECK=1 npm run measure:session-first`, which types a phrase that
+// exists only inside two transcripts and requires both Sessions to appear with their snippets, the
+// coverage line to state what could not be read, and clearing the field to restore the full list.
+
+// --- The lifecycle notice sits on the message column ------------------------------------------
+// "Model changed to ... · continuing with ..." centred itself with `margin: auto` in the whole
+// transcript, but the messages occupy an 880px column that is not centred in that pane - so on a wide
+// screen the notice sat visibly right of the bubbles above and below it.
+assert.match(workbenchCss, /\.hr-native-session-observer \.tdw-conversation-event \{[^}]*margin-inline: var\(--hrsf-column-inset\) auto/s,
+  'the notice must occupy the same column as the messages')
+assert.match(workbenchCss, /\.hr-native-session-observer \.tdw-conversation-event \{[^}]*justify-content: center/s,
+  'and centre its pill inside that column')
+assert.match(workbenchCss, /\.hr-native-session-observer \.tdw-conversation-event > span::before/,
+  'the leading dot must move into the pill, or the centring makes room for it outside the border')
+assert.match(workbenchCss, /\.hr-native-session-observer \.tdw-conversation-event::before \{\s*display: none/,
+  'and the control plane\'s dot outside the pill must be withdrawn')
+// Geometry is asserted by `NOTICE_CHECK=1 npm run measure:session-first`, which requires the pill's
+// centre to be the message column's centre, the dot to be inside the pill, and the pill to stay
+// narrower than the column.

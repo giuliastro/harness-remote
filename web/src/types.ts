@@ -347,3 +347,31 @@ export type HarnessActionResult = {
   actions: HarnessAction[]
   sessionRevision?: string
 }
+
+/** One line of a transcript that matched a search, with enough around it to recognise. */
+export type TranscriptSearchMatch = {
+  role?: "user" | "assistant" | "system" | "tool"
+  snippet: string
+  at?: number
+}
+
+/**
+ * What one harness on one machine found. `unsearched` names the Sessions whose journal could not be
+ * read - a live Session the harness has not written yet, a harness whose journals live elsewhere -
+ * and `truncated` says a bound was reached. Both exist so the UI can never present an incomplete
+ * search as a complete one.
+ */
+export type TranscriptSearchResponse = {
+  query: string
+  results: {
+    sessionID: string
+    title: string
+    directory: string
+    updated: number
+    count: number
+    matches: TranscriptSearchMatch[]
+  }[]
+  scanned: number
+  unsearched: string[]
+  truncated: boolean
+}

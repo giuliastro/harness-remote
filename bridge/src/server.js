@@ -3,7 +3,8 @@ import { readdir, realpath } from "node:fs/promises"
 import path from "node:path"
 import { AcpPromptEchoFilter } from "./acp-prompt-echo-filter.js"
 import { AcpService } from "./acp-service.js"
-import { harnessProfile } from "./harness-profiles.js"
+import { harnessProfile, transcriptRoot } from "./harness-profiles.js"
+import { createTranscriptSearch } from "./session-transcript-search.js"
 import { allowedOrigin, applyCorsHeaders, matchesCredentials, writeJSON } from "./http-policy.js"
 
 const ATTACHMENT_MIME_TYPES = new Set(["image/png", "image/jpeg", "image/webp", "image/gif"])
@@ -147,6 +148,9 @@ export function createBridgeServer({ config, acp, serviceOptions, machineRegistr
     preferListedTitles: profile.preferListedTitles,
     nativeRenameCommand: profile.nativeRenameCommand
   })
+  // Reads the harness's own journals, never the agent: see `session-transcript-search.js`.
+  const transcriptSearch = serviceOptions?.transcriptSearch
+    ?? createTranscriptSearch({ root: transcriptRoot(profile.id) })
   const hiddenSessionIDs = serviceOptions?.hiddenSessionIDs
   const liveSessionActivity = new Map()
   let sseClients = 0
@@ -265,6 +269,43 @@ export function createBridgeServer({ config, acp, serviceOptions, machineRegistr
       }
       if (request.method === "GET" && (url.pathname === "/v1/sessions" || url.pathname === "/session")) {
         writeJSON(response, 200, await listVisibleSessions(directory))
+        return
+      }
+      /**
+       * Full-text search across this harness's Sessions.
+       *
+       * Ordered by the harness's own session index - most recently updated first - and bounded, so
+       * a machine with hundreds of Sessions answers in a bounded time and the response says what it
+       * could not reach rather than presenting a partial answer as a complete one. `unsearched`
+       * lists Sessions with no journal on disk; `truncated` means a bound was hit.
+       */
+      if (request.method === "GET" && url.pathname === "/session/search") {
+        const query = url.searchParams.get("q") ?? url.searchParams.get("query") ?? ""
+        if (query.trim().length < 2) {
+          writeJSON(response, 200, { query: query.trim(), results: [], scanned: 0, unsearched: [], truncated: false })
+          return
+        }
+        const candidates = await listVisibleSessionMetadata(directory)
+        const ordered = [...candidates].sort((left, right) => (right.time?.updated ?? 0) - (left.time?.updated ?? 0))
+        const outcome = await transcriptSearch.search(ordered.map((session) => session.id), query, {
+          limit: messageLimit(url) ?? undefined,
+          maxSessions: Number(url.searchParams.get("sessions")) || undefined
+        })
+        const byID = new Map(ordered.map((session) => [session.id, session]))
+        writeJSON(response, 200, {
+          query: outcome.query,
+          results: outcome.hits.map((hit) => ({
+            sessionID: hit.sessionID,
+            title: byID.get(hit.sessionID)?.title ?? "",
+            directory: byID.get(hit.sessionID)?.directory ?? "",
+            updated: byID.get(hit.sessionID)?.time?.updated ?? 0,
+            count: hit.count,
+            matches: hit.matches
+          })),
+          scanned: outcome.scanned,
+          unsearched: outcome.unsearched,
+          truncated: outcome.truncated
+        })
         return
       }
       if (request.method === "GET" && url.pathname === "/session/status") {

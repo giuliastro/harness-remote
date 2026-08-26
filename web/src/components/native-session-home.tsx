@@ -13,6 +13,12 @@ import { useTranslator } from "../useTranslator"
 import type { Translator } from "../i18n"
 import type { WorkspaceMachine } from "../workspaceMachines"
 import { ChatIcon, ChevronDownIcon, LoadingIcon, PlusIcon, SearchIcon, ServerIcon } from "../Icons"
+import {
+  EMPTY_TRANSCRIPT_SEARCH,
+  searchNativeTranscripts,
+  TRANSCRIPT_SEARCH_MIN_CHARS,
+  type TranscriptSearchOutcome
+} from "../native-session-search"
 import "../native-session-home.css"
 
 type Source = {
@@ -45,6 +51,10 @@ type CreateProject = {
   snapshot: MachineSnapshot
   project: MachineProject
 }
+/** Long enough that a query is a thought rather than a keystroke, and one journal read per Session
+ *  is not paid for every character typed. */
+const TRANSCRIPT_SEARCH_DEBOUNCE_MS = 350
+
 type SessionPresentationState = "working" | "attention" | "stopped" | "ready"
 
 /** One Session as the command palette needs it: what to show, and what to open. */
@@ -292,6 +302,48 @@ export function NativeSessionHome({ sources, onOpen, refreshToken = 0, onAttenti
     if (machineFilter && !sources.some(({ machine }) => machine.id === machineFilter)) setMachineFilter("")
   }, [machineFilter, sources])
 
+  /**
+   * What the query finds inside the transcripts, not just in the titles.
+   *
+   * The daemon reads the harness's own journals, so this costs no ACP traffic and cannot disturb a
+   * Session running in someone's terminal. It is debounced because each query is a bounded set of
+   * file reads on the machine, and it keeps the previous answer while a new one is in flight so the
+   * list does not flicker empty between keystrokes.
+   */
+  const [transcriptSearch, setTranscriptSearch] = useState<TranscriptSearchOutcome>(EMPTY_TRANSCRIPT_SEARCH)
+  const [transcriptSearching, setTranscriptSearching] = useState(false)
+  useEffect(() => {
+    const trimmed = query.trim()
+    if (trimmed.length < TRANSCRIPT_SEARCH_MIN_CHARS) {
+      setTranscriptSearch(EMPTY_TRANSCRIPT_SEARCH)
+      setTranscriptSearching(false)
+      return
+    }
+    const targets = sources.flatMap(({ machine, snapshot }) => snapshot
+      ? [{ machineID: machine.id, config: machine.config, agents: snapshot.agents }]
+      : [])
+    if (!targets.length) {
+      setTranscriptSearch({ ...EMPTY_TRANSCRIPT_SEARCH, query: trimmed })
+      return
+    }
+    let cancelled = false
+    setTranscriptSearching(true)
+    const timer = window.setTimeout(() => {
+      void searchNativeTranscripts(targets, trimmed)
+        .then((outcome) => { if (!cancelled) setTranscriptSearch(outcome) })
+        // A daemon too old to know the route, or a machine that went away mid-query: the title
+        // filter still works, and claiming zero transcript matches would be a lie about coverage.
+        .catch(() => { if (!cancelled) setTranscriptSearch({ ...EMPTY_TRANSCRIPT_SEARCH, query: trimmed, truncated: true }) })
+        .finally(() => { if (!cancelled) setTranscriptSearching(false) })
+    }, TRANSCRIPT_SEARCH_DEBOUNCE_MS)
+    return () => { cancelled = true; window.clearTimeout(timer) }
+  }, [query, sources])
+
+  const transcriptHits = useMemo(
+    () => new Map(transcriptSearch.hits.map((hit) => [hit.key, hit])),
+    [transcriptSearch]
+  )
+
   useEffect(() => {
     if (!sources.length) {
       setRecords([])
@@ -456,17 +508,20 @@ export function NativeSessionHome({ sources, onOpen, refreshToken = 0, onAttenti
         if (filter === "attention" && presentation.state !== "attention") return false
         if (!normalizedQuery) return true
         const session = item.record.session
-        return [
+        if ([
           session.title,
           item.record.agentLabel,
           group.name,
           group.directory,
           group.machine.name
-        ].some((value) => value?.toLowerCase().includes(normalizedQuery))
+        ].some((value) => value?.toLowerCase().includes(normalizedQuery))) return true
+        // The point of A4: a Session whose title says nothing about the query is still the Session
+        // the user is looking for when the words are in its transcript.
+        return transcriptHits.has(recordKey(item))
       })
       return sessions.length ? [{ ...group, sessions }] : []
     })
-  }, [agentFilter, filter, groups, machineFilter, presentationForItem, query])
+  }, [agentFilter, filter, groups, machineFilter, presentationForItem, query, transcriptHits])
   const machineGroups = useMemo(() => sources
     .filter(({ machine }) => !machineFilter || machine.id === machineFilter)
     .flatMap(({ machine, snapshot, state, error }) => {
@@ -621,6 +676,20 @@ export function NativeSessionHome({ sources, onOpen, refreshToken = 0, onAttenti
               {agentChoices.map((choice) => <option value={choice.id} key={choice.id}>{choice.label} · {choice.count}</option>)}
             </select>
           </div>
+          {/* What the query actually reached. A search that silently covers part of the history
+              teaches the user that a phrase was never said, which is the one wrong answer here. */}
+          {query.trim().length >= TRANSCRIPT_SEARCH_MIN_CHARS ? (
+            <p className="hr-native-search-coverage" role="status">
+              {transcriptSearching ? <LoadingIcon size={12} /> : null}
+              <span>
+                {transcriptSearching
+                  ? t("sf.searchingTranscripts")
+                  : transcriptSearch.truncated || transcriptSearch.unsearched
+                    ? t("sf.transcriptCoveragePartial", { count: transcriptSearch.scanned, skipped: transcriptSearch.unsearched })
+                    : t("sf.transcriptCoverage", { count: transcriptSearch.scanned, matches: transcriptSearch.hits.length })}
+              </span>
+            </p>
+          ) : null}
         </div>
       ) : null}
 
@@ -758,6 +827,7 @@ export function NativeSessionHome({ sources, onOpen, refreshToken = 0, onAttenti
                               const icon = harnessIconUrl(item.record.backend)
                               const targetKey = recordKey(item)
                               const selected = targetKey === selectedKey
+                              const transcriptHit = transcriptHits.get(targetKey)
                               return (
                                 <button
                                   type="button"
@@ -792,7 +862,17 @@ export function NativeSessionHome({ sources, onOpen, refreshToken = 0, onAttenti
                                           <em>{summary?.files || 0} file{summary?.files === 1 ? "" : "s"}</em>
                                         </span>
                                       ) : null}
+                                      {transcriptHit ? (
+                                        <span className="hr-native-session-transcript-count">
+                                          {t("sf.transcriptMatchCount", { count: transcriptHit.count })}
+                                        </span>
+                                      ) : null}
                                     </small>
+                                    {/* Why this row is in the list at all when its title says nothing
+                                        about the query: the words are in the conversation. */}
+                                    {transcriptHit?.matches[0]?.snippet ? (
+                                      <q className="hr-native-session-snippet">{transcriptHit.matches[0].snippet}</q>
+                                    ) : null}
                                   </span>
                                   <span className="hr-native-session-meta">
                                     <span className="hr-native-session-status" data-state={status.state}>{status.label}</span>
