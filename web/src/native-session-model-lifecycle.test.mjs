@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
 
 /*
  * Regression coverage for the Session-first model-change failure class reported in #287.
@@ -184,5 +185,17 @@ assert.deepEqual(
   { providerID: 'anthropic', modelID: 'claude-sonnet-4-6', variant: 'high' },
   'a flat OpenCode assistant envelope must inherit the matching immediately preceding user variant'
 )
+
+// --- 8. OMP continuation must establish a new logical Run before writer activity -----------------
+const adapter = readFileSync(new URL('./native-session-v3-adapter.ts', import.meta.url), 'utf8')
+assert.match(adapter, /\["opencode", "codex", "omp"\]\.includes\(entry\.target\.backend\)/, 'OMP page.model must participate in live projection reconciliation')
+assert.match(adapter, /entry\.target\.backend === "omp" && entry\.forcedStatus === "running"/, 'a lagging OMP journal must not overwrite the selected model while the new turn is live')
+assert.match(adapter, /const prepared = beginProjectionRun\(entry, prompt, model \?\? null\)/, 'continuation must create the logical user-turn boundary before network mutation')
+const preparedIndex = adapter.indexOf('const prepared = beginProjectionRun(entry, prompt, model ?? null)')
+const writerIndex = adapter.indexOf('await ensureWriter(entry)', preparedIndex)
+const sendIndex = adapter.indexOf('await sendNativeSessionPrompt(entry.target, prompt, model)', preparedIndex)
+assert.ok(preparedIndex >= 0 && writerIndex > preparedIndex && sendIndex > writerIndex, 'the new Run boundary must exist before OMP claim or prompt can emit session.updated')
+assert.match(adapter, /const effectiveModel = model \?\? entry\.currentModel/, 'a continuation with no explicit picker change must retain the recovered native model')
+assert.match(adapter, /if \(run && !run\.model && entry\.currentModel\) run\.model = entry\.currentModel/, 'late OMP model enrichment must fill the current Run instead of leaving Harness default')
 
 console.log('native-session model lifecycle regressions: OK')
