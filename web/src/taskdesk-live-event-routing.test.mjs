@@ -47,16 +47,18 @@ test("OpenCode completion lifecycle reconciles status and the selected transcrip
   assert.match(lifecycle, /event\.type === "session\.idle"/)
   assert.match(lifecycle, /throttle\("index", [^,]+, onIndex\)/)
   assert.match(lifecycle, /selectedEvent[\s\S]*?throttle\("message", [^,]+, onMessage\)/)
+  assert.doesNotMatch(lifecycle, /backend === "omp"/)
   assert.doesNotMatch(lifecycle, /send|prompt|continueWorkThread/)
 })
 
-test("ACP session.updated lifecycle also reconciles the selected transcript tail", () => {
+test("ACP session.updated keeps baseline detail behavior except for OMP tail convergence", () => {
   const refresh = readFileSync(new URL("./taskdesk-session-live-refresh.ts", import.meta.url), "utf8")
   const lifecycle = refresh.match(/if \(event\.type === "session\.updated"\) \{[\s\S]*?\n      \}/)?.[0] || ""
 
   assert.match(lifecycle, /throttle\("index", [^,]+, onIndex\)/)
-  assert.match(lifecycle, /selectedEvent[\s\S]*?throttle\("message", [^,]+, onMessage\)/)
-  assert.match(lifecycle, /settleAfterLifecycle\(\)/)
+  assert.match(lifecycle, /selectedEvent[\s\S]*?throttle\("detail", [^,]+, onDetail\)/)
+  assert.match(lifecycle, /if \(target\.config\.backend === "omp"\) \{[\s\S]*?throttle\("message", [^,]+, onMessage\)[\s\S]*?settleAfterLifecycle\(\)/)
+  assert.doesNotMatch(lifecycle, /backend === "pi"|backend === "claude"|backend === "codex"/)
   assert.doesNotMatch(lifecycle, /send|prompt|continueWorkThread/)
 })
 
