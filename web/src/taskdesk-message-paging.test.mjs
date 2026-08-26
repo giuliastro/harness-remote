@@ -59,34 +59,18 @@ test("newest-page reconcile never cuts a streamed assistant reply back to a stal
   assert.equal(caughtUp[0], laterJournal, "a journal that catches up and extends the answer remains authoritative")
 })
 
-test("live-to-journal id swaps cannot cut the final reply or duplicate it", () => {
+test("shared paging does not invent identity across different native message ids", () => {
   const prompt = userMessage("user-1", "Explain the final state")
-  const complete = message("live-reply", "This is the complete answer from the live ACP stream.")
+  const liveReply = message("live-reply", "This is the complete answer")
   const journalPrompt = userMessage("user-1", "Explain the final state")
-  const staleJournal = message("journal-reply", "This is the complete answer")
+  const journalReply = message("journal-reply", "This is the complete answer")
 
-  const merged = mergeLatestMessagePage([prompt, complete], [journalPrompt, staleJournal])
-  assert.deepEqual(merged.map((entry) => entry.info.id), ["user-1", "live-reply"])
-  assert.equal(merged[1], complete, "a lagging journal with a new transport id must not replace or duplicate the live answer")
-
-  const caughtUpJournal = message("journal-reply", "This is the complete answer from the live ACP stream. Persisted.")
-  const caughtUp = mergeLatestMessagePage(merged, [journalPrompt, caughtUpJournal])
-  assert.deepEqual(caughtUp.map((entry) => entry.info.id), ["user-1", "live-reply"])
-  assert.equal(caughtUp[1].parts[0].text, "This is the complete answer from the live ACP stream. Persisted.")
-})
-
-test("cross-id stabilization is limited to the same final user turn", () => {
-  const current = [
-    userMessage("user-1", "First prompt"),
-    message("live-reply", "Same looking answer")
-  ]
-  const differentTurn = [
-    userMessage("user-2", "Different prompt"),
-    message("journal-reply", "Same looking answer")
-  ]
-
-  const merged = mergeLatestMessagePage(current, differentTurn)
-  assert.deepEqual(merged.map((entry) => entry.info.id), ["user-1", "live-reply", "user-2", "journal-reply"])
+  const merged = mergeLatestMessagePage([prompt, liveReply], [journalPrompt, journalReply])
+  assert.deepEqual(
+    merged.map((entry) => entry.info.id),
+    ["user-1", "live-reply", "journal-reply"],
+    "cross-id repair belongs to the harness-specific projection, not the shared page merger"
+  )
 })
 
 test("a divergent native rewrite is not mistaken for a stale prefix", () => {
