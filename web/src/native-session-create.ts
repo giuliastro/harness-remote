@@ -9,8 +9,9 @@ import type { MachineAgentHost, ServerConfig } from "./types"
 
 /**
  * Native create uses the same mature /session route for every harness transport that can own a
- * writable Session. ACP's implementation is deliberately generic (`session/new`) and OpenCode owns
- * the equivalent HTTP lifecycle, so the UI must not hide OMP, Claude or Codex behind an old rollout
+ * writable Session. This creates a real harness-owned native Session, never a parallel Conversation
+ * object. ACP's implementation is deliberately generic (`session/new`) and OpenCode owns the
+ * equivalent HTTP lifecycle, so the UI must not hide OMP, Claude or Codex behind an old rollout
  * gate that was only meant for the first Session-first validation pass.
  */
 export function canCreateNativeSession(agent: MachineAgentHost): boolean {
