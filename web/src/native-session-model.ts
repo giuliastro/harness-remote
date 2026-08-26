@@ -105,9 +105,9 @@ async function currentSessionModel(target: NativeSessionSurfaceTarget): Promise<
  * selected on their exact native JSONL branch and Codex reports it from the newest rollout
  * turn_context. Claude has no journal authority of its own here, but its transcript already requires
  * ACP session/load; after that load the adapter's current model config option is available through
- * the normal models endpoint. OMP uses the same session-scoped ACP fallback when an ambiguous tree
- * had to be replayed before the journal branch could be identified, so a real native model never
- * degrades to Harness default merely because the first JSONL page could not prove the branch yet.
+ * the normal models endpoint. OMP deliberately does not use that fallback: its selected model belongs
+ * to the JSONL branch/page header. Loading an existing OMP Session merely to populate the picker can
+ * replay a huge transcript on the single ACP adapter and block the independent machine model catalog.
  */
 export async function resolveNativeSessionTargetModel(
   target: NativeSessionSurfaceTarget
@@ -123,7 +123,7 @@ export async function resolveNativeSessionTargetModel(
       false
     )
     let model = page.model ?? (target.backend === "opencode" ? lastNativeMessageModel(page.messages) : null)
-    if (!model && (target.backend === "claude" || target.backend === "omp")) {
+    if (!model && target.backend === "claude") {
       model = await currentSessionModel(target)
     }
     return model ? { ...target, model } : target
