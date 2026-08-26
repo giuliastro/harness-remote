@@ -186,16 +186,20 @@ assert.deepEqual(
   'a flat OpenCode assistant envelope must inherit the matching immediately preceding user variant'
 )
 
-// --- 8. OMP continuation must establish a new logical Run before writer activity -----------------
+// --- 8. OMP projection fixes must not change other harness continuation semantics -----------------
 const adapter = readFileSync(new URL('./native-session-v3-adapter.ts', import.meta.url), 'utf8')
-assert.match(adapter, /\["opencode", "codex", "omp"\]\.includes\(entry\.target\.backend\)/, 'OMP page.model must participate in live projection reconciliation')
-assert.match(adapter, /entry\.target\.backend === "omp" && entry\.forcedStatus === "running"/, 'a lagging OMP journal must not overwrite the selected model while the new turn is live')
-assert.match(adapter, /const prepared = beginProjectionRun\(entry, prompt, model \?\? null\)/, 'continuation must create the logical user-turn boundary before network mutation')
-const preparedIndex = adapter.indexOf('const prepared = beginProjectionRun(entry, prompt, model ?? null)')
+assert.match(adapter, /if \(entry\.target\.backend === "omp"\) \{[\s\S]*?const model = page\.model \?\? null/, 'OMP page.model must participate in its own projection reconciliation branch')
+assert.match(adapter, /entry\.forcedStatus === "running" && entry\.currentModel && !sameModel\(entry\.currentModel, model\)/, 'a lagging OMP journal must not overwrite the selected model while the new turn is live')
+assert.match(adapter, /if \(entry\.target\.backend !== "omp"\) \{[\s\S]*?await ensureWriter\(entry\)[\s\S]*?sendNativeSessionPrompt\(entry\.target, prompt, model\)[\s\S]*?appendAcceptedRun\(entry, prompt, model \?\? null/, 'non-OMP harnesses must retain the validated post-accept continuation path')
+assert.match(adapter, /page = stabilizeOmpTailPage\(entry, page, before\)/, 'OMP live-to-journal identity repair must stay inside the OMP projection')
+assert.match(adapter, /if \(entry\.target\.backend !== "omp" \|\| before\) return page/, 'OMP tail stabilization must not run for another harness')
+
+const ompGateIndex = adapter.indexOf('if (entry.target.backend !== "omp")')
+const preparedIndex = adapter.indexOf('const prepared = beginProjectionRun(entry, prompt, model ?? null)', ompGateIndex)
 const writerIndex = adapter.indexOf('await ensureWriter(entry)', preparedIndex)
 const sendIndex = adapter.indexOf('await sendNativeSessionPrompt(entry.target, prompt, model)', preparedIndex)
-assert.ok(preparedIndex >= 0 && writerIndex > preparedIndex && sendIndex > writerIndex, 'the new Run boundary must exist before OMP claim or prompt can emit session.updated')
-assert.match(adapter, /const effectiveModel = model \?\? entry\.currentModel/, 'a continuation with no explicit picker change must retain the recovered native model')
+assert.ok(ompGateIndex >= 0 && preparedIndex > ompGateIndex && writerIndex > preparedIndex && sendIndex > writerIndex, 'only OMP creates the logical Run boundary before claim/prompt can emit session.updated')
+assert.match(adapter, /const effectiveModel = model \?\? entry\.currentModel/, 'an OMP continuation with no explicit picker change must retain the recovered native model')
 assert.match(adapter, /if \(run && !run\.model && entry\.currentModel\) run\.model = entry\.currentModel/, 'late OMP model enrichment must fill the current Run instead of leaving Harness default')
 
 console.log('native-session model lifecycle regressions: OK')
