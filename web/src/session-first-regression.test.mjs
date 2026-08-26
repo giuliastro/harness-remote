@@ -261,3 +261,15 @@ assert.equal(workbenchCss.includes('rgba(0, 0, 0'), false, 'shadows and scrims m
 // D4: with the chat full-screen on a phone the rail cannot show that a Session needs input.
 assert.ok(standalone.includes('hr-mobile-nav-badge'), 'the mobile Sessions tab must carry the attention count')
 assert.ok(home.includes('onAttentionCountChange'), 'the rail must report the count it already computes')
+
+// --- E2: an unreachable machine keeps its Sessions, marked as a cache -------------------------
+// The group used to empty to "This machine is unavailable" while the last successful discovery was
+// still in memory, so on an intermittent network the list vanished and returned by itself.
+assert.ok(home.includes('lastKnownRef'), 'the rail must remember the last successful read per machine')
+assert.ok(home.includes('cached: true'), 'Sessions served from that memory must be marked as a cache')
+assert.ok(home.includes('sf.showingCached'), 'an offline machine must say its list is a cache, not live truth')
+assert.ok(workbenchCss.includes('.hr-native-session-row.cached'), 'a cached row must not read as live state')
+// A rename or delete cannot land on an unreachable machine; offering it produces a network error
+// where an explanation belongs.
+assert.ok(sessionActions.includes('machineOnline'), 'mutations must be withdrawn while the machine is unreachable')
+assert.ok(standalone.includes('machineOnline={selectedRuntime?.state === "online"}'), 'the shell must pass the machine reachability through')

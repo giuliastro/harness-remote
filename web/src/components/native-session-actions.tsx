@@ -16,11 +16,14 @@ import { useTranslator } from "../useTranslator"
  */
 type Props = {
   target: NativeSessionSurfaceTarget
+  /** False while the owning machine is unreachable: a rename or delete cannot land, and offering
+   *  it produces a network error instead of an explanation. */
+  machineOnline?: boolean
   onRenamed: (session: Session, title: string) => void
   onDeleted: (key: string) => void
 }
 
-export function NativeSessionActions({ target, onRenamed, onDeleted }: Props) {
+export function NativeSessionActions({ target, machineOnline = true, onRenamed, onDeleted }: Props) {
   const t = useTranslator()
   const [mode, setMode] = useState<"rename" | "delete" | null>(null)
   const [title, setTitle] = useState("")
@@ -48,6 +51,7 @@ export function NativeSessionActions({ target, onRenamed, onDeleted }: Props) {
   useDialogDismiss(renameRef, close, { enabled: mode === "rename" })
   useDialogDismiss(deleteRef, close, { enabled: mode === "delete" })
 
+  if (!machineOnline) return null
   if (!target.renameSupported && !target.deleteSupported) return null
 
   function beginRename() {

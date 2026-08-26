@@ -519,7 +519,7 @@ function NativeSessionsWorkspace({
                       {Number(selected.cost) > 0 ? <span title={t("sf.reportedCost")}>${Number(selected.cost).toFixed(2)}</span> : null}
                     </div>
                   ) : null}
-                  <NativeSessionActions target={selected} onRenamed={handleSessionRenamed} onDeleted={handleSessionDeleted} />
+                  <NativeSessionActions target={selected} machineOnline={selectedRuntime?.state === "online"} onRenamed={handleSessionRenamed} onDeleted={handleSessionDeleted} />
                   <NativeSessionHandoffControl source={selected} agents={selectedRuntime?.snapshot?.agents || []} onOpen={openSession} />
                   <code title={selected.sessionID}>{selected.sessionID}</code>
                 </div>

@@ -49,6 +49,7 @@ const json = (res, code, body) => {
   res.end(raw)
 }
 
+let offline = false
 let handoffCalls = 0
 const handedOff = []
 const promptBodies = []
@@ -56,6 +57,7 @@ const daemon = http.createServer((req, res) => {
   if (req.method === "OPTIONS") { res.writeHead(204, cors); res.end(); return }
   const url = new URL(req.url || "/", `http://127.0.0.1:${DAEMON_PORT}`)
   const p = url.pathname
+  if (p === "/v1/machine" && offline) return json(res, 503, { error: "offline" })
   if (p === "/v1/machine") return json(res, 200, {
     machine: { id: "m1", name: "Giulio-S7", createdAt: new Date().toISOString() },
     agents: [{ id: "claude", label: "Claude Code", backend: "claude", transport: "acp", managed: true, state: "available",
@@ -124,6 +126,23 @@ const run = async () => {
   await page.locator(".hr-native-session-row").first().click()
   await page.locator(".hr-native-session-observer .uw-markdown p").first().waitFor({ timeout: 20_000 })
   await page.waitForTimeout(1200)
+
+  if (process.env.OFFLINE_CHECK) {
+    const rows = () => page.locator(".hr-native-session-row").count()
+    const before = await rows()
+    // Take the machine off the network the way a home Wi-Fi drop does: the daemon stops answering.
+    offline = true
+    await page.waitForTimeout(13_000)
+    console.log(JSON.stringify({
+      rowsWhileOnline: before,
+      rowsWhileOffline: await rows(),
+      cachedRows: await page.locator(".hr-native-session-row.cached").count(),
+      notice: await page.locator(".hr-native-machine-cached span").first().textContent().catch(() => null),
+      renameOffered: await page.locator(".hr-session-actions .tdw-icon-button").count()
+    }, null, 2))
+    await page.screenshot({ path: OUT })
+    return
+  }
 
   if (process.env.BADGE_CHECK) {
     await page.waitForTimeout(600)

@@ -408,6 +408,35 @@
 .hr-native-machine-group.collapsed .hr-native-machine-heading {
   margin-bottom: 0;
 }
+/* A cached list must read as a cache. Dimming the rows says "not live" without hiding anything,
+   and the notice above them says why and what is blocked. */
+.hr-native-machine-cached {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin: 0 3px 6px;
+  padding: 7px 9px;
+  border: 1px solid var(--td3-border-soft);
+  border-radius: 8px;
+  color: var(--td3-muted);
+  background: var(--td3-sunken-soft);
+  font-size: 10.5px;
+  line-height: 1.4;
+}
+
+.hr-native-machine-cached svg {
+  flex: none;
+}
+
+.hr-native-session-row.cached {
+  opacity: .62;
+}
+
+.hr-native-session-row.cached:hover,
+.hr-native-session-row.cached.selected {
+  opacity: 1;
+}
+
 .hr-native-machine-empty {
   min-height: 48px;
   display: flex;

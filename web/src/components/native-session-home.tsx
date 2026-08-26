@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { listMachineProjects, type MachineProject } from "../machineClient"
 import { canCreateNativeSession, createNativeSessionTarget } from "../native-session-create"
 import {
@@ -26,6 +26,8 @@ type RecordWithMachine = {
   machine: WorkspaceMachine
   record: NativeSessionRecord
   project?: MachineProject
+  /** Served from the last successful discovery because the machine is unreachable right now. */
+  cached?: boolean
 }
 
 type ProjectGroup = {
@@ -237,6 +239,11 @@ export function NativeSessionHome({ sources, onOpen, refreshToken = 0, onAttenti
   const t = useTranslator()
   const [records, setRecords] = useState<RecordWithMachine[]>([])
   const [projectsByMachine, setProjectsByMachine] = useState<Record<string, MachineProject[]>>({})
+  // A machine that drops off the network keeps its configuration, and until now lost its Sessions:
+  // the group emptied to "This machine is unavailable" even though the last successful discovery
+  // was still in memory. On an intermittent home network the list vanished and came back by itself.
+  // The cache is read-only - `cached` rows refuse mutations until the machine answers again.
+  const lastKnownRef = useRef<Record<string, { records: RecordWithMachine[]; projects: MachineProject[] }>>({})
   const [loading, setLoading] = useState(false)
   const [loaded, setLoaded] = useState(false)
   const [revision, setRevision] = useState(0)
@@ -284,7 +291,15 @@ export function NativeSessionHome({ sources, onOpen, refreshToken = 0, onAttenti
     setLoading(true)
     setDiscoveryError(null)
     void Promise.all(sources.map(async ({ machine, snapshot }) => {
-      if (!snapshot) return { machine, projects: [] as MachineProject[], records: [] as RecordWithMachine[] }
+      if (!snapshot) {
+        const remembered = lastKnownRef.current[machine.id]
+        if (!remembered) return { machine, projects: [] as MachineProject[], records: [] as RecordWithMachine[] }
+        return {
+          machine,
+          projects: remembered.projects,
+          records: remembered.records.map((item: RecordWithMachine) => ({ ...item, machine, cached: true }))
+        }
+      }
       const [sessions, projects] = await Promise.all([
         discoverMachineNativeSessions(machine.config, snapshot.agents),
         listMachineProjects(machine.config).catch(() => [] as MachineProject[])
@@ -300,6 +315,10 @@ export function NativeSessionHome({ sources, onOpen, refreshToken = 0, onAttenti
       }
     })).then((results) => {
       if (cancelled) return
+      for (const result of results) {
+        const online = sources.find(({ machine }) => machine.id === result.machine.id)?.snapshot
+        if (online) lastKnownRef.current[result.machine.id] = { records: result.records, projects: result.projects }
+      }
       setProjectsByMachine(Object.fromEntries(results.map((result) => [result.machine.id, result.projects])))
       // This is a fresh status read from every harness, so it supersedes any presentation bridge
       // remembered only to span the gap between a detail event and this discovery cycle.
@@ -655,6 +674,12 @@ export function NativeSessionHome({ sources, onOpen, refreshToken = 0, onAttenti
               </button>
               {machineCollapsed ? null : (
               <>
+                {state === "offline" && projects.length > 0 ? (
+                  <div className="hr-native-machine-cached" role="status">
+                    <ServerIcon size={13} />
+                    <span>{t("sf.showingCached")}</span>
+                  </div>
+                ) : null}
                 {projects.length === 0 ? (
                   <div className="hr-native-machine-empty">
                     {state === "loading" ? <LoadingIcon size={15} /> : <ServerIcon size={15} />}
@@ -706,7 +731,7 @@ export function NativeSessionHome({ sources, onOpen, refreshToken = 0, onAttenti
                               return (
                                 <button
                                   type="button"
-                                  className={`hr-native-session-row ${status.state}${selected ? " selected" : ""}${depth ? " child" : ""}`}
+                                  className={`hr-native-session-row ${status.state}${selected ? " selected" : ""}${depth ? " child" : ""}${item.cached ? " cached" : ""}`}
                                   data-depth={Math.min(depth, 3)}
                                   key={targetKey}
                                   onClick={() => open(item)}
