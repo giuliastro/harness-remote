@@ -57,7 +57,7 @@ function tailPair(messages: MessageEnvelope[]): { user: MessageEnvelope; assista
   }
   if (userIndex < 0) return null
   const assistants = messages.slice(userIndex + 1).filter((message) => message.info.role === "assistant")
-  const assistant = assistants.at(-1)
+  const assistant = assistants.length ? assistants[assistants.length - 1] : undefined
   return assistant ? { user: messages[userIndex], assistant } : null
 }
 
