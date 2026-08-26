@@ -22,7 +22,7 @@ const DEFAULT_LIFECYCLE_SETTLE_DELAYS_MS = [900] as const
 // OMP can emit its final session.updated before the JSONL writer has made the last assistant words
 // durable. One follow-up read was therefore occasionally still too early, leaving the mounted reply
 // truncated until navigation forced a fresh load. Keep a short, finite convergence window for OMP
-// only; all other harnesses retain the single existing settle read.
+// only; all other harnesses retain their existing lifecycle behavior.
 const OMP_LIFECYCLE_SETTLE_DELAYS_MS = [350, 900, 1_800, 3_200] as const
 
 function isAttentionEvent(type: string): boolean {
@@ -79,13 +79,10 @@ export function startTaskDeskSessionLiveRefresh({
   }
 
   /**
-   * A harness may publish its lifecycle edge before the final assistant envelope is durable through
-   * `/session/:id/message`. Keep bounded, coalesced settle reads after the latest lifecycle edge so
-   * the already-mounted Session gets another authoritative chance without permanent fast polling.
-   *
-   * OMP gets a few additional reads because its JSONL durability can lag the ACP lifecycle edge by
-   * more than the original 900ms. The selected Session identity is captured so leaving that Session
-   * cancels the old convergence chain instead of refreshing whichever Session was opened next.
+   * OpenCode already used one bounded settle read after its lifecycle edge. OMP needs a few bounded
+   * reads because its JSONL durability can lag session.updated longer than 900ms. Capture the selected
+   * Session identity so leaving it cancels the old convergence chain rather than refreshing the next
+   * Session the user opens.
    */
   const settleAfterLifecycle = () => {
     const selectedAtSchedule = getSelected()
@@ -174,9 +171,8 @@ export function startTaskDeskSessionLiveRefresh({
       }
 
       // OpenCode's authoritative turn lifecycle is session.status. The deprecated session.idle event
-      // is still accepted because older OpenCode releases emit it. The immediate tail read covers the
-      // normal case; the bounded settle read covers real servers where transcript durability lags the
-      // lifecycle edge and no convenient final message.updated is emitted.
+      // is still accepted because older OpenCode releases emit it. Preserve its existing immediate
+      // read + one 900ms settle behavior exactly.
       if (event.type === "session.status" || event.type === "session.idle") {
         throttle("index", 120, onIndex)
         if (selectedEvent) {
@@ -198,15 +194,16 @@ export function startTaskDeskSessionLiveRefresh({
         return
       }
 
-      // ACP-backed harnesses use session.updated for both the busy edge and the final idle edge. The
-      // final edge may be the only signal after the last streamed chunk, so treating it as index-only
-      // can leave the mounted transcript on a stale prefix until navigation forces a fresh read.
       if (event.type === "session.updated") {
         throttle("index", 450, onIndex)
         if (selectedEvent) {
-          throttle("message", 80, onMessage)
+          // Baseline ACP behavior is detail-only. OMP alone needs transcript convergence because its
+          // journal may trail the final ACP lifecycle edge; do not widen that behavior to PI/Claude.
+          if (target.config.backend === "omp") {
+            throttle("message", 80, onMessage)
+            settleAfterLifecycle()
+          }
           throttle("detail", 450, onDetail)
-          settleAfterLifecycle()
         }
         return
       }
