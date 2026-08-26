@@ -18,6 +18,12 @@ const COMMON_CAPABILITIES = {
   sessionDelete: false
 }
 
+const OMP_HISTORY_LOADER = createOmpHistoryLoader()
+// OMP's JSONL file is a tree, not a linear transcript. The newest terminal leaf can belong to an
+// abandoned sibling branch, so paging must ask the OMP extension for the authoritative active leaf
+// before choosing a branch. AcpService falls back to its full load path if that state is unavailable.
+OMP_HISTORY_LOADER.pageRequiresActiveLeaf = true
+
 export const HARNESS_PROFILES = {
   omp: {
     id: "omp",
@@ -25,7 +31,7 @@ export const HARNESS_PROFILES = {
     command: "omp",
     args: ["acp"],
     permissionMode: "allow",
-    historyLoader: createOmpHistoryLoader(),
+    historyLoader: OMP_HISTORY_LOADER,
     // OMP exposes thinking as a real ACP config option. We probe only ids the running adapter
     // actually advertises; this list is a routing hint, never a source of invented variants.
     modelVariantConfigIDs: ["thinking"],
@@ -116,7 +122,6 @@ export const HARNESS_PROFILES = {
     // explicitly and invoke its published binary instead of relying on npx package-spec inference.
     args: ["--yes", "--package=@agentclientprotocol/codex-acp@1.1.14", "codex-acp"],
     adapterCommand: "codex-acp",
-    permissionMode: "allow",
     // The adapter offers `api-key` before `chat-gpt`; the former demands CODEX_API_KEY or
     // OPENAI_API_KEY, while a `codex login` leaves ChatGPT credentials the `chat-gpt` method
     // reads from disk. Prefer the login, exactly like the generic default already avoids
