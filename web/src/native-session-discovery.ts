@@ -97,47 +97,6 @@ function supportedBackend(value: string, fallback: BackendKind): BackendKind {
     : fallback
 }
 
-/** Every status value a harness adapter reports while a turn is still running. */
-const WORKING_STATUS_TYPES = new Set([
-  "busy",
-  "running",
-  "working",
-  "waiting",
-  "retry",
-  "in_progress",
-  "in-progress"
-])
-
-/**
- * How long a reported "working" status is honoured after the Session last showed activity.
- *
- * A live turn advances the Session's own activity time on every chunk, plan update and message, so
- * a Session that claims to be working while its newest activity is this old is reporting a flag
- * that outlived its turn, not a harness that is still thinking. Sessions the user had long since
- * stopped or finished stayed painted as Working until the daemon was restarted.
- *
- * The window is far longer than any silent stretch inside a real turn (a long tool call still
- * streams its own updates, and the ACP prompt watchdog gives up after 300s), so this can only ever
- * downgrade a status that is genuinely stale.
- */
-export const WORKING_STATUS_GRACE_MS = 600_000
-
-/**
- * Presentation guard, not a second source of truth: any status the harness reports is passed
- * through untouched except a working claim that its own Session activity contradicts.
- */
-export function corroboratedSessionStatus(
-  session: Session,
-  status: SessionStatus | undefined,
-  now: number = Date.now()
-): SessionStatus | undefined {
-  if (!status) return status
-  if (!WORKING_STATUS_TYPES.has(status.type?.trim().toLowerCase() || "")) return status
-  const activityAt = session.time?.updated || session.time?.created || 0
-  if (!activityAt || now - activityAt < WORKING_STATUS_GRACE_MS) return status
-  return { ...status, type: "idle" }
-}
-
 function supportedStopCapability(value: string | undefined): boolean {
   return value === "owned-session-native-cancel" || value === "native-abort"
 }
@@ -251,7 +210,7 @@ export async function discoverAgentNativeSessions(
     renameSupported: agent.capabilities?.sessionRename === true,
     deleteSupported: agent.capabilities?.sessionDelete === true,
     session,
-    status: corroboratedSessionStatus(session, statuses[session.id])
+    status: statuses[session.id]
   }))
 }
 
