@@ -81,9 +81,6 @@ test("native Session metadata actions belong to the open Session, not the naviga
   assert.match(standalone, /<NativeSessionActions target=\{selected\}/)
   assert.match(actions, /api\.deleteSession/)
   assert.match(actions, /target\.deleteSupported/)
-  // Rename edits the heading the header already shows, so it lives on that heading rather than in a
-  // panel that covers it. It still writes through the owning harness, and still only when the
-  // harness reports that it can.
   assert.match(standalone, /<NativeSessionTitle target=\{selected\}/)
   assert.match(rename, /api\.renameSession/)
   assert.match(rename, /target\.renameSupported/)
@@ -95,7 +92,9 @@ test("native Session metadata actions belong to the open Session, not the naviga
 test("new Session creates a real harness-owned Session in the selected Project", () => {
   const create = read("./native-session-create.ts")
 
-  assert.match(create, /api\.createSession\(config, title\?\.trim\(\) \|\| undefined, undefined, directory\)/)
+  assert.match(create, /const normalizedTitle = title\?\.trim\(\) \|\| undefined/)
+  assert.match(create, /api\.createSession\(config, normalizedTitle, undefined, directory\)/)
+  assert.match(create, /config\.backend === "omp"[\s\S]*api\.renameSession\(config, session\.id, normalizedTitle, directory\)/)
   assert.match(create, /writerOwned: true/)
   assert.doesNotMatch(create, /createTask/)
   assert.doesNotMatch(create, /createCheckpoint/)
