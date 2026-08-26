@@ -71,7 +71,7 @@ assert.match(workbenchCss, /prefers-reduced-motion: reduce\)\s*\{[^}]*hr-native-
 // re-show the same turn whenever Run matching and replay/reconciliation were temporarily out of sync.
 assert.equal(observer.includes('nativeSessionTruth'), false, 'native Session observer must not enable a parallel unmatched-turn projection')
 assert.equal(timeline.includes('unmatchedNativeTurnEntries'), false, 'timeline must keep one canonical Run-to-native projection')
-assert.ok(discovery.includes('corroboratedSessionStatus'), 'a reported working status must be corroborated by real Session activity')
+assert.equal(discovery.includes('corroboratedSessionStatus'), false, 'Session discovery must preserve the harness-reported status during recovery')
 assert.ok(discovery.includes('nativeSessionDisplayTitle'), 'a Session titled with a handoff packet must be shown by its instruction')
 
 assert.ok(prompt.includes('clientRequestId'), 'native prompts must retain durable mutation identity')
