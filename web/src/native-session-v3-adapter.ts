@@ -2,7 +2,7 @@ import { api, type MessagePage } from "./api"
 import { probeNativeSessionContinuation } from "./native-session-continuation"
 import { lastNativeMessageModel } from "./native-session-model"
 import type { NativeSessionSurfaceTarget } from "./native-session-discovery"
-import { sendNativeSessionPrompt } from "./native-session-prompt"
+import { loadPendingNativeSessionPrompt, sendNativeSessionPrompt } from "./native-session-prompt"
 import { stopNativeSession } from "./native-session-stop"
 import {
   taskClient,
@@ -36,8 +36,16 @@ type ProjectionEntry = {
   listeners: Set<(task: MachineTask) => void>
 }
 
+type PreparedProjectionRun = {
+  id: string
+  created: number
+  prompt: string
+  model: ModelSelection | null
+}
+
 const projections = new Map<string, ProjectionEntry>()
 let installed = false
+let provisionalRunSequence = 0
 
 export function nativeSessionIsWorking(status?: string): boolean {
   const value = status?.trim().toLowerCase() || ""
@@ -160,10 +168,10 @@ function nativeAssistantCompleted(message: MessageEnvelope): boolean {
 }
 
 function sameModel(left: ModelSelection | null, right: ModelSelection | null): boolean {
-  return Boolean(left && right
-    && left.providerID === right.providerID
+  if (!left || !right) return !left && !right
+  return left.providerID === right.providerID
     && left.modelID === right.modelID
-    && (left.variant || "") === (right.variant || ""))
+    && (left.variant || "") === (right.variant || "")
 }
 
 /**
@@ -171,20 +179,36 @@ function sameModel(left: ModelSelection | null, right: ModelSelection | null): b
  * new native envelope is durable, then return while the reply is still streaming. Every current-tail
  * page can therefore advance the projection from stale/default metadata to the model on the newest
  * native turn.
+ *
+ * OMP reports the model of its selected JSONL branch as page.model. That is native truth and must be
+ * allowed to fill a projection that mounted before model enrichment. While an HR-originated turn is
+ * already running, however, an older journal page may still describe the previous model for a few
+ * milliseconds; never let that stale page undo a concrete model the user just selected for the turn.
  */
 function reconcileNativeSessionModel(entry: ProjectionEntry, page: MessagePage, before?: string): void {
-  if (before || (entry.target.backend !== "opencode" && entry.target.backend !== "codex")) return
+  if (before || !["opencode", "codex", "omp"].includes(entry.target.backend)) return
   const model = page.model ?? (entry.target.backend === "opencode" ? lastNativeMessageModel(page.messages) : null)
   if (!model) return
+  if (entry.target.backend === "omp" && entry.forcedStatus === "running" && entry.currentModel && !sameModel(entry.currentModel, model)) {
+    return
+  }
 
   let changed = !sameModel(entry.currentModel, model)
   entry.currentModel = model
-  const latestUser = [...page.messages].reverse().find((message) => message.info.role === "user" && message.info.id)
-  if (latestUser) {
-    const run = entry.runs.get(`${projectionID(entry.target)}:native-user:${latestUser.info.id}`)
-    if (run && !sameModel(run.model, model)) {
-      run.model = model
-      changed = true
+
+  const orderedRuns = [...entry.runs.values()].sort((left, right) => left.created - right.created || left.id.localeCompare(right.id))
+  const latestRun = orderedRuns[orderedRuns.length - 1]
+  if (latestRun && !latestRun.model) {
+    latestRun.model = model
+    changed = true
+  } else {
+    const latestUser = [...page.messages].reverse().find((message) => message.info.role === "user" && message.info.id)
+    if (latestUser) {
+      const run = entry.runs.get(`${projectionID(entry.target)}:native-user:${latestUser.info.id}`)
+      if (run && !sameModel(run.model, model)) {
+        run.model = model
+        changed = true
+      }
     }
   }
   if (changed) notify(entry)
@@ -356,16 +380,68 @@ function captureUserRuns(entry: ProjectionEntry, page: MessagePage, before?: str
   if (changed) notify(entry)
 }
 
-function appendAcceptedRun(entry: ProjectionEntry, prompt: string, model: ModelSelection | null, clientRequestId: string): MachineTask {
-  const id = `${projectionID(entry.target)}:request:${clientRequestId}`
+function requestRunID(entry: ProjectionEntry, clientRequestId: string): string {
+  return `${projectionID(entry.target)}:request:${clientRequestId}`
+}
+
+/**
+ * Create the logical continuation boundary before writer acquisition or HTTP prompt delivery starts.
+ * OMP can emit session.updated while claim/model application is in progress; without a new Run in the
+ * projection that event marks the preceding assistant as active and its old Activity flips back to
+ * Working. A provisional Run gives the mature timeline the correct current turn immediately.
+ */
+function beginProjectionRun(entry: ProjectionEntry, prompt: string, model: ModelSelection | null): PreparedProjectionRun {
+  const normalizedPrompt = canonicalText(prompt)
+  const effectiveModel = model ?? entry.currentModel
+  const unresolved = loadPendingNativeSessionPrompt(entry.target)
+  const canReusePending = Boolean(
+    unresolved
+    && canonicalText(unresolved.text) === normalizedPrompt
+    && sameModel(unresolved.model ?? null, effectiveModel)
+  )
+  const created = canReusePending && unresolved ? unresolved.createdAt : Date.now()
+  const id = canReusePending && unresolved
+    ? requestRunID(entry, unresolved.clientRequestId)
+    : `${projectionID(entry.target)}:pending:${created.toString(36)}:${++provisionalRunSequence}`
+
   if (!entry.runs.has(id)) {
-    const created = Date.now()
-    entry.runs.set(id, { id, prompt: canonicalText(prompt), created, model })
-    entry.updatedAt = created
+    entry.runs.set(id, { id, prompt: normalizedPrompt, created, model: effectiveModel })
   }
-  entry.currentModel = model
+  if (effectiveModel) entry.currentModel = effectiveModel
+  entry.updatedAt = Math.max(entry.updatedAt, created)
   entry.forcedStatus = "running"
-  entry.statusType = "running"
+  notify(entry)
+  return { id, created, prompt: normalizedPrompt, model: effectiveModel }
+}
+
+function promoteProjectionRun(
+  entry: ProjectionEntry,
+  prepared: PreparedProjectionRun,
+  clientRequestId: string,
+  running: boolean
+): MachineTask {
+  const id = requestRunID(entry, clientRequestId)
+  const existing = entry.runs.get(prepared.id)
+  if (prepared.id !== id) entry.runs.delete(prepared.id)
+  if (!entry.runs.has(id)) {
+    entry.runs.set(id, {
+      id,
+      prompt: existing?.prompt ?? prepared.prompt,
+      created: existing?.created ?? prepared.created,
+      model: existing?.model ?? prepared.model ?? entry.currentModel
+    })
+  }
+  const run = entry.runs.get(id)
+  if (run && !run.model && entry.currentModel) run.model = entry.currentModel
+  entry.updatedAt = Math.max(entry.updatedAt, run?.created ?? prepared.created)
+  entry.forcedStatus = running ? "running" : null
+  if (running) entry.statusType = "running"
+  return notify(entry)
+}
+
+function abandonProjectionRun(entry: ProjectionEntry, prepared: PreparedProjectionRun): MachineTask {
+  entry.runs.delete(prepared.id)
+  entry.forcedStatus = null
   return notify(entry)
 }
 
@@ -448,17 +524,39 @@ function installAdapter(): void {
     if (body.agentId && body.agentId !== entry.target.agentID) {
       throw new Error("Cross-agent continuation is disabled until single-Session parity is validated")
     }
-    await ensureWriter(entry)
+
     // The shared v3 controller emits null while its model picker is still catching up with native
-    // transcript enrichment. For a native Session that is not an explicit new catalog selection;
+    // transcript enrichment. For a native Session that is not an explicit new catalog selection,
     // preserve the model already recovered from the authoritative Session instead of silently
     // switching the next turn to the harness default. A concrete ModelSelection still wins.
     const model = body.model ?? entry.currentModel
-    const result = await sendNativeSessionPrompt(entry.target, prompt, model)
-    if (result.status !== "accepted") {
-      throw new Error(`Prompt delivery is ${result.status}. Retry the same prompt to reconcile the existing request id.`)
+    const prepared = beginProjectionRun(entry, prompt, model ?? null)
+
+    try {
+      await ensureWriter(entry)
+      const result = await sendNativeSessionPrompt(entry.target, prompt, model)
+      if (result.status !== "accepted") {
+        promoteProjectionRun(entry, prepared, result.clientRequestId, false)
+        throw new Error(`Prompt delivery is ${result.status}. Retry the same prompt to reconcile the existing request id.`)
+      }
+      return promoteProjectionRun(entry, prepared, result.clientRequestId, true)
+    } catch (reason) {
+      // A transport failure after dispatch keeps the durable pending request id. Preserve that logical
+      // user turn so retrying cannot reactivate the preceding Activity, but do not claim it is still
+      // Working until native status proves delivery. A claim/HTTP refusal clears the pending record,
+      // which proves no turn exists and allows the provisional boundary to be removed completely.
+      const pending = loadPendingNativeSessionPrompt(entry.target)
+      if (
+        pending
+        && canonicalText(pending.text) === prepared.prompt
+        && sameModel(pending.model ?? null, prepared.model)
+      ) {
+        promoteProjectionRun(entry, prepared, pending.clientRequestId, false)
+      } else if (entry.runs.has(prepared.id)) {
+        abandonProjectionRun(entry, prepared)
+      }
+      throw reason
     }
-    return appendAcceptedRun(entry, prompt, model ?? null, result.clientRequestId)
   }
 
   const originalCancelWorkThread = taskClient.cancelWorkThread.bind(taskClient)
