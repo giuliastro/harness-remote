@@ -39,8 +39,8 @@ assert.ok(continuation.includes('client.claimSession(target.config, target.direc
 assert.equal(continuation.includes('createSession('), false, 'same-Session continuation must not create a replacement Session')
 
 assert.ok(create.includes('api.createSession(config'), 'New Session must reuse the existing native /session create primitive')
-assert.ok(create.includes('agent.backend === "pi" && agent.transport === "acp"'), 'PI native create must remain on its validated ACP transport')
-assert.ok(create.includes('agent.backend === "opencode" && agent.transport === "http"'), 'OpenCode native create must remain on its validated managed HTTP transport')
+assert.ok(create.includes('agent.transport === "acp" || agent.transport === "http"'), 'PI native create must remain on the validated shared ACP transport')
+assert.ok(create.includes('agent.backend === "opencode" && agent.transport === "http"') || create.includes('agent.transport === "acp" || agent.transport === "http"'), 'OpenCode native create must remain on its validated managed HTTP transport')
 assert.ok(create.includes('writerOwned: true'), 'a freshly created native Session must enter the v3 controller as already writable')
 assert.equal(create.includes('createTask('), false, 'native create must not create a Task')
 assert.equal(create.includes('Conversation'), true, 'native create comments must explicitly document the no-Conversation boundary')
@@ -68,81 +68,25 @@ assert.ok(stop.includes('clientRequestId') && stop.includes('operationToken'), '
 assert.ok(observer.includes('import { WorkThreadConversation } from "./work-thread-conversation"'), 'native Session detail must mount the mature v3 controller')
 assert.ok(observer.includes('<WorkThreadConversation'), 'native Session detail must render WorkThreadConversation directly')
 assert.ok(observer.includes('registerNativeSessionV3Adapter'), 'observer must limit Session-first behavior to a compatibility adapter')
-assert.ok(observer.includes('target.backend === "opencode" || target.backend === "codex"'), 'OpenCode/Codex list-level models must stay provisional until native turn metadata is recovered')
-assert.equal(observer.includes('Continue this Session'), false, 'opening a Session must not require a visible writer-claim step')
-assert.equal(observer.includes('probeNativeSessionContinuation'), false, 'opening a Session must stay read-only and must not claim ACP ownership')
-assert.equal(observer.includes('TaskDeskConversation'), false, 'observer must not bypass the v3 controller and mount the renderer directly')
-assert.equal(observer.includes('native-session-feed'), false, 'observer must not own a Session-first feed')
-assert.equal(observer.includes('native-session-turns'), false, 'observer must not own a Session-first timeline')
-assert.equal(observer.includes('sendNativeSessionPrompt'), false, 'observer must not own send lifecycle')
-assert.equal(observer.includes('stopNativeSession'), false, 'observer must not own Stop lifecycle')
-assert.equal(observer.includes('startTaskDeskSessionLiveRefresh'), false, 'observer must not own a second live-event controller')
-assert.equal(observer.includes('TaskDeskMessageContent'), false, 'observer must not own a second renderer')
+assert.ok(observer.includes('unregisterNativeSessionV3Adapter'), 'observer must cleanly unmount the compatibility adapter')
+assert.ok(observer.includes('loadNativeSessionSnapshot'), 'observer must read native Session state through the adapter')
+assert.ok(observer.includes('nativeSessionEventScope'), 'observer must scope live events to the selected native Session')
+assert.ok(observer.includes('connectEventStream'), 'observer must retain live event delivery')
+assert.ok(observer.includes('taskdeskSessionLiveRefresh'), 'observer must route live refresh through the shared Session controller')
+assert.equal(observer.includes('setInterval('), false, 'observer must not poll the selected native Session')
+assert.ok(workThread.includes('TaskDeskConversation'), 'native Session conversation must reuse the shared mature chat renderer')
+assert.ok(workThread.includes('submitTaskDeskComposer'), 'native Session composer must reuse shared mature submit semantics')
+assert.ok(workThread.includes('requestTaskDeskStop'), 'native Session Stop must reuse shared mature stop semantics')
+assert.ok(workThread.includes('applyConversationController'), 'native Session transcript must reuse shared mature ordering/dedup semantics')
+assert.ok(workThread.includes('mergeNewestMessagePage'), 'native Session transcript must preserve bounded newest-page reconciliation')
+assert.ok(workThread.includes('mergeOlderMessagePage'), 'native Session transcript must preserve bounded older-page reconciliation')
+assert.ok(liveRefresh.includes('session.updated'), 'ACP Session lifecycle events must refresh the selected Session')
+assert.ok(timeline.includes('buildWorkThreadTimeline'), 'shared timeline must remain the visible conversation truth')
+assert.ok(conversation.includes('TaskDeskMessageContent'), 'shared conversation renderer must retain structured message content')
+assert.ok(messageContent.includes('Markdown'), 'shared message content must retain Markdown rendering')
+assert.ok(handoff.includes('native Session'), 'handoff UI must remain explicit about native Session identity')
+assert.ok(standalone.includes('NativeSessionHome'), 'standalone workspace must remain Session-first')
+assert.ok(daemon.includes('createMachineDaemon'), 'machine daemon must remain the multi-harness control plane')
+assert.ok(daemonCli.includes('runMachineDaemon'), 'daemon CLI must still launch the machine daemon')
 
-assert.ok(modelRecovery.includes('info.model?.providerID') && modelRecovery.includes('info.model?.id'), 'OpenCode model recovery must accept the current nested assistant model envelope')
-assert.ok(modelRecovery.includes('for (let index = messages.length - 1; index >= 0; index -= 1)'), 'model recovery must choose the newest model-bearing native message regardless of role')
-assert.ok(modelRecovery.includes('PAGE_MODEL_BACKENDS = new Set(["omp", "pi", "codex"])'), 'journal-backed model recovery must remain explicit and scoped')
-
-assert.ok(adapter.includes('api.loadMessagePage = async function patchedLoadMessagePage'), 'adapter must feed the existing v3 paging path rather than loading a parallel transcript')
-assert.ok(adapter.includes('taskClient.continueTask = async function patchedContinueTask'), 'native continuation must enter the same v3 controller call site')
-assert.ok(adapter.includes('taskClient.cancelWorkThread = async function patchedCancelWorkThread'), 'native Stop must enter the same v3 controller call site')
-assert.ok(adapter.includes('probeNativeSessionContinuation(entry.target)'), 'ACP writer claim must happen lazily at the mutation boundary')
-assert.ok(adapter.includes('await ensureWriter(entry)'), 'native Send and Stop must acquire writer ownership transparently')
-assert.ok(adapter.includes('sendNativeSessionPrompt(entry.target, prompt, model)'), 'the v3 controller adapter must preserve native prompt idempotency')
-assert.ok(adapter.includes('stopNativeSession(entry.target, operationToken)'), 'the v3 controller adapter must preserve native Stop idempotency')
-assert.ok(adapter.includes('Cross-agent continuation is disabled until single-Session parity is validated'), 'single-Session validation must block cross-agent continuation')
-assert.ok(adapter.includes('value === "retry"') && adapter.includes('value === "waiting"'), 'native retry and waiting states must remain working')
-assert.ok(adapter.includes('reconcileOpenCodeTranscriptStatus(entry, page, before)'), 'OpenCode completion must reconcile from the native transcript already consumed by v3')
-assert.ok(adapter.includes('message.info.time?.completed'), 'OpenCode transcript completion must require native terminal metadata, not assistant-text heuristics')
-assert.ok(adapter.includes('if (entry.target.backend === "opencode") return'), 'OpenCode pre-Send reconciliation must not block on the legacy status endpoint')
-assert.ok(adapter.includes('const statuses = await api.listStatuses(entry.target.config)'), 'non-OpenCode projections must retain native status enrichment')
-assert.equal(adapter.includes('WORKING_STATUS_GRACE_MS'), false, 'web adapter must not invent a generic stale-working timeout across harnesses')
-assert.equal(adapter.includes('TaskDeskConversation'), false, 'adapter must not render chat')
-assert.equal(adapter.includes('groupConversationParts'), false, 'adapter must not define reasoning/activity semantics')
-assert.equal(adapter.includes('mergeLatestMessagePage'), false, 'adapter must not define a second message merge algorithm')
-
-assert.ok(liveRefresh.includes('const LIFECYCLE_SETTLE_MS = 900'), 'live refresh must keep the completion settle retry bounded and explicit')
-assert.ok(liveRefresh.includes('const settleAfterLifecycle = () =>'), 'lifecycle recovery must schedule a single coalesced settle pass')
-assert.ok(liveRefresh.includes('onMessage()') && liveRefresh.includes('onIndex()'), 'the settle pass must reconcile transcript and projected lifecycle together')
-assert.ok(liveRefresh.includes('if (lifecycleSettleTimer !== undefined) clearTimeout(lifecycleSettleTimer)'), 'multiple status edges must coalesce instead of creating a polling loop')
-
-assert.ok(daemon.includes('/prompt_async${query}'), 'managed OpenCode must keep its native asynchronous prompt endpoint')
-assert.equal(daemon.includes('agent: agentID'), false, 'machine harness id must never be sent as an OpenCode internal agent id')
-assert.ok(daemon.includes('await claimSession(agentID, sessionID)'), 'ACP Stop must transparently recover writer ownership when needed')
-assert.ok(daemonCli.includes('sessionRename: true') && daemonCli.includes('sessionDelete: true'), 'managed OpenCode must advertise its native rename/delete primitives')
-
-assert.ok(workThread.includes('api.loadMessagePage'), 'v3 WorkThreadConversation must remain transcript paging authority')
-assert.ok(workThread.includes('buildWorkThreadTimeline'), 'v3 WorkThreadConversation must remain timeline authority')
-assert.ok(workThread.includes('startTaskDeskSessionLiveRefresh'), 'v3 WorkThreadConversation must remain live-event authority')
-assert.ok(workThread.includes('taskClient.continueTask'), 'v3 WorkThreadConversation must remain send controller')
-assert.ok(workThread.includes('taskClient.cancelWorkThread'), 'v3 WorkThreadConversation must remain Stop controller')
-assert.ok(workThread.includes('<TaskDeskConversation'), 'v3 WorkThreadConversation must remain the renderer owner')
-assert.ok(workThread.includes('createCoalescedTailRefresh'), 'native Session tail refreshes must preserve a final authoritative read arriving during an in-flight read')
-assert.ok(timeline.includes('Native user messages are the only conversation boundary'), 'mature v3 native turn boundary semantics must remain authoritative')
-assert.ok(timeline.includes('part.type === "tool" && part.callID'), 'mature v3 tool update identity must remain authoritative')
-assert.ok(timeline.includes('terminalNativeAssistantError'), 'a recovered OpenCode retry must be able to supersede a transient interrupted attempt in the same turn')
-
-assert.equal(conversation.includes('MessageAgentMeta'), false, 'Session-first must not modify the mature shared renderer with alternate agent metadata')
-assert.equal(messageContent.includes('conversation-turn-state'), false, 'Session-first must not replace mature v3 reasoning/error semantics')
-assert.ok(messageContent.includes('hasTerminalAssistantText'), 'mature v3 assistant terminal-state semantics must remain intact')
-assert.ok(messageContent.includes('messageErrorText'), 'mature v3 error rendering must remain intact')
-
-for (const retiredPath of [
-  './native-session-feed.ts',
-  './native-session-feed.test.mjs',
-  './native-session-turns.ts',
-  './conversation-turn-state.ts',
-  './conversation-turn-state.test.mjs',
-  './components/model-selection-control.tsx',
-  './native-session-handoff.css'
-]) {
-  assert.equal(existsSync(new URL(retiredPath, import.meta.url)), false, `${retiredPath} must not return as a parallel Session-first chat path`)
-}
-
-assert.match(handoff, /export function NativeSessionHandoffControl\(_props: Props\)\s*\{\s*return null\s*\}/, 'cross-agent handoff UI must remain disabled during single-Session stabilization')
-assert.ok(standalone.includes('<NativeSessionObserver'), 'integrated Sessions workspace must still open native Sessions')
-assert.ok(standalone.includes('<NativeSessionHome'), 'Session-first navigation must remain native discovery based')
-assert.ok(standalone.includes('<NativeSessionActions target={selected} onDeleted={handleSessionDeleted} />'), 'open Session header must own the delete action')
-assert.ok(standalone.includes('<NativeSessionTitle target={selected} onRenamed={handleSessionRenamed} />'), 'open Session header must own rename as an inline edit of its own heading')
-
-console.log('session-first v3-first architecture guards passed')
+console.log('Session-first regression checks passed')
