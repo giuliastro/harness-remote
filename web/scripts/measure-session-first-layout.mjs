@@ -127,6 +127,27 @@ const run = async () => {
   await page.locator(".hr-native-session-observer .uw-markdown p").first().waitFor({ timeout: 20_000 })
   await page.waitForTimeout(1200)
 
+  // Drives the Settings language picker itself. The earlier language check wrote localStorage and
+  // dispatched the event by hand, which proved the listener worked but not that the control reaches
+  // it - the one thing a "the picker does nothing" report is about.
+  if (process.env.PICKER_CHECK) {
+    const before = await page.locator(".hr-native-home-heading h2").textContent()
+    // Settings, not Refresh: both are icon buttons and the labels are themselves translated.
+    await page.locator(".tdw-top-actions .tdw-icon-button:not(.hr-refresh-button)").first().click()
+    await page.waitForTimeout(400)
+    const selects = await page.locator(".hr-mobile-settings-body select").count()
+    const opts = await page.locator(".hr-mobile-settings-body select").last().locator("option").allTextContents()
+    await page.locator(".hr-mobile-settings-body select").last().selectOption("it")
+    await page.waitForTimeout(600)
+    const stored = await page.evaluate(() => localStorage.getItem("opencode.remote.language"))
+    await page.locator(".hr-mobile-settings-page footer button").click().catch(() => {})
+    await page.waitForTimeout(500)
+    const after = await page.locator(".hr-native-home-heading h2").textContent()
+    console.log(JSON.stringify({ before, selects, opts, stored, after }, null, 2))
+    await page.screenshot({ path: OUT })
+    return
+  }
+
   if (process.env.OFFLINE_CHECK) {
     const rows = () => page.locator(".hr-native-session-row").count()
     const before = await rows()
