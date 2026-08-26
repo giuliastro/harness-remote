@@ -24,9 +24,10 @@ export function canCreateNativeSession(agent: MachineAgentHost): boolean {
 /**
  * Create one real harness-owned Session through the existing mature /session endpoint.
  *
- * This is intentionally a very small Session-first adapter. It does not create or persist a Task,
- * Conversation or Run. A Session created through the owning harness is immediately writable: ACP
- * owns the new writer already, while OpenCode's HTTP server owns writer coordination itself.
+ * OMP's ACP `session/new` does not accept a title field. OMP 18.x does expose its native `/rename`
+ * command through ACP, however, and that command updates the same title storage used by `session/list`.
+ * Persist an explicitly supplied title through that native path immediately after creation instead
+ * of keeping a Harness Remote-only display name that disappears on the next discovery refresh.
  */
 export async function createNativeSessionTarget({
   machineID,
@@ -47,8 +48,15 @@ export async function createNativeSessionTarget({
   if (!directory.trim()) throw new Error("Choose a Project before creating a Session.")
 
   const config = nativeSessionConfig(baseConfig, agent)
-  const session = await api.createSession(config, title?.trim() || undefined, undefined, directory)
+  const normalizedTitle = title?.trim() || undefined
+  let session = await api.createSession(config, normalizedTitle, undefined, directory)
   if (!session?.id) throw new Error(`${agent.label || agent.id} did not return a native Session id.`)
+
+  // OMP cannot receive the title in session/new. The bridge profile maps this PATCH to OMP's native
+  // ACP /rename command, so the name survives daemon restarts and is visible to OMP itself too.
+  if (config.backend === "omp" && normalizedTitle) {
+    session = await api.renameSession(config, session.id, normalizedTitle, directory)
+  }
 
   const record: NativeSessionRecord = {
     key: `${agent.id}:${session.id}`,
