@@ -127,6 +127,22 @@ const run = async () => {
   await page.locator(".hr-native-session-observer .uw-markdown p").first().waitFor({ timeout: 20_000 })
   await page.waitForTimeout(1200)
 
+  const layout = await page.evaluate(() => {
+    const rail = document.querySelector(".hr-native-workspace-list")?.getBoundingClientRect()
+    const detail = document.querySelector(".hr-native-workspace-detail")?.getBoundingClientRect()
+    return rail && detail
+      ? { railRight: Math.round(rail.right), detailLeft: Math.round(detail.left), detailWidth: Math.round(detail.width), detailTop: Math.round(detail.top), railTop: Math.round(rail.top) }
+      : null
+  })
+  if (!layout) throw new Error("Session-first shell did not render its rail and detail panes")
+  if (layout.detailLeft < layout.railRight - 12) {
+    throw new Error(`detail pane overlaps the rail: rail ends at ${layout.railRight}, detail starts at ${layout.detailLeft}`)
+  }
+  if (layout.detailTop > layout.railTop + 12) {
+    throw new Error(`detail pane wrapped below the rail instead of beside it (rail top ${layout.railTop}, detail top ${layout.detailTop})`)
+  }
+  if (layout.detailWidth < 320) throw new Error(`detail pane collapsed to ${layout.detailWidth}px`)
+
   // Drives the Settings language picker itself. The earlier language check wrote localStorage and
   // dispatched the event by hand, which proved the listener worked but not that the control reaches
   // it - the one thing a "the picker does nothing" report is about.

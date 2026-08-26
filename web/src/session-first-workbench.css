@@ -84,7 +84,10 @@
 
 
 .hr-native-workspace-body {
-  grid-template-columns: var(--hrsf-rail-width) minmax(0, 1fr);
+  /* Three tracks, not two: the rail, a zero-width track for the divider (it hangs into both sides
+     on its own negative margin) and the detail pane. A two-track grid gave the divider the pane's
+     column and wrapped <main> onto a second row under the rail. */
+  grid-template-columns: var(--hrsf-rail-width) 0 minmax(0, 1fr);
 }
 
 .hr-native-workspace-list {
@@ -1415,6 +1418,10 @@
 
   .hr-native-workspace-body {
     grid-template-columns: 1fr;
+  }
+
+  .hr-rail-resizer {
+    display: none;
   }
 
   .hr-native-workspace-detail {

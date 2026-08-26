@@ -502,6 +502,7 @@
 
 @media (max-width: 780px), (pointer: coarse) and (min-width: 600px) and (max-height: 640px) {
   .hr-native-workspace-body { grid-template-columns: 1fr; }
+  .hr-rail-resizer { display: none; }
   .hr-native-workspace-list { border-right: 0; }
   .hr-native-workspace-detail {
     position: absolute;
