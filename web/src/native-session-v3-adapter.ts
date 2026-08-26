@@ -166,6 +166,13 @@ function sameModel(left: ModelSelection | null, right: ModelSelection | null): b
     && (left.variant || "") === (right.variant || ""))
 }
 
+function rememberCurrentModel(entry: ProjectionEntry, model: ModelSelection | null): void {
+  entry.currentModel = model
+  const targetModel = entry.target.model ?? null
+  if ((model === null && targetModel === null) || sameModel(targetModel, model)) return
+  entry.target = { ...entry.target, model }
+}
+
 /**
  * Model enrichment is not a mount-only read. A user can leave immediately after Send, before the
  * new native envelope is durable, then return while the reply is still streaming. Every current-tail
@@ -173,12 +180,12 @@ function sameModel(left: ModelSelection | null, right: ModelSelection | null): b
  * native turn.
  */
 function reconcileNativeSessionModel(entry: ProjectionEntry, page: MessagePage, before?: string): void {
-  if (before || (entry.target.backend !== "opencode" && entry.target.backend !== "codex")) return
+  if (before || (entry.target.backend !== "opencode" && entry.target.backend !== "codex" && entry.target.backend !== "omp")) return
   const model = page.model ?? (entry.target.backend === "opencode" ? lastNativeMessageModel(page.messages) : null)
   if (!model) return
 
   let changed = !sameModel(entry.currentModel, model)
-  entry.currentModel = model
+  rememberCurrentModel(entry, model)
   const latestUser = [...page.messages].reverse().find((message) => message.info.role === "user" && message.info.id)
   if (latestUser) {
     const run = entry.runs.get(`${projectionID(entry.target)}:native-user:${latestUser.info.id}`)
@@ -363,7 +370,7 @@ function appendAcceptedRun(entry: ProjectionEntry, prompt: string, model: ModelS
     entry.runs.set(id, { id, prompt: canonicalText(prompt), created, model })
     entry.updatedAt = created
   }
-  entry.currentModel = model
+  rememberCurrentModel(entry, model)
   entry.forcedStatus = "running"
   entry.statusType = "running"
   return notify(entry)
@@ -505,9 +512,10 @@ export function registerNativeSessionV3Adapter(
     }
     projections.set(id, entry)
   } else {
+    const currentModel = target.model ?? entry.currentModel
     entry.target = target
     entry.statusType = target.status?.type || entry.statusType
-    entry.currentModel = target.model ?? entry.currentModel
+    rememberCurrentModel(entry, currentModel)
     if (!target.requiresExplicitClaim) entry.writerReady = true
   }
   entry.listeners.add(onTaskUpdate)
@@ -538,6 +546,10 @@ export function applyDiscoveredNativeSessionModel(
   if (!model) return
   const entry = projections.get(projectionID(target))
   if (!entry || entry.currentModel) return
-  entry.currentModel = model
+  rememberCurrentModel(entry, model)
+  const latestRun = [...entry.runs.values()]
+    .sort((left, right) => left.created - right.created || left.id.localeCompare(right.id))
+    .pop()
+  if (latestRun && !latestRun.model) latestRun.model = model
   notify(entry)
 }
