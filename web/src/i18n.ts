@@ -306,6 +306,10 @@ type TranslationKey =
   | 'sf.showingCached'
   | 'sf.loadOlder'
   | 'sf.loadingOlder'
+  | 'sf.attachImage'
+  | 'sf.attachedImages'
+  | 'sf.removeAttachment'
+  | 'sf.attachmentLimit'
   | 'sf.brandTagline'
   | 'sf.allMachines'
   | 'sf.nativeSessions'
@@ -771,6 +775,10 @@ const translations: Record<LanguageCode, Partial<Record<TranslationKey, string>>
     'sf.showingCached': 'Showing the last Sessions read from this machine. They cannot be changed until it answers again.',
     'sf.loadOlder': 'Older messages',
     'sf.loadingOlder': 'Loading…',
+    'sf.attachImage': 'Attach an image',
+    'sf.attachedImages': 'Attached images',
+    'sf.removeAttachment': 'Remove {name}',
+    'sf.attachmentLimit': 'At most {count} images per message.',
     'sf.brandTagline': 'Native coding-agent Sessions, anywhere.',
     'sf.allMachines': 'All machines',
     'sf.nativeSessions': 'Native Sessions',
@@ -1236,6 +1244,10 @@ const translations: Record<LanguageCode, Partial<Record<TranslationKey, string>>
     'sf.showingCached': 'Mostrate le ultime sessioni lette da questa macchina. Non sono modificabili finché non risponde di nuovo.',
     'sf.loadOlder': 'Messaggi precedenti',
     'sf.loadingOlder': 'Caricamento…',
+    'sf.attachImage': 'Allega un\'immagine',
+    'sf.attachedImages': 'Immagini allegate',
+    'sf.removeAttachment': 'Rimuovi {name}',
+    'sf.attachmentLimit': 'Massimo {count} immagini per messaggio.',
     'sf.brandTagline': 'Sessioni native dei coding agent, ovunque.',
     'sf.allMachines': 'Tutte le macchine',
     'sf.nativeSessions': 'Sessioni native',
@@ -1653,6 +1665,10 @@ const translations: Record<LanguageCode, Partial<Record<TranslationKey, string>>
     'sf.showingCached': '顯示最後一次從這部機器讀取的工作階段。在它再次回應之前無法變更。',
     'sf.loadOlder': '較舊的訊息',
     'sf.loadingOlder': '載入中…',
+    'sf.attachImage': '附加圖片',
+    'sf.attachedImages': '已附加的圖片',
+    'sf.removeAttachment': '移除 {name}',
+    'sf.attachmentLimit': '每則訊息最多 {count} 張圖片。',
     'sf.brandTagline': '隨處操作編碼代理的原生工作階段。',
     'sf.allMachines': '所有機器',
     'sf.nativeSessions': '原生工作階段',
@@ -2115,6 +2131,10 @@ const translations: Record<LanguageCode, Partial<Record<TranslationKey, string>>
     'sf.showingCached': '显示最后一次从该机器读取的会话。在它再次响应之前无法更改。',
     'sf.loadOlder': '更早的消息',
     'sf.loadingOlder': '加载中…',
+    'sf.attachImage': '附加图片',
+    'sf.attachedImages': '已附加的图片',
+    'sf.removeAttachment': '移除 {name}',
+    'sf.attachmentLimit': '每条消息最多 {count} 张图片。',
     'sf.brandTagline': '随时随地操作编码代理的原生会话。',
     'sf.allMachines': '所有机器',
     'sf.nativeSessions': '原生会话',

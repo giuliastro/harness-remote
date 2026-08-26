@@ -29,7 +29,7 @@ function attachmentPayload(url) {
  * cannot read, or a payload large enough to stall the turn, is a client mistake worth
  * naming rather than a failure to discover mid-stream.
  */
-function parseAttachments(parts) {
+export function parseAttachments(parts) {
   const files = (Array.isArray(parts) ? parts : []).filter((part) => part?.type === "file")
   if (files.length > MAX_ATTACHMENTS) throw new Error(`At most ${MAX_ATTACHMENTS} attachments per prompt`)
   let total = 0

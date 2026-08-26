@@ -1,4 +1,5 @@
 import { Capacitor, CapacitorHttp } from "@capacitor/core"
+import type { AttachmentPart } from "./attachments"
 import { desktopRequestResult, isDesktopPlatform } from "./desktopBridge"
 import { unwrapPayload } from "./machinePayload"
 import { authHeader, hasCredentials, machineBaseUrl } from "./serverConfig"
@@ -149,6 +150,8 @@ export type TaskContinueInput = {
   mode?: "fresh" | "resume"
   fresh?: boolean
   clientRequestId?: string
+  /** Images travelling with this prompt, where the owning harness accepts them. */
+  attachments?: AttachmentPart[]
 }
 
 export type TaskCheckpointRestoreResponse = {

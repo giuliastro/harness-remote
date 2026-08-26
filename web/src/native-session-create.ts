@@ -54,6 +54,7 @@ export async function createNativeSessionTarget({
     modelsSupported: agent.capabilities?.models === true,
     renameSupported: agent.capabilities?.sessionRename === true,
     deleteSupported: agent.capabilities?.sessionDelete === true,
+    attachmentsSupported: agent.capabilities?.attachments === true,
     writerOwned: true,
     session
   }

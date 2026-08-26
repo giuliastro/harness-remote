@@ -13,6 +13,9 @@ export type NativeSessionRecord = {
   modelsSupported: boolean
   renameSupported: boolean
   deleteSupported: boolean
+  /** Whether the running adapter negotiated image input. Not declarable - the daemon reads it off
+   *  the live ACP handshake - so it is absent until that adapter has started. */
+  attachmentsSupported: boolean
   /** True only when this UI record comes from a mutation that just created/claimed the Session through
    * this daemon. Discovery itself deliberately leaves ownership unknown. */
   writerOwned?: boolean
@@ -68,6 +71,7 @@ export type NativeSessionSurfaceTarget = {
    * Rename/Delete only for a Session whose harness actually implements them. */
   renameSupported: boolean
   deleteSupported: boolean
+  attachmentsSupported: boolean
   model: ModelSelection | null
   parentID?: string
   summary?: Session["summary"]
@@ -208,6 +212,7 @@ export function nativeSessionSurfaceTarget(
     modelsSupported: record.modelsSupported,
     renameSupported: record.renameSupported,
     deleteSupported: record.deleteSupported,
+    attachmentsSupported: record.attachmentsSupported,
     model: sessionModel(record.session),
     parentID: record.session.parentID,
     summary: record.session.summary,
@@ -250,6 +255,7 @@ export async function discoverAgentNativeSessions(
     modelsSupported: agent.capabilities?.models === true,
     renameSupported: agent.capabilities?.sessionRename === true,
     deleteSupported: agent.capabilities?.sessionDelete === true,
+    attachmentsSupported: agent.capabilities?.attachments === true,
     session,
     status: corroboratedSessionStatus(session, statuses[session.id])
   }))

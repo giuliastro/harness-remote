@@ -1,6 +1,7 @@
 import { memo, useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent, type ReactNode } from "react"
+import { ATTACHMENT_MAX_COUNT, fileToAttachment, type AttachmentPart } from "../attachments"
 import type { MessageEnvelope } from "../types"
-import { ChatIcon, JumpToBottomIcon, JumpToTopIcon, LoadingIcon, StopCircleIcon } from "../Icons"
+import { ChatIcon, CloseIcon, JumpToBottomIcon, JumpToTopIcon, LoadingIcon, PaperclipIcon, StopCircleIcon } from "../Icons"
 import { useTranslator } from "../useTranslator"
 import "../taskdesk-conversation.css"
 import "../taskdesk-conversation-fixes.css"
@@ -31,6 +32,10 @@ type Props = {
   sendDisabled?: boolean
   onStop?: () => Promise<void> | void
   stopping?: boolean
+  /** Images staged for the next prompt. Absent means this surface does not offer attachments. */
+  attachments?: AttachmentPart[]
+  onAttachmentsChange?: (attachments: AttachmentPart[]) => void
+  attachmentsSupported?: boolean
   workingLabel?: string
   showWaitingIndicator?: boolean
   placeholder?: string
@@ -345,6 +350,9 @@ export function TaskDeskConversation({
   sendDisabled = false,
   onStop,
   stopping = false,
+  attachments = [],
+  onAttachmentsChange,
+  attachmentsSupported = false,
   workingLabel,
   showWaitingIndicator = true,
   placeholder,
@@ -355,9 +363,31 @@ export function TaskDeskConversation({
 }: Props) {
   const t = useTranslator()
   const composerRef = useRef<HTMLTextAreaElement>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
+  const [attachmentError, setAttachmentError] = useState<string | null>(null)
+
+  async function stageFiles(files: FileList | File[] | null) {
+    if (!files || !onAttachmentsChange) return
+    setAttachmentError(null)
+    const room = ATTACHMENT_MAX_COUNT - attachments.length
+    const chosen = [...files].slice(0, Math.max(0, room))
+    if (chosen.length < [...files].length) {
+      setAttachmentError(t("sf.attachmentLimit", { count: ATTACHMENT_MAX_COUNT }))
+    }
+    const staged: AttachmentPart[] = []
+    for (const file of chosen) {
+      try {
+        staged.push(await fileToAttachment(file))
+      } catch (reason) {
+        // One rejected file must not discard the ones that converted: report it and keep the rest.
+        setAttachmentError(reason instanceof Error ? reason.message : String(reason))
+      }
+    }
+    if (staged.length) onAttachmentsChange([...attachments, ...staged])
+  }
   const composerFrameRef = useRef<number | undefined>(undefined)
   const touchFirst = hasTouchFirstPointer()
-  const canSend = Boolean(draft.trim() && !sending && !waiting && !sendDisabled && ready)
+  const canSend = Boolean((draft.trim() || attachments.length) && !sending && !waiting && !sendDisabled && ready)
   // A phone has no Ctrl or Cmd key, so telling a touch user to press Ctrl/Cmd+Enter named the one
   // way to send that they do not have. Enter inserts a newline there; the Send button is the action.
   const hint = footerHint ?? (touchFirst ? t("sf.ctrlEnterToSend") : t("sf.enterToSend"))
@@ -417,6 +447,18 @@ export function TaskDeskConversation({
             device here, so promising "send" would name a behaviour that key does not have. */}
         <textarea
           ref={composerRef}
+          onPaste={attachmentsSupported && onAttachmentsChange ? (event) => {
+            const files = [...event.clipboardData.files]
+            if (!files.length) return
+            // A pasted screenshot must not also drop its filename into the prompt as text.
+            event.preventDefault()
+            void stageFiles(files)
+          } : undefined}
+          onDrop={attachmentsSupported && onAttachmentsChange ? (event) => {
+            if (!event.dataTransfer.files.length) return
+            event.preventDefault()
+            void stageFiles(event.dataTransfer.files)
+          } : undefined}
           value={draft}
           onChange={(event) => onDraftChange(event.target.value)}
           onKeyDown={onComposerKeyDown}
@@ -427,10 +469,54 @@ export function TaskDeskConversation({
           aria-label={`Message ${agentLabel}`}
           aria-describedby="uw-composer-hint"
         />
+        {attachments.length ? (
+          <ul className="uw-composer-attachments" aria-label={t("sf.attachedImages")}>
+            {attachments.map((attachment, index) => (
+              <li key={`${attachment.filename}:${index}`}>
+                <img src={attachment.url} alt="" />
+                <span title={attachment.filename}>{attachment.filename}</span>
+                <button
+                  type="button"
+                  onClick={() => onAttachmentsChange?.(attachments.filter((_, at) => at !== index))}
+                  aria-label={t("sf.removeAttachment", { name: attachment.filename })}
+                >
+                  <CloseIcon size={12} />
+                </button>
+              </li>
+            ))}
+          </ul>
+        ) : null}
+        {attachmentError ? <div className="uw-composer-attachment-error" role="alert">{attachmentError}</div> : null}
         <div className="uw-composer-footer">
           <span className="uw-composer-directory">{directory || ""}</span>
           <div>
             <small id="uw-composer-hint">{hint}</small>
+            {attachmentsSupported && onAttachmentsChange ? (
+              <>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/png,image/jpeg,image/webp,image/gif"
+                  multiple
+                  hidden
+                  onChange={(event) => {
+                    void stageFiles(event.target.files)
+                    // Without this, choosing the same file twice in a row fires no change event.
+                    event.target.value = ""
+                  }}
+                />
+                <button
+                  type="button"
+                  className="uw-button uw-button-ghost uw-composer-attach"
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={!ready || attachments.length >= ATTACHMENT_MAX_COUNT}
+                  aria-label={t("sf.attachImage")}
+                  title={t("sf.attachImage")}
+                >
+                  <PaperclipIcon size={15} />
+                </button>
+              </>
+            ) : null}
             {waiting && onStop ? (
               <button
                 type="button"

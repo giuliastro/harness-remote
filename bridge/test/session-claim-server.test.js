@@ -418,3 +418,105 @@ test("native Session operation routes accept POST only", async () => {
     await close(server)
   }
 })
+
+const SAMPLE_PNG_BASE64 = "iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAIAAABLbSncAAAAEUlEQVR4nGPQiDqBFTEMLQkAFKhSgZfuVK8AAAAASUVORK5CYII="
+
+function imagePart(overrides = {}) {
+  return { type: "file", mime: "image/png", filename: "screenshot.png", url: `data:image/png;base64,${SAMPLE_PNG_BASE64}`, ...overrides }
+}
+
+test("a prompt carries its images to the harness", async () => withLedger(async (operationLedger) => {
+  const dispatched = []
+  const server = createSessionClaimServer({
+    innerServer: new EventEmitter(),
+    config: { username: "", password: "", corsOrigins: [] },
+    operationLedger,
+    async promptSession(agentID, sessionID, input) { dispatched.push({ agentID, sessionID, input }) }
+  })
+  const port = await listen(server)
+  try {
+    const response = await fetch(`http://127.0.0.1:${port}/v1/agents/claude/session/native-1/prompt`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(promptBody({ parts: [imagePart()] }))
+    })
+    assert.equal(response.status, 200)
+    assert.equal(dispatched.length, 1)
+    assert.equal(dispatched[0].input.attachments.length, 1)
+    assert.equal(dispatched[0].input.attachments[0].mime, "image/png")
+    assert.equal(dispatched[0].input.attachments[0].filename, "screenshot.png")
+    // The base64 payload is what an ACP image block needs, not the data: URL wrapper.
+    assert.equal(dispatched[0].input.attachments[0].data, SAMPLE_PNG_BASE64)
+  } finally {
+    await close(server)
+  }
+}))
+
+test("an image with no words is a prompt", async () => withLedger(async (operationLedger) => {
+  let dispatched = 0
+  const server = createSessionClaimServer({
+    innerServer: new EventEmitter(),
+    config: { username: "", password: "", corsOrigins: [] },
+    operationLedger,
+    async promptSession() { dispatched += 1 }
+  })
+  const port = await listen(server)
+  try {
+    const response = await fetch(`http://127.0.0.1:${port}/v1/agents/claude/session/native-2/prompt`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(promptBody({ text: "", parts: [imagePart()] }))
+    })
+    assert.equal(response.status, 200)
+    assert.equal(dispatched, 1)
+  } finally {
+    await close(server)
+  }
+}))
+
+test("the same words with a different image is a different prompt", async () => withLedger(async (operationLedger) => {
+  // Without the attachments in the mutation signature the second send reuses the first request id
+  // and is answered as a duplicate, so the second image is never seen.
+  let dispatched = 0
+  const server = createSessionClaimServer({
+    innerServer: new EventEmitter(),
+    config: { username: "", password: "", corsOrigins: [] },
+    operationLedger,
+    async promptSession() { dispatched += 1 }
+  })
+  const port = await listen(server)
+  try {
+    const send = (parts) => fetch(`http://127.0.0.1:${port}/v1/agents/claude/session/native-3/prompt`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(promptBody({ clientRequestId: "same-id", parts }))
+    })
+    assert.equal((await send([imagePart()])).status, 200)
+    const conflict = await send([imagePart({ url: `data:image/png;base64,${SAMPLE_PNG_BASE64}AA==` })])
+    assert.equal(conflict.status, 409)
+    assert.equal(dispatched, 1)
+  } finally {
+    await close(server)
+  }
+}))
+
+test("an unsupported attachment type is refused as a bad request", async () => withLedger(async (operationLedger) => {
+  const server = createSessionClaimServer({
+    innerServer: new EventEmitter(),
+    config: { username: "", password: "", corsOrigins: [] },
+    operationLedger,
+    async promptSession() { throw new Error("must not dispatch") }
+  })
+  const port = await listen(server)
+  try {
+    const response = await fetch(`http://127.0.0.1:${port}/v1/agents/claude/session/native-4/prompt`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(promptBody({ parts: [imagePart({ mime: "application/pdf" })] }))
+    })
+    assert.equal(response.status, 400)
+    assert.match((await response.json()).error, /Unsupported attachment type/)
+  } finally {
+    await close(server)
+  }
+}))

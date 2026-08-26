@@ -828,6 +828,92 @@
   position: relative;
 }
 
+/* Staged images sit above the field, as thumbnails with their own remove control - a filename list
+   makes you guess which screenshot you picked. Each is a real button with a name, not a hover-only
+   affordance. */
+.hr-native-session-observer .uw-composer-attachments {
+  margin: 0 0 8px;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.hr-native-session-observer .uw-composer-attachments > li {
+  position: relative;
+  max-width: 190px;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 5px 7px;
+  border: 1px solid var(--td3-border);
+  border-radius: 9px;
+  background: var(--td3-sunken-soft);
+}
+
+.hr-native-session-observer .uw-composer-attachments img {
+  width: 30px;
+  height: 30px;
+  flex: none;
+  border-radius: 5px;
+  object-fit: cover;
+}
+
+.hr-native-session-observer .uw-composer-attachments span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--td3-text-2);
+  font-size: 11px;
+}
+
+.hr-native-session-observer .uw-composer-attachments button {
+  width: 22px;
+  height: 22px;
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 6px;
+  color: var(--td3-muted);
+  background: transparent;
+  cursor: pointer;
+}
+
+.hr-native-session-observer .uw-composer-attachments button:hover,
+.hr-native-session-observer .uw-composer-attachments button:focus-visible {
+  color: var(--td3-red-text);
+  background: var(--td3-red-soft);
+}
+
+.hr-native-session-observer .uw-composer-attachment-error {
+  margin-bottom: 8px;
+  padding: 6px 9px;
+  border-radius: 7px;
+  color: var(--td3-red-text);
+  background: var(--td3-red-soft);
+  font-size: 10.5px;
+  line-height: 1.45;
+}
+
+.hr-native-session-observer .uw-composer-attach {
+  width: 30px;
+  height: 30px;
+  flex: none;
+  justify-content: center;
+  padding: 0;
+}
+
+@media (max-width: 780px) {
+  .hr-native-session-observer .uw-composer-attach {
+    width: 44px;
+    height: 44px;
+  }
+}
+
 .hr-session-handoff {
   position: relative;
   flex: none;

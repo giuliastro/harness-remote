@@ -30,6 +30,7 @@ import {
 import { ModelPicker, modelOptionKey } from "./model-picker"
 import { TaskDeskConversation } from "./taskdesk-conversation"
 import { TaskDeskMessageContent } from "./taskdesk-message-content"
+import { ATTACHMENT_MAX_COUNT, type AttachmentPart } from "../attachments"
 import { useTranslator } from "../useTranslator"
 import { WorkThreadAttention } from "./work-thread-attention"
 
@@ -294,6 +295,8 @@ export function WorkThreadConversation({
   const [loading, setLoading] = useState(true)
   const [loadingOlder, setLoadingOlder] = useState(false)
   const [draft, setDraft] = useState(() => localStorage.getItem(draftStorageKey) || "")
+  // Staged in memory only: base64 images do not belong in the draft store.
+  const [attachments, setAttachments] = useState<AttachmentPart[]>([])
   const [sending, setSending] = useState(false)
   const [stopping, setStopping] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -341,6 +344,9 @@ export function WorkThreadConversation({
   const currentSessionID = runSessionID(task.run)
   const currentTarget = currentSessionID ? targets.find((target) => target.sessionID === currentSessionID) : undefined
   const working = isActive(task)
+  // Attachment support is what the running adapter negotiated, published per agent by the daemon.
+  // Absent means "not yet known", which is the safe answer: no picker rather than a failing send.
+  const attachmentsSupported = Boolean(agents.find((agent) => agent.id === currentAgentID)?.capabilities?.attachments)
   // JSON.stringify over every Run is far too expensive to repeat on each keystroke. The Task object
   // identity only changes when the workspace actually reloads or updates the conversation.
   const conversationSignature = useMemo(() => taskConversationSignature(task), [task])
@@ -657,11 +663,14 @@ export function WorkThreadConversation({
 
   async function send() {
     const text = draft.trim()
-    if (!text || sending || working || sendInFlightRef.current) return
+    const staged = attachments
+    // An image with no words is a real prompt; the daemon applies the same rule.
+    if ((!text && staged.length === 0) || sending || working || sendInFlightRef.current) return
     sendInFlightRef.current = true
     setSending(true)
     setError(null)
     setDraft("")
+    setAttachments([])
     try {
       const latest = await taskClient.getWorkThread(baseConfig, task.id)
       if (isActive(latest)) {
@@ -670,6 +679,7 @@ export function WorkThreadConversation({
       }
       const next = await taskClient.continueTask(baseConfig, task.id, {
         prompt: text,
+        ...(staged.length ? { attachments: staged } : {}),
         agentId: targetAgentID,
         model: selectedModel ? { providerID: selectedModel.providerID, modelID: selectedModel.modelID, variant: selectedModel.variant } : null
       })
@@ -681,6 +691,9 @@ export function WorkThreadConversation({
       void refreshAttention(next)
     } catch (reason) {
       setDraft((current) => current ? `${text}\n${current}` : text)
+      // Give the images back too: re-picking them after a failed send is the worst part of losing a
+      // prompt, and they are already in memory.
+      if (staged.length) setAttachments((current) => [...staged, ...current].slice(0, ATTACHMENT_MAX_COUNT))
       setError(reason instanceof Error ? reason.message : String(reason))
     } finally {
       sendInFlightRef.current = false
@@ -778,6 +791,9 @@ export function WorkThreadConversation({
         onDraftChange={setDraft}
         onSend={send}
         sending={preparingReply}
+        attachments={attachments}
+        onAttachmentsChange={setAttachments}
+        attachmentsSupported={attachmentsSupported}
         sendDisabled={working || hasAttention}
         onStop={working ? stop : undefined}
         stopping={stopping}

@@ -1,5 +1,6 @@
 import { Capacitor, CapacitorHttp } from "@capacitor/core"
 import { desktopRequestResult, isDesktopPlatform } from "./desktopBridge"
+import type { AttachmentPart } from "./attachments"
 import type { NativeSessionSurfaceTarget } from "./native-session-discovery"
 import { authHeader, baseUrl, hasCredentials, routingHeaders } from "./serverConfig"
 import type { MessageEnvelope, ModelSelection } from "./types"
@@ -167,10 +168,12 @@ function errorDetail(body: unknown, status: number): string {
 export async function sendNativeSessionPrompt(
   target: NativeSessionSurfaceTarget,
   text: string,
-  model?: ModelSelection | null
+  model?: ModelSelection | null,
+  attachments: AttachmentPart[] = []
 ): Promise<{ status: NativeSessionPromptStatus; clientRequestId: string }> {
   const normalized = text.trim()
-  if (!normalized) throw new Error("A text prompt is required")
+  // An image with no words is a real prompt. The daemon applies the same rule.
+  if (!normalized && attachments.length === 0) throw new Error("A text prompt is required")
   const requestedModel = normalizeModel(model)
 
   const stored = loadPendingNativeSessionPrompt(target)
@@ -187,12 +190,22 @@ export async function sendNativeSessionPrompt(
     model: requestedModel,
     createdAt: Date.now()
   }
+  // Attachments are deliberately not persisted with the pending record: a retry re-sends the same
+  // request id, and the daemon's ledger already holds the accepted mutation. Carrying megabytes of
+  // base64 through localStorage would break the store long before it helped a retry.
+  const parts = attachments.map((attachment) => ({
+    type: "file" as const,
+    mime: attachment.mime,
+    filename: attachment.filename,
+    url: attachment.url
+  }))
   persistPending(target, pending)
 
   const path = `/session/${encodeURIComponent(target.sessionID)}/prompt`
   const body = {
     clientRequestId: pending.clientRequestId,
     text: pending.wireText || pending.text,
+    ...(parts.length ? { parts } : {}),
     directory: target.directory,
     model: pending.model ? { providerID: pending.model.providerID, modelID: pending.model.modelID } : undefined,
     variant: pending.model?.variant || undefined

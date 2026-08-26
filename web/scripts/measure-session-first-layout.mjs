@@ -61,7 +61,7 @@ const daemon = http.createServer((req, res) => {
   if (p === "/v1/machine") return json(res, 200, {
     machine: { id: "m1", name: "Giulio-S7", createdAt: new Date().toISOString() },
     agents: [{ id: "claude", label: "Claude Code", backend: "claude", transport: "acp", managed: true, state: "available",
-      capabilities: { sessions: true, prompt: true, abort: true, streaming: true, models: true, sessionRename: true, sessionDelete: true },
+      capabilities: { sessions: true, prompt: true, abort: true, streaming: true, models: true, sessionRename: true, sessionDelete: true, attachments: true },
       contract: { sessions: { stop: "native-abort" } } },
       { id: "codex", label: "Codex CLI", backend: "codex", transport: "acp", managed: true, state: "available",
         capabilities: { sessions: true, prompt: true, abort: true, streaming: true, models: true, sessionRename: true, sessionDelete: true },
@@ -99,7 +99,9 @@ const daemon = http.createServer((req, res) => {
     }
     return json(res, 200, transcript)
   }
-  const promptRoute = /^\/v1\/agents\/codex\/session\/([^/]+)\/prompt$/.exec(p)
+  const claimRoute = /^\/v1\/agents\/(?:claude|codex)\/session\/([^/]+)\/claim$/.exec(p)
+  if (req.method === "POST" && claimRoute) return json(res, 200, { claimed: true, sessionID: claimRoute[1] })
+  const promptRoute = /^\/v1\/agents\/(?:claude|codex)\/session\/([^/]+)\/prompt$/.exec(p)
   if (req.method === "POST" && promptRoute) {
     let body = ""
     req.on("data", (c) => { body += c })
@@ -133,6 +135,8 @@ const run = async () => {
   browser = await chromium.launch({ headless: true, ...(process.env.CHROMIUM_PATH ? { executablePath: process.env.CHROMIUM_PATH } : {}) })
   const ctx = await browser.newContext({ viewport: { width: Number(process.env.VW || 1875), height: Number(process.env.VH || 1000) }, deviceScaleFactor: 1 })
   const page = await ctx.newPage()
+  page.on("pageerror", (error) => console.error("PAGE ERROR:", error.message))
+  page.on("console", (message) => { if (message.type() === "error") console.error("CONSOLE:", message.text()) })
   await page.addInitScript(({ key, port }) => {
     localStorage.setItem(key, JSON.stringify([{ id: "m1", name: "Giulio-S7", config: { backend: "opencode", host: "127.0.0.1", port, username: "h", password: "p" } }]))
     localStorage.setItem("harness-remote.theme", "light")
@@ -163,6 +167,47 @@ const run = async () => {
   // Drives the Settings language picker itself. The earlier language check wrote localStorage and
   // dispatched the event by hand, which proved the listener worked but not that the control reaches
   // it - the one thing a "the picker does nothing" report is about.
+  if (process.env.ATTACH_CHECK) {
+    const picker = page.locator(".uw-composer-attach")
+    await picker.waitFor({ timeout: 15_000 })
+    // A real 1x1 PNG, chosen through the actual file input rather than injected into state.
+    const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAIAAABLbSncAAAAEUlEQVR4nGPQiDqBFTEMLQkAFKhSgZfuVK8AAAAASUVORK5CYII=", "base64")
+    const inputs = await page.locator(".uw-composer-shell input[type=file]").count()
+    const probe = await page.evaluate(() => {
+      const input = document.querySelector(".uw-composer-shell input[type=file]")
+      return input ? { exists: true, hidden: input.hidden, accept: input.accept, multiple: input.multiple } : { exists: false }
+    })
+    console.log("INPUT", inputs, JSON.stringify(probe))
+    await page.setInputFiles(".uw-composer-shell input[type=file]", { name: "schermata.png", mimeType: "image/png", buffer: png })
+    await page.waitForTimeout(900)
+    console.log("AFTER SET", JSON.stringify(await page.evaluate(() => ({
+      files: document.querySelector(".uw-composer-shell input[type=file]")?.files?.length ?? null,
+      previews: document.querySelectorAll(".uw-composer-attachments > li").length,
+      error: document.querySelector(".uw-composer-attachment-error")?.textContent ?? null
+    }))))
+    const staged = await page.locator(".uw-composer-attachments > li").count()
+    const canSendWithoutText = await page.locator(".uw-composer-footer .uw-button-primary").isEnabled()
+    await page.locator(".uw-composer-shell textarea").fill("guarda questa schermata")
+    await page.locator(".uw-composer-footer .uw-button-primary").click()
+    await page.waitForTimeout(1500)
+    const body = promptBodies.at(-1) || {}
+    const files = (body.parts || []).filter((part) => part?.type === "file")
+    console.log(JSON.stringify({
+      pickerOffered: true,
+      stagedPreviews: staged,
+      sendEnabledWithImageOnly: canSendWithoutText,
+      promptsSent: promptBodies.length,
+      wireFiles: files.length,
+      wireMime: files[0]?.mime ?? null,
+      wireFilename: files[0]?.filename ?? null,
+      wireHasBase64: typeof files[0]?.url === "string" && files[0].url.startsWith("data:image/png;base64,"),
+      wireText: body.text ?? null,
+      previewsClearedAfterSend: await page.locator(".uw-composer-attachments > li").count()
+    }, null, 2))
+    await page.screenshot({ path: OUT })
+    return
+  }
+
   if (process.env.PAGING_CHECK) {
     const state = () => page.evaluate(() => {
       const t = document.querySelector(".hr-native-session-observer .uw-transcript")

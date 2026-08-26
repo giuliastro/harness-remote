@@ -88,9 +88,10 @@ export function NativeSessionObserver({ target, onSessionRefresh, onStateChange 
       sessions: true,
       prompt: true,
       abort: target.canStop,
-      models: target.modelsSupported
+      models: target.modelsSupported,
+      attachments: target.attachmentsSupported
     }
-  }), [target.agentID, target.agentLabel, target.backend, target.transport, target.canStop, target.modelsSupported])
+  }), [target.agentID, target.agentLabel, target.backend, target.transport, target.canStop, target.modelsSupported, target.attachmentsSupported])
 
   useEffect(() => {
     let disposed = false

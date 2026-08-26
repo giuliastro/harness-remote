@@ -131,7 +131,7 @@ assert.ok(adapter.includes('taskClient.continueTask = async function patchedCont
 assert.ok(adapter.includes('taskClient.cancelWorkThread = async function patchedCancelWorkThread'), 'native Stop must enter the same v3 controller call site')
 assert.ok(adapter.includes('probeNativeSessionContinuation(entry.target)'), 'ACP writer claim must happen lazily at the mutation boundary')
 assert.ok(adapter.includes('await ensureWriter(entry)'), 'native Send and Stop must acquire writer ownership transparently')
-assert.ok(adapter.includes('sendNativeSessionPrompt(entry.target, prompt, model)'), 'the v3 controller adapter must preserve native prompt idempotency')
+assert.ok(adapter.includes('sendNativeSessionPrompt(entry.target, prompt, model, body.attachments ?? [])'), 'the v3 controller adapter must preserve native prompt idempotency and carry its images')
 assert.ok(adapter.includes('stopNativeSession(entry.target, operationToken)'), 'the v3 controller adapter must preserve native Stop idempotency')
 assert.ok(adapter.includes('Cross-agent continuation is disabled until single-Session parity is validated'), 'single-Session validation must block cross-agent continuation')
 assert.ok(adapter.includes('value === "retry"') && adapter.includes('value === "waiting"'), 'native retry and waiting states must remain working')
@@ -305,3 +305,24 @@ assert.ok(conversation.includes('pendingOlderRef'), 'the measurements must be ha
 assert.match(conversation, /nearBottomRef\.current = false[\s\S]{0,200}refreshJumpAffordances/,
   'reading history must leave follow-to-bottom, or it immediately undoes the reposition')
 assert.ok(conversation.includes('OLDER_JUNCTION_OVERLAP'), 'the view must land on the junction so the new content is on screen')
+
+// --- A2: images in the composer ---------------------------------------------------------------
+// The bridge server already validated and forwarded attachments, and `attachments.ts` already
+// converted files. What was missing: the composer had no picker, the native prompt body had no
+// parts, and the daemon passed a hardcoded empty array to the ACP service - so a capability that
+// existed end to end could never be reached.
+assert.ok(conversation.includes('fileToAttachment'), 'the composer must convert picked files')
+assert.ok(conversation.includes('onPaste') && conversation.includes('onDrop'),
+  'an image usually arrives by paste or drop, not through a file dialog')
+assert.match(conversation, /canSend = Boolean\(\(draft\.trim\(\) \|\| attachments\.length\)/,
+  'an image with no words is a prompt')
+assert.ok(workThread.includes('attachmentsSupported'), 'the picker must be offered only where the harness accepts images')
+assert.match(workThread, /if \(staged\.length\) setAttachments/, 'a failed send must give the images back')
+const nativePrompt = readFileSync(new URL('./native-session-prompt.ts', import.meta.url), 'utf8')
+assert.match(nativePrompt, /\.\.\.\(parts\.length \? \{ parts \} : \{\}\)/, 'the native prompt body must carry the parts')
+assert.ok(!nativePrompt.includes('attachments: pending'), 'megabytes of base64 must not go into the pending-prompt store')
+const daemon2 = readFileSync(new URL('../../bridge/src/machine-daemon.js', import.meta.url), 'utf8')
+assert.match(daemon2, /service\.prompt\(sessionID, text, modelWireName\(resolvedModel\), attachments/,
+  'the daemon must forward the attachments instead of a hardcoded empty array')
+assert.match(daemon2, /attachments: Boolean\(entry\.host\?\.promptCapabilities\?\.image\)/,
+  'attachment support is what the live adapter negotiated, not a declared profile flag')

@@ -149,7 +149,30 @@ export class MachineDaemon {
       : { id: entry.id, status: "unavailable", error: settled[index].reason })
   }
 
-  snapshot() { return this.registry.snapshot() }
+  /**
+   * The registry holds each harness's declared capabilities. Attachment support is not declarable:
+   * it is whatever the running ACP adapter negotiated (`promptCapabilities.image`), which is only
+   * known once that adapter has started. Overlay it here so the client can offer an image picker
+   * exactly where a prompt can carry one, and hide it - rather than fail on send - where it cannot.
+   * Before the adapter starts the answer is "not yet", which is the safe default.
+   */
+  snapshot() {
+    const snapshot = this.registry.snapshot()
+    return {
+      ...snapshot,
+      agents: snapshot.agents.map((agent) => {
+        const entry = this.hostEntry(agent.id)
+        if (entry?.kind !== "acp") return agent
+        return {
+          ...agent,
+          capabilities: {
+            ...agent.capabilities,
+            attachments: Boolean(entry.host?.promptCapabilities?.image)
+          }
+        }
+      })
+    }
+  }
 
   diagnostics() {
     return {
@@ -260,7 +283,7 @@ export function createMachineDaemonServer({
     }
     claimedAcpSessions.add(nativeSessionKey(agentID, sessionID))
   }
-  const promptSession = async (agentID, sessionID, { text, directory, model, variant }) => {
+  const promptSession = async (agentID, sessionID, { text, directory, model, variant, attachments = [] }) => {
     const entry = daemon.hostEntry(agentID)
     if (!entry) throw daemonError("unknown_agent", `Unknown agent: ${agentID}`)
     const requestedModel = model ? { ...model, ...(variant ? { variant } : {}) } : null
@@ -273,7 +296,9 @@ export function createMachineDaemonServer({
       // place that already loads configOptions, orders the model before its variant, and defers both
       // to dequeue when a turn is still running. Setting them here directly reordered the model
       // after the variant and mutated a live turn's configuration.
-      await service.prompt(sessionID, text, modelWireName(resolvedModel), [], acpModelVariant(resolvedModel))
+      // The empty array here was why an attachment could never reach an ACP harness: the client and
+      // the bridge server both carried images, and the daemon dropped them on the floor.
+      await service.prompt(sessionID, text, modelWireName(resolvedModel), attachments, acpModelVariant(resolvedModel))
       return
     }
 
@@ -294,7 +319,15 @@ export function createMachineDaemonServer({
         method: "POST",
         headers,
         body: JSON.stringify({
-          parts: [{ type: "text", text }],
+          parts: [
+            ...(text ? [{ type: "text", text }] : []),
+            ...attachments.map((file) => ({
+              type: "file",
+              mime: file.mime,
+              filename: file.filename,
+              url: `data:${file.mime};base64,${file.data}`
+            }))
+          ],
           model: resolvedModel ? { providerID: resolvedModel.providerID, modelID: resolvedModel.modelID } : undefined,
           variant: resolvedModel?.variant || undefined
         })

@@ -1,6 +1,9 @@
 import { createHash } from "node:crypto"
 import http from "node:http"
 import { authenticateDaemonRequest, writeJSON } from "./http-policy.js"
+import { parseAttachments } from "./server.js"
+
+const MAX_REQUEST_BODY_BYTES = 24 * 1024 * 1024
 
 const SESSION_OPERATION_ROUTE = /^\/v1\/agents\/([^/]+)\/session\/([^/]+)\/(claim|prompt|stop|handoff)$/
 
@@ -36,7 +39,10 @@ async function readJSONBody(request) {
   let body = ""
   for await (const chunk of request) {
     body += chunk
-    if (body.length > 2_000_000) throw requestError("Request body is too large")
+    // A prompt may carry images. `parseAttachments` is the real bound - 5MB per file, 15MB in total -
+    // and base64 inflates that to about 20MB on the wire, so this only has to be wide enough not to
+    // reject a valid prompt before that validator ever sees it.
+    if (body.length > MAX_REQUEST_BODY_BYTES) throw requestError("Request body is too large")
   }
   if (!body) return {}
   try {
@@ -68,8 +74,16 @@ function promptInput(body) {
   const text = typeof body.text === "string" ? body.text.trim() : ""
   const model = promptModelInput(body)
   const variant = typeof body.variant === "string" && body.variant.trim() ? body.variant.trim() : undefined
-  if (!text) throw requestError("A text prompt is required")
-  return { ...common, text, model, variant }
+  // Reuses the bridge server's validator so the two paths cannot disagree about accepted types,
+  // per-file size or total size. An image-only prompt is a real prompt: "look at this".
+  let attachments = []
+  try {
+    attachments = parseAttachments(body.parts)
+  } catch (error) {
+    throw requestError(error instanceof Error ? error.message : "Invalid attachment")
+  }
+  if (!text && !attachments.length) throw requestError("A text prompt is required")
+  return { ...common, text, model, variant, attachments }
 }
 
 function stopInput(body) {
@@ -176,7 +190,15 @@ export function createSessionClaimServer({
 
       const identity = { agentID, sessionID, clientRequestId: input.clientRequestId }
       const signaturePayload = operation === "prompt"
-        ? { text: input.text, directory: input.directory, model: input.model, variant: input.variant ?? null }
+        ? {
+            text: input.text,
+            directory: input.directory,
+            model: input.model,
+            variant: input.variant ?? null,
+            // Without this, the same text sent with a different image reuses the first request's
+            // identity and the second prompt is answered as a duplicate of the first.
+            attachments: (input.attachments ?? []).map((file) => `${file.mime}:${file.data.length}`)
+          }
         : operation === "stop"
           ? { directory: input.directory, operationToken: input.operationToken }
           : {

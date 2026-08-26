@@ -455,7 +455,7 @@ function installAdapter(): void {
     }
     await ensureWriter(entry)
     const model = body.model === undefined ? entry.currentModel : body.model
-    const result = await sendNativeSessionPrompt(entry.target, prompt, model)
+    const result = await sendNativeSessionPrompt(entry.target, prompt, model, body.attachments ?? [])
     if (result.status !== "accepted") {
       throw new Error(`Prompt delivery is ${result.status}. Retry the same prompt to reconcile the existing request id.`)
     }

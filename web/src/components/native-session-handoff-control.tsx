@@ -114,6 +114,7 @@ export function NativeSessionHandoffControl({ source, agents, onOpen }: Props) {
         modelsSupported: agent.capabilities?.models === true,
         renameSupported: agent.capabilities?.sessionRename === true,
         deleteSupported: agent.capabilities?.sessionDelete === true,
+        attachmentsSupported: agent.capabilities?.attachments === true,
         // The daemon just created this Session through this bridge, so the writer is ours and the
         // user must not be asked to claim it a second time.
         writerOwned: true,
