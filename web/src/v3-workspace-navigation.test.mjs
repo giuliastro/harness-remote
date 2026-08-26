@@ -48,7 +48,8 @@ test("opening a native Session updates selection and mobile detail explicitly", 
 })
 
 test("Session list navigation groups real native Sessions by machine and Project", () => {
-  assert.match(home, /projectGroups\(records\)/)
+  assert.match(home, /const selectedActivityAnchor = activityAnchor\?\.key === selectedKey \? activityAnchor : null/)
+  assert.match(home, /projectGroups\(records, selectedActivityAnchor\)/)
   assert.match(home, /collapsedMachines/)
   assert.match(home, /collapsedProjects/)
   assert.match(home, /sessionTreeRows\(group\.sessions\)/)
