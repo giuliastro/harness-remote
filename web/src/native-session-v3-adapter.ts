@@ -168,6 +168,11 @@ function sameModel(left: ModelSelection | null, right: ModelSelection | null): b
 
 function rememberCurrentModel(entry: ProjectionEntry, model: ModelSelection | null): void {
   entry.currentModel = model
+  // OMP interprets an explicit model in the next prompt as a real native model mutation, so once its
+  // JSONL proves the current selection the transport target must remember it and suppress a redundant
+  // set_config_option. OpenCode deliberately keeps the opposite wire contract: its continuation path
+  // resends the recovered native model on each prompt, and existing real-browser coverage depends on it.
+  if (entry.target.backend !== "omp") return
   const targetModel = entry.target.model ?? null
   if ((model === null && targetModel === null) || sameModel(targetModel, model)) return
   entry.target = { ...entry.target, model }
