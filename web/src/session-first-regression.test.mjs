@@ -273,3 +273,11 @@ assert.ok(workbenchCss.includes('.hr-native-session-row.cached'), 'a cached row 
 // where an explanation belongs.
 assert.ok(sessionActions.includes('machineOnline'), 'mutations must be withdrawn while the machine is unreachable')
 assert.ok(standalone.includes('machineOnline={selectedRuntime?.state === "online"}'), 'the shell must pass the machine reachability through')
+
+// The empty state is a centred column, not copy centred by inheritance with a stray icon at the
+// block's left edge. Geometry is asserted by `EMPTY_CHECK=1 npm run measure:session-first`, which
+// requires the icon, the heading and the block to share one centre.
+assert.match(workbenchCss, /\.hr-native-startup \{[^}]*display: grid;[^}]*justify-items: center/s,
+  'the empty state must centre its own children rather than inherit text-align')
+assert.match(workbenchCss, /\.hr-native-startup \{[^}]*width: min\(var\(--hrsf-content-width\)/s,
+  'the empty state must occupy the column a transcript will')

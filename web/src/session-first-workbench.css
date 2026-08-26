@@ -986,9 +986,21 @@
   background: var(--td3-red-soft);
 }
 
+/* The block is a centred column, declared as one. It used to rely on `text-align: center` from its
+   parent, which centres the copy but leaves the icon sitting at the left edge of the block - the
+   icon reads as unrelated to the text it belongs to. Its width matches the conversation column, so
+   the empty state occupies exactly the space a transcript will. */
 .hr-native-startup {
-  width: min(680px, calc(100% - 36px));
+  width: min(var(--hrsf-content-width), calc(100% - 36px));
   justify-self: center;
+  display: grid;
+  justify-items: center;
+  gap: 6px;
+}
+
+.hr-native-startup > svg {
+  margin-bottom: 6px;
+  color: var(--td3-muted);
 }
 
 .hr-native-startup > span {

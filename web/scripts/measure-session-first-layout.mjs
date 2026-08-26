@@ -146,6 +146,29 @@ const run = async () => {
   // Drives the Settings language picker itself. The earlier language check wrote localStorage and
   // dispatched the event by hand, which proved the listener worked but not that the control reaches
   // it - the one thing a "the picker does nothing" report is about.
+  if (process.env.EMPTY_CHECK) {
+    // Deselect so the workspace shows its empty state, then check the block reads as one column:
+    // the icon centred over the copy rather than parked at the block's left edge.
+    await page.evaluate(() => history.replaceState(null, "", location.pathname))
+    await page.reload()
+    await page.locator(".hr-native-startup").waitFor({ timeout: 20_000 })
+    console.log(JSON.stringify(await page.evaluate(() => {
+      const block = document.querySelector(".hr-native-startup").getBoundingClientRect()
+      const svg = document.querySelector(".hr-native-startup > svg")?.getBoundingClientRect()
+      const heading = document.querySelector(".hr-native-startup > strong").getBoundingClientRect()
+      const centre = (r) => Math.round(r.left + r.width / 2)
+      return {
+        blockCentre: centre(block),
+        iconCentre: svg ? centre(svg) : null,
+        headingCentre: centre(heading),
+        iconOffsetFromCentre: svg ? Math.abs(centre(svg) - centre(block)) : null,
+        blockWidth: Math.round(block.width)
+      }
+    }), null, 2))
+    await page.screenshot({ path: OUT })
+    return
+  }
+
   if (process.env.PICKER_CHECK) {
     const before = await page.locator(".hr-native-home-heading h2").textContent()
     // Settings, not Refresh: both are icon buttons and the labels are themselves translated.
