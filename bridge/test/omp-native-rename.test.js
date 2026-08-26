@@ -1,7 +1,8 @@
 import assert from "node:assert/strict"
 import { EventEmitter } from "node:events"
 import test from "node:test"
-import { createBridgeServer } from "../src/server.js"
+import { AcpService } from "../src/acp-service.js"
+import { harnessProfile } from "../src/harness-profiles.js"
 
 class RenameOmpAcp extends EventEmitter {
   agentInfo = { version: "18.0.6" }
@@ -33,47 +34,22 @@ class RenameOmpAcp extends EventEmitter {
   notify() {}
 }
 
-function authHeaders() {
-  return {
-    authorization: `Basic ${Buffer.from("omp:secret").toString("base64")}`,
-    "content-type": "application/json"
-  }
-}
+test("OMP profile persists rename through OMP's native /rename ACP command", async () => {
+  const profile = harnessProfile("omp")
+  assert.equal(profile.nativeRenameCommand, "rename")
+  assert.equal(profile.preferListedTitles, true)
 
-test("OMP rename is executed by OMP's native /rename ACP command and returned from session/list", async () => {
   const acp = new RenameOmpAcp()
-  const historyLoader = async () => []
-  const server = createBridgeServer({
-    acp,
-    serviceOptions: { historyLoader },
-    config: {
-      backend: "omp",
-      host: "127.0.0.1",
-      port: 0,
-      username: "omp",
-      password: "secret",
-      roots: [process.cwd()]
-    }
+  const service = new AcpService(acp, {
+    historyLoader: async () => [],
+    nativeRenameCommand: profile.nativeRenameCommand,
+    preferListedTitles: profile.preferListedTitles
   })
-  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve))
-  const address = server.address()
-  const baseURL = `http://127.0.0.1:${address.port}`
 
-  try {
-    const response = await fetch(`${baseURL}/session/019faa51-rename-test?directory=${encodeURIComponent(process.cwd())}`, {
-      method: "PATCH",
-      headers: authHeaders(),
-      body: JSON.stringify({ title: "Risolvi altra issue e crea PR" })
-    })
-    assert.equal(response.status, 200)
-    const renamed = await response.json()
-    assert.equal(renamed.title, "Risolvi altra issue e crea PR")
-    assert.deepEqual(acp.prompts, ["/rename Risolvi altra issue e crea PR"])
+  const renamed = await service.renameSession("019faa51-rename-test", "Risolvi altra issue e crea PR")
+  assert.equal(renamed.title, "Risolvi altra issue e crea PR")
+  assert.deepEqual(acp.prompts, ["/rename Risolvi altra issue e crea PR"])
 
-    const listed = await fetch(`${baseURL}/experimental/session`, { headers: authHeaders() })
-    assert.equal(listed.status, 200)
-    assert.equal((await listed.json())[0].title, "Risolvi altra issue e crea PR")
-  } finally {
-    await new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve()))
-  }
+  const listed = await service.listSessions()
+  assert.equal(listed[0].title, "Risolvi altra issue e crea PR")
 })
