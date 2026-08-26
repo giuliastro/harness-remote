@@ -326,3 +326,38 @@ assert.match(daemon2, /service\.prompt\(sessionID, text, modelWireName\(resolved
   'the daemon must forward the attachments instead of a hardcoded empty array')
 assert.match(daemon2, /attachments: Boolean\(entry\.host\?\.promptCapabilities\?\.image\)/,
   'attachment support is what the live adapter negotiated, not a declared profile flag')
+
+// --- B3: command palette and keyboard navigation ----------------------------------------------
+// A project collapses to five rows with a "show more", so on a machine with hundreds of Sessions
+// most of them are reachable only by expanding and scrolling. `CommandPalette` already existed in
+// `shell.tsx` with its stylesheet, imported by nothing the product mounts. Cmd/Ctrl+K now opens it
+// over the Session-first shell with every visible Session in it.
+assert.ok(standalone.includes('import { CommandPalette, type PaletteCommand } from "./shell"'),
+  'the shell must mount the palette that already existed rather than grow a second one')
+assert.match(standalone, /event\.key\.toLowerCase\(\) !== "k" \|\| !\(event\.metaKey \|\| event\.ctrlKey\)/,
+  'the palette must answer to Cmd+K and Ctrl+K, not one of the two')
+assert.match(standalone, /run: \(\) => openSession\(entry\.target\)/,
+  'a palette entry must open the real native Session, not a reconstructed target')
+assert.ok(standalone.includes('onSessionsChange={setDirectory}'),
+  'the palette must list what the rail discovered instead of running a second discovery pass')
+assert.ok(home.includes('export type SessionDirectoryEntry'), 'the rail must publish what it found')
+assert.match(home, /onSessionsChange\?\: \(entries: SessionDirectoryEntry\[\]\) => void/,
+  'reporting the visible Sessions must be optional, so the rail still works unwired')
+// The reported entries have to be built from the same helpers the rows use, or the palette shows a
+// handoff envelope where the row shows a title.
+assert.match(home, /onSessionsChange\(groups\.flatMap[\s\S]{0,600}nativeSessionDisplayTitle/,
+  'palette labels must go through the same title normaliser as the rows')
+assert.match(home, /onSessionsChange\(groups\.flatMap[\s\S]{0,600}nativeSessionSurfaceTarget/,
+  'palette entries must carry a real surface target')
+// Up/Down in the rail move real DOM focus, so assistive technology follows the selection.
+assert.match(standalone, /if \(event\.key !== "ArrowDown" && event\.key !== "ArrowUp"\) return/,
+  'the rail must handle vertical arrows itself')
+assert.match(standalone, /rows\[next\]\.focus\(\)[\s\S]{0,120}scrollIntoView\(\{ block: "nearest" \}\)/,
+  'arrowing must move focus and keep the focused row on screen')
+for (const key of ['sf.palettePlaceholder', 'sf.paletteEmpty', 'sf.paletteNavigate', 'sf.paletteRun', 'sf.paletteClose']) {
+  assert.ok(sfKeys.includes(key), `${key} must be declared so all four languages carry it`)
+}
+// Behaviour is asserted by `PALETTE_CHECK=1 npm run measure:session-first`, which presses Ctrl+K,
+// types a title that only exists behind the rail's "show more", presses Enter, and requires the
+// detail pane to show that exact Session - then Escape to close, and ArrowDown/ArrowUp to move
+// focus between rows.

@@ -20,10 +20,11 @@ import {
 } from "../workspaceMachines"
 import { reuseList } from "../workspace-runtime-merge"
 import { useDialogDismiss } from "../useDialogDismiss"
+import { CommandPalette, type PaletteCommand } from "./shell"
 import { useTranslator } from "../useTranslator"
 import { NativeSessionActions } from "./native-session-actions"
 import { NativeSessionHandoffControl } from "./native-session-handoff-control"
-import { NativeSessionHome } from "./native-session-home"
+import { NativeSessionHome, type SessionDirectoryEntry } from "./native-session-home"
 import { NativeSessionObserver, type NativeSessionVisualState } from "./native-session-observer"
 import "../taskdesk-workthreads.css"
 import "../taskdesk-mobile-navigation.css"
@@ -297,12 +298,45 @@ function NativeSessionsWorkspace({
   // Sessions after a rename or delete instead of waiting up to 30s for its own refresh.
   const [listRevision, setListRevision] = useState(0)
   const [railWidth, setRailWidth] = useState<number | null>(loadRailWidth)
+  const [directory, setDirectory] = useState<SessionDirectoryEntry[]>([])
+  const [paletteOpen, setPaletteOpen] = useState(false)
   const refreshGeneration = useRef(0)
 
   useEffect(() => {
     if (railWidth === null) return
     try { localStorage.setItem(RAIL_WIDTH_STORAGE_KEY, String(railWidth)) } catch { /* private mode keeps the session's width */ }
   }, [railWidth])
+
+  // The 2.x shell had a palette and this one imported nothing: 411 Sessions were reachable only by
+  // scrolling a rail. Cmd/Ctrl+K is the shortcut every client this is compared against uses.
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key.toLowerCase() !== "k" || !(event.metaKey || event.ctrlKey)) return
+      event.preventDefault()
+      setPaletteOpen((open) => !open)
+    }
+    window.addEventListener("keydown", onKeyDown)
+    return () => window.removeEventListener("keydown", onKeyDown)
+  }, [])
+
+  const paletteCommands = useMemo<PaletteCommand[]>(() => [
+    {
+      id: "new-session",
+      group: t("nav.sessions"),
+      label: t("sf.newSession"),
+      run: () => document.querySelector<HTMLButtonElement>(".hr-native-new-session")?.click()
+    },
+    { id: "machines", group: t("sf.machines"), label: t("sf.manageMachines"), run: onManageMachines },
+    { id: "settings", group: t("sf.machines"), label: t("nav.settings"), run: onManageSettings },
+    ...directory.map((entry) => ({
+      id: `session:${entry.key}`,
+      group: `${entry.machine} · ${entry.project}`,
+      label: entry.title,
+      hint: `${entry.agentLabel} · ${entry.status}`,
+      keywords: `${entry.agentLabel} ${entry.project} ${entry.machine}`,
+      run: () => openSession(entry.target)
+    }))
+  ], [directory, onManageMachines, onManageSettings, t])
 
   const resizeRail = useCallback((next: number) => {
     setRailWidth(clampRailWidth(next))
@@ -446,16 +480,46 @@ function NativeSessionsWorkspace({
           </button>
         </div>
       </header>
+      {paletteOpen ? (
+        <CommandPalette
+          commands={paletteCommands}
+          placeholder={t("sf.palettePlaceholder")}
+          emptyLabel={t("sf.paletteEmpty")}
+          navigateHint={t("sf.paletteNavigate")}
+          runHint={t("sf.paletteRun")}
+          closeHint={t("sf.paletteClose")}
+          onClose={() => setPaletteOpen(false)}
+        />
+      ) : null}
       <div
         className="hr-native-workspace-body"
         style={railWidth === null ? undefined : { ["--hrsf-rail-width" as string]: `${railWidth}px` }}
       >
-        <aside className="hr-native-workspace-list">
+        {/* Up/Down move between Session rows and Enter opens the focused one, so the list is
+            navigable without a pointer. Real focus moves, so a screen reader follows. */}
+        <aside
+          className="hr-native-workspace-list"
+          onKeyDown={(event) => {
+            if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return
+            const rows = [...event.currentTarget.querySelectorAll<HTMLButtonElement>(".hr-native-session-row")]
+            if (rows.length === 0) return
+            const active = document.activeElement
+            const index = active instanceof HTMLButtonElement ? rows.indexOf(active) : -1
+            // Arrowing from the search field or a filter enters the list at its first row.
+            const next = index < 0
+              ? 0
+              : (index + (event.key === "ArrowDown" ? 1 : -1) + rows.length) % rows.length
+            event.preventDefault()
+            rows[next].focus()
+            rows[next].scrollIntoView({ block: "nearest" })
+          }}
+        >
           <NativeSessionHome
             sources={runtimes}
             onOpen={openSession}
             refreshToken={listRevision}
             onAttentionCountChange={onAttentionCountChange}
+            onSessionsChange={setDirectory}
             selectedKey={selected?.key}
             selectedState={selectedState}
           />

@@ -167,6 +167,82 @@ const run = async () => {
   // Drives the Settings language picker itself. The earlier language check wrote localStorage and
   // dispatched the event by hand, which proved the listener worked but not that the control reaches
   // it - the one thing a "the picker does nothing" report is about.
+  // Cmd/Ctrl+K has to reach the Sessions themselves, not just open a box: the palette is the only
+  // way to reach the 400th Session without scrolling, so the check types a title, presses Enter and
+  // compares the chosen row's label against the Session the detail pane then shows.
+  if (process.env.PALETTE_CHECK) {
+    await page.keyboard.press("Control+k")
+    await page.locator(".palette").waitFor({ timeout: 10_000 })
+    const commandsWithNoQuery = await page.locator(".palette-item").count()
+    const groups = await page.locator(".palette-list .menu-group-label").allTextContents()
+    // The palette has to sit above the shell, not behind it: a fixed overlay inside a transformed
+    // ancestor renders in the wrong place, and only hit-testing catches that.
+    const overlay = await page.evaluate(() => {
+      const box = document.querySelector(".palette").getBoundingClientRect()
+      const hit = document.elementFromPoint(box.left + box.width / 2, box.top + 30)
+      return {
+        left: Math.round(box.left), width: Math.round(box.width), top: Math.round(box.top),
+        viewportWidth: window.innerWidth,
+        centredOverViewport: Math.abs((box.left + box.width / 2) - window.innerWidth / 2) < 4,
+        topmostAtPalette: Boolean(hit && hit.closest(".palette"))
+      }
+    })
+    await page.locator(".palette-input").fill("capitali")
+    await page.waitForTimeout(400)
+    const filtered = await page.locator(".palette-item").count()
+    const chosen = await page.locator(".palette-item.active .palette-item-label").first().textContent()
+    const hint = await page.locator(".palette-item.active .palette-item-hint").first().textContent().catch(() => null)
+    await page.keyboard.press("Enter")
+    await page.waitForTimeout(1200)
+    const openedTitle = await page.locator(".hr-native-session-heading h1").textContent()
+    const stillOpen = await page.locator(".palette").count()
+
+    // Escape has to close it, or the palette becomes a trap on a keyboard-only client.
+    await page.keyboard.press("Control+k")
+    await page.locator(".palette").waitFor({ timeout: 10_000 })
+    await page.keyboard.press("Escape")
+    await page.waitForTimeout(300)
+    const closedByEscape = (await page.locator(".palette").count()) === 0
+
+    // Arrow keys in the rail move real DOM focus between rows, so a screen reader follows along.
+    const rows = page.locator(".hr-native-session-row")
+    await rows.first().focus()
+    const focusedTitle = () => page.evaluate(() =>
+      (document.activeElement?.closest(".hr-native-session-row")?.querySelector("strong")?.textContent || "").trim())
+    const first = await focusedTitle()
+    await page.keyboard.press("ArrowDown")
+    await page.waitForTimeout(150)
+    const afterDown = await focusedTitle()
+    await page.keyboard.press("ArrowDown")
+    await page.waitForTimeout(150)
+    const afterSecondDown = await focusedTitle()
+    await page.keyboard.press("ArrowUp")
+    await page.waitForTimeout(150)
+    const afterUp = await focusedTitle()
+    const focusStaysInRail = await page.evaluate(() =>
+      Boolean(document.activeElement?.closest(".hr-native-workspace-list")))
+
+    console.log(JSON.stringify({
+      commandsWithNoQuery,
+      sessionRows: await rows.count(),
+      groups,
+      overlay,
+      filtered,
+      chosen,
+      hint,
+      openedTitle,
+      openedTheChosenSession: chosen !== null && openedTitle === chosen,
+      paletteClosedOnRun: stillOpen === 0,
+      closedByEscape,
+      railFocus: { first, afterDown, afterSecondDown, afterUp },
+      arrowDownMovedFocus: Boolean(first) && afterDown !== first,
+      arrowUpReturned: afterUp === afterDown,
+      focusStaysInRail
+    }, null, 2))
+    await page.screenshot({ path: OUT })
+    return
+  }
+
   if (process.env.ATTACH_CHECK) {
     const picker = page.locator(".uw-composer-attach")
     await picker.waitFor({ timeout: 15_000 })

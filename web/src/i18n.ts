@@ -310,6 +310,11 @@ type TranslationKey =
   | 'sf.attachedImages'
   | 'sf.removeAttachment'
   | 'sf.attachmentLimit'
+  | 'sf.palettePlaceholder'
+  | 'sf.paletteEmpty'
+  | 'sf.paletteNavigate'
+  | 'sf.paletteRun'
+  | 'sf.paletteClose'
   | 'sf.brandTagline'
   | 'sf.allMachines'
   | 'sf.nativeSessions'
@@ -779,6 +784,11 @@ const translations: Record<LanguageCode, Partial<Record<TranslationKey, string>>
     'sf.attachedImages': 'Attached images',
     'sf.removeAttachment': 'Remove {name}',
     'sf.attachmentLimit': 'At most {count} images per message.',
+    'sf.palettePlaceholder': 'Search Sessions and actions…',
+    'sf.paletteEmpty': 'Nothing matches',
+    'sf.paletteNavigate': '↑↓ to move',
+    'sf.paletteRun': 'Enter to open',
+    'sf.paletteClose': 'Esc to close',
     'sf.brandTagline': 'Native coding-agent Sessions, anywhere.',
     'sf.allMachines': 'All machines',
     'sf.nativeSessions': 'Native Sessions',
@@ -1248,6 +1258,11 @@ const translations: Record<LanguageCode, Partial<Record<TranslationKey, string>>
     'sf.attachedImages': 'Immagini allegate',
     'sf.removeAttachment': 'Rimuovi {name}',
     'sf.attachmentLimit': 'Massimo {count} immagini per messaggio.',
+    'sf.palettePlaceholder': 'Cerca sessioni e azioni…',
+    'sf.paletteEmpty': 'Nessun risultato',
+    'sf.paletteNavigate': '↑↓ per spostarti',
+    'sf.paletteRun': 'Invio per aprire',
+    'sf.paletteClose': 'Esc per chiudere',
     'sf.brandTagline': 'Sessioni native dei coding agent, ovunque.',
     'sf.allMachines': 'Tutte le macchine',
     'sf.nativeSessions': 'Sessioni native',
@@ -1669,6 +1684,11 @@ const translations: Record<LanguageCode, Partial<Record<TranslationKey, string>>
     'sf.attachedImages': '已附加的圖片',
     'sf.removeAttachment': '移除 {name}',
     'sf.attachmentLimit': '每則訊息最多 {count} 張圖片。',
+    'sf.palettePlaceholder': '搜尋工作階段與動作…',
+    'sf.paletteEmpty': '沒有符合的項目',
+    'sf.paletteNavigate': '↑↓ 移動',
+    'sf.paletteRun': 'Enter 開啟',
+    'sf.paletteClose': 'Esc 關閉',
     'sf.brandTagline': '隨處操作編碼代理的原生工作階段。',
     'sf.allMachines': '所有機器',
     'sf.nativeSessions': '原生工作階段',
@@ -2135,6 +2155,11 @@ const translations: Record<LanguageCode, Partial<Record<TranslationKey, string>>
     'sf.attachedImages': '已附加的图片',
     'sf.removeAttachment': '移除 {name}',
     'sf.attachmentLimit': '每条消息最多 {count} 张图片。',
+    'sf.palettePlaceholder': '搜索会话和操作…',
+    'sf.paletteEmpty': '没有匹配项',
+    'sf.paletteNavigate': '↑↓ 移动',
+    'sf.paletteRun': 'Enter 打开',
+    'sf.paletteClose': 'Esc 关闭',
     'sf.brandTagline': '随时随地操作编码代理的原生会话。',
     'sf.allMachines': '所有机器',
     'sf.nativeSessions': '原生会话',

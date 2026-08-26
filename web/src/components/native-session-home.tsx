@@ -47,6 +47,17 @@ type CreateProject = {
 }
 type SessionPresentationState = "working" | "attention" | "stopped" | "ready"
 
+/** One Session as the command palette needs it: what to show, and what to open. */
+export type SessionDirectoryEntry = {
+  key: string
+  title: string
+  project: string
+  machine: string
+  agentLabel: string
+  status: string
+  target: NativeSessionSurfaceTarget
+}
+
 
 type Props = {
   sources: Source[]
@@ -56,6 +67,9 @@ type Props = {
   refreshToken?: number
   /** The rail already counts Sessions needing input; the mobile nav needs that count outside it. */
   onAttentionCountChange?: (count: number) => void
+  /** The Sessions currently in view, so the command palette can offer them without a second
+   *  discovery pass. Reported after every filter or discovery change. */
+  onSessionsChange?: (entries: SessionDirectoryEntry[]) => void
   selectedKey?: string
   selectedState?: SessionPresentationState
 }
@@ -235,7 +249,7 @@ function nativeCreateAgents(snapshot: MachineSnapshot): MachineAgentHost[] {
   return snapshot.agents.filter(canCreateNativeSession)
 }
 
-export function NativeSessionHome({ sources, onOpen, refreshToken = 0, onAttentionCountChange, selectedKey, selectedState }: Props) {
+export function NativeSessionHome({ sources, onOpen, refreshToken = 0, onAttentionCountChange, onSessionsChange, selectedKey, selectedState }: Props) {
   const t = useTranslator()
   const [records, setRecords] = useState<RecordWithMachine[]>([])
   const [projectsByMachine, setProjectsByMachine] = useState<Record<string, MachineProject[]>>({})
@@ -414,6 +428,22 @@ export function NativeSessionHome({ sources, onOpen, refreshToken = 0, onAttenti
   useEffect(() => {
     onAttentionCountChange?.(attentionCount)
   }, [attentionCount, onAttentionCountChange])
+
+  useEffect(() => {
+    if (!onSessionsChange) return
+    onSessionsChange(groups.flatMap((group) => group.sessions.map((item) => {
+      const presentation = presentationForItem(item)
+      return {
+        key: recordKey(item),
+        title: nativeSessionDisplayTitle(item.record.session.title, t("sf.untitledSession", { agent: item.record.agentLabel })),
+        project: group.name,
+        machine: group.machine.name,
+        agentLabel: item.record.agentLabel,
+        status: presentation.label,
+        target: nativeSessionSurfaceTarget(item.machine.id, item.machine.config, item.record)
+      }
+    })))
+  }, [groups, onSessionsChange, presentationForItem, t])
 
   const filteredGroups = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase()
