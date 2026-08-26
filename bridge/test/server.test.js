@@ -853,7 +853,29 @@ test("keeps an external OMP session observational when its journal has no active
 })
 
 test("renames and hides ACP sessions through OpenCode-compatible endpoints", async () => {
-  const bridge = await startServer()
+  class RenamableAcp extends EventEmitter {
+    agentInfo = { version: "18.0.6" }
+    title = "Test"
+    async start() {}
+    async listSessions() {
+      return [{ sessionId: "session-1", title: this.title, cwd: process.cwd(), updatedAt: "2026-07-22T00:00:00.000Z" }]
+    }
+    async request(method, params) {
+      if (method === "session/load") return { configOptions: [] }
+      if (method === "session/prompt") {
+        const command = params?.prompt?.[0]?.text || ""
+        if (command.startsWith("/rename ")) this.title = command.slice("/rename ".length)
+        return { stopReason: "end_turn" }
+      }
+      return {}
+    }
+    notify() {}
+  }
+
+  // The generic FakeAcp intentionally holds its first session/load open for the concurrency tests
+  // below. OMP rename now correctly loads/owns the Session before sending native /rename, so using
+  // that artificial fixture here would turn a simple endpoint test into a five-minute timeout.
+  const bridge = await startServer({ acp: new RenamableAcp() })
   try {
     const renamed = await fetch(`${bridge.baseURL}/session/session-1`, {
       method: "PATCH",
