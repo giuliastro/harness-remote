@@ -99,7 +99,9 @@ function stabilizeCurrentUserIdentity(existing: MessageEnvelope[], latest: Messa
   if (!previousPrompt || previousPrompt !== incomingPrompt || !sameTurnTime(previous.user, incoming.user)) return latest
 
   const previousTerminal = previous.assistants.some(assistantTerminal)
-  if (previousTerminal && !compatibleSimpleAssistants(previous.assistants.at(-1), incoming.assistants.at(-1))) {
+  const previousAssistant = previous.assistants[previous.assistants.length - 1]
+  const incomingAssistant = incoming.assistants[incoming.assistants.length - 1]
+  if (previousTerminal && !compatibleSimpleAssistants(previousAssistant, incomingAssistant)) {
     return latest
   }
 
