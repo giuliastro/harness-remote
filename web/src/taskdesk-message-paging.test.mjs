@@ -52,6 +52,49 @@ test("newest-page reconcile never cuts a streamed assistant reply back to a stal
   assert.equal(caughtUp[0], laterJournal, "a journal that catches up and extends the answer remains authoritative")
 })
 
+test("a persisted OMP user id replaces the temporary prompt id before the assistant exists", () => {
+  const firstUser = message("u1", "first", "user", 1_000)
+  const firstAssistant = message("a1", "first answer", "assistant", 1_100)
+  firstAssistant.info.time.completed = 1_100
+  const temporarySecond = message("temporary-second", "second", "user", 2_000)
+
+  // OMP persists the user message before its assistant is durable. The native id must alias the
+  // already-visible temporary prompt instead of becoming a second logical user turn.
+  const persistedSecond = message("omp-u2", "second", "user", 2_001)
+  const liveAssistant = message("live-a2", "working on second", "assistant", 2_100)
+  const merged = mergeLatestMessagePage(
+    [firstUser, firstAssistant, temporarySecond],
+    [firstUser, firstAssistant, persistedSecond, liveAssistant]
+  )
+
+  assert.deepEqual(
+    merged.map((entry) => entry.info.id),
+    ["u1", "a1", "temporary-second", "live-a2"],
+    "the persisted prompt must keep the accepted Run's existing browser identity"
+  )
+  assert.equal(
+    merged.filter((entry) => entry.info.role === "user" && entry.parts[0]?.text === "second").length,
+    1,
+    "one accepted prompt must remain one native turn"
+  )
+})
+
+test("a later repeated completed prompt is not mistaken for an id migration", () => {
+  const oldUser = message("old-user", "repeat", "user", 1_000)
+  const oldAssistant = message("old-assistant", "old result", "assistant", 1_100)
+  oldAssistant.info.time.completed = 1_100
+  const newUser = message("new-user", "repeat", "user", 1_500)
+  const newAssistant = message("new-assistant", "different result", "assistant", 1_600)
+  newAssistant.info.time.completed = 1_600
+
+  const merged = mergeLatestMessagePage([oldUser, oldAssistant], [newUser, newAssistant])
+  assert.deepEqual(
+    merged.map((entry) => entry.info.id),
+    ["old-user", "old-assistant", "new-user", "new-assistant"],
+    "terminal repeated turns need compatible assistant evidence before ids can be stabilized"
+  )
+})
+
 test("live ACP ids reconcile to persisted journal ids without duplicating the final turn", () => {
   const liveUser = message("live-user", "same prompt", "user", 1000)
   const liveAssistant = message("live-assistant", "answer prefix", "assistant", 1100)
