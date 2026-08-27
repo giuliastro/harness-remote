@@ -60,6 +60,11 @@ test("OMP 18.x title slot and session header are metadata, not fake branch leave
     const history = createOmpHistoryLoader(root)
     const page = await history.page(sessionID, { limit: 20 })
     assert.deepEqual(page.messages.map((message) => message.parts[0].text), ["hello", "world"])
+    assert.equal(
+      page.messages.find((message) => message.info.role === "assistant")?.info.time.completed,
+      Date.parse("2026-08-26T18:00:02.000Z"),
+      "an OMP assistant exists in JSONL only after message_end, so its journal timestamp is completion evidence"
+    )
     assert.deepEqual(page.model, { providerID: "openai-codex", modelID: "gpt-5.6-terra" })
   } finally {
     await rm(root, { recursive: true, force: true })
