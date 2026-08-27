@@ -895,8 +895,9 @@ export class AcpService {
   }
 
   #startTurn(sessionID, text, recorded = false, attachments = []) {
-    // From the first turn this bridge runs, its own stream is the live record for the session, the
-    // same way taking ownership of an external session stops the journal being re-read for it.
+    // From the first turn this bridge runs, its ACP stream is live state for the Session. Harnesses
+    // with authoritative journals still merge that stream as transient enrichment rather than
+    // replacing their persisted transcript authority.
     this.#adoptedSessions.delete(sessionID)
     const generation = (this.#turnGenerations.get(sessionID) ?? 0) + 1
     this.#turnGenerations.set(sessionID, generation)
@@ -1182,12 +1183,9 @@ export class AcpService {
             return
           }
         }
-        // OMP's journal deliberately refuses to guess a branch when its optional
-        // extension did not publish an active leaf.  Replaying through ACP is not
-        // a safe fallback for an externally-owned Session: it can take minutes
-        // (or acquire the Session) merely to render an empty attachment-only
-        // transcript.  Such a Session stays observational until the user takes
-        // ownership by sending a prompt or explicitly asks for its config.
+        // A journal-backed reader may explicitly prohibit ACP replay when an observational read
+        // has no visible messages. Loading native history just to turn an empty read into another
+        // read can be expensive or stateful; writer/config acquisition remains a separate path.
         if (
           this.#journalBacked(sessionID) &&
           !requireConfigOptions &&
