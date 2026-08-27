@@ -61,7 +61,6 @@ test("OMP 18.x title slot and session header are metadata, not fake branch leave
     const page = await history.page(sessionID, { limit: 20 })
     assert.deepEqual(page.messages.map((message) => message.parts[0].text), ["hello", "world"])
     assert.deepEqual(page.model, { providerID: "openai-codex", modelID: "gpt-5.6-terra" })
-    assert.equal(history.needsReplay(sessionID), false, "a normal OMP 18.x Session must not require ACP replay")
   } finally {
     await rm(root, { recursive: true, force: true })
   }
@@ -89,7 +88,6 @@ test("an OMP journal created after a negative lookup is visible immediately on t
     const page = await history.page(sessionID, { limit: 20 })
     assert.deepEqual(page.messages.map((message) => message.parts[0].text), ["first prompt", "first answer"])
     assert.ok(history.diagnostics().listingScans > before, "an unknown Session id must re-scan instead of caching a negative lookup")
-    assert.equal(history.needsReplay(sessionID), false)
   } finally {
     await rm(root, { recursive: true, force: true })
   }
@@ -113,13 +111,12 @@ test("ordinary OMP continuation advances the confirmed branch without session/lo
     await appendRecords(file, [user("u2", "a1", "two", 3), assistant("a2", "u2", "answer two", 4)])
     const page = await history.page(sessionID, { limit: 20 })
     assert.deepEqual(page.messages.map((message) => message.parts[0].text), ["one", "answer one", "two", "answer two"])
-    assert.equal(history.needsReplay(sessionID), false, "a unique descendant chain is PI-like normal continuation, not branch ambiguity")
   } finally {
     await rm(root, { recursive: true, force: true })
   }
 })
 
-test("actual sibling replies still require native OMP branch selection", async () => {
+test("actual sibling replies use OMP's persisted last-entry leaf without native replay", async () => {
   const root = await mkdtemp(path.join(tmpdir(), "harness-remote-omp18-branch-"))
   const sessionID = "019faa51-branch-test"
   const file = path.join(root, `2026-08-26_${sessionID}.jsonl`)
@@ -133,8 +130,9 @@ test("actual sibling replies still require native OMP branch selection", async (
 
   try {
     const history = createOmpHistoryLoader(root)
-    assert.equal(await history.page(sessionID, { limit: 20 }), undefined)
-    assert.equal(history.needsReplay(sessionID), true)
+    const page = await history.page(sessionID, { limit: 20 })
+    assert.deepEqual(page.messages.map((message) => message.parts[0].text), ["choose", "new"])
+    assert.equal("reconcileReplay" in history, false, "persisted branch reads must never acquire OMP through session/load")
   } finally {
     await rm(root, { recursive: true, force: true })
   }
