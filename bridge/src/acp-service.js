@@ -585,6 +585,9 @@ export class AcpService {
         return messages
       } catch {
         this.#emit("session.error", sessionID, { message: "Harness session history could not be read" })
+        if (this.#historyLoader.neverReplayOnRead === true) {
+          return mergeFragmentedPiSnapshot(this.#messages.get(sessionID) ?? [])
+        }
       }
     }
     const reloadHistory = refresh && this.#reloadOnHistoryRefresh
