@@ -216,15 +216,16 @@ function reconcileNativeSessionModel(entry: ProjectionEntry, page: MessagePage, 
 }
 
 /**
- * OpenCode status and transcript durability are separate streams. After HR accepts one prompt, the
- * durable native transcript is the strongest evidence that this exact turn finished: it cannot be
- * scoped away by `/session/status`, and it is also the payload the user ultimately needs to see.
+ * OpenCode status and OMP lifecycle events are separate from transcript durability. After HR accepts
+ * one prompt, a completed assistant in the authoritative native transcript is the strongest evidence
+ * that this exact turn finished. OMP needs this especially because its JSONL may become complete
+ * after the last live event the mounted renderer observed.
  *
  * Match by prompt occurrence, not timestamps, so repeated prompts remain correct and clock skew
- * between the browser and OpenCode cannot attach an older completed assistant to a new Run.
+ * between browser and harness cannot attach an older completed assistant to a new Run.
  */
-function reconcileOpenCodeTranscriptStatus(entry: ProjectionEntry, page: MessagePage, before?: string): void {
-  if (entry.target.backend !== "opencode" || before || entry.forcedStatus !== "running") return
+function reconcileNativeTranscriptStatus(entry: ProjectionEntry, page: MessagePage, before?: string): void {
+  if ((entry.target.backend !== "opencode" && entry.target.backend !== "omp") || before || entry.forcedStatus !== "running") return
 
   const orderedRuns = [...entry.runs.values()].sort((left, right) => left.created - right.created || left.id.localeCompare(right.id))
   const current = orderedRuns[orderedRuns.length - 1]
@@ -449,7 +450,7 @@ function installAdapter(): void {
     if (entry) {
       page = stabilizePiTailPage(entry, page, before)
       captureUserRuns(entry, page, before)
-      reconcileOpenCodeTranscriptStatus(entry, page, before)
+      reconcileNativeTranscriptStatus(entry, page, before)
       reconcileNativeSessionModel(entry, page, before)
     }
     return page
