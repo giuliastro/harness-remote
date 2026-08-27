@@ -182,7 +182,8 @@ export function createBridgeServer({ config, acp, serviceOptions, machineRegistr
     ...serviceOptions,
     actionProviders: profile.actionProviders,
     preferListedTitles: profile.preferListedTitles,
-    nativeRenameCommand: profile.nativeRenameCommand
+    nativeRenameCommand: profile.nativeRenameCommand,
+    nativeResumeOnClaim: profile.nativeResumeOnClaim
   })
   const hiddenSessionIDs = serviceOptions?.hiddenSessionIDs
   const liveSessionActivity = new Map()
@@ -392,25 +393,6 @@ export function createBridgeServer({ config, acp, serviceOptions, machineRegistr
               before,
               refresh
             })
-
-            // OMP's ACP replay knows the native selected branch but omits persistent ids, red failed
-            // attempts and some model metadata. When the JSONL tree is ambiguous, the history loader
-            // deliberately asks for this replay rather than trusting the optional undo extension or
-            // guessing the newest leaf. Once ACP has replayed the branch, immediately map it back to
-            // JSONL and serve the stable journal page in this same read: no Send/reopen side effect is
-            // required just to make an existing Session become visible.
-            if (
-              backend === "omp"
-              && !before
-              && typeof historyLoader?.reconcileReplay === "function"
-              && (refresh || historyLoader.needsReplay?.(sessionID))
-            ) {
-              const selectedLeaf = await historyLoader.reconcileReplay(sessionID, page.messages)
-              if (selectedLeaf !== undefined && typeof historyLoader.page === "function") {
-                const journalPage = await historyLoader.page(sessionID, { limit: limit ?? 100 })
-                if (journalPage && Array.isArray(journalPage.messages)) page = journalPage
-              }
-            }
 
             if (page.before) response.setHeader("X-Next-Cursor", page.before)
             response.setHeader("X-Has-More", page.hasMore ? "1" : "0")
