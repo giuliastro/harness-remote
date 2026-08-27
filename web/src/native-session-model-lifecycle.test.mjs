@@ -253,4 +253,38 @@ assert.deepEqual(continued.runs[continued.runs.length - 1].model, MODEL_X)
 registration.dispose()
 api.loadMessagePage = realLoadPage
 
+// --- 10. Leaving and reopening a still-working OMP Session keeps its known model ------------------
+const workingTargetWithModel = target({
+  key: 'machine:omp:working-remount',
+  agentID: 'omp',
+  agentLabel: 'OMP',
+  backend: 'omp',
+  sessionID: 'working-remount',
+  model: MODEL_Y,
+  status: { type: 'busy' },
+  config: { backend: 'omp', host: '127.0.0.1', port: 4099, username: 'harness', password: 'pw', agentId: 'omp' }
+})
+const firstWorkingRegistration = registerNativeSessionV3Adapter(workingTargetWithModel, () => {})
+assert.deepEqual(firstWorkingRegistration.task.model, MODEL_Y)
+firstWorkingRegistration.dispose()
+
+// Native list metadata may temporarily omit the model while OMP is busy. Navigation must not turn
+// that absence into "Harness default" when this browser already observed the Session's real model.
+const workingTargetWithoutModel = {
+  ...workingTargetWithModel,
+  model: null
+}
+const remountedWorkingRegistration = registerNativeSessionV3Adapter(workingTargetWithoutModel, () => {})
+assert.deepEqual(
+  remountedWorkingRegistration.task.model,
+  MODEL_Y,
+  'a still-working OMP Session must restore its last known model across observer unmount/remount'
+)
+assert.deepEqual(
+  remountedWorkingRegistration.task.run?.model,
+  MODEL_Y,
+  'the remounted anchor Run must expose the remembered model to the shared model picker'
+)
+remountedWorkingRegistration.dispose()
+
 console.log('native-session model lifecycle regressions: OK')
