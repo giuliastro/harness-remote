@@ -424,6 +424,7 @@ export function createOmpHistoryLoader(sessionRoot = path.join(homedir(), ".omp"
   // Like PI, OMP's append-only journal is transcript truth even after this bridge acquires the writer.
   // ACP remains lifecycle/config transport; it must never be required merely to read a Session.
   loadOmpHistory.authoritativeHistory = true
+  loadOmpHistory.neverReplayOnRead = true
   loadOmpHistory.mergeLiveHistory = mergeOmpLiveHistory
   loadOmpHistory.pageRequiresActiveLeaf = false
   loadOmpHistory.deferAcpReplayWithoutActiveLeaf = true
