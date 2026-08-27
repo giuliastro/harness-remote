@@ -321,6 +321,7 @@ export class AcpService {
   #replaySettleMs
   #preferListedTitles
   #nativeRenameCommand
+  #nativeResumeOnClaim
   constructor(acp, {
     snapshotDirectory,
     historyLoader,
@@ -329,6 +330,7 @@ export class AcpService {
     replaySettleMs = 0,
     preferListedTitles = false,
     nativeRenameCommand,
+    nativeResumeOnClaim = false,
     actionProviders = []
   } = {}) {
     this.#acp = acp
@@ -339,6 +341,7 @@ export class AcpService {
     this.#replaySettleMs = replaySettleMs
     this.#preferListedTitles = preferListedTitles
     this.#nativeRenameCommand = nativeRenameCommand
+    this.#nativeResumeOnClaim = nativeResumeOnClaim
     this.#actionProviders = actionProviders
     acp.on("notification", (notification) => this.#handleNotification(notification))
   }
@@ -417,7 +420,20 @@ export class AcpService {
       return true
     }
 
-    await this.#load(sessionID, true, true)
+    if (this.#nativeResumeOnClaim) {
+      const session = this.#sessions.get(sessionID)
+      if (!session) throw new Error("Harness session not found")
+      await this.#acp.start()
+      const result = await this.#acp.request("session/resume", {
+        sessionId: sessionID,
+        cwd: session.cwd,
+        mcpServers: []
+      }, 300_000)
+      this.#acpOpenSessions.add(sessionID)
+      this.#rememberConfigOptions(sessionID, result?.configOptions)
+    } else {
+      await this.#load(sessionID, true, true)
+    }
     this.#ownedSessions.add(sessionID)
     this.#adoptedSessions.delete(sessionID)
     this.#persistSnapshot(sessionID)
@@ -555,8 +571,9 @@ export class AcpService {
       try {
         const persistedMessages = mergeFragmentedPiSnapshot(await this.#historyLoader(sessionID))
         const cachedMessages = mergeFragmentedPiSnapshot(this.#messages.get(sessionID) ?? [])
+        const mergeLiveHistory = this.#historyLoader.mergeLiveHistory ?? mergeExternalHistory
         const messages = this.#isBusy(sessionID)
-          ? mergeFragmentedPiSnapshot(mergeExternalHistory(persistedMessages, cachedMessages))
+          ? mergeFragmentedPiSnapshot(mergeLiveHistory(persistedMessages, cachedMessages))
           : persistedMessages
         if (semanticHistorySignature(messages) !== semanticHistorySignature(cachedMessages)) {
           this.#resetActionsForSessionChange(sessionID)
