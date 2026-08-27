@@ -87,8 +87,8 @@ function journalEntry(record) {
 function normalizeEntries(raw, sessionID, legacySessions) {
   const header = raw.find((record) => record?.type === "session")
   const source = raw.filter(journalEntry)
-  const version = Number(header?.version ?? 1)
-  const legacyOnDisk = version < 2 || source.some((record) =>
+  const headerVersion = header ? Number(header.version ?? 1) : undefined
+  const legacyOnDisk = (headerVersion !== undefined && headerVersion < 2) || source.some((record) =>
     typeof record?.id !== "string" || !Object.prototype.hasOwnProperty.call(record, "parentId")
   )
   if (legacyOnDisk) legacySessions.add(sessionID)
