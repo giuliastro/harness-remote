@@ -431,6 +431,7 @@ export class AcpService {
       }, 300_000)
       this.#acpOpenSessions.add(sessionID)
       this.#rememberConfigOptions(sessionID, result?.configOptions)
+      this.#loaded.add(sessionID)
     } else {
       await this.#load(sessionID, true, true)
     }
@@ -847,14 +848,7 @@ export class AcpService {
       throw new Error("This harness does not accept images")
     }
     if (this.#historyLoader && !this.#ownedSessions.has(sessionID)) {
-      this.#ownedSessions.add(sessionID)
-      this.#loaded.delete(sessionID)
-      try {
-        await this.#load(sessionID)
-      } catch (error) {
-        this.#ownedSessions.delete(sessionID)
-        throw error
-      }
+      await this.claimSession(sessionID)
     } else {
       await this.#load(sessionID)
     }
