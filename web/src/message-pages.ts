@@ -47,6 +47,67 @@ function withStableID(message: MessageEnvelope, stableID: string): MessageEnvelo
   }
 }
 
+function currentTurn(messages: MessageEnvelope[]): { user: MessageEnvelope; assistants: MessageEnvelope[] } | null {
+  let userIndex = -1
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    if (messages[index].info.role === "user") {
+      userIndex = index
+      break
+    }
+  }
+  if (userIndex < 0) return null
+  return {
+    user: messages[userIndex],
+    assistants: messages.slice(userIndex + 1).filter((message) => message.info.role === "assistant")
+  }
+}
+
+function assistantTerminal(message: MessageEnvelope): boolean {
+  if (message.info.role !== "assistant") return false
+  if (message.info.error || message.info.time?.completed) return true
+  const info = message.info as MessageEnvelope["info"] & { finish?: unknown }
+  return typeof info.finish === "string" && Boolean(info.finish.trim())
+}
+
+function compatibleSimpleAssistants(left: MessageEnvelope | undefined, right: MessageEnvelope | undefined): boolean {
+  if (!left || !right || !simpleTailMessage(left) || !simpleTailMessage(right)) return false
+  const a = visibleText(left)
+  const b = visibleText(right)
+  return Boolean(a && b && (a === b || a.startsWith(b) || b.startsWith(a)))
+}
+
+/**
+ * The bridge records a prompt immediately under a temporary id, then OMP/PI persist the same user
+ * turn under their own journal id. Persistence can happen before any assistant chunk exists. If that
+ * id swap is treated as a second user message, the work-thread mapper sees two identical prompts:
+ * the accepted Run binds to the first, now-orphaned one, while the answer/activity bind to the second.
+ * The Session then looks blank or stuck on "starting" until navigation discards the temporary row.
+ *
+ * Preserve the current user's browser identity as soon as persistence proves it is the same turn.
+ * An unfinished prior turn is safe to alias because a distinct next prompt cannot have been accepted
+ * yet. Once the prior turn is terminal, require compatible assistant text as the extra proof so two
+ * genuinely repeated prompts are never collapsed just because they were sent close together.
+ */
+function stabilizeCurrentUserIdentity(existing: MessageEnvelope[], latest: MessageEnvelope[]): MessageEnvelope[] {
+  const previous = currentTurn(existing)
+  const incoming = currentTurn(latest)
+  if (!previous || !incoming || previous.user.info.id === incoming.user.info.id) return latest
+  if (!simpleTailMessage(previous.user) || !simpleTailMessage(incoming.user)) return latest
+
+  const previousPrompt = visibleText(previous.user).trim()
+  const incomingPrompt = visibleText(incoming.user).trim()
+  if (!previousPrompt || previousPrompt !== incomingPrompt || !sameTurnTime(previous.user, incoming.user)) return latest
+
+  const previousTerminal = previous.assistants.some(assistantTerminal)
+  if (previousTerminal && !compatibleSimpleAssistants(previous.assistants.at(-1), incoming.assistants.at(-1))) {
+    return latest
+  }
+
+  return latest.map((message) =>
+    message === incoming.user ? withStableID(message, previous.user.info.id) : message
+  )
+}
+
 function tailPair(messages: MessageEnvelope[]): { user: MessageEnvelope; assistant: MessageEnvelope } | null {
   let userIndex = -1
   for (let index = messages.length - 1; index >= 0; index -= 1) {
@@ -73,6 +134,7 @@ function tailPair(messages: MessageEnvelope[]): { user: MessageEnvelope; assista
  * duplicate or remaining cut off until reopen. PI and OMP both cross this live-ACP -> journal boundary.
  */
 function stabilizeTailIdentity(existing: MessageEnvelope[], latest: MessageEnvelope[]): MessageEnvelope[] {
+  latest = stabilizeCurrentUserIdentity(existing, latest)
   const previousTail = tailPair(existing)
   const incomingTail = tailPair(latest)
   if (!previousTail || !incomingTail) return latest
