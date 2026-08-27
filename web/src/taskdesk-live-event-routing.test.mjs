@@ -50,15 +50,24 @@ test("OpenCode completion lifecycle reconciles status and the selected transcrip
   assert.doesNotMatch(lifecycle, /send|prompt|continueWorkThread/)
 })
 
-test("OMP session.updated gets one bounded journal settle read without a polling loop", () => {
+test("ACP session.updated refreshes immediately without an OMP guessed-delay loop", () => {
   const refresh = readFileSync(new URL("./taskdesk-session-live-refresh.ts", import.meta.url), "utf8")
   const lifecycle = refresh.match(/if \(event\.type === "session\.updated"\)[\s\S]*?\n      \}/)?.[0] || ""
 
   assert.match(lifecycle, /throttle\("index", [^,]+, onIndex\)/)
   assert.match(lifecycle, /selectedEvent[\s\S]*?throttle\("message", [^,]+, onMessage\)/)
   assert.match(lifecycle, /throttle\("detail", [^,]+, onDetail\)/)
-  assert.match(lifecycle, /target\.config\.backend === "omp"[\s\S]*?settleAfterLifecycle\(\)/)
-  assert.doesNotMatch(lifecycle, /setTimeout|350|1800|3200/, "the lifecycle branch must schedule one shared settle read, never its own polling loop")
+  assert.doesNotMatch(lifecycle, /backend === "omp"|settleAfterLifecycle|setTimeout|350|900|1800|3200/, "OMP completion must not depend on a guessed delay")
+})
+
+test("the mature conversation re-reads the persisted tail exactly on Working to Ready", () => {
+  const conversation = readFileSync(new URL("./components/work-thread-conversation.tsx", import.meta.url), "utf8")
+  assert.match(conversation, /const priorWorkingRef = useRef\(working\)/)
+  const edge = conversation.match(/useEffect\(\(\) => \{\n    const wasWorking = priorWorkingRef\.current[\s\S]*?\n  \}, \[working, refreshCurrentTail\]\)/)?.[0] || ""
+  assert.match(edge, /priorWorkingRef\.current = working/)
+  assert.match(edge, /if \(!wasWorking \|\| working\) return/)
+  assert.match(edge, /void refreshCurrentTail\(\)/)
+  assert.doesNotMatch(edge, /setTimeout|setInterval/, "final persisted-tail convergence must be lifecycle-driven")
 })
 
 test("foregrounding the app immediately reconciles durable conversation state", () => {
