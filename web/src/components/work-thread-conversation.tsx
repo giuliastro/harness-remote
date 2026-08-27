@@ -338,6 +338,7 @@ export function WorkThreadConversation({
   const currentSessionID = runSessionID(task.run)
   const currentTarget = currentSessionID ? targets.find((target) => target.sessionID === currentSessionID) : undefined
   const working = isActive(task)
+  const priorWorkingRef = useRef(working)
   // JSON.stringify over every Run is far too expensive to repeat on each keystroke. The Task object
   // identity only changes when the workspace actually reloads or updates the conversation.
   const conversationSignature = useMemo(() => taskConversationSignature(task), [task])
@@ -514,6 +515,18 @@ export function WorkThreadConversation({
       }
     })
   }, [baseConfig])
+
+  // The live ACP cache is authoritative while a turn is running, but OMP switches back to its
+  // persisted JSONL as soon as the turn becomes idle. Re-read exactly on that Working -> Ready edge.
+  // This mirrors what navigation already proves works: once idle, the same endpoint returns the full
+  // persisted tail. The coalescer guarantees that if a chunk refresh is in flight this becomes the
+  // one trailing read instead of racing or being dropped.
+  useEffect(() => {
+    const wasWorking = priorWorkingRef.current
+    priorWorkingRef.current = working
+    if (!wasWorking || working) return
+    void refreshCurrentTail()
+  }, [working, refreshCurrentTail])
 
   const refreshAttention = useCallback(async (sourceTask?: MachineTask) => {
     if (attentionInFlightRef.current) return
