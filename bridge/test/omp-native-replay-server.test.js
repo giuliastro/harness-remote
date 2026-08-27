@@ -118,6 +118,25 @@ test("OMP history read stays journal-only and writer claim uses session/resume",
   }
 })
 
+test("an OMP journal read failure never falls back to session/load", async () => {
+  const historyLoader = async () => {
+    throw new Error("simulated JSONL rewrite window")
+  }
+  historyLoader.authoritativeHistory = true
+  historyLoader.neverReplayOnRead = true
+
+  const bridge = await startServer(historyLoader)
+  try {
+    const response = await fetch(`${bridge.baseURL}/session/session-1/message?limit=100`, { headers: authHeaders() })
+    assert.equal(response.status, 200)
+    assert.deepEqual(await response.json(), [])
+    assert.equal(bridge.acp.loads, 0, "a transient journal failure must never acquire OMP through session/load")
+    assert.equal(bridge.acp.resumes, 0, "a transcript GET must remain observational even on failure")
+  } finally {
+    await bridge.close()
+  }
+})
+
 test("old OMP v1 transcript is visible through HTTP without any native load", async () => {
   const root = await mkdtemp(path.join(tmpdir(), "harness-remote-omp-native-v1-"))
   const records = [
