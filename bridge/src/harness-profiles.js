@@ -30,6 +30,9 @@ export const HARNESS_PROFILES = {
     // Keep title ownership in OMP instead of a Harness Remote-only snapshot, exactly as the
     // Session-first surface already expects from native session/list metadata.
     nativeRenameCommand: "rename",
+    // OMP advertises ACP session/resume. Writer acquisition should open the stored Session without
+    // replaying its transcript through ACP; JSONL already owns reads and replay can disturb lifecycle.
+    nativeResumeOnClaim: true,
     preferListedTitles: true,
     // OMP exposes thinking as a real ACP config option. We probe only ids the running adapter
     // actually advertises; this list is a routing hint, never a source of invented variants.
