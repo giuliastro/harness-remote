@@ -257,19 +257,24 @@ async function newSessionAudit(page, label) {
   const group = page.getByRole("group", { name: "Create native Session" })
   await group.waitFor({ state: "visible" })
 
+  const machine = group.locator(".hr-native-create-machine select")
   const project = group.getByLabel("Project")
   const agent = group.getByLabel("Coding agent")
   const title = group.getByLabel("Title optional")
   const cancel = group.getByRole("button", { name: "Cancel" })
   const create = group.getByRole("button", { name: /Create Session/ })
-  for (const [locator, name] of [[project, "Project"], [agent, "Coding agent"], [title, "Title"], [cancel, "Cancel"], [create, "Create Session"]]) {
+  for (const [locator, name] of [[machine, "Machine"], [project, "Project"], [agent, "Coding agent"], [title, "Title"], [cancel, "Cancel"], [create, "Create Session"]]) {
     await locator.waitFor({ state: "visible" })
     await locator.scrollIntoViewIfNeeded()
     await insideViewport(page, locator, `${label} ${name}`)
   }
 
-  assert.equal(await project.locator("option").count(), 2, `${label}: New Session must expose Projects from both machines`)
-  assert.equal(await agent.locator("option").count(), 2, `${label}: New Session must expose the supported native create agents`)
+  assert.equal(await machine.locator("option").count(), 2, `${label}: New Session must expose both configured machines`)
+  assert.equal(await project.locator("option").count(), 1, `${label}: Project choices must be scoped to the selected machine`)
+  assert.equal(await agent.locator("option").count(), agentDefinitions.length, `${label}: New Session must expose every create-capable harness on the selected machine`)
+  await machine.selectOption(fixtures[1].id)
+  assert.equal(await project.locator("option").count(), 1, `${label}: switching machine must replace the Project scope instead of mixing machines`)
+  assert.equal(await project.inputValue(), fixtures[1].project.path, `${label}: switching machine must select that machine's Project`)
   await title.fill("Session-first UI audit")
   assert.equal(await create.isDisabled(), false, `${label}: a valid Project and agent must enable Create Session`)
   await noOverflow(page, `${label} New Session`)
