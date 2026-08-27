@@ -176,7 +176,6 @@ function providersResponse(models, fallbackProviderID) {
 export function createBridgeServer({ config, acp, serviceOptions, machineRegistry }) {
   const backend = config.backend ?? "omp"
   const profile = harnessProfile(backend)
-  const historyLoader = serviceOptions?.historyLoader ?? profile.historyLoader
   const serviceAcp = new AcpPromptEchoFilter(acp)
   const service = new AcpService(serviceAcp, {
     ...serviceOptions,
