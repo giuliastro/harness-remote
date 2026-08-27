@@ -44,12 +44,15 @@ function messageEnvelope(record, sessionID) {
   const error = messageError(record.message)
   if (parts.length === 0 && !error) return undefined
   const created = Date.parse(record.timestamp ?? "")
+  const timestamp = Number.isFinite(created) ? created : Date.now()
   return {
     info: {
       id: messageID,
       role,
       sessionID,
-      time: { created: Number.isFinite(created) ? created : Date.now() },
+      // OMP appends an assistant message to JSONL only at message_end. For a persisted assistant the
+      // journal timestamp is therefore also durable completion evidence, not a live-stream guess.
+      time: role === "assistant" ? { created: timestamp, completed: timestamp } : { created: timestamp },
       ...(error ? { error } : {})
     },
     parts
