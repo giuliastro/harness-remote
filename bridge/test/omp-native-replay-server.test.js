@@ -7,9 +7,11 @@ import test from "node:test"
 import { createOmpHistoryLoader } from "../src/omp-session-history.js"
 import { createBridgeServer } from "../src/server.js"
 
-class AmbiguousOmpAcp extends EventEmitter {
+class NativeOmpAcp extends EventEmitter {
   agentInfo = { version: "18.0.6" }
   loads = 0
+  resumes = 0
+  prompts = []
 
   async start() {}
 
@@ -22,34 +24,27 @@ class AmbiguousOmpAcp extends EventEmitter {
     }]
   }
 
-  async request(method) {
-    if (method !== "session/load") return {}
-    this.loads += 1
-    for (const message of [
-      { role: "user", id: "acp-u0", text: "first" },
-      { role: "assistant", id: "acp-a0", text: "first answer" },
-      { role: "user", id: "acp-u1", text: "retry this" },
-      { role: "assistant", id: "acp-a1", text: "selected answer" }
-    ]) {
-      this.emit("notification", {
-        method: "session/update",
-        params: {
-          sessionId: "session-1",
-          update: {
-            sessionUpdate: message.role === "user" ? "user_message_chunk" : "agent_message_chunk",
-            messageId: message.id,
-            content: { type: "text", text: message.text }
-          }
-        }
-      })
+  async request(method, params) {
+    if (method === "session/load") {
+      this.loads += 1
+      throw new Error("read path must not call session/load")
     }
-    return {
-      configOptions: [{
-        id: "model",
-        currentValue: "openai-codex/gpt-5.6-terra",
-        options: [{ value: "openai-codex/gpt-5.6-terra", name: "GPT-5.6 Terra" }]
-      }]
+    if (method === "session/resume") {
+      this.resumes += 1
+      assert.equal(params.sessionId, "session-1")
+      return {
+        configOptions: [{
+          id: "model",
+          currentValue: "openai-codex/gpt-5.6-terra",
+          options: [{ value: "openai-codex/gpt-5.6-terra", name: "GPT-5.6 Terra" }]
+        }]
+      }
     }
+    if (method === "session/prompt") {
+      this.prompts.push(params.sessionId)
+      return { stopReason: "end_turn" }
+    }
+    return {}
   }
 
   notify() {}
@@ -60,7 +55,7 @@ function authHeaders() {
 }
 
 async function startServer(historyLoader) {
-  const acp = new AmbiguousOmpAcp()
+  const acp = new NativeOmpAcp()
   const server = createBridgeServer({
     acp,
     serviceOptions: { historyLoader },
@@ -77,20 +72,21 @@ async function startServer(historyLoader) {
   const address = server.address()
   return {
     acp,
+    service: server.acpService,
     baseURL: `http://127.0.0.1:${address.port}`,
     close: () => new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve()))
   }
 }
 
-test("cold OMP read replays the native selected branch and returns stable JSONL truth in the same response", async () => {
-  const root = await mkdtemp(path.join(tmpdir(), "harness-remote-omp-native-replay-"))
+test("OMP history read stays journal-only and writer claim uses session/resume", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "harness-remote-omp-native-resume-"))
   const records = [
+    { type: "session", version: 3, id: "session-1", cwd: process.cwd() },
     { type: "message", id: "u0", parentId: null, timestamp: "2026-08-26T10:00:00.000Z", message: { role: "user", content: "first" } },
     { type: "message", id: "a0", parentId: "u0", timestamp: "2026-08-26T10:00:01.000Z", message: { role: "assistant", content: "first answer" } },
     { type: "message", id: "u1", parentId: "a0", timestamp: "2026-08-26T10:00:02.000Z", message: { role: "user", content: "retry this" } },
-    { type: "message", id: "failed", parentId: "u1", timestamp: "2026-08-26T10:00:03.000Z", message: { role: "assistant", provider: "openai-codex", model: "gpt-5.6-terra", errorMessage: "Interrupted by user", content: [] } },
-    { type: "message", id: "abandoned", parentId: "u1", timestamp: "2026-08-26T10:00:04.000Z", message: { role: "assistant", content: "abandoned answer" } },
-    { type: "message", id: "selected", parentId: "u1", timestamp: "2026-08-26T10:00:05.000Z", message: { role: "assistant", provider: "openai-codex", model: "gpt-5.6-terra", content: "selected answer" } }
+    { type: "message", id: "abandoned", parentId: "u1", timestamp: "2026-08-26T10:00:03.000Z", message: { role: "assistant", content: "abandoned answer" } },
+    { type: "message", id: "selected", parentId: "u1", timestamp: "2026-08-26T10:00:04.000Z", message: { role: "assistant", provider: "openai-codex", model: "gpt-5.6-terra", content: "selected answer" } }
   ]
   await writeFile(path.join(root, "2026-08-26_session-1.jsonl"), `${records.map((record) => JSON.stringify(record)).join("\n")}\n`)
 
@@ -99,21 +95,47 @@ test("cold OMP read replays the native selected branch and returns stable JSONL 
   try {
     const response = await fetch(`${bridge.baseURL}/session/session-1/message?limit=100`, { headers: authHeaders() })
     assert.equal(response.status, 200)
-    const messages = await response.json()
+    assert.deepEqual((await response.json()).map((message) => message.info.id), ["u0", "a0", "u1", "selected"])
+    assert.equal(bridge.acp.loads, 0, "opening an OMP Session must not replay or acquire it")
+    assert.equal(bridge.acp.resumes, 0, "reading is observational and must not acquire a writer")
 
-    assert.equal(bridge.acp.loads, 1, "cold ambiguous history must use one native session/load rather than waiting for a Send")
-    assert.deepEqual(messages.map((message) => message.info.id), ["u0", "a0", "u1", "failed", "selected"])
-    assert.equal(messages.find((message) => message.info.id === "failed")?.info.error?.message, "Interrupted by user")
-    assert.ok(!messages.some((message) => message.info.id === "abandoned"), "an unselected successful sibling must stay hidden")
+    await bridge.service.claimSession("session-1")
+    assert.equal(bridge.acp.resumes, 1, "the first real writer claim uses OMP's native resume")
+    assert.equal(bridge.acp.loads, 0, "claiming OMP must not replay the whole transcript")
 
+    await bridge.service.prompt("session-1", "continue")
+    await new Promise((resolve) => setImmediate(resolve))
+    assert.deepEqual(bridge.acp.prompts, ["session-1"])
+    assert.equal(bridge.acp.loads, 0)
+    assert.equal(bridge.acp.resumes, 1)
+
+    const reopened = await fetch(`${bridge.baseURL}/session/session-1/message?limit=100`, { headers: authHeaders() })
+    assert.equal(reopened.status, 200)
+    assert.equal(bridge.acp.loads, 0, "post-prompt reads remain journal-authoritative")
+  } finally {
+    await bridge.close()
+    await rm(root, { recursive: true, force: true })
+  }
+})
+
+test("old OMP v1 transcript is visible through HTTP without any native load", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "harness-remote-omp-native-v1-"))
+  const records = [
+    { type: "session", cwd: process.cwd(), timestamp: "2025-01-01T00:00:00.000Z" },
+    { type: "message", timestamp: "2025-01-01T00:00:01.000Z", message: { role: "user", content: "legacy prompt" } },
+    { type: "message", timestamp: "2025-01-01T00:00:02.000Z", message: { role: "assistant", provider: "openai-codex", model: "gpt-5.6-terra", content: "legacy answer" } }
+  ]
+  await writeFile(path.join(root, "2025-01-01_session-1.jsonl"), `${records.map((record) => JSON.stringify(record)).join("\n")}\n`)
+
+  const bridge = await startServer(createOmpHistoryLoader(root))
+  try {
+    const response = await fetch(`${bridge.baseURL}/session/session-1/message?limit=100`, { headers: authHeaders() })
+    assert.equal(response.status, 200)
+    assert.deepEqual((await response.json()).map((message) => message.parts[0].text), ["legacy prompt", "legacy answer"])
+    assert.equal(bridge.acp.loads, 0)
+    assert.equal(bridge.acp.resumes, 0)
     const rawModel = response.headers.get("x-session-model")
-    assert.ok(rawModel, "the first successful read must carry the native Session model")
     assert.deepEqual(JSON.parse(decodeURIComponent(rawModel)), { providerID: "openai-codex", modelID: "gpt-5.6-terra" })
-
-    const second = await fetch(`${bridge.baseURL}/session/session-1/message?limit=100`, { headers: authHeaders() })
-    assert.equal(second.status, 200)
-    assert.equal(bridge.acp.loads, 1, "once branch truth is confirmed, reopen must remain journal-only")
-    assert.deepEqual((await second.json()).map((message) => message.info.id), ["u0", "a0", "u1", "failed", "selected"])
   } finally {
     await bridge.close()
     await rm(root, { recursive: true, force: true })
