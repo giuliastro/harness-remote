@@ -225,14 +225,15 @@ const ompTarget = target({
   config: { backend: 'omp', host: '127.0.0.1', port: 4099, username: 'harness', password: 'pw', agentId: 'omp' }
 })
 const realLoadPage = api.loadMessagePage
-api.loadMessagePage = async () => ({
+let ompPage = {
   messages: [{
     info: { id: 'persisted-user', role: 'user', sessionID: 'reopen', time: { created: 10 } },
     parts: [{ id: 'persisted-user:text', messageID: 'persisted-user', type: 'text', text: 'first prompt' }]
   }],
   hasMore: false,
   model: MODEL_X
-})
+}
+api.loadMessagePage = async () => ompPage
 const projectionUpdates = []
 const registration = registerNativeSessionV3Adapter(ompTarget, (next) => projectionUpdates.push(next))
 await api.loadMessagePage(ompTarget.config, ompTarget.sessionID, ompTarget.directory, undefined, 20, false)
@@ -250,6 +251,49 @@ const continued = await taskClient.continueTask(ompTarget.config, enriched.id, {
 assert.equal(sent[sent.length - 1].body.model, undefined, 'the same recovered OMP model must not be sent as a model mutation')
 assert.deepEqual(continued.runs[continued.runs.length - 2].model, MODEL_X)
 assert.deepEqual(continued.runs[continued.runs.length - 1].model, MODEL_X)
+assert.equal(continued.status, 'running', 'an accepted OMP continuation starts as working')
+
+// A live assistant chunk is useful progress but is not proof that OMP has finished the turn.
+ompPage = {
+  messages: [
+    {
+      info: { id: 'persisted-user', role: 'user', sessionID: 'reopen', time: { created: 10 } },
+      parts: [{ id: 'persisted-user:text', messageID: 'persisted-user', type: 'text', text: 'first prompt' }]
+    },
+    {
+      info: { id: 'omp-user-2', role: 'user', sessionID: 'reopen', time: { created: 20 } },
+      parts: [{ id: 'omp-user-2:text', messageID: 'omp-user-2', type: 'text', text: 'continue without changing model' }]
+    },
+    {
+      info: { id: 'live-assistant-2', role: 'assistant', sessionID: 'reopen', time: { created: 21 } },
+      parts: [{ id: 'live-assistant-2:text', messageID: 'live-assistant-2', type: 'text', text: 'still streaming' }]
+    }
+  ],
+  hasMore: false,
+  model: MODEL_X
+}
+await api.loadMessagePage(ompTarget.config, ompTarget.sessionID, ompTarget.directory, undefined, 20, false)
+assert.equal(projectionUpdates[projectionUpdates.length - 1].status, 'running', 'an incomplete live OMP assistant must not end the Run')
+
+// OMP writes an assistant to JSONL only after message_end. Once that completed envelope is visible,
+// the mounted projection must become Ready without requiring a Session unmount/remount.
+ompPage = {
+  ...ompPage,
+  messages: [
+    ompPage.messages[0],
+    ompPage.messages[1],
+    {
+      info: { id: 'omp-assistant-2', role: 'assistant', sessionID: 'reopen', time: { created: 22, completed: 22 } },
+      parts: [{ id: 'omp-assistant-2:text', messageID: 'omp-assistant-2', type: 'text', text: 'complete second answer' }]
+    }
+  ]
+}
+await api.loadMessagePage(ompTarget.config, ompTarget.sessionID, ompTarget.directory, undefined, 20, false)
+assert.equal(
+  projectionUpdates[projectionUpdates.length - 1].status,
+  'completed',
+  'a durable OMP assistant for the current prompt must clear forced Working in the mounted projection'
+)
 registration.dispose()
 api.loadMessagePage = realLoadPage
 
