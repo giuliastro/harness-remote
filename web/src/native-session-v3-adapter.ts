@@ -37,6 +37,8 @@ type ProjectionEntry = {
 }
 
 const projections = new Map<string, ProjectionEntry>()
+const rememberedProjectionModels = new Map<string, ModelSelection>()
+const MAX_REMEMBERED_PROJECTION_MODELS = 256
 let installed = false
 
 export function nativeSessionIsWorking(status?: string): boolean {
@@ -166,8 +168,19 @@ function sameModel(left: ModelSelection | null, right: ModelSelection | null): b
     && (left.variant || "") === (right.variant || ""))
 }
 
+function rememberProjectionModel(id: string, model: ModelSelection): void {
+  rememberedProjectionModels.delete(id)
+  rememberedProjectionModels.set(id, model)
+  while (rememberedProjectionModels.size > MAX_REMEMBERED_PROJECTION_MODELS) {
+    const oldest = rememberedProjectionModels.keys().next().value
+    if (typeof oldest !== "string") break
+    rememberedProjectionModels.delete(oldest)
+  }
+}
+
 function rememberCurrentModel(entry: ProjectionEntry, model: ModelSelection | null): void {
   entry.currentModel = model
+  if (model) rememberProjectionModel(projectionID(entry.target), model)
   // OMP interprets an explicit model in the next prompt as a real native model mutation, so once its
   // JSONL proves the current selection the transport target must remember it and suppress a redundant
   // set_config_option. OpenCode deliberately keeps the opposite wire contract: its continuation path
@@ -501,13 +514,15 @@ export function registerNativeSessionV3Adapter(
   let entry = projections.get(id)
   if (!entry) {
     const now = Date.now()
+    const rememberedModel = rememberedProjectionModels.get(id) ?? null
+    const currentModel = target.model ?? rememberedModel
     entry = {
       target,
       createdAt: now,
       updatedAt: now,
       statusType: target.status?.type || "idle",
       forcedStatus: null,
-      currentModel: target.model,
+      currentModel,
       initialPageCaptured: false,
       piTailMessages: [],
       writerReady: !target.requiresExplicitClaim,
@@ -515,6 +530,11 @@ export function registerNativeSessionV3Adapter(
       runs: new Map(),
       listeners: new Set()
     }
+    // Navigation destroys the live projection but not the fact that this native Session was already
+    // observed using a specific model. Restore that lightweight fact before the controller mounts so
+    // returning to a still-working OMP Session never flashes "Harness default". For OMP this also
+    // restores transport comparison state, while OpenCode keeps its existing explicit-model wire contract.
+    rememberCurrentModel(entry, currentModel)
     projections.set(id, entry)
   } else {
     const currentModel = target.model ?? entry.currentModel
