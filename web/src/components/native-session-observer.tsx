@@ -40,7 +40,7 @@ export { nativeSessionIsWorking }
  */
 const NATIVE_SESSION_MODEL_SCOPE: AgentModelScope = {}
 
-function targetForInitialProjection(target: NativeSessionSurfaceTarget): NativeSessionSurfaceTarget {
+function targetForInitialRuntime(target: NativeSessionSurfaceTarget): NativeSessionSurfaceTarget {
   // OpenCode's Session list model is provider/default metadata rather than reliable per-turn truth,
   // and Codex's list can likewise expose the adapter default while the rollout carries the model
   // actually used by the latest turn. Treat those list values as provisional: mount immediately
@@ -59,7 +59,7 @@ function targetForInitialProjection(target: NativeSessionSurfaceTarget): NativeS
  * Writer acquisition is deferred to the first mutation by native-session-v3-adapter, so the user
  * never has to unlock the transcript with an extra Continue step. Nothing is persisted as a Task or Run.
  */
-export function NativeSessionObserver({ target, onSessionRefresh, onStateChange }: Props) {
+export function NativeSessionObserver({ target, onStateChange }: Props) {
   const [conversation, setConversation] = useState<ConversationRuntime | null>(null)
   const [controller, setController] = useState<ConversationController | null>(null)
   const [attachmentsSupported, setAttachmentsSupported] = useState(false)
@@ -127,7 +127,7 @@ export function NativeSessionObserver({ target, onSessionRefresh, onStateChange 
   useEffect(() => {
     let disposed = false
     let registration: ReturnType<typeof registerNativeSessionV3Adapter> | undefined
-    const initialTarget = targetForInitialProjection(target)
+    const initialTarget = targetForInitialRuntime(target)
 
     setConversation(null)
     setController(null)
@@ -170,7 +170,6 @@ export function NativeSessionObserver({ target, onSessionRefresh, onStateChange 
         deferModelFallback
         controller={controller}
         onConversationUpdate={handleConversationUpdate}
-        onSessionRefresh={onSessionRefresh}
         onAttentionChange={handleAttentionChange}
         commands={commands}
       />
