@@ -469,7 +469,7 @@ function nativeConversationController(entry: ProjectionEntry): ConversationContr
         ? await sendNativeSessionCommand(entry.target, body.command.name, body.command.arguments, model)
         : await sendNativeSessionPrompt(entry.target, prompt, model, body.attachments ?? [])
       if (result.status !== "accepted") {
-        throw new Error(\`\${body.command ? "Command" : "Prompt"} delivery is \${result.status}. Retry the same request to reconcile the existing request id.\`)
+        throw new Error(`${body.command ? "Command" : "Prompt"} delivery is ${result.status}. Retry the same request to reconcile the existing request id.`)
       }
       return appendAcceptedRun(entry, prompt, model ?? null, result.clientRequestId)
     },
@@ -482,7 +482,7 @@ function nativeConversationController(entry: ProjectionEntry): ConversationContr
       const operationToken = latestRun?.id || entry.target.sessionID
       const result = await stopNativeSession(entry.target, operationToken)
       if (result.status !== "accepted") {
-        throw new Error(\`Stop delivery is \${result.status}. The existing native cancel request will be reconciled instead of repeated.\`)
+        throw new Error(`Stop delivery is ${result.status}. The existing native cancel request will be reconciled instead of repeated.`)
       }
       entry.forcedStatus = "cancelled"
       entry.statusType = "idle"
