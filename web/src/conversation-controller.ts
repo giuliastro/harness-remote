@@ -9,7 +9,7 @@ export type ConversationContinueInput = {
   agentId?: string
   model?: ModelSelection | null
   attachments?: AttachmentPart[]
-  command?: { name: string; arguments?: string }
+  command?: { name: string; arguments: string }
 }
 
 /**
