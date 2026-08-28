@@ -120,12 +120,14 @@ assert.ok(workThread.includes('api.loadMessagePage'), 'v3 WorkThreadConversation
 assert.ok(workThread.includes('buildWorkThreadTimeline'), 'v3 WorkThreadConversation must remain timeline authority')
 assert.ok(workThread.includes('startTaskDeskSessionLiveRefresh'), 'v3 WorkThreadConversation must remain live-event authority')
 assert.ok(workThread.includes('taskClient.continueTask'), 'v3 WorkThreadConversation must remain send controller')
+assert.ok(workThread.includes('pendingPrompt.attachments.map'), 'optimistic user turns must keep sent attachments visible immediately')
 assert.ok(workThread.includes('command: slashCommand'), 'recognized slash commands must travel through the same continueTask controller call')
 assert.equal(workThread.includes('api.sendCommand('), false, 'slash commands must not bypass Session-first with the legacy mutation endpoint')
 assert.ok(workThread.includes('taskClient.cancelWorkThread'), 'v3 WorkThreadConversation must remain Stop controller')
 assert.ok(workThread.includes('<TaskDeskConversation'), 'v3 WorkThreadConversation must remain the renderer owner')
 assert.ok(workThread.includes('createCoalescedTailRefresh'), 'native Session tail refreshes must preserve a final authoritative read arriving during an in-flight read')
 assert.ok(timeline.includes('Native user messages are the only conversation boundary'), 'mature v3 native turn boundary semantics must remain authoritative')
+assert.ok(timeline.includes('attachmentParts = nativeUserParts.filter'), 'native attachment parts must survive the synthetic user-turn projection')
 assert.ok(timeline.includes('part.type === "tool" && part.callID'), 'mature v3 tool update identity must remain authoritative')
 assert.ok(timeline.includes('terminalNativeAssistantError'), 'a recovered OpenCode retry must be able to supersede a transient interrupted attempt in the same turn')
 
@@ -133,6 +135,7 @@ assert.equal(conversation.includes('MessageAgentMeta'), false, 'Session-first mu
 assert.equal(messageContent.includes('conversation-turn-state'), false, 'Session-first must not replace mature v3 reasoning/error semantics')
 assert.ok(messageContent.includes('hasTerminalAssistantText'), 'mature v3 assistant terminal-state semantics must remain intact')
 assert.ok(messageContent.includes('messageErrorText'), 'mature v3 error rendering must remain intact')
+assert.ok(messageContent.includes('AttachmentPartCard') && messageContent.includes('uw-message-attachments'), 'user turns must visibly render attached files/images')
 
 for (const retiredPath of [
   './native-session-feed.ts',
