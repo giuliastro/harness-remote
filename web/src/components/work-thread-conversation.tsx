@@ -1,7 +1,8 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { api } from "../api"
 import type { AttachmentPart } from "../attachments"
-import { createCoalescedTailRefresh } from "../coalesced-tail-refresh"\nimport { taskConversationController, type ConversationController } from "../conversation-controller"
+import { createCoalescedTailRefresh } from "../coalesced-tail-refresh"
+import { taskConversationController, type ConversationController } from "../conversation-controller"
 import { mergeLatestMessagePage, prependOlderMessagePage } from "../message-pages"
 import type { SavedServerProfile } from "../serverProfiles"
 import {
@@ -86,6 +87,8 @@ type Props = {
    * as if it were the Session's persisted selection.
    */
   deferModelFallback?: boolean
+  /** Explicit I/O boundary. Native Sessions provide a Session-scoped controller. */
+  controller?: ConversationController
 }
 
 function supportedBackend(value: string, fallback: BackendKind): BackendKind {
@@ -282,7 +285,8 @@ export function WorkThreadConversation({
   onAttentionChange,
   commands = [],
   modelScope,
-  deferModelFallback = false
+  deferModelFallback = false,
+  controller = taskConversationController
 }: Props) {
   const draftStorageKey = `${DRAFT_STORAGE_PREFIX}${task.id}`
   const initialAgentID = agentForRun(task, task.run)
@@ -411,7 +415,7 @@ export function WorkThreadConversation({
   const loadInitialTarget = useCallback(async (target: SessionTarget): Promise<SessionFeed> => {
     const page = await controller.loadMessagePage(target.config, target.sessionID, target.directory, undefined, INITIAL_PAGE_SIZE, false)
     return { messages: page.messages, before: page.before, hasMore: page.hasMore }
-  }, [])
+  }, [controller])
 
   useEffect(() => {
     const generation = ++loadGeneration.current
@@ -526,7 +530,7 @@ export function WorkThreadConversation({
         // reconciliation path will retry without clearing or replacing it.
       }
     })
-  }, [baseConfig])
+  }, [baseConfig, controller])
 
   const refreshAttention = useCallback(async (sourceTask?: MachineTask) => {
     if (attentionInFlightRef.current) return
