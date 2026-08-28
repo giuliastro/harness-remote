@@ -15,6 +15,8 @@ const COMMON_CAPABILITIES = {
   questions: false,
   permissions: false,
   sessionRename: false,
+  // ACP currently has no standard native Session-delete operation. Keep this false unless a
+  // specific adapter gains a verified native primitive; a local bridge tombstone is not deletion.
   sessionDelete: false
 }
 
@@ -51,8 +53,7 @@ export const HARNESS_PROFILES = {
       todos: true,
       commands: true,
       actions: true,
-      sessionRename: true,
-      sessionDelete: true
+      sessionRename: true
     },
     actionProviders: OMP_EXTENSION_ACTION_PROVIDERS
   },
@@ -86,8 +87,7 @@ export const HARNESS_PROFILES = {
       todos: false,
       commands: true,
       actions: false,
-      sessionRename: true,
-      sessionDelete: true
+      sessionRename: true
     }
   },
   claude: {
@@ -116,8 +116,7 @@ export const HARNESS_PROFILES = {
       todos: true,
       commands: false,
       actions: false,
-      sessionRename: true,
-      sessionDelete: true
+      sessionRename: true
     }
   },
   codex: {
@@ -157,8 +156,7 @@ export const HARNESS_PROFILES = {
       todos: true,
       commands: true,
       actions: false,
-      sessionRename: true,
-      sessionDelete: true
+      sessionRename: true
     }
   }
 }
