@@ -667,16 +667,19 @@ test("reports capabilities from the selected harness profile", async () => {
     assert.equal(ompCapabilities.todos, true)
     assert.equal(ompCapabilities.commands, true)
     assert.equal(ompCapabilities.actions, true)
+    assert.equal(ompCapabilities.sessionDelete, false)
     assert.equal(piCapabilities.models, true)
     assert.equal(piCapabilities.todos, false)
     assert.equal(piCapabilities.commands, true)
     assert.equal(piCapabilities.actions, false)
+    assert.equal(piCapabilities.sessionDelete, false)
     // Codex mirrors Claude's flat model ids and OMP's slash-command catalog, so the app must
     // trust the canonical OMP-style values the bridge exposes.
     assert.equal(codexCapabilities.models, true)
     assert.equal(codexCapabilities.todos, true)
     assert.equal(codexCapabilities.commands, true)
     assert.equal(codexCapabilities.actions, false)
+    assert.equal(codexCapabilities.sessionDelete, false)
   } finally {
     await Promise.all([omp.close(), pi.close(), codex.close()])
   }
@@ -852,7 +855,7 @@ test("keeps an external OMP session observational when its journal is empty", as
   assert.equal(acp.loads, 0, "a read-only OMP open must not fall back to a blocking ACP replay")
 })
 
-test("renames and hides ACP sessions through OpenCode-compatible endpoints", async () => {
+test("renames ACP sessions but refuses bridge-local deletion as a native mutation", async () => {
   const bridge = await startServer()
   try {
     // Naming a Session is a command sent into it, so the rename opens it first. This adapter holds
@@ -873,13 +876,14 @@ test("renames and hides ACP sessions through OpenCode-compatible endpoints", asy
       method: "DELETE",
       headers: authHeaders()
     })
-    assert.equal(deleted.status, 200)
-    assert.equal(await deleted.json(), true)
-    assert.deepEqual(await readJSON(bridge.baseURL, "/session"), [])
+    assert.equal(deleted.status, 405)
+    assert.match((await deleted.json()).error, /does not expose native Session deletion through ACP/)
 
+    // The rejected mutation must not create AcpService's local tombstone. The native Session stays
+    // readable/discoverable exactly as the harness reports it.
+    assert.equal((await readJSON(bridge.baseURL, "/session"))[0].title, "Renamed from mobile")
     const messages = await fetch(`${bridge.baseURL}/session/session-1/message`, { headers: authHeaders() })
-    assert.equal(messages.status, 400)
-    assert.match((await messages.json()).error, /Harness session not found/)
+    assert.equal(messages.status, 200)
   } finally {
     await bridge.close()
   }
