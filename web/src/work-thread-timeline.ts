@@ -1,3 +1,10 @@
+import {
+  conversationRuntimeFromTask,
+  conversationTurnSessionID,
+  conversationTurns,
+  type ConversationRuntime,
+  type ConversationTurn
+} from "./conversation-runtime"
 import type { MachineTask, MachineTaskRun } from "./taskClient"
 import type { MessageEnvelope, MessagePart } from "./types"
 
@@ -19,7 +26,7 @@ export type WorkThreadMessage = MessageEnvelope & {
 
 export type WorkThreadAgentMeta = Record<string, { label: string; backend: string }>
 
-type RunWithError = MachineTaskRun & { error?: { message?: string } | string | null }
+type TurnWithError = ConversationTurn & { error?: { message?: string } | string | null }
 
 type NativeTurn = {
   user: MessageEnvelope | null
@@ -39,8 +46,8 @@ export function workThreadRuns(task: MachineTask): MachineTaskRun[] {
   return runsFor(task)
 }
 
-export function runSessionID(run?: MachineTaskRun | null): string | null {
-  return run?.sessionId || run?.sessionID || null
+export function runSessionID(run?: MachineTaskRun | ConversationTurn | null): string | null {
+  return conversationTurnSessionID(run)
 }
 
 function textParts(parts: MessagePart[] | undefined): string {
@@ -110,20 +117,20 @@ function syntheticMessage({
   }
 }
 
-function runStart(task: MachineTask, run: MachineTaskRun, index: number): number {
-  const parsed = Date.parse(run.startedAt || "")
+function turnStart(conversation: ConversationRuntime, turn: ConversationTurn, index: number): number {
+  const parsed = Date.parse(turn.startedAt || "")
   if (Number.isFinite(parsed)) return parsed
-  const taskCreated = Date.parse(task.createdAt || "")
+  const taskCreated = Date.parse(conversation.createdAt || "")
   return (Number.isFinite(taskCreated) ? taskCreated : Date.now()) + index * 10
 }
 
-function modelLabel(run?: MachineTaskRun | null): string {
-  const model = run?.model
+function modelLabel(turn?: ConversationTurn | null): string {
+  const model = turn?.model
   if (!model?.modelID) return ""
   return `${model.modelID}${model.variant ? ` · ${model.variant}` : ""}`
 }
 
-function sameModel(left?: MachineTaskRun | null, right?: MachineTaskRun | null): boolean {
+function sameModel(left?: ConversationTurn | null, right?: ConversationTurn | null): boolean {
   const a = left?.model
   const b = right?.model
   if (!a && !b) return true
@@ -131,20 +138,20 @@ function sameModel(left?: MachineTaskRun | null, right?: MachineTaskRun | null):
   return a.providerID === b.providerID && a.modelID === b.modelID && (a.variant || "") === (b.variant || "")
 }
 
-function eventText(runs: MachineTaskRun[], index: number, agents: WorkThreadAgentMeta): string | null {
+function eventText(turns: ConversationTurn[], index: number, agents: WorkThreadAgentMeta): string | null {
   if (index === 0) return null
-  const run = runs[index]
-  const previous = runs[index - 1]
-  const currentAgent = run.agentId || ""
+  const turn = turns[index]
+  const previous = turns[index - 1]
+  const currentAgent = turn.agentId || ""
   const previousAgent = previous.agentId || ""
   const label = agents[currentAgent]?.label || currentAgent || "coding agent"
-  const model = modelLabel(run)
+  const model = modelLabel(turn)
 
   if (currentAgent && currentAgent !== previousAgent) {
     return `Continued with ${label}${model ? ` · ${model}` : ""} · context transferred`
   }
 
-  if (!sameModel(previous, run) && model) {
+  if (!sameModel(previous, turn) && model) {
     return `Model changed to ${model} · continuing with ${label}`
   }
 
@@ -230,11 +237,11 @@ function assistantParts(messages: MessageEnvelope[], aggregateID: string): Messa
   return parts
 }
 
-function runErrorText(task: MachineTask, run: MachineTaskRun): string {
-  const persisted = (run as RunWithError).error
+function turnErrorText(conversation: ConversationRuntime, turn: ConversationTurn): string {
+  const persisted = (turn as TurnWithError).error
   if (typeof persisted === "string") return persisted.trim()
   if (persisted?.message) return persisted.message.trim()
-  if (run.id && run.id === task.run?.id && task.error?.message) return task.error.message.trim()
+  if (turn.id && turn.id === conversation.currentTurn?.id && conversation.error?.message) return conversation.error.message.trim()
   return ""
 }
 
@@ -261,9 +268,9 @@ function terminalNativeAssistantError(assistants: MessageEnvelope[]): MessageEnv
   return undefined
 }
 
-function assistantForRun({
-  task,
-  run,
+function assistantForTurn({
+  conversation,
+  turn,
   index,
   turn,
   session,
@@ -271,30 +278,30 @@ function assistantForRun({
   agentLabel,
   agentBackend
 }: {
-  task: MachineTask
-  run: MachineTaskRun
+  conversation: ConversationRuntime
+  turn: ConversationTurn
   index: number
-  turn: NativeTurn | null
+  nativeTurn: NativeTurn | null
   session: string
   agentID: string
   agentLabel?: string
   agentBackend?: string
 }): WorkThreadMessage | null {
-  const assistants = (turn?.messages ?? []).filter((message) => message.info.role === "assistant")
-  const outcome = typeof run.outcome === "string" ? run.outcome.trim() : ""
-  const persistedError = run.status === "failed" ? runErrorText(task, run) : ""
+  const assistants = (nativeTurn?.messages ?? []).filter((message) => message.info.role === "assistant")
+  const outcome = typeof turn.outcome === "string" ? turn.outcome.trim() : ""
+  const persistedError = turn.status === "failed" ? turnErrorText(conversation, turn) : ""
   const nativeError = terminalNativeAssistantError(assistants)
-  const active = Boolean(run.id && run.id === task.run?.id && (task.status === "starting" || task.status === "running"))
+  const active = Boolean(turn.id && turn.id === conversation.currentTurn?.id && (conversation.status === "starting" || conversation.status === "running"))
 
   if (!assistants.length && !outcome && !persistedError) return null
 
-  const id = `work-thread:${task.id}:run:${run.id || index}:assistant`
+  const id = `work-thread:${conversation.id}:turn:${turn.id || index}:assistant`
   const parts = assistantParts(assistants, id)
   if (outcome && !parts.some((part) => part.type === "text" && typeof part.text === "string" && part.text.trim())) {
     parts.push({ id: `${id}:outcome`, messageID: id, type: "text", text: outcome })
   }
 
-  const created = Number(assistants[0]?.info?.time?.created) || runStart(task, run, index) + 1
+  const created = Number(assistants[0]?.info?.time?.created) || turnStart(conversation, turn, index) + 1
   const error = nativeError || (persistedError ? { name: "TaskRunError", message: persistedError } : undefined)
   return {
     info: {
@@ -307,7 +314,7 @@ function assistantForRun({
     parts,
     taskdesk: {
       kind: assistants.length ? "native" : persistedError && !outcome ? "error" : "fallback-result",
-      runId: run.id,
+      runId: turn.id,
       agentId: agentID,
       agentLabel,
       agentBackend,
@@ -316,82 +323,85 @@ function assistantForRun({
   }
 }
 
-export function buildWorkThreadTimeline(
-  task: MachineTask,
+export function buildConversationTimeline(
+  conversation: ConversationRuntime,
   messagesBySession: Record<string, MessageEnvelope[]>,
   agents: WorkThreadAgentMeta
 ): WorkThreadMessage[] {
-  const runs = runsFor(task)
-  if (runs.length === 0) {
-    const created = Date.parse(task.createdAt || "")
-    return task.prompt?.trim() ? [syntheticMessage({
-      id: `work-thread:${task.id}:objective`,
+  const turns = conversationTurns(conversation)
+  if (turns.length === 0) {
+    const created = Date.parse(conversation.createdAt || "")
+    return conversation.initialPrompt?.trim() ? [syntheticMessage({
+      id: `work-thread:${conversation.id}:objective`,
       role: "user",
-      sessionID: `work-thread:${task.id}`,
+      sessionID: `work-thread:${conversation.id}`,
       created: Number.isFinite(created) ? created : Date.now(),
-      text: task.prompt.trim(),
-      meta: { kind: "synthetic-user", agentId: task.agentId, agentLabel: agents[task.agentId]?.label, agentBackend: agents[task.agentId]?.backend }
+      text: conversation.initialPrompt.trim(),
+      meta: {
+        kind: "synthetic-user",
+        agentId: conversation.agentId,
+        agentLabel: agents[conversation.agentId]?.label,
+        agentBackend: agents[conversation.agentId]?.backend
+      }
     })] : []
   }
 
-  const runIndexesBySession = new Map<string, number[]>()
-  runs.forEach((run, index) => {
-    const session = runSessionID(run)
+  const turnIndexesBySession = new Map<string, number[]>()
+  turns.forEach((turn, index) => {
+    const session = conversationTurnSessionID(turn)
     if (!session) return
-    const indexes = runIndexesBySession.get(session) ?? []
+    const indexes = turnIndexesBySession.get(session) ?? []
     indexes.push(index)
-    runIndexesBySession.set(session, indexes)
+    turnIndexesBySession.set(session, indexes)
   })
 
-  const turnByRunIndex = new Map<number, NativeTurn | null>()
-  for (const [session, indexes] of runIndexesBySession) {
-    const prompts = indexes.map((index) => (runs[index].prompt || (index === 0 ? task.prompt : "")).trim())
+  const nativeTurnByIndex = new Map<number, NativeTurn | null>()
+  for (const [session, indexes] of turnIndexesBySession) {
+    const prompts = indexes.map((index) => (turns[index].prompt || (index === 0 ? conversation.initialPrompt : "")).trim())
     const matched = turnsForRunPrompts(messagesBySession[session] ?? [], prompts)
-    indexes.forEach((runIndex, ordinal) => turnByRunIndex.set(runIndex, matched[ordinal] ?? null))
+    indexes.forEach((turnIndex, ordinal) => nativeTurnByIndex.set(turnIndex, matched[ordinal] ?? null))
   }
 
   const timeline: WorkThreadMessage[] = []
-  runs.forEach((run, index) => {
-    const start = runStart(task, run, index)
-    const session = runSessionID(run) || `work-thread:${task.id}`
-    const agentID = run.agentId || task.agentId
+  turns.forEach((turn, index) => {
+    const start = turnStart(conversation, turn, index)
+    const session = conversationTurnSessionID(turn) || `work-thread:${conversation.id}`
+    const agentID = turn.agentId || conversation.agentId
     const agent = agents[agentID]
-    const event = eventText(runs, index, agents)
+    const event = eventText(turns, index, agents)
     if (event) {
       timeline.push(syntheticMessage({
-        id: `work-thread:${task.id}:run:${run.id || index}:handoff`,
-        // A client-side synthetic role for handoff/lifecycle lines in the merged timeline. It is
-        // never sent to or received from a harness, so the product noun does not belong in it.
+        id: `work-thread:${conversation.id}:turn:${turn.id || index}:handoff`,
         role: CONVERSATION_EVENT_ROLE,
         sessionID: session,
         created: start - 1,
         text: event,
-        meta: { kind: "event", runId: run.id, agentId: agentID, agentLabel: agent?.label, agentBackend: agent?.backend }
+        meta: { kind: "event", runId: turn.id, agentId: agentID, agentLabel: agent?.label, agentBackend: agent?.backend }
       }))
     }
 
-    const prompt = (run.prompt || (index === 0 ? task.prompt : "")).trim()
+    const prompt = (turn.prompt || (index === 0 ? conversation.initialPrompt : "")).trim()
     if (prompt) {
-      const nativeUserParts = turnByRunIndex.get(index)?.user?.parts ?? []
+      const nativeUserParts = nativeTurnByIndex.get(index)?.user?.parts ?? []
       const attachmentParts = nativeUserParts.filter((part) =>
         part.type === "file" || part.type === "image" || Boolean(part.mime && part.url)
       )
       timeline.push(syntheticMessage({
-        id: `work-thread:${task.id}:run:${run.id || index}:user`,
+        id: `work-thread:${conversation.id}:turn:${turn.id || index}:user`,
         role: "user",
         sessionID: session,
         created: start,
         text: prompt,
         parts: attachmentParts,
-        meta: { kind: "synthetic-user", runId: run.id, agentId: agentID, agentLabel: agent?.label, agentBackend: agent?.backend }
+        meta: { kind: "synthetic-user", runId: turn.id, agentId: agentID, agentLabel: agent?.label, agentBackend: agent?.backend }
       }))
     }
 
-    const assistant = assistantForRun({
-      task,
-      run,
+    const assistant = assistantForTurn({
+      conversation,
+      turn,
       index,
-      turn: turnByRunIndex.get(index) ?? null,
+      nativeTurn: nativeTurnByIndex.get(index) ?? null,
       session,
       agentID,
       agentLabel: agent?.label,
@@ -401,4 +411,16 @@ export function buildWorkThreadTimeline(
   })
 
   return timeline
+}
+
+/**
+ * Legacy Task/Run entry point. Task-backed callers adapt inward to the neutral conversation domain;
+ * Native Sessions never adapt outward to Task/Run.
+ */
+export function buildWorkThreadTimeline(
+  task: MachineTask,
+  messagesBySession: Record<string, MessageEnvelope[]>,
+  agents: WorkThreadAgentMeta
+): WorkThreadMessage[] {
+  return buildConversationTimeline(conversationRuntimeFromTask(task), messagesBySession, agents)
 }
