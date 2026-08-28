@@ -76,7 +76,7 @@ test("Session conversation exposes bounded older-history loading without snappin
   const conversation = readFileSync(new URL("./components/taskdesk-conversation.tsx", import.meta.url), "utf8")
   const historyStyles = readFileSync(new URL("./taskdesk-history-loader.css", import.meta.url), "utf8")
 
-  assert.match(controller, /api\.loadMessagePage\(target\.config, target\.sessionID, target\.directory/)
+  assert.match(controller, /controller\.loadMessagePage\(target\.config, target\.sessionID, target\.directory/)
   assert.match(controller, /async function loadOlder\(\)/)
   assert.match(controller, /prependOlderMessagePage\(feed\.messages, page\.messages\)/)
   assert.match(controller, /onLoadOlder=\{loadOlder\}/)
