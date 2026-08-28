@@ -145,11 +145,11 @@ npx github:giuliastro/harness-remote \
 
 Use a trusted LAN or VPN, keep authentication enabled for non-loopback access, and do not expose the daemon directly to the public internet. The detailed security and backend-specific guidance is in [REFERENCE.md](REFERENCE.md).
 
-## 3.0 candidate status
+## Built for trustworthy handoffs
 
-This branch is the candidate for Harness Remote 3.0. The product experience is usable, but promotion depends on evidence from real installed harnesses: reliable create/resume/stop behavior, transport and reconnect resilience, accurate capability discovery, trustworthy cross-agent handoffs and consistent desktop, web and Android behavior.
+Changing agents should not make the work opaque. Harness Remote keeps native-session links, explicit handoff context and the Project workspace visible, so you can see what happened, return to the agent that did the work and continue with confidence.
 
-The stable `main` branch remains the 2.x line until those release gates pass. This branch keeps compatibility code where existing 2.x users depend on it, but that legacy architecture is not the 3.0 product model.
+Reliable create, resume, stop, reconnect and capability discovery are core product requirements across desktop, web and Android. Compatibility code may remain for existing installations, but it does not define the product experience.
 
 ## Development
 

@@ -62,7 +62,7 @@ harness-remote
 
 starts one machine daemon instead of failing and asking you to choose a backend. The launcher reports the CLIs it detected, selects an ACP primary, finds a free loopback port for managed OpenCode, and exposes the machine through one authenticated daemon connection.
 
-The current candidate's automatic multi-host shape is deliberately precise:
+The automatic multi-host shape is deliberately precise:
 
 ```text
 Harness daemon :4097
@@ -70,7 +70,7 @@ Harness daemon :4097
   └── OpenCode, when installed, as a managed loopback HTTP host
 ```
 
-Other detected ACP CLIs are reported by discovery but are not all instantiated concurrently by this startup slice yet. This is an implementation boundary of the 3.0 candidate, not a claim that every discovered CLI is active at once. The daemon API and client are already agent-scoped, so adding more ACP host instances does not require another client transport change.
+Other detected ACP CLIs are reported by discovery but are not all instantiated concurrently by this startup path. This is an implementation boundary, not a claim that every discovered CLI is active at once. The daemon API and client are already agent-scoped, so adding more ACP host instances does not require another client transport change.
 
 ## Choose the daemon primary or force one backend
 
