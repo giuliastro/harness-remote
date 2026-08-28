@@ -4,12 +4,8 @@ import { lastNativeMessageModel } from "./native-session-model"
 import type { NativeSessionSurfaceTarget } from "./native-session-discovery"
 import { sendNativeSessionCommand, sendNativeSessionPrompt } from "./native-session-prompt"
 import { stopNativeSession } from "./native-session-stop"
-import {
-  taskClient,
-  type MachineTask,
-  type MachineTaskRun,
-  type TaskContinueInput
-} from "./taskClient"
+import type { ConversationController } from "./conversation-controller"
+import type { MachineTask, MachineTaskRun, TaskContinueInput } from "./taskClient"
 import type { MessageEnvelope, ModelSelection, ServerConfig } from "./types"
 
 const PROJECTION_ID_PREFIX = "native-session-v3:"
@@ -37,7 +33,6 @@ type ProjectionEntry = {
 }
 
 const projections = new Map<string, ProjectionEntry>()
-let installed = false
 
 export function nativeSessionIsWorking(status?: string): boolean {
   const value = status?.trim().toLowerCase() || ""
@@ -427,80 +422,80 @@ async function ensureWriter(entry: ProjectionEntry): Promise<void> {
   }
 }
 
-function installAdapter(): void {
-  if (installed) return
-  installed = true
-
-  const originalLoadMessagePage = api.loadMessagePage.bind(api)
-  api.loadMessagePage = async function patchedLoadMessagePage(config, sessionID, directory, before, limit, refreshHistory) {
-    let page = await originalLoadMessagePage(config, sessionID, directory, before, limit, refreshHistory)
-    const entry = entryForRead(config, sessionID, directory)
-    if (entry) {
-      page = stabilizePiTailPage(entry, page, before)
-      captureUserRuns(entry, page, before)
-      reconcileOpenCodeTranscriptStatus(entry, page, before)
-      reconcileNativeSessionModel(entry, page, before)
-    }
-    return page
+function requireProjectionTask(entry: ProjectionEntry, taskId: string): void {
+  if (taskId !== projectionID(entry.target)) {
+    throw new Error("Native Session controller received a task outside its Session scope")
   }
+}
 
-  const originalGetWorkThread = taskClient.getWorkThread.bind(taskClient)
-  taskClient.getWorkThread = async function patchedGetWorkThread(config, taskId) {
-    const entry = projections.get(taskId)
-    if (!entry) return originalGetWorkThread(config, taskId)
-    await refreshStatus(entry)
-    return projectedTask(entry)
-  }
+/**
+ * Session-scoped I/O implementation for the mature v3 conversation UI.
+ *
+ * This deliberately does not patch api/taskClient. The observer passes this controller explicitly
+ * to WorkThreadConversation, so mounting one Native Session cannot change another conversation's
+ * runtime behavior or make call routing depend on module/mount order.
+ */
+function nativeConversationController(entry: ProjectionEntry): ConversationController {
+  return {
+    async loadMessagePage(config, sessionID, directory, before, limit, refreshHistory) {
+      let page = await api.loadMessagePage(config, sessionID, directory, before, limit, refreshHistory)
+      const activeEntry = entryForRead(config, sessionID, directory)
+      if (activeEntry === entry) {
+        page = stabilizePiTailPage(entry, page, before)
+        captureUserRuns(entry, page, before)
+        reconcileOpenCodeTranscriptStatus(entry, page, before)
+        reconcileNativeSessionModel(entry, page, before)
+      }
+      return page
+    },
 
-  const originalContinueTask = taskClient.continueTask.bind(taskClient)
-  taskClient.continueTask = async function patchedContinueTask(config, taskId, input) {
-    const entry = projections.get(taskId)
-    if (!entry) return originalContinueTask(config, taskId, input)
-    const body: TaskContinueInput = typeof input === "string" ? { prompt: input } : input
-    const prompt = body.prompt?.trim() || ""
-    if (!prompt) throw new Error("A text prompt is required")
-    if (body.agentId && body.agentId !== entry.target.agentID) {
-      throw new Error("Cross-agent continuation is disabled until single-Session parity is validated")
-    }
-    await ensureWriter(entry)
-    // The shared v3 controller emits null while its model picker is still catching up with native
-    // transcript enrichment. For a native Session that is not an explicit new catalog selection;
-    // preserve the model already recovered from the authoritative Session instead of silently
-    // switching the next turn to the harness default. A concrete ModelSelection still wins.
-    const model = body.model ?? entry.currentModel
-    const result = body.command
-      ? await sendNativeSessionCommand(entry.target, body.command.name, body.command.arguments, model)
-      : await sendNativeSessionPrompt(entry.target, prompt, model, body.attachments ?? [])
-    if (result.status !== "accepted") {
-      throw new Error(`${body.command ? "Command" : "Prompt"} delivery is ${result.status}. Retry the same request to reconcile the existing request id.`)
-    }
-    return appendAcceptedRun(entry, prompt, model ?? null, result.clientRequestId)
-  }
+    async getWorkThread(_config, taskId) {
+      requireProjectionTask(entry, taskId)
+      await refreshStatus(entry)
+      return projectedTask(entry)
+    },
 
-  const originalCancelWorkThread = taskClient.cancelWorkThread.bind(taskClient)
-  taskClient.cancelWorkThread = async function patchedCancelWorkThread(config, taskId) {
-    const entry = projections.get(taskId)
-    if (!entry) return originalCancelWorkThread(config, taskId)
-    await ensureWriter(entry)
-    const projectionRuns = sortedRuns(entry)
-    const latestRun = projectionRuns[projectionRuns.length - 1]
-    const operationToken = latestRun?.id || entry.target.sessionID
-    const result = await stopNativeSession(entry.target, operationToken)
-    if (result.status !== "accepted") {
-      throw new Error(`Stop delivery is ${result.status}. The existing native cancel request will be reconciled instead of repeated.`)
+    async continueTask(_config, taskId, input) {
+      requireProjectionTask(entry, taskId)
+      const body: TaskContinueInput = typeof input === "string" ? { prompt: input } : input
+      const prompt = body.prompt?.trim() || ""
+      if (!prompt) throw new Error("A text prompt is required")
+      if (body.agentId && body.agentId !== entry.target.agentID) {
+        throw new Error("Cross-agent continuation is disabled until single-Session parity is validated")
+      }
+      await ensureWriter(entry)
+      const model = body.model ?? entry.currentModel
+      const result = body.command
+        ? await sendNativeSessionCommand(entry.target, body.command.name, body.command.arguments, model)
+        : await sendNativeSessionPrompt(entry.target, prompt, model, body.attachments ?? [])
+      if (result.status !== "accepted") {
+        throw new Error(\`\${body.command ? "Command" : "Prompt"} delivery is \${result.status}. Retry the same request to reconcile the existing request id.\`)
+      }
+      return appendAcceptedRun(entry, prompt, model ?? null, result.clientRequestId)
+    },
+
+    async cancelWorkThread(_config, taskId) {
+      requireProjectionTask(entry, taskId)
+      await ensureWriter(entry)
+      const projectionRuns = sortedRuns(entry)
+      const latestRun = projectionRuns[projectionRuns.length - 1]
+      const operationToken = latestRun?.id || entry.target.sessionID
+      const result = await stopNativeSession(entry.target, operationToken)
+      if (result.status !== "accepted") {
+        throw new Error(\`Stop delivery is \${result.status}. The existing native cancel request will be reconciled instead of repeated.\`)
+      }
+      entry.forcedStatus = "cancelled"
+      entry.statusType = "idle"
+      entry.updatedAt = Date.now()
+      return notify(entry)
     }
-    entry.forcedStatus = "cancelled"
-    entry.statusType = "idle"
-    entry.updatedAt = Date.now()
-    return notify(entry)
   }
 }
 
 export function registerNativeSessionV3Adapter(
   target: NativeSessionSurfaceTarget,
   onTaskUpdate: (task: MachineTask) => void
-): { task: MachineTask; dispose: () => void } {
-  installAdapter()
+): { task: MachineTask; controller: ConversationController; dispose: () => void } {
   const id = projectionID(target)
   let entry = projections.get(id)
   if (!entry) {
@@ -529,6 +524,7 @@ export function registerNativeSessionV3Adapter(
   entry.listeners.add(onTaskUpdate)
   return {
     task: projectedTask(entry),
+    controller: nativeConversationController(entry),
     dispose: () => {
       entry?.listeners.delete(onTaskUpdate)
       if (entry && entry.listeners.size === 0) projections.delete(id)
