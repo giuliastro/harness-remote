@@ -113,7 +113,7 @@ test("Session chat keeps bounded paging live events attention Stop and startup f
   assert.match(chat, /OLDER_PAGE_SIZE = 500/)
   assert.match(chat, /ACTIVE_RECONCILE_MS = 5_000/)
   assert.match(chat, /startTaskDeskSessionLiveRefresh/)
-  assert.match(chat, /currentRunHasAssistantSignal/)
+  assert.match(chat, /currentTurnHasAssistantSignal/)
   assert.match(chat, /preparingReply/)
   assert.match(chat, /api\.loadQuestions/)
   assert.match(chat, /api\.loadPermissions/)
