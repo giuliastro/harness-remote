@@ -296,7 +296,7 @@ export function WorkThreadConversation({
   const [sending, setSending] = useState(false)
   // The prompt that has been sent but is not yet in the transcript, with the Run that was current
   // when it was sent. See `visibleTimeline`.
-  const [pendingPrompt, setPendingPrompt] = useState<{ text: string; priorRunID: string | null } | null>(null)
+  const [pendingPrompt, setPendingPrompt] = useState<{ text: string; priorRunID: string | null; attachments: AttachmentPart[] } | null>(null)
   const [stopping, setStopping] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [modelError, setModelError] = useState<string | null>(null)
@@ -467,7 +467,14 @@ export function WorkThreadConversation({
     const id = `work-thread:${task.id}:pending-user`
     return [...timeline, {
       info: { id, role: "user", sessionID: `work-thread:${task.id}`, time: { created: Date.now() } },
-      parts: [{ id: `${id}:text`, messageID: id, type: "text", text: pendingPrompt.text }],
+      parts: [
+        ...(pendingPrompt.text ? [{ id: `${id}:text`, messageID: id, type: "text", text: pendingPrompt.text }] : []),
+        ...pendingPrompt.attachments.map((attachment, index) => ({
+          ...attachment,
+          id: `${id}:attachment:${index}`,
+          messageID: id
+        }))
+      ],
       taskdesk: { kind: "synthetic-user" as const }
     } as WorkThreadMessage]
   }, [timeline, pendingPrompt, settledPrompt, task.id])
@@ -702,7 +709,7 @@ export function WorkThreadConversation({
     setSending(true)
     setError(null)
     setDraft("")
-    setPendingPrompt({ text, priorRunID: taskRef.current.run?.id ?? null })
+    setPendingPrompt({ text, priorRunID: taskRef.current.run?.id ?? null, attachments: promptAttachments })
     try {
       const latest = await taskClient.getWorkThread(baseConfig, task.id)
       if (isActive(latest)) {
