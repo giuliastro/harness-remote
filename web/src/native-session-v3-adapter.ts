@@ -168,13 +168,13 @@ const PAGE_MODEL_BACKENDS = new Set(["opencode", "codex", "omp"])
 /**
  * Model enrichment is not a mount-only read. A user can leave immediately after Send, before the
  * new native envelope is durable, then return while the reply is still streaming. Every current-tail
- * page can therefore advance the projection from stale/default metadata to the model on the newest
+ * page can therefore advance the runtime from stale/default metadata to the model on the newest
  * native turn.
  *
- * A Run minted before that answer arrived carries no model at all, and the timeline reads two
- * adjacent Runs whose models differ as a model change - which is how continuing on the very same
+ * A turn minted before that answer arrived carries no model at all, and the timeline reads two
+ * adjacent turns whose models differ as a model change - which is how continuing on the very same
  * model announced "Model changed to ..." in the conversation. Enrichment therefore fills in the
- * Runs that never had one; a Run that recorded a different model keeps it, because that one is a
+ * turns that never had one; a turn that recorded a different model keeps it, because that one is a
  * real change the user made.
  */
 function reconcileNativeSessionModel(entry: NativeConversationEntry, page: MessagePage, before?: string): void {
@@ -184,16 +184,16 @@ function reconcileNativeSessionModel(entry: NativeConversationEntry, page: Messa
 
   let changed = !sameModel(entry.currentModel, model)
   entry.currentModel = model
-  for (const run of entry.turns.values()) {
-    if (run.model) continue
-    run.model = model
+  for (const turn of entry.turns.values()) {
+    if (turn.model) continue
+    turn.model = model
     changed = true
   }
   const latestUser = [...page.messages].reverse().find((message) => message.info.role === "user" && message.info.id)
   if (latestUser) {
-    const run = entry.turns.get(`${conversationID(entry.target)}:native-user:${latestUser.info.id}`)
-    if (run && !sameModel(run.model, model)) {
-      run.model = model
+    const turn = entry.turns.get(`${conversationID(entry.target)}:native-user:${latestUser.info.id}`)
+    if (turn && !sameModel(turn.model, model)) {
+      turn.model = model
       changed = true
     }
   }
@@ -206,17 +206,17 @@ function reconcileNativeSessionModel(entry: NativeConversationEntry, page: Messa
  * scoped away by `/session/status`, and it is also the payload the user ultimately needs to see.
  *
  * Match by prompt occurrence, not timestamps, so repeated prompts remain correct and clock skew
- * between the browser and OpenCode cannot attach an older completed assistant to a new Run.
+ * between the browser and OpenCode cannot attach an older completed assistant to a new turn.
  */
 function reconcileOpenCodeTranscriptStatus(entry: NativeConversationEntry, page: MessagePage, before?: string): void {
   if (entry.target.backend !== "opencode" || before || entry.forcedStatus !== "running") return
 
-  const orderedRuns = [...entry.turns.values()].sort((left, right) => left.created - right.created || left.id.localeCompare(right.id))
-  const current = orderedRuns[orderedRuns.length - 1]
+  const orderedTurns = [...entry.turns.values()].sort((left, right) => left.created - right.created || left.id.localeCompare(right.id))
+  const current = orderedTurns[orderedTurns.length - 1]
   const prompt = canonicalText(current?.prompt || "")
   if (!current || !prompt) return
 
-  const occurrence = orderedRuns.slice(0, -1).filter((run) => canonicalText(run.prompt) === prompt).length
+  const occurrence = orderedTurns.slice(0, -1).filter((turn) => canonicalText(turn.prompt) === prompt).length
   let seen = 0
   let userIndex = -1
   for (let index = 0; index < page.messages.length; index += 1) {
@@ -294,19 +294,19 @@ function sortedTurns(entry: NativeConversationEntry): ConversationTurn[] {
     }]
   }
 
-  return ordered.map((run, index) => ({
-    id: run.id,
+  return ordered.map((turn, index) => ({
+    id: turn.id,
     sequence: index + 1,
     agentId: entry.target.agentID,
-    model: run.model,
+    model: turn.model,
     role: index === 0 ? "implement" : "continue",
     sessionId: entry.target.sessionID,
     status: index === ordered.length - 1 ? status : "completed",
     transport: entry.target.transport,
     directory: entry.target.directory,
-    prompt: run.prompt,
-    startedAt: iso(run.created),
-    ...(index === ordered.length - 1 && status === "running" ? {} : { finishedAt: iso(Math.max(run.created, entry.updatedAt)) })
+    prompt: turn.prompt,
+    startedAt: iso(turn.created),
+    ...(index === ordered.length - 1 && status === "running" ? {} : { finishedAt: iso(Math.max(turn.created, entry.updatedAt)) })
   }))
 }
 
@@ -342,7 +342,7 @@ function notify(entry: NativeConversationEntry): ConversationRuntime {
 function captureUserTurns(entry: NativeConversationEntry, page: MessagePage, before?: string): void {
   // The first page describes the Session state that existed when the v3 controller mounted. Older
   // pages are admitted when the user explicitly pages backward. Tail refreshes do not manufacture
-  // new Runs from replay IDs: new HR prompts already have one accepted client operation identity.
+  // new turns from replay IDs: new HR prompts already have one accepted client operation identity.
   const mayDiscoverRuns = !entry.initialPageCaptured || Boolean(before)
   if (!mayDiscoverRuns) return
 
