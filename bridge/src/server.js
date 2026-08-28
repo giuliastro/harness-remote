@@ -370,6 +370,14 @@ export function createBridgeServer({ config, acp, serviceOptions, machineRegistr
           return
         }
         if (request.method === "DELETE" && !operation) {
+          // ACP has no standard native Session-delete primitive. AcpService.deleteSession() is an
+          // internal tombstone/cache cleanup mechanism and must never be exposed as if it deleted
+          // the harness-owned Session: the next native discovery can legitimately see it again.
+          // Keep prompt/load/resume/streaming untouched and reject the unsupported mutation.
+          if (profile.capabilities.sessionDelete !== true) {
+            writeJSON(response, 405, { error: `${profile.label} does not expose native Session deletion through ACP` })
+            return
+          }
           await service.deleteSession(sessionID)
           writeJSON(response, 200, true)
           return
