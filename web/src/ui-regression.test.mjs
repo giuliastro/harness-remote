@@ -25,10 +25,10 @@ assert.match(home, /hr-native-session-row/, 'Session navigation must render nati
 assert.match(observer, /<WorkThreadConversation/, 'native Session detail must reuse the mature v3 controller')
 assert.match(chat, /<TaskDeskConversation/, 'the mature controller must own the shared transcript/composer')
 assert.match(chat, /buildWorkThreadTimeline/, 'the mature timeline projection must remain in one place')
-assert.match(chat, /api\.loadMessagePage/, 'the mature controller must own bounded transcript paging')
+assert.match(chat, /controller\.loadMessagePage/, 'the mature controller must own bounded transcript paging through its explicit I/O boundary')
 assert.match(chat, /startTaskDeskSessionLiveRefresh/, 'the mature controller must own live refresh')
-assert.match(chat, /taskClient\.continueTask/, 'the native adapter must continue through the proven controller boundary')
-assert.match(chat, /taskClient\.cancelWorkThread/, 'Stop must keep the proven controller boundary')
+assert.match(chat, /controller\.continueTask/, 'the native adapter must continue through the proven controller boundary')
+assert.match(chat, /controller\.cancelWorkThread/, 'Stop must keep the proven controller boundary')
 
 assert.match(shared, /const ConversationTranscript = memo/, 'composer typing must not rerender the full transcript')
 assert.match(shared, /NEAR_BOTTOM_PX = 96/, 'the shared transcript must keep explicit near-bottom behavior')
