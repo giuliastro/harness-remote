@@ -1063,6 +1063,23 @@
   white-space: nowrap;
 }
 
+.hr-experimental-badge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 17px;
+  padding: 0 5px;
+  border: 1px solid var(--td3-blue-border);
+  border-radius: 999px;
+  color: var(--td3-blue-text);
+  background: var(--td3-blue-soft);
+  font-size: 8px;
+  font-weight: 800;
+  letter-spacing: .04em;
+  line-height: 1;
+  text-transform: uppercase;
+  vertical-align: middle;
+}
+
 .hr-session-handoff .hr-session-action-panel {
   position: absolute;
   z-index: 60;
