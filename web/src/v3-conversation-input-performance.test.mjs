@@ -7,8 +7,8 @@ const picker = readFileSync(new URL("./components/model-picker.tsx", import.meta
 const observer = readFileSync(new URL("./components/native-session-observer.tsx", import.meta.url), "utf8")
 
 test("the shared Session chat signature is not recomputed on every keystroke", () => {
-  assert.match(chat, /const conversationSignature = useMemo\(\(\) => taskConversationSignature\(task\), \[task\]\)/)
-  assert.doesNotMatch(chat, /^\s*const conversationSignature = taskConversationSignature\(task\)\s*$/m)
+  assert.match(chat, /const conversationSignature = useMemo\(\(\) => runtimeSignature\(conversation\), \[conversation\]\)/)
+  assert.doesNotMatch(chat, /^\s*const conversationSignature = runtimeSignature\(conversation\)\s*$/m)
 })
 
 test("the Session composer draft is persisted on a debounce, not on every keystroke", () => {
