@@ -71,7 +71,7 @@ test('an OMP transcript page carries the Session model into the open projection'
       hasMore: false,
       model: MODEL
     })
-    await api.loadMessagePage(CONFIG, 'omp-1', '/repo')
+    await registration.controller.loadMessagePage(CONFIG, 'omp-1', '/repo')
 
     const latest = updates.at(-1)
     assert.deepEqual(latest.model, MODEL, 'the picker must show the model OMP is actually on')
@@ -99,11 +99,11 @@ test('continuing a recovered OMP Session announces no model change', async () =>
       ],
       hasMore: false
     })
-    await api.loadMessagePage(CONFIG, 'omp-1', '/repo')
+    await registration.controller.loadMessagePage(CONFIG, 'omp-1', '/repo')
     assert.deepEqual(updates.at(-1).runs.map((run) => run.model), [null, null])
 
     pages.push({ messages: [], hasMore: false, model: MODEL })
-    await api.loadMessagePage(CONFIG, 'omp-1', '/repo')
+    await registration.controller.loadMessagePage(CONFIG, 'omp-1', '/repo')
 
     const task = updates.at(-1)
     assert.deepEqual(
