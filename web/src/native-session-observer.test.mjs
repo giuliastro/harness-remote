@@ -8,7 +8,8 @@ const nativeModel = readFileSync(new URL('./native-session-model.ts', import.met
 
 assert.ok(observer.includes('import { WorkThreadConversation } from "./work-thread-conversation"'), 'native Session must mount the mature v3 conversation controller')
 assert.ok(observer.includes('<WorkThreadConversation'), 'native Session must render the v3 controller directly')
-assert.ok(observer.includes('registerNativeSessionV3Adapter'), 'native identity must be translated by a thin compatibility adapter')
+assert.ok(observer.includes('registerNativeSessionV3Adapter'), 'native identity must be translated by the Session-scoped adapter')
+assert.ok(observer.includes('controller={controller}'), 'native Session I/O must be injected explicitly into the mature controller')
 assert.equal(observer.includes('Continue this Session'), false, 'opening a native Session must never require a visible Continue unlock step')
 assert.equal(observer.includes('probeNativeSessionContinuation'), false, 'observer must not acquire ACP writer ownership while opening a Session')
 assert.equal(observer.includes('TaskDeskConversation'), false, 'observer must not mount the chat renderer directly')
@@ -19,7 +20,8 @@ assert.equal(observer.includes('sendNativeSessionPrompt'), false, 'observer must
 assert.equal(observer.includes('stopNativeSession'), false, 'observer must not own a parallel Stop controller')
 assert.equal(observer.includes('ModelSelectionControl'), false, 'observer must not own a parallel model picker')
 
-assert.ok(adapter.includes('api.loadMessagePage = async function patchedLoadMessagePage'), 'adapter must observe the pages requested by the v3 controller')
+assert.ok(adapter.includes('async loadMessagePage(config, sessionID, directory, before, limit, refreshHistory)'), 'adapter must observe the pages requested by the v3 controller through its scoped boundary')
+assert.equal(adapter.includes('api.loadMessagePage ='), false, 'native Session mounting must not mutate the shared API client')
 assert.ok(adapter.includes('!entry.initialPageCaptured || Boolean(before)'), 'initial history and explicit older paging may create compatibility Run identities')
 assert.ok(adapter.includes('if (!mayDiscoverRuns) return'), 'tail replay must not manufacture duplicate Runs from changed replay ids')
 assert.ok(adapter.includes(':request:${clientRequestId}'), 'new native prompts must use durable client request identity for the compatibility Run')
@@ -52,7 +54,7 @@ assert.ok(observer.includes('deferModelFallback'), 'native Sessions must not dis
 assert.ok(workThread.includes('const fallback = deferModelFallback'), 'the shared controller must preserve ordinary Work Thread fallback behavior')
 
 assert.ok(workThread.includes('const sendInFlightRef = useRef(false)'), 'v3 send in-flight guard must remain authoritative')
-assert.ok(workThread.includes('api.loadMessagePage'), 'v3 transcript paging must remain authoritative')
+assert.ok(workThread.includes('controller.loadMessagePage'), 'v3 transcript paging must remain authoritative')
 assert.ok(workThread.includes('startTaskDeskSessionLiveRefresh'), 'v3 live routing must remain authoritative')
 assert.ok(workThread.includes('buildWorkThreadTimeline'), 'v3 logical timeline must remain authoritative')
 
