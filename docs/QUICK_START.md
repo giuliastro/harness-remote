@@ -1,4 +1,8 @@
-# Harness Remote quick start
+# Harness Remote machine setup
+
+This guide is the operational companion to the [README](../README.md). Start there for the 3.0 product model; use this page when you need to choose a launcher path, control the machine daemon or configure browser access.
+
+## The shortest path
 
 The shortest setup path uses the `harness-remote` launcher.
 
@@ -20,6 +24,20 @@ harness-remote
 ```
 
 The root package intentionally remains private for now: this documents a real GitHub/repository launch path without claiming that an npm package has already been published.
+
+For a typical machine, the workflow is:
+
+1. Run the launcher in a directory containing—or above—the projects you want to use.
+2. Copy the host, public port and credentials it prints.
+3. In Harness Remote, add that machine and choose a Project.
+
+Use `--root <directory>` to make the project boundary explicit. For example:
+
+```bash
+harness-remote --root ~/Software
+```
+
+When opening the daemon beyond loopback, set a username and a long, unique password. Keep it on a trusted LAN or VPN; do not expose it directly to the public internet.
 
 ## What the one command does
 
@@ -44,7 +62,7 @@ harness-remote
 
 starts one machine daemon instead of failing and asking you to choose a backend. The launcher reports the CLIs it detected, selects an ACP primary, finds a free loopback port for managed OpenCode, and exposes the machine through one authenticated daemon connection.
 
-The current automatic multi-host shape is deliberately precise:
+The current candidate's automatic multi-host shape is deliberately precise:
 
 ```text
 Harness daemon :4097
@@ -52,7 +70,7 @@ Harness daemon :4097
   └── OpenCode, when installed, as a managed loopback HTTP host
 ```
 
-Other detected ACP CLIs are reported by discovery but are not all instantiated concurrently by this startup slice yet. The daemon API and client are already agent-scoped, so adding more ACP host instances does not require another client transport change.
+Other detected ACP CLIs are reported by discovery but are not all instantiated concurrently by this startup slice yet. This is an implementation boundary of the 3.0 candidate, not a claim that every discovered CLI is active at once. The daemon API and client are already agent-scoped, so adding more ACP host instances does not require another client transport change.
 
 ## Choose the daemon primary or force one backend
 
