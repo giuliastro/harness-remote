@@ -146,6 +146,7 @@ export function NativeSessionHandoffControl({ source, agents, onOpen }: Props) {
       >
         <ChatIcon size={14} />
         {t("sf.continueWithAgent")}
+        <span className="hr-experimental-badge">Experimental</span>
       </button>
 
       {open ? <div className="hr-session-action-backdrop" role="presentation" onMouseDown={close} /> : null}
@@ -154,7 +155,7 @@ export function NativeSessionHandoffControl({ source, agents, onOpen }: Props) {
         <div className="hr-session-action-panel" role="dialog" aria-modal="true" aria-label={t("sf.continueWithAgent")} ref={panelRef}>
           <div className="hr-session-action-heading">
             <div>
-              <strong>{t("sf.continueWithAgent")}</strong>
+              <strong>{t("sf.continueWithAgent")} <span className="hr-experimental-badge">Experimental</span></strong>
               <small>{t("sf.handoffSubtitle")}</small>
             </div>
             <button type="button" className="tdw-icon-button" data-dismiss="session-actions" onClick={close} disabled={busy} aria-label={t("sf.cancel")}>×</button>
