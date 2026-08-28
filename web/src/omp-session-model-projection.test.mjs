@@ -107,7 +107,7 @@ test('continuing a recovered OMP Session announces no model change', async () =>
 
     const conversation = updates.at(-1)
     assert.deepEqual(
-      task.turns.map((turn) => turn.model),
+      conversation.turns.map((turn) => turn.model),
       [MODEL, MODEL],
       'a turn that never had a model must adopt the recovered one'
     )
