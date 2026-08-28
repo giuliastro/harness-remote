@@ -3,7 +3,7 @@ import ReactMarkdown, { type Components } from "react-markdown"
 import remarkGfm from "remark-gfm"
 import { copyToClipboard } from "../clipboard"
 import { activityLabel, groupConversationParts, type ConversationPartGroup } from "../conversation-parts"
-import { CheckIcon, CopyIcon } from "../Icons"
+import { CheckIcon, CopyIcon, PaperclipIcon } from "../Icons"
 import type { MessageEnvelope, MessagePart, TodoItem } from "../types"
 
 const REMARK_PLUGINS = [remarkGfm]
@@ -164,6 +164,20 @@ function ToolPartCard({ part }: { part: MessagePart }) {
   )
 }
 
+function AttachmentPartCard({ part }: { part: MessagePart }) {
+  const label = part.filename || "Attached image"
+  const isImage = (part.mime || "").startsWith("image/") && typeof part.url === "string" && part.url.startsWith("data:")
+  return (
+    <div className="uw-message-attachment" title={label}>
+      {isImage ? <img src={part.url} alt={label} /> : <span className="uw-message-attachment-icon"><PaperclipIcon size={14} /></span>}
+      <span>
+        <strong>{label}</strong>
+        <small>{part.mime || "attachment"}</small>
+      </span>
+    </div>
+  )
+}
+
 function UnsupportedPart({ part }: { part: MessagePart }) {
   const label = part.filename || part.tool || part.type || "unknown"
   return <div className="uw-unsupported-part" title={`Unsupported message part: ${part.type}`}>{label}</div>
@@ -190,7 +204,15 @@ function ContentGroup({ group }: { group: ContentGroupValue }) {
           </div>
         </>
       ) : null}
-      {other.map((part) => <UnsupportedPart key={part.id} part={part} />)}
+      {other.length ? (
+        <div className="uw-message-attachments" aria-label="Attachments">
+          {other.map((part) => (
+            part.type === "file" || part.type === "image" || Boolean(part.mime && part.url)
+              ? <AttachmentPartCard key={part.id} part={part} />
+              : <UnsupportedPart key={part.id} part={part} />
+          ))}
+        </div>
+      ) : null}
     </div>
   )
 }
