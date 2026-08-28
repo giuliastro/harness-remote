@@ -8,7 +8,8 @@ import {
   nativeSessionIsWorking,
   registerNativeSessionV3Adapter
 } from "../native-session-v3-adapter"
-import type { AgentModelScope, MachineTask } from "../taskClient"
+import type { ConversationRuntime } from "../conversation-runtime"
+import type { AgentModelScope } from "../taskClient"
 import type { CommandInfo, MachineAgentHost } from "../types"
 import { LoadingIcon } from "../Icons"
 import { WorkThreadConversation } from "./work-thread-conversation"
@@ -21,10 +22,10 @@ type Props = {
 }
 export type NativeSessionVisualState = "working" | "attention" | "stopped" | "ready"
 
-function visualState(task: MachineTask, attention = false): NativeSessionVisualState {
-  if (attention || task.status === "failed") return "attention"
-  if (task.status === "cancelled") return "stopped"
-  if (nativeSessionIsWorking(task.status)) return "working"
+function visualState(conversation: ConversationRuntime, attention = false): NativeSessionVisualState {
+  if (attention || conversation.status === "failed") return "attention"
+  if (conversation.status === "cancelled") return "stopped"
+  if (nativeSessionIsWorking(conversation.status)) return "working"
   return "ready"
 }
 
@@ -59,24 +60,24 @@ function targetForInitialProjection(target: NativeSessionSurfaceTarget): NativeS
  * never has to unlock the transcript with an extra Continue step. Nothing is persisted as a Task or Run.
  */
 export function NativeSessionObserver({ target, onSessionRefresh, onStateChange }: Props) {
-  const [task, setTask] = useState<MachineTask | null>(null)
+  const [conversation, setConversation] = useState<ConversationRuntime | null>(null)
   const [controller, setController] = useState<ConversationController | null>(null)
   const [attachmentsSupported, setAttachmentsSupported] = useState(false)
   const [commands, setCommands] = useState<CommandInfo[]>([])
-  const taskRef = useRef<MachineTask | null>(null)
+  const conversationRef = useRef<ConversationRuntime | null>(null)
   const attentionRef = useRef(false)
   const onStateChangeRef = useRef(onStateChange)
   onStateChangeRef.current = onStateChange
 
-  const handleTaskUpdate = useCallback((next: MachineTask) => {
-    taskRef.current = next
-    setTask(next)
+  const handleConversationUpdate = useCallback((next: ConversationRuntime) => {
+    conversationRef.current = next
+    setConversation(next)
     onStateChangeRef.current?.(visualState(next, attentionRef.current))
   }, [])
 
   const handleAttentionChange = useCallback((attention: boolean) => {
     attentionRef.current = attention
-    const current = taskRef.current
+    const current = conversationRef.current
     if (current) onStateChangeRef.current?.(visualState(current, attention))
   }, [])
 
@@ -128,17 +129,17 @@ export function NativeSessionObserver({ target, onSessionRefresh, onStateChange 
     let registration: ReturnType<typeof registerNativeSessionV3Adapter> | undefined
     const initialTarget = targetForInitialProjection(target)
 
-    setTask(null)
+    setConversation(null)
     setController(null)
-    taskRef.current = null
+    conversationRef.current = null
     attentionRef.current = false
 
     // Mount the mature controller on the Session itself, before any model enrichment. Gating the
     // whole transcript on a network read left this surface stuck on "Loading Session into the v3
     // controller..." whenever that read was slow, which is exactly what a busy daemon produces.
-    registration = registerNativeSessionV3Adapter(initialTarget, handleTaskUpdate)
+    registration = registerNativeSessionV3Adapter(initialTarget, handleConversationUpdate)
     setController(registration.controller)
-    handleTaskUpdate(registration.task)
+    handleConversationUpdate(registration.conversation)
 
     // Recovering the last requested native model is enrichment. It refines the already usable
     // Session and must never be able to fail it. OpenCode/Codex deliberately started with no model
@@ -152,9 +153,9 @@ export function NativeSessionObserver({ target, onSessionRefresh, onStateChange 
       disposed = true
       registration?.dispose()
     }
-  }, [target.key, handleTaskUpdate])
+  }, [target.key, handleConversationUpdate])
 
-  if (!task || !controller) {
+  if (!conversation || !controller) {
     return <div className="tdw-detail-loading"><LoadingIcon size={20} /> Loading Session into the v3 controller...</div>
   }
 
@@ -162,14 +163,14 @@ export function NativeSessionObserver({ target, onSessionRefresh, onStateChange 
     <div className="hr-native-session-observer writable">
       <WorkThreadConversation
         key={target.key}
-        task={task}
+        conversation={conversation}
         baseConfig={target.config}
         agents={[agent]}
         modelScope={NATIVE_SESSION_MODEL_SCOPE}
         deferModelFallback
         controller={controller}
-        onTaskUpdate={handleTaskUpdate}
-        onWorkspaceRefresh={onSessionRefresh}
+        onConversationUpdate={handleConversationUpdate}
+        onSessionRefresh={onSessionRefresh}
         onAttentionChange={handleAttentionChange}
         commands={commands}
       />
