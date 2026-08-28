@@ -77,6 +77,7 @@ function syntheticMessage({
   sessionID,
   created,
   text,
+  parts,
   meta,
   error
 }: {
@@ -85,6 +86,7 @@ function syntheticMessage({
   sessionID: string
   created: number
   text?: string
+  parts?: MessagePart[]
   meta: WorkThreadMessageMeta
   error?: { name?: string; message?: string; data?: Record<string, unknown> }
 }): WorkThreadMessage {
@@ -96,7 +98,14 @@ function syntheticMessage({
       time: { created },
       ...(error ? { error } : {})
     },
-    parts: text ? [{ id: `${id}:text`, messageID: id, type: "text", text }] : [],
+    parts: [
+      ...(text ? [{ id: `${id}:text`, messageID: id, type: "text", text }] : []),
+      ...(parts ?? []).map((part, index) => ({
+        ...part,
+        id: `${id}:attachment:${index}:${part.id || index}`,
+        messageID: id
+      }))
+    ],
     taskdesk: meta
   }
 }
@@ -363,12 +372,17 @@ export function buildWorkThreadTimeline(
 
     const prompt = (run.prompt || (index === 0 ? task.prompt : "")).trim()
     if (prompt) {
+      const nativeUserParts = turnByRunIndex.get(index)?.user?.parts ?? []
+      const attachmentParts = nativeUserParts.filter((part) =>
+        part.type === "file" || part.type === "image" || Boolean(part.mime && part.url)
+      )
       timeline.push(syntheticMessage({
         id: `work-thread:${task.id}:run:${run.id || index}:user`,
         role: "user",
         sessionID: session,
         created: start,
         text: prompt,
+        parts: attachmentParts,
         meta: { kind: "synthetic-user", runId: run.id, agentId: agentID, agentLabel: agent?.label, agentBackend: agent?.backend }
       }))
     }
