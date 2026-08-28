@@ -1,9 +1,15 @@
 import { api, type MessagePage } from "./api"
 import { probeNativeSessionContinuation } from "./native-session-continuation"
-import { lastNativeMessageModel } from "./native-session-model"
 import type { NativeSessionSurfaceTarget } from "./native-session-discovery"
 import { sendNativeSessionCommand, sendNativeSessionPrompt } from "./native-session-prompt"
 import { stopNativeSession } from "./native-session-stop"
+import {
+  canonicalNativeText,
+  nativeSessionTranscriptModel,
+  openCodeTranscriptCompletion,
+  stabilizePiTailMessageIDs,
+  visibleNativePrompt
+} from "./native-session-reconciliation"
 import type { ConversationController } from "./conversation-controller"
 import type { MachineTask, MachineTaskRun, TaskContinueInput } from "./taskClient"
 import type { MessageEnvelope, ModelSelection, ServerConfig } from "./types"
@@ -49,81 +55,7 @@ function projectionID(target: NativeSessionSurfaceTarget): string {
   return `${PROJECTION_ID_PREFIX}${encodeURIComponent(target.machineID)}:${encodeURIComponent(target.agentID)}:${encodeURIComponent(target.sessionID)}`
 }
 
-function canonicalText(value: string): string {
-  return value.replace(/\r\n/g, "\n").trim()
-}
-
-function messageText(message: MessageEnvelope): string {
-  return (message.parts || [])
-    .filter((part) => part.type === "text" && typeof part.text === "string")
-    .map((part) => part.text)
-    .join("\n")
-    .trim()
-}
-
-/**
- * PI exposes two legitimate identities for one completed assistant reply: while the turn is live the
- * ACP stream has one message id, then the authoritative JSONL journal can expose the same reply with
- * its persisted record id. The mature v3 tail merge intentionally retains unseen ids, so letting that
- * transport identity swap through would display the same answer twice after Stop/reopen or any other
- * live-to-journal transition.
- *
- * Preserve the prior browser identity only for one unambiguous assistant final-text match. Reasoning
- * may accompany the final text because PI journals thinking and the answer in the same assistant
- * record. Repeated identical answers stay distinct because neither side may contain more than one
- * candidate. Errors and tool-bearing messages keep their native identities unchanged.
- */
-function piStableAssistantKey(message: MessageEnvelope): string | null {
-  if (message.info.role !== "assistant" || message.info.error || !message.parts.length) return null
-  if (message.parts.some((part) => part.type !== "text" && part.type !== "reasoning")) return null
-  const textParts = message.parts.filter((part) => part.type === "text" && typeof part.text === "string")
-  if (!textParts.length) return null
-  const text = canonicalText(textParts.map((part) => part.text || "").join("\n"))
-  return text ? text : null
-}
-
-export function stabilizePiTailMessageIDs(
-  previous: MessageEnvelope[],
-  next: MessageEnvelope[]
-): MessageEnvelope[] {
-  if (!previous.length || !next.length) return next
-
-  const previousIDs = new Set(previous.map((message) => message.info.id))
-  const nextIDs = new Set(next.map((message) => message.info.id))
-  const previousByKey = new Map<string, MessageEnvelope[]>()
-  const nextKeyCounts = new Map<string, number>()
-
-  for (const message of previous) {
-    if (nextIDs.has(message.info.id)) continue
-    const key = piStableAssistantKey(message)
-    if (!key) continue
-    const candidates = previousByKey.get(key) ?? []
-    candidates.push(message)
-    previousByKey.set(key, candidates)
-  }
-  for (const message of next) {
-    if (previousIDs.has(message.info.id)) continue
-    const key = piStableAssistantKey(message)
-    if (key) nextKeyCounts.set(key, (nextKeyCounts.get(key) ?? 0) + 1)
-  }
-
-  let changed = false
-  const stabilized = next.map((message) => {
-    if (previousIDs.has(message.info.id)) return message
-    const key = piStableAssistantKey(message)
-    if (!key || nextKeyCounts.get(key) !== 1) return message
-    const candidates = previousByKey.get(key)
-    if (candidates?.length !== 1) return message
-    const stableID = candidates[0].info.id
-    changed = true
-    return {
-      ...message,
-      info: { ...message.info, id: stableID },
-      parts: message.parts.map((part) => ({ ...part, messageID: stableID }))
-    }
-  })
-  return changed ? stabilized : next
-}
+export { stabilizePiTailMessageIDs }
 
 function stabilizePiTailPage(entry: ProjectionEntry, page: MessagePage, before?: string): MessagePage {
   if (entry.target.backend !== "pi" || before) return page
@@ -132,37 +64,12 @@ function stabilizePiTailPage(entry: ProjectionEntry, page: MessagePage, before?:
   return messages === page.messages ? page : { ...page, messages }
 }
 
-/**
- * The old v3 handoff packet is transport context, not visible dialogue. This adapter only extracts
- * the same USER INSTRUCTION marker so the mature work-thread timeline can match the native turn.
- */
-function visiblePrompt(message: MessageEnvelope): string {
-  const value = canonicalText(messageText(message))
-  if (!value.startsWith("You are taking over an existing TaskDesk task.")) return value
-  const marker = "\nUSER INSTRUCTION\n"
-  const start = value.indexOf(marker)
-  if (start < 0) return value
-  const instructionStart = start + marker.length
-  const footerStart = value.indexOf("\n\nContinue from the shared workspace", instructionStart)
-  return canonicalText(value.slice(instructionStart, footerStart >= 0 ? footerStart : undefined))
-}
-
-function nativeAssistantCompleted(message: MessageEnvelope): boolean {
-  if (message.info.role !== "assistant") return false
-  if (message.info.error || message.info.time?.completed) return true
-  const info = message.info as MessageEnvelope["info"] & { finish?: unknown }
-  return typeof info.finish === "string" && Boolean(info.finish.trim())
-}
-
 function sameModel(left: ModelSelection | null, right: ModelSelection | null): boolean {
   return Boolean(left && right
     && left.providerID === right.providerID
     && left.modelID === right.modelID
     && (left.variant || "") === (right.variant || ""))
 }
-
-/** Backends whose transcript reads report the Session's own current model on the page itself. */
-const PAGE_MODEL_BACKENDS = new Set(["opencode", "codex", "omp"])
 
 /**
  * Model enrichment is not a mount-only read. A user can leave immediately after Send, before the
@@ -177,8 +84,7 @@ const PAGE_MODEL_BACKENDS = new Set(["opencode", "codex", "omp"])
  * real change the user made.
  */
 function reconcileNativeSessionModel(entry: ProjectionEntry, page: MessagePage, before?: string): void {
-  if (before || !PAGE_MODEL_BACKENDS.has(entry.target.backend)) return
-  const model = page.model ?? (entry.target.backend === "opencode" ? lastNativeMessageModel(page.messages) : null)
+  const model = nativeSessionTranscriptModel(entry.target.backend, page, before)
   if (!model) return
 
   let changed = !sameModel(entry.currentModel, model)
@@ -208,42 +114,17 @@ function reconcileNativeSessionModel(entry: ProjectionEntry, page: MessagePage, 
  * between the browser and OpenCode cannot attach an older completed assistant to a new Run.
  */
 function reconcileOpenCodeTranscriptStatus(entry: ProjectionEntry, page: MessagePage, before?: string): void {
-  if (entry.target.backend !== "opencode" || before || entry.forcedStatus !== "running") return
+  if (entry.target.backend !== "opencode" || entry.forcedStatus !== "running") return
 
-  const orderedRuns = [...entry.runs.values()].sort((left, right) => left.created - right.created || left.id.localeCompare(right.id))
-  const current = orderedRuns[orderedRuns.length - 1]
-  const prompt = canonicalText(current?.prompt || "")
-  if (!current || !prompt) return
-
-  const occurrence = orderedRuns.slice(0, -1).filter((run) => canonicalText(run.prompt) === prompt).length
-  let seen = 0
-  let userIndex = -1
-  for (let index = 0; index < page.messages.length; index += 1) {
-    const message = page.messages[index]
-    if (message.info.role !== "user" || visiblePrompt(message) !== prompt) continue
-    if (seen === occurrence) {
-      userIndex = index
-      break
-    }
-    seen += 1
-  }
-  if (userIndex < 0) return
-
-  let completedAt = 0
-  let completed = false
-  for (let index = userIndex + 1; index < page.messages.length; index += 1) {
-    const message = page.messages[index]
-    if (message.info.role === "user") break
-    if (!nativeAssistantCompleted(message)) continue
-    completed = true
-    completedAt = Math.max(completedAt, Number(message.info.time?.completed) || Number(message.info.time?.created) || 0)
-  }
-  if (!completed) return
+  const orderedRuns = [...entry.runs.values()]
+    .sort((left, right) => left.created - right.created || left.id.localeCompare(right.id))
+  const completion = openCodeTranscriptCompletion(orderedRuns.map((run) => run.prompt), page, before)
+  if (!completion) return
 
   const priorStatus = taskStatus(entry)
   entry.statusType = "idle"
   entry.forcedStatus = null
-  if (completedAt) entry.updatedAt = Math.max(entry.updatedAt, completedAt)
+  if (completion.completedAt) entry.updatedAt = Math.max(entry.updatedAt, completion.completedAt)
   if (taskStatus(entry) !== priorStatus) notify(entry)
 }
 
@@ -351,7 +232,7 @@ function captureUserRuns(entry: ProjectionEntry, page: MessagePage, before?: str
   let changed = false
   for (const message of page.messages) {
     if (message.info.role !== "user" || !message.info.id) continue
-    const prompt = visiblePrompt(message)
+    const prompt = visibleNativePrompt(message)
     if (!prompt) continue
     const id = `${projectionID(entry.target)}:native-user:${message.info.id}`
     if (entry.runs.has(id)) continue
@@ -369,7 +250,7 @@ function appendAcceptedRun(entry: ProjectionEntry, prompt: string, model: ModelS
   const id = `${projectionID(entry.target)}:request:${clientRequestId}`
   if (!entry.runs.has(id)) {
     const created = Date.now()
-    entry.runs.set(id, { id, prompt: canonicalText(prompt), created, model })
+    entry.runs.set(id, { id, prompt: canonicalNativeText(prompt), created, model })
     entry.updatedAt = created
   }
   entry.currentModel = model
