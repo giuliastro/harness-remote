@@ -49,7 +49,7 @@ test("primary product surface is Machine -> Project -> native Session", () => {
   assert.match(home, /hr-native-session-row/)
   assert.match(home, /sessionTreeRows/)
   assert.match(observer, /<WorkThreadConversation/)
-  assert.match(sharedChat, /buildWorkThreadTimeline/)
+  assert.match(sharedChat, /buildConversationTimeline/)
   assert.match(sharedChat, /<TaskDeskConversation/)
 })
 
