@@ -52,6 +52,13 @@ test("Session-first contract separates discovery, transcript reads and writer ac
   for (const contract of [omp, pi, codex, claude]) {
     assert.equal(contract.sessions.stop, "owned-session-native-cancel")
   }
+
+  // ACP itself does not define Session deletion. Do not turn AcpService's local tombstone into a
+  // product promise: native Sessions must remain owned by the harness unless an adapter exposes a
+  // verified native delete primitive.
+  for (const id of ["omp", "pi", "codex", "claude"]) {
+    assert.equal(harnessProfile(id).capabilities.sessionDelete, false, `${id} must not advertise bridge-local deletion as native deletion`)
+  }
 })
 
 test("OpenCode capability contract describes daemon-owned SSE fanout and native HTTP Sessions", () => {
