@@ -2,15 +2,11 @@ import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { api } from "../api"
 import type { AttachmentPart } from "../attachments"
 import { createCoalescedTailRefresh } from "../coalesced-tail-refresh"
-import { taskConversationController, type ConversationController } from "../conversation-controller"
+import type { ConversationController } from "../conversation-controller"
+import { conversationTurnSessionID, conversationTurns, type ConversationRuntime, type ConversationTurn } from "../conversation-runtime"
 import { mergeLatestMessagePage, prependOlderMessagePage } from "../message-pages"
 import type { SavedServerProfile } from "../serverProfiles"
-import {
-  taskClient,
-  type AgentModelScope,
-  type MachineTask,
-  type MachineTaskRun
-} from "../taskClient"
+import { taskClient, type AgentModelScope } from "../taskClient"
 import { startTaskDeskSessionLiveRefresh } from "../taskdesk-session-live-refresh"
 import type {
   BackendKind,
@@ -24,10 +20,8 @@ import type {
   ServerConfig
 } from "../types"
 import {
-  buildWorkThreadTimeline,
+  buildConversationTimeline,
   CONVERSATION_EVENT_ROLE,
-  runSessionID,
-  workThreadRuns,
   type WorkThreadMessage,
   type WorkThreadAgentMeta
 } from "../work-thread-timeline"
@@ -67,11 +61,10 @@ type SessionFeed = {
 }
 
 type Props = {
-  task: MachineTask
+  conversation: ConversationRuntime
   baseConfig: ServerConfig
   agents: MachineAgentHost[]
-  onTaskUpdate: (task: MachineTask) => void
-  onWorkspaceRefresh?: () => void
+  onConversationUpdate: (conversation: ConversationRuntime) => void
   onAttentionChange?: (needsAttention: boolean) => void
   commands?: CommandInfo[]
   /**
@@ -88,7 +81,7 @@ type Props = {
    */
   deferModelFallback?: boolean
   /** Explicit I/O boundary. Native Sessions provide a Session-scoped controller. */
-  controller?: ConversationController
+  controller: ConversationController
 }
 
 function supportedBackend(value: string, fallback: BackendKind): BackendKind {
@@ -106,8 +99,8 @@ function configForAgent(base: ServerConfig, agents: MachineAgentHost[], agentID:
   }
 }
 
-function agentForRun(task: MachineTask, run: MachineTaskRun | null | undefined): string {
-  return run?.agentId || task.agentId
+function agentForTurn(conversation: ConversationRuntime, turn: ConversationTurn | null | undefined): string {
+  return turn?.agentId || conversation.agentId
 }
 
 function agentMap(agents: MachineAgentHost[]): WorkThreadAgentMeta {
@@ -124,61 +117,59 @@ function harnessIconUrl(backend: string | undefined): string | undefined {
   return file ? `${import.meta.env.BASE_URL}harness-icons/${file}` : undefined
 }
 
-function isActive(task: MachineTask): boolean {
-  return task.status === "starting" || task.status === "running"
+function isActive(conversation: ConversationRuntime): boolean {
+  return conversation.status === "starting" || conversation.status === "running"
 }
 
 function modelKey(model?: ModelSelection | null): string {
   return model ? modelOptionKey(model as ModelOption) : ""
 }
 
-function lastModelForAgent(task: MachineTask, agentID: string): ModelSelection | null {
-  const runs = workThreadRuns(task)
-  for (let index = runs.length - 1; index >= 0; index -= 1) {
-    const run = runs[index]
-    if (agentForRun(task, run) !== agentID || !run.model) continue
-    return run.model
+function lastModelForAgent(conversation: ConversationRuntime, agentID: string): ModelSelection | null {
+  const turns = conversationTurns(conversation)
+  for (let index = turns.length - 1; index >= 0; index -= 1) {
+    const turn = turns[index]
+    if (agentForTurn(conversation, turn) !== agentID || !turn.model) continue
+    return turn.model
   }
-  return task.agentId === agentID ? task.model ?? null : null
+  return conversation.agentId === agentID ? conversation.model ?? null : null
 }
 
-function sessionTargets(task: MachineTask, baseConfig: ServerConfig, agents: MachineAgentHost[]): SessionTarget[] {
+function sessionTargets(conversation: ConversationRuntime, baseConfig: ServerConfig, agents: MachineAgentHost[]): SessionTarget[] {
   const bySession = new Map<string, SessionTarget>()
-  for (const run of workThreadRuns(task)) {
-    const session = runSessionID(run)
+  for (const turn of conversationTurns(conversation)) {
+    const session = conversationTurnSessionID(turn)
     if (!session || bySession.has(session)) continue
-    const agentID = agentForRun(task, run)
+    const agentID = agentForTurn(conversation, turn)
     bySession.set(session, {
       sessionID: session,
       agentID,
-      directory: run.directory || task.workspace.path,
+      directory: turn.directory || conversation.directory,
       config: configForAgent(baseConfig, agents, agentID)
     })
   }
   return [...bySession.values()]
 }
 
-function taskConversationSignature(task: MachineTask): string {
-  const runs = workThreadRuns(task).map((run) => [
-    run.id || "",
-    run.sequence || 0,
-    run.agentId || "",
-    runSessionID(run) || "",
-    run.status || "",
-    run.prompt || "",
-    run.outcome || "",
-    (run as MachineTaskRun & { error?: { message?: string } | string }).error instanceof Object
-      ? (run as MachineTaskRun & { error?: { message?: string } }).error?.message || ""
-      : String((run as MachineTaskRun & { error?: string }).error || ""),
-    run.startedAt || "",
-    run.finishedAt || ""
+function runtimeSignature(conversation: ConversationRuntime): string {
+  const turns = conversationTurns(conversation).map((turn) => [
+    turn.id || "",
+    turn.sequence || 0,
+    turn.agentId || "",
+    conversationTurnSessionID(turn) || "",
+    turn.status || "",
+    turn.prompt || "",
+    turn.outcome || "",
+    typeof turn.error === "object" ? turn.error?.message || "" : String(turn.error || ""),
+    turn.startedAt || "",
+    turn.finishedAt || ""
   ])
   return JSON.stringify([
-    task.id,
-    task.status,
-    task.error?.message || "",
-    task.finishedAt || "",
-    runs
+    conversation.id,
+    conversation.status,
+    conversation.error?.message || "",
+    conversation.finishedAt || "",
+    turns
   ])
 }
 
@@ -277,20 +268,19 @@ const WorkThreadBubble = memo(function WorkThreadBubble({ message, activity }: {
 })
 
 export function WorkThreadConversation({
-  task,
+  conversation,
   baseConfig,
   agents,
-  onTaskUpdate,
-  onWorkspaceRefresh,
+  onConversationUpdate,
   onAttentionChange,
   commands = [],
   modelScope,
   deferModelFallback = false,
-  controller = taskConversationController
+  controller
 }: Props) {
-  const draftStorageKey = `${DRAFT_STORAGE_PREFIX}${task.id}`
-  const initialAgentID = agentForRun(task, task.run)
-  const initialModelKey = modelKey(lastModelForAgent(task, initialAgentID))
+  const draftStorageKey = `${DRAFT_STORAGE_PREFIX}${conversation.id}`
+  const initialAgentID = agentForTurn(conversation, conversation.currentTurn)
+  const initialModelKey = modelKey(lastModelForAgent(conversation, initialAgentID))
   const [feeds, setFeeds] = useState<Record<string, SessionFeed>>({})
   const feedsRef = useRef<Record<string, SessionFeed>>({})
   const [loading, setLoading] = useState(true)
@@ -298,9 +288,9 @@ export function WorkThreadConversation({
   const [draft, setDraft] = useState(() => localStorage.getItem(draftStorageKey) || "")
   const [attachments, setAttachments] = useState<AttachmentPart[]>([])
   const [sending, setSending] = useState(false)
-  // The prompt that has been sent but is not yet in the transcript, with the Run that was current
+  // The prompt that has been sent but is not yet in the transcript, with the turn that was current
   // when it was sent. See `visibleTimeline`.
-  const [pendingPrompt, setPendingPrompt] = useState<{ text: string; priorRunID: string | null; attachments: AttachmentPart[] } | null>(null)
+  const [pendingPrompt, setPendingPrompt] = useState<{ text: string; priorTurnID: string | null; attachments: AttachmentPart[] } | null>(null)
   const [stopping, setStopping] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [modelError, setModelError] = useState<string | null>(null)
@@ -318,38 +308,36 @@ export function WorkThreadConversation({
   const draftRef = useRef(draft)
   draftRef.current = draft
   const targetAgentIDRef = useRef(targetAgentID)
-  const observedTaskModelKeyRef = useRef(initialModelKey)
+  const observedConversationModelKeyRef = useRef(initialModelKey)
   const modelSelectionTouchedRef = useRef(false)
   const sendInFlightRef = useRef(false)
   const stopInFlightRef = useRef(false)
   const tailRefreshRef = useRef(createCoalescedTailRefresh())
   const attentionInFlightRef = useRef(false)
   const reconcileInFlightRef = useRef(false)
-  const taskRef = useRef(task)
+  const conversationRef = useRef(conversation)
   const agentsRef = useRef(agents)
-  const onTaskUpdateRef = useRef(onTaskUpdate)
-  const onWorkspaceRefreshRef = useRef(onWorkspaceRefresh)
+  const onConversationUpdateRef = useRef(onConversationUpdate)
   const onAttentionChangeRef = useRef(onAttentionChange)
 
-  taskRef.current = task
+  conversationRef.current = conversation
   agentsRef.current = agents
-  onTaskUpdateRef.current = onTaskUpdate
-  onWorkspaceRefreshRef.current = onWorkspaceRefresh
+  onConversationUpdateRef.current = onConversationUpdate
   onAttentionChangeRef.current = onAttentionChange
 
-  const targets = useMemo(() => sessionTargets(task, baseConfig, agents), [task.id, task.runs, task.run, task.workspace.path, baseConfig, agents])
+  const targets = useMemo(() => sessionTargets(conversation, baseConfig, agents), [conversation.id, conversation.turns, conversation.currentTurn, conversation.directory, baseConfig, agents])
   const targetSignature = targets.map((target) => `${target.sessionID}:${target.agentID}:${target.directory}`).join("|")
   const agentsSignature = agents.map((agent) => `${agent.id}:${agent.label}:${agent.backend}`).join("|")
   const agentsByID = useMemo(() => agentMap(agents), [agentsSignature])
-  const currentAgentID = agentForRun(task, task.run)
-  const currentTaskModelKey = modelKey(lastModelForAgent(task, currentAgentID))
+  const currentAgentID = agentForTurn(conversation, conversation.currentTurn)
+  const currentConversationModelKey = modelKey(lastModelForAgent(conversation, currentAgentID))
   const currentAgent = agents.find((agent) => agent.id === currentAgentID)
-  const currentSessionID = runSessionID(task.run)
+  const currentSessionID = conversationTurnSessionID(conversation.currentTurn)
   const currentTarget = currentSessionID ? targets.find((target) => target.sessionID === currentSessionID) : undefined
-  const working = isActive(task)
-  // JSON.stringify over every Run is far too expensive to repeat on each keystroke. The Task object
+  const working = isActive(conversation)
+  // JSON.stringify over every turn is far too expensive to repeat on each keystroke. The conversation object
   // identity only changes when the workspace actually reloads or updates the conversation.
-  const conversationSignature = useMemo(() => taskConversationSignature(task), [task])
+  const conversationSignature = useMemo(() => runtimeSignature(conversation), [conversation])
 
   const persistDraft = useCallback((key: string, value: string) => {
     try {
@@ -381,36 +369,36 @@ export function WorkThreadConversation({
     setAttachments([])
     setPendingPrompt(null)
     setTargetAgentID(currentAgentID)
-    setTargetModelKey(currentTaskModelKey)
-    observedTaskModelKeyRef.current = currentTaskModelKey
+    setTargetModelKey(currentConversationModelKey)
+    observedConversationModelKeyRef.current = currentConversationModelKey
     modelSelectionTouchedRef.current = false
     sendInFlightRef.current = false
     stopInFlightRef.current = false
     attentionInFlightRef.current = false
     reconcileInFlightRef.current = false
-  }, [task.id])
+  }, [conversation.id])
 
   useEffect(() => {
-    if (currentAgentID !== targetAgentIDRef.current && task.run?.id) {
-      const nextModelKey = modelKey(task.run.model ?? lastModelForAgent(task, currentAgentID))
+    if (currentAgentID !== targetAgentIDRef.current && conversation.currentTurn?.id) {
+      const nextModelKey = modelKey(conversation.currentTurn.model ?? lastModelForAgent(conversation, currentAgentID))
       setTargetAgentID(currentAgentID)
       setTargetModelKey(nextModelKey)
-      observedTaskModelKeyRef.current = nextModelKey
+      observedConversationModelKeyRef.current = nextModelKey
       modelSelectionTouchedRef.current = false
     }
-  }, [currentAgentID, task.run?.id])
+  }, [currentAgentID, conversation.currentTurn?.id])
 
   // Native Session enrichment is intentionally asynchronous so transcript rendering never waits for
   // model discovery. If the catalog wins that race it may temporarily choose its default. Follow a
-  // later verified model from the Task projection unless the user has already touched the picker;
+  // later verified model from the Session runtime unless the user has already touched the picker;
   // this keeps the control on the Session's real last model without clobbering an explicit choice.
   useEffect(() => {
-    const previous = observedTaskModelKeyRef.current
-    observedTaskModelKeyRef.current = currentTaskModelKey
-    if (!currentTaskModelKey || currentTaskModelKey === previous) return
+    const previous = observedConversationModelKeyRef.current
+    observedConversationModelKeyRef.current = currentConversationModelKey
+    if (!currentConversationModelKey || currentConversationModelKey === previous) return
     if (currentAgentID !== targetAgentIDRef.current || modelSelectionTouchedRef.current) return
-    setTargetModelKey(currentTaskModelKey)
-  }, [currentAgentID, currentTaskModelKey])
+    setTargetModelKey(currentConversationModelKey)
+  }, [currentAgentID, currentConversationModelKey])
 
   const loadInitialTarget = useCallback(async (target: SessionTarget): Promise<SessionFeed> => {
     const page = await controller.loadMessagePage(target.config, target.sessionID, target.directory, undefined, INITIAL_PAGE_SIZE, false)
@@ -446,7 +434,7 @@ export function WorkThreadConversation({
     [feeds]
   )
   const timeline = useMemo(
-    () => buildWorkThreadTimeline(task, messagesBySession, agentsByID),
+    () => buildConversationTimeline(conversation, messagesBySession, agentsByID),
     [conversationSignature, messagesBySession, agentsByID]
   )
 
@@ -458,19 +446,19 @@ export function WorkThreadConversation({
    * a real id and the timeline's key for its row changed from the run's index to that id. On screen
    * that reads as the message flashing in, being removed and being redrawn. The optimistic row
    * closes the gap: same bubble, same place, keyed once. It stands down the moment the real row
-   * exists - either because the text is in the transcript or because a new Run is on the Task, which
+   * exists - either because the text is in the transcript or because a new turn is in the Session runtime, which
    * is what that row is built from - so the two are never on screen together.
    */
   const settledPrompt = pendingPrompt
-    && (Boolean(task.run?.id && task.run.id !== pendingPrompt.priorRunID)
+    && (Boolean(conversation.currentTurn?.id && conversation.currentTurn.id !== pendingPrompt.priorTurnID)
       || timeline.some((message) => message.info.role === "user"
         && message.parts.some((part) => part.type === "text" && part.text?.trim() === pendingPrompt.text)))
 
   const visibleTimeline = useMemo(() => {
     if (!pendingPrompt || settledPrompt) return timeline
-    const id = `work-thread:${task.id}:pending-user`
+    const id = `work-thread:${conversation.id}:pending-user`
     return [...timeline, {
-      info: { id, role: "user", sessionID: `work-thread:${task.id}`, time: { created: Date.now() } },
+      info: { id, role: "user", sessionID: `work-thread:${conversation.id}`, time: { created: Date.now() } },
       parts: [
         ...(pendingPrompt.text ? [{ id: `${id}:text`, messageID: id, type: "text", text: pendingPrompt.text }] : []),
         ...pendingPrompt.attachments.map((attachment, index) => ({
@@ -481,36 +469,36 @@ export function WorkThreadConversation({
       ],
       taskdesk: { kind: "synthetic-user" as const }
     } as WorkThreadMessage]
-  }, [timeline, pendingPrompt, settledPrompt, task.id])
+  }, [timeline, pendingPrompt, settledPrompt, conversation.id])
 
   useEffect(() => {
     if (settledPrompt) setPendingPrompt(null)
   }, [settledPrompt])
 
-  const currentRunHasAssistantSignal = useMemo(() => {
-    const runID = task.run?.id
-    if (!runID) return false
+  const currentTurnHasAssistantSignal = useMemo(() => {
+    const turnID = conversation.currentTurn?.id
+    if (!turnID) return false
     return timeline.some((message) => message.info.role === "assistant"
-      && message.taskdesk?.runId === runID
+      && message.taskdesk?.runId === turnID
       && message.parts.some((part) => {
         if (part.type === "tool") return true
         if (part.type === "reasoning") return Boolean(part.text?.trim() || part.time?.start)
         return part.type === "text" && Boolean(part.text?.trim())
       }))
-  }, [timeline, task.run?.id])
+  }, [timeline, conversation.currentTurn?.id])
   const hasMore = Object.values(feeds).some((feed) => feed.hasMore && feed.before)
 
-  const refreshCurrentTail = useCallback(async (sourceTask?: MachineTask) => {
-    const currentTask = sourceTask ?? taskRef.current
-    const run = currentTask.run
-    const session = runSessionID(run)
+  const refreshCurrentTail = useCallback(async (sourceConversation?: ConversationRuntime) => {
+    const currentConversation = sourceConversation ?? conversationRef.current
+    const turn = currentConversation.currentTurn
+    const session = conversationTurnSessionID(turn)
     if (!session) return
     const currentAgents = agentsRef.current
-    const agentID = agentForRun(currentTask, run)
+    const agentID = agentForTurn(currentConversation, turn)
     const target: SessionTarget = {
       sessionID: session,
       agentID,
-      directory: run?.directory || currentTask.workspace.path,
+      directory: turn?.directory || currentConversation.directory,
       config: configForAgent(baseConfig, currentAgents, agentID)
     }
     await tailRefreshRef.current(async () => {
@@ -532,20 +520,20 @@ export function WorkThreadConversation({
     })
   }, [baseConfig, controller])
 
-  const refreshAttention = useCallback(async (sourceTask?: MachineTask) => {
+  const refreshAttention = useCallback(async (sourceConversation?: ConversationRuntime) => {
     if (attentionInFlightRef.current) return
-    const currentTask = sourceTask ?? taskRef.current
-    const run = currentTask.run
-    const session = runSessionID(run)
+    const currentConversation = sourceConversation ?? conversationRef.current
+    const turn = currentConversation.currentTurn
+    const session = conversationTurnSessionID(turn)
     if (!session) {
       setQuestions((current) => current.length ? [] : current)
       setPermissions((current) => current.length ? [] : current)
       return
     }
     const currentAgents = agentsRef.current
-    const agentID = agentForRun(currentTask, run)
+    const agentID = agentForTurn(currentConversation, turn)
     const config = configForAgent(baseConfig, currentAgents, agentID)
-    const directory = run?.directory || currentTask.workspace.path
+    const directory = turn?.directory || currentConversation.directory
     attentionInFlightRef.current = true
     try {
       const [nextQuestions, nextPermissions] = await Promise.all([
@@ -565,30 +553,15 @@ export function WorkThreadConversation({
     if (reconcileInFlightRef.current) return
     reconcileInFlightRef.current = true
     try {
-      const prior = taskRef.current
-      let next = await controller.getWorkThread(baseConfig, prior.id)
-      if (taskConversationSignature(next) !== taskConversationSignature(prior)
-        || next.title !== prior.title
-        || next.checkpoints?.length !== prior.checkpoints?.length) {
-        onTaskUpdateRef.current(next)
-        taskRef.current = next
+      const prior = conversationRef.current
+      let next = await controller.refreshConversation(baseConfig, prior.id)
+      if (runtimeSignature(next) !== runtimeSignature(prior)
+        || next.title !== prior.title) {
+        onConversationUpdateRef.current(next)
+        conversationRef.current = next
       }
       await Promise.all([refreshCurrentTail(next), refreshAttention(next)])
-      const hasRunCheckpoint = Boolean(next.run?.id && next.checkpoints?.some((checkpoint) => checkpoint.kind === "after-run" && checkpoint.runId === next.run?.id))
-      if (next.workspace.mode === "worktree" && !isActive(next) && next.run?.id && next.run.finishedAt && !hasRunCheckpoint) {
-        try {
-          const created = await taskClient.createCheckpoint(baseConfig, next.id, {
-            label: `After ${agentLabel(agentsRef.current, agentForRun(next, next.run))}`,
-            kind: "after-run",
-            runId: next.run.id
-          })
-          if (created) {
-            next = await controller.getWorkThread(baseConfig, next.id)
-            onTaskUpdateRef.current(next)
-            taskRef.current = next
-            onWorkspaceRefreshRef.current?.()
-          }
-        } catch {
+    } catch {
           // Checkpoints are useful orchestration metadata, never a chat blocker.
         }
       }
@@ -612,7 +585,7 @@ export function WorkThreadConversation({
     if (!currentTarget) return
     const currentAgents = agentsRef.current
     const profile: SavedServerProfile = {
-      id: `thread:${task.id}:${currentTarget.agentID}`,
+      id: `thread:${conversation.id}:${currentTarget.agentID}`,
       name: agentLabel(currentAgents, currentTarget.agentID),
       config: currentTarget.config
     }
@@ -626,7 +599,7 @@ export function WorkThreadConversation({
     return () => subscription.close()
     // These scalar values identify the native stream. Do not depend on the changing Task object or
     // callback identities: doing so reopened the OpenCode stream on every reconcile tick.
-  }, [task.id, currentTarget?.sessionID, currentTarget?.agentID, currentTarget?.directory, refreshCurrentTail, reconcile, refreshAttention])
+  }, [conversation.id, currentTarget?.sessionID, currentTarget?.agentID, currentTarget?.directory, refreshCurrentTail, reconcile, refreshAttention])
 
   useEffect(() => {
     const current = ++modelGeneration.current
@@ -641,10 +614,10 @@ export function WorkThreadConversation({
     setModels([])
     setModelsLoading(true)
     setModelError(null)
-    void taskClient.listAgentModels(baseConfig, targetAgentID, modelScope ?? { workThreadId: task.id }).then((catalog) => {
+    void taskClient.listAgentModels(baseConfig, targetAgentID, modelScope ?? {}).then((catalog) => {
       if (modelGeneration.current !== current) return
       setModels(catalog.models)
-      const prior = lastModelForAgent(taskRef.current, targetAgentID)
+      const prior = lastModelForAgent(conversationRef.current, targetAgentID)
       const priorKey = modelKey(prior)
       const fallback = deferModelFallback
         ? undefined
@@ -663,7 +636,7 @@ export function WorkThreadConversation({
     }).finally(() => {
       if (modelGeneration.current === current) setModelsLoading(false)
     })
-  }, [targetAgentID, task.id, task.workspace.path, baseConfig, modelScopeKey, deferModelFallback])
+  }, [targetAgentID, conversation.id, conversation.directory, baseConfig, modelScopeKey, deferModelFallback])
 
   // Only a model verified by the current live catalog is sent explicitly. A null selection is
   // intentional: the controller distinguishes it from an omitted field, which means reuse the
@@ -713,14 +686,14 @@ export function WorkThreadConversation({
     setSending(true)
     setError(null)
     setDraft("")
-    setPendingPrompt({ text, priorRunID: taskRef.current.run?.id ?? null, attachments: promptAttachments })
+    setPendingPrompt({ text, priorTurnID: conversationRef.current.run?.id ?? null, attachments: promptAttachments })
     try {
-      const latest = await controller.getWorkThread(baseConfig, task.id)
+      const latest = await controller.refreshConversation(baseConfig, conversation.id)
       if (isActive(latest)) {
-        onTaskUpdateRef.current(latest)
-        throw new Error(`${agentLabel(agentsRef.current, agentForRun(latest, latest.run))} is still working. Stop it or wait for the reply before sending another message.`)
+        onConversationUpdateRef.current(latest)
+        throw new Error(`${agentLabel(agentsRef.current, agentForTurn(latest, latest.run))} is still working. Stop it or wait for the reply before sending another message.`)
       }
-      const next = await controller.continueTask(baseConfig, task.id, {
+      const next = await controller.continueConversation(baseConfig, conversation.id, {
         prompt: text,
         attachments: promptAttachments,
         command: slashCommand,
@@ -729,8 +702,8 @@ export function WorkThreadConversation({
       })
       localStorage.removeItem(draftStorageKey)
       setAttachments([])
-      onTaskUpdateRef.current(next)
-      taskRef.current = next
+      onConversationUpdateRef.current(next)
+      conversationRef.current = next
       modelSelectionTouchedRef.current = false
       await refreshCurrentTail(next)
       void refreshAttention(next)
@@ -753,9 +726,9 @@ export function WorkThreadConversation({
     setStopping(true)
     setError(null)
     try {
-      const next = await controller.cancelWorkThread(baseConfig, task.id)
-      onTaskUpdateRef.current(next)
-      taskRef.current = next
+      const next = await controller.stopConversation(baseConfig, conversation.id)
+      onConversationUpdateRef.current(next)
+      conversationRef.current = next
       await Promise.all([refreshCurrentTail(next), refreshAttention(next)])
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : String(reason))
@@ -769,14 +742,14 @@ export function WorkThreadConversation({
   const attachmentAgent = agents.find((agent) => agent.id === targetAgentID)
   const attachmentsSupported = attachmentAgent?.capabilities?.attachments === true
   const hasAttention = questions.length > 0 || permissions.length > 0
-  const preparingReply = sending || (working && !currentRunHasAssistantSignal)
+  const preparingReply = sending || (working && !currentTurnHasAssistantSignal)
   const pendingAgentLabel = sending ? agentLabel(agents, targetAgentID) : currentLabel
   // The pending bubble is the reply that is coming, so it wears the identity of the agent that is
   // about to answer rather than the one that answered last.
   const pendingAgentBackend = (sending ? agents.find((agent) => agent.id === targetAgentID) : currentAgent)?.backend
   // Only the turn that is actually running carries the live status row, and only once its bubble is
   // on screen - before that the pending bubble is showing the very same row.
-  const liveRunID = working && !hasAttention && currentRunHasAssistantSignal ? task.run?.id : undefined
+  const liveTurnID = working && !hasAttention && currentTurnHasAssistantSignal ? conversation.currentTurn?.id : undefined
 
   const waitingLabel = hasAttention
     ? "Waiting for your input"
@@ -789,11 +762,11 @@ export function WorkThreadConversation({
    *
    * A Run's id is on every row the Run produced, the synthetic user message included, so matching on
    * the id alone put the status row inside the user's own bubble as well as the reply's. The status
-   * of a turn belongs to the reply, so the role is part of the match - and `liveRunID` is already
+   * of a turn belongs to the reply, so the role is part of the match - and `liveTurnID` is already
    * mutually exclusive with the pending bubble, which is the only other place this row can appear.
    */
   const activityForMessage = (message: WorkThreadMessage): string | undefined =>
-    liveRunID && message.info.role === "assistant" && message.taskdesk?.runId === liveRunID
+    liveTurnID && message.info.role === "assistant" && message.taskdesk?.runId === liveTurnID
       ? waitingLabel
       : undefined
 
@@ -823,12 +796,12 @@ export function WorkThreadConversation({
             {modelError ? <small className="tdw-field-note" title={modelError}>Model catalog unavailable. Continue uses the harness default.</small> : null}
           </label>
         </div>
-        <ConversationStatePill working={working || sending} attention={hasAttention} workingLabel={waitingLabel} startedAt={sending ? undefined : task.run?.startedAt} status={task.status} detail={task.error?.message || undefined} />
+        <ConversationStatePill working={working || sending} attention={hasAttention} workingLabel={waitingLabel} startedAt={sending ? undefined : conversation.currentTurn?.startedAt} status={conversation.status} detail={conversation.error?.message || undefined} />
       </div>
 
       <WorkThreadAttention
         config={currentTarget?.config || configForAgent(baseConfig, agents, currentAgentID)}
-        directory={currentTarget?.directory || task.workspace.path}
+        directory={currentTarget?.directory || conversation.directory}
         questions={questions}
         permissions={permissions}
         onResolved={async () => { await refreshAttention(); await reconcile() }}
