@@ -272,7 +272,7 @@ function assistantForTurn({
   conversation,
   turn,
   index,
-  turn,
+  nativeTurn,
   session,
   agentID,
   agentLabel,
