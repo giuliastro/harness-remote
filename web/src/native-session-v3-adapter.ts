@@ -4,20 +4,21 @@ import { lastNativeMessageModel } from "./native-session-model"
 import type { NativeSessionSurfaceTarget } from "./native-session-discovery"
 import { sendNativeSessionCommand, sendNativeSessionPrompt } from "./native-session-prompt"
 import { stopNativeSession } from "./native-session-stop"
-import type { ConversationController } from "./conversation-controller"
-import type { MachineTask, MachineTaskRun, TaskContinueInput } from "./taskClient"
+import type { ConversationContinueInput, ConversationController } from "./conversation-controller"
+import type { ConversationRuntime, ConversationTurn } from "./conversation-runtime"
 import type { MessageEnvelope, ModelSelection, ServerConfig } from "./types"
 
-const PROJECTION_ID_PREFIX = "native-session-v3:"
+// Keep the value stable so drafts/local UI identity survive the architecture migration.
+const NATIVE_CONVERSATION_ID_PREFIX = "native-session-v3:"
 
-type ProjectionRun = {
+type NativeTurnRecord = {
   id: string
   prompt: string
   created: number
   model: ModelSelection | null
 }
 
-type ProjectionEntry = {
+type NativeConversationEntry = {
   target: NativeSessionSurfaceTarget
   createdAt: number
   updatedAt: number
@@ -28,11 +29,11 @@ type ProjectionEntry = {
   piTailMessages: MessageEnvelope[]
   writerReady: boolean
   writerClaimInFlight: Promise<void> | null
-  runs: Map<string, ProjectionRun>
-  listeners: Set<(task: MachineTask) => void>
+  turns: Map<string, NativeTurnRecord>
+  listeners: Set<(conversation: ConversationRuntime) => void>
 }
 
-const projections = new Map<string, ProjectionEntry>()
+const conversations = new Map<string, NativeConversationEntry>()
 
 export function nativeSessionIsWorking(status?: string): boolean {
   const value = status?.trim().toLowerCase() || ""
@@ -45,8 +46,8 @@ export function nativeSessionIsWorking(status?: string): boolean {
     || value === "in-progress"
 }
 
-function projectionID(target: NativeSessionSurfaceTarget): string {
-  return `${PROJECTION_ID_PREFIX}${encodeURIComponent(target.machineID)}:${encodeURIComponent(target.agentID)}:${encodeURIComponent(target.sessionID)}`
+function conversationID(target: NativeSessionSurfaceTarget): string {
+  return `${NATIVE_CONVERSATION_ID_PREFIX}${encodeURIComponent(target.machineID)}:${encodeURIComponent(target.agentID)}:${encodeURIComponent(target.sessionID)}`
 }
 
 function canonicalText(value: string): string {
@@ -125,7 +126,7 @@ export function stabilizePiTailMessageIDs(
   return changed ? stabilized : next
 }
 
-function stabilizePiTailPage(entry: ProjectionEntry, page: MessagePage, before?: string): MessagePage {
+function stabilizePiTailPage(entry: NativeConversationEntry, page: MessagePage, before?: string): MessagePage {
   if (entry.target.backend !== "pi" || before) return page
   const messages = stabilizePiTailMessageIDs(entry.piTailMessages, page.messages)
   entry.piTailMessages = messages
@@ -176,21 +177,21 @@ const PAGE_MODEL_BACKENDS = new Set(["opencode", "codex", "omp"])
  * Runs that never had one; a Run that recorded a different model keeps it, because that one is a
  * real change the user made.
  */
-function reconcileNativeSessionModel(entry: ProjectionEntry, page: MessagePage, before?: string): void {
+function reconcileNativeSessionModel(entry: NativeConversationEntry, page: MessagePage, before?: string): void {
   if (before || !PAGE_MODEL_BACKENDS.has(entry.target.backend)) return
   const model = page.model ?? (entry.target.backend === "opencode" ? lastNativeMessageModel(page.messages) : null)
   if (!model) return
 
   let changed = !sameModel(entry.currentModel, model)
   entry.currentModel = model
-  for (const run of entry.runs.values()) {
+  for (const run of entry.turns.values()) {
     if (run.model) continue
     run.model = model
     changed = true
   }
   const latestUser = [...page.messages].reverse().find((message) => message.info.role === "user" && message.info.id)
   if (latestUser) {
-    const run = entry.runs.get(`${projectionID(entry.target)}:native-user:${latestUser.info.id}`)
+    const run = entry.turns.get(`${conversationID(entry.target)}:native-user:${latestUser.info.id}`)
     if (run && !sameModel(run.model, model)) {
       run.model = model
       changed = true
@@ -207,10 +208,10 @@ function reconcileNativeSessionModel(entry: ProjectionEntry, page: MessagePage, 
  * Match by prompt occurrence, not timestamps, so repeated prompts remain correct and clock skew
  * between the browser and OpenCode cannot attach an older completed assistant to a new Run.
  */
-function reconcileOpenCodeTranscriptStatus(entry: ProjectionEntry, page: MessagePage, before?: string): void {
+function reconcileOpenCodeTranscriptStatus(entry: NativeConversationEntry, page: MessagePage, before?: string): void {
   if (entry.target.backend !== "opencode" || before || entry.forcedStatus !== "running") return
 
-  const orderedRuns = [...entry.runs.values()].sort((left, right) => left.created - right.created || left.id.localeCompare(right.id))
+  const orderedRuns = [...entry.turns.values()].sort((left, right) => left.created - right.created || left.id.localeCompare(right.id))
   const current = orderedRuns[orderedRuns.length - 1]
   const prompt = canonicalText(current?.prompt || "")
   if (!current || !prompt) return
@@ -240,11 +241,11 @@ function reconcileOpenCodeTranscriptStatus(entry: ProjectionEntry, page: Message
   }
   if (!completed) return
 
-  const priorStatus = taskStatus(entry)
+  const priorStatus = conversationStatus(entry)
   entry.statusType = "idle"
   entry.forcedStatus = null
   if (completedAt) entry.updatedAt = Math.max(entry.updatedAt, completedAt)
-  if (taskStatus(entry) !== priorStatus) notify(entry)
+  if (conversationStatus(entry) !== priorStatus) notify(entry)
 }
 
 function iso(timestamp: number): string {
@@ -259,8 +260,8 @@ function sameServer(left: ServerConfig, right: ServerConfig): boolean {
     && (left.agentId || "") === (right.agentId || "")
 }
 
-function entryForRead(config: ServerConfig, sessionID: string, directory?: string): ProjectionEntry | undefined {
-  for (const entry of projections.values()) {
+function entryForRead(config: ServerConfig, sessionID: string, directory?: string): NativeConversationEntry | undefined {
+  for (const entry of conversations.values()) {
     if (entry.target.sessionID !== sessionID || !sameServer(entry.target.config, config)) continue
     if (directory && entry.target.directory && directory !== entry.target.directory) continue
     return entry
@@ -268,17 +269,17 @@ function entryForRead(config: ServerConfig, sessionID: string, directory?: strin
   return undefined
 }
 
-function taskStatus(entry: ProjectionEntry): string {
+function conversationStatus(entry: NativeConversationEntry): string {
   if (entry.forcedStatus) return entry.forcedStatus
   return nativeSessionIsWorking(entry.statusType) ? "running" : "completed"
 }
 
-function sortedRuns(entry: ProjectionEntry): MachineTaskRun[] {
-  const status = taskStatus(entry)
-  const ordered = [...entry.runs.values()].sort((left, right) => left.created - right.created || left.id.localeCompare(right.id))
+function sortedTurns(entry: NativeConversationEntry): ConversationTurn[] {
+  const status = conversationStatus(entry)
+  const ordered = [...entry.turns.values()].sort((left, right) => left.created - right.created || left.id.localeCompare(right.id))
   if (ordered.length === 0) {
     return [{
-      id: `${projectionID(entry.target)}:anchor`,
+      id: `${conversationID(entry.target)}:anchor`,
       sequence: 1,
       agentId: entry.target.agentID,
       model: entry.currentModel,
@@ -309,39 +310,36 @@ function sortedRuns(entry: ProjectionEntry): MachineTaskRun[] {
   }))
 }
 
-function projectedTask(entry: ProjectionEntry): MachineTask {
-  const runs = sortedRuns(entry)
-  const current = runs[runs.length - 1] ?? null
-  const firstPrompt = runs.find((run) => run.prompt?.trim())?.prompt || ""
-  const directoryParts = entry.target.directory.split(/[\\/]/).filter(Boolean)
-  const projectName = directoryParts[directoryParts.length - 1] || entry.target.title || "Native Session"
+function conversationSnapshot(entry: NativeConversationEntry): ConversationRuntime {
+  const turns = sortedTurns(entry)
+  const current = turns[turns.length - 1] ?? null
+  const firstPrompt = turns.find((turn) => turn.prompt?.trim())?.prompt || ""
+  const status = conversationStatus(entry)
   return {
-    id: projectionID(entry.target),
+    id: conversationID(entry.target),
     machineId: entry.target.machineID,
-    projectId: `native:${entry.target.directory || entry.target.sessionID}`,
-    project: { name: projectName, path: entry.target.directory, kind: "directory" },
     title: entry.target.title,
     agentId: entry.target.agentID,
-    prompt: firstPrompt,
+    initialPrompt: firstPrompt,
     model: entry.currentModel,
-    status: taskStatus(entry),
-    workspace: { mode: "project", path: entry.target.directory },
-    run: current,
-    runs,
+    status,
+    directory: entry.target.directory,
+    currentTurn: current,
+    turns,
     error: null,
     createdAt: iso(entry.createdAt),
     updatedAt: iso(entry.updatedAt),
-    ...(taskStatus(entry) === "running" ? {} : { finishedAt: iso(entry.updatedAt) })
+    ...(status === "running" ? {} : { finishedAt: iso(entry.updatedAt) })
   }
 }
 
-function notify(entry: ProjectionEntry): MachineTask {
-  const task = projectedTask(entry)
-  for (const listener of entry.listeners) listener(task)
-  return task
+function notify(entry: NativeConversationEntry): ConversationRuntime {
+  const conversation = conversationSnapshot(entry)
+  for (const listener of entry.listeners) listener(conversation)
+  return conversation
 }
 
-function captureUserRuns(entry: ProjectionEntry, page: MessagePage, before?: string): void {
+function captureUserTurns(entry: NativeConversationEntry, page: MessagePage, before?: string): void {
   // The first page describes the Session state that existed when the v3 controller mounted. Older
   // pages are admitted when the user explicitly pages backward. Tail refreshes do not manufacture
   // new Runs from replay IDs: new HR prompts already have one accepted client operation identity.
@@ -353,10 +351,10 @@ function captureUserRuns(entry: ProjectionEntry, page: MessagePage, before?: str
     if (message.info.role !== "user" || !message.info.id) continue
     const prompt = visiblePrompt(message)
     if (!prompt) continue
-    const id = `${projectionID(entry.target)}:native-user:${message.info.id}`
-    if (entry.runs.has(id)) continue
+    const id = `${conversationID(entry.target)}:native-user:${message.info.id}`
+    if (entry.turns.has(id)) continue
     const created = Number(message.info.time?.created) || entry.createdAt
-    entry.runs.set(id, { id, prompt, created, model: entry.currentModel })
+    entry.turns.set(id, { id, prompt, created, model: entry.currentModel })
     entry.createdAt = Math.min(entry.createdAt, created)
     entry.updatedAt = Math.max(entry.updatedAt, created)
     changed = true
@@ -365,11 +363,11 @@ function captureUserRuns(entry: ProjectionEntry, page: MessagePage, before?: str
   if (changed) notify(entry)
 }
 
-function appendAcceptedRun(entry: ProjectionEntry, prompt: string, model: ModelSelection | null, clientRequestId: string): MachineTask {
-  const id = `${projectionID(entry.target)}:request:${clientRequestId}`
-  if (!entry.runs.has(id)) {
+function appendAcceptedTurn(entry: NativeConversationEntry, prompt: string, model: ModelSelection | null, clientRequestId: string): ConversationRuntime {
+  const id = `${conversationID(entry.target)}:request:${clientRequestId}`
+  if (!entry.turns.has(id)) {
     const created = Date.now()
-    entry.runs.set(id, { id, prompt: canonicalText(prompt), created, model })
+    entry.turns.set(id, { id, prompt: canonicalText(prompt), created, model })
     entry.updatedAt = created
   }
   entry.currentModel = model
@@ -378,7 +376,7 @@ function appendAcceptedRun(entry: ProjectionEntry, prompt: string, model: ModelS
   return notify(entry)
 }
 
-async function refreshStatus(entry: ProjectionEntry): Promise<void> {
+async function refreshStatus(entry: NativeConversationEntry): Promise<void> {
   // OpenCode's legacy /session/status has changed scope across recent releases and can omit a child
   // directory Session entirely. More importantly, this read sits in the v3 pre-Send reconciliation
   // path, so a slow status endpoint delays prompt delivery before OpenCode even starts reasoning.
@@ -401,9 +399,9 @@ async function refreshStatus(entry: ProjectionEntry): Promise<void> {
 /**
  * ACP writer ownership is a transport detail, not a navigation step. Reading a Session never claims
  * it. The first Send or Stop acquires the writer transparently and caches that fact for this open
- * projection. OpenCode resolves immediately because it has no ACP single-writer claim boundary.
+ * conversation. OpenCode resolves immediately because it has no ACP single-writer claim boundary.
  */
-async function ensureWriter(entry: ProjectionEntry): Promise<void> {
+async function ensureWriter(entry: NativeConversationEntry): Promise<void> {
   if (entry.writerReady) return
   if (entry.writerClaimInFlight) return entry.writerClaimInFlight
 
@@ -422,9 +420,9 @@ async function ensureWriter(entry: ProjectionEntry): Promise<void> {
   }
 }
 
-function requireProjectionTask(entry: ProjectionEntry, taskId: string): void {
-  if (taskId !== projectionID(entry.target)) {
-    throw new Error("Native Session controller received a task outside its Session scope")
+function requireConversationScope(entry: NativeConversationEntry, conversationId: string): void {
+  if (conversationId !== conversationID(entry.target)) {
+    throw new Error("Native Session controller received a conversation outside its Session scope")
   }
 }
 
@@ -435,29 +433,29 @@ function requireProjectionTask(entry: ProjectionEntry, taskId: string): void {
  * to WorkThreadConversation, so mounting one Native Session cannot change another conversation's
  * runtime behavior or make call routing depend on module/mount order.
  */
-function nativeConversationController(entry: ProjectionEntry): ConversationController {
+function nativeConversationController(entry: NativeConversationEntry): ConversationController {
   return {
     async loadMessagePage(config, sessionID, directory, before, limit, refreshHistory) {
       let page = await api.loadMessagePage(config, sessionID, directory, before, limit, refreshHistory)
       const activeEntry = entryForRead(config, sessionID, directory)
       if (activeEntry === entry) {
         page = stabilizePiTailPage(entry, page, before)
-        captureUserRuns(entry, page, before)
+        captureUserTurns(entry, page, before)
         reconcileOpenCodeTranscriptStatus(entry, page, before)
         reconcileNativeSessionModel(entry, page, before)
       }
       return page
     },
 
-    async getWorkThread(_config, taskId) {
-      requireProjectionTask(entry, taskId)
+    async refreshConversation(_config, conversationId) {
+      requireConversationScope(entry, conversationId)
       await refreshStatus(entry)
-      return projectedTask(entry)
+      return conversationSnapshot(entry)
     },
 
-    async continueTask(_config, taskId, input) {
-      requireProjectionTask(entry, taskId)
-      const body: TaskContinueInput = typeof input === "string" ? { prompt: input } : input
+    async continueConversation(_config, conversationId, input) {
+      requireConversationScope(entry, conversationId)
+      const body: ConversationContinueInput = input
       const prompt = body.prompt?.trim() || ""
       if (!prompt) throw new Error("A text prompt is required")
       if (body.agentId && body.agentId !== entry.target.agentID) {
@@ -471,15 +469,15 @@ function nativeConversationController(entry: ProjectionEntry): ConversationContr
       if (result.status !== "accepted") {
         throw new Error(`${body.command ? "Command" : "Prompt"} delivery is ${result.status}. Retry the same request to reconcile the existing request id.`)
       }
-      return appendAcceptedRun(entry, prompt, model ?? null, result.clientRequestId)
+      return appendAcceptedTurn(entry, prompt, model ?? null, result.clientRequestId)
     },
 
-    async cancelWorkThread(_config, taskId) {
-      requireProjectionTask(entry, taskId)
+    async stopConversation(_config, conversationId) {
+      requireConversationScope(entry, conversationId)
       await ensureWriter(entry)
-      const projectionRuns = sortedRuns(entry)
-      const latestRun = projectionRuns[projectionRuns.length - 1]
-      const operationToken = latestRun?.id || entry.target.sessionID
+      const conversationTurns = sortedTurns(entry)
+      const latestTurn = conversationTurns[conversationTurns.length - 1]
+      const operationToken = latestTurn?.id || entry.target.sessionID
       const result = await stopNativeSession(entry.target, operationToken)
       if (result.status !== "accepted") {
         throw new Error(`Stop delivery is ${result.status}. The existing native cancel request will be reconciled instead of repeated.`)
@@ -494,10 +492,10 @@ function nativeConversationController(entry: ProjectionEntry): ConversationContr
 
 export function registerNativeSessionV3Adapter(
   target: NativeSessionSurfaceTarget,
-  onTaskUpdate: (task: MachineTask) => void
-): { task: MachineTask; controller: ConversationController; dispose: () => void } {
-  const id = projectionID(target)
-  let entry = projections.get(id)
+  onConversationUpdate: (conversation: ConversationRuntime) => void
+): { conversation: ConversationRuntime; controller: ConversationController; dispose: () => void } {
+  const id = conversationID(target)
+  let entry = conversations.get(id)
   if (!entry) {
     const now = Date.now()
     entry = {
@@ -511,30 +509,33 @@ export function registerNativeSessionV3Adapter(
       piTailMessages: [],
       writerReady: !target.requiresExplicitClaim,
       writerClaimInFlight: null,
-      runs: new Map(),
+      turns: new Map(),
       listeners: new Set()
     }
-    projections.set(id, entry)
+    conversations.set(id, entry)
   } else {
     entry.target = target
     entry.statusType = target.status?.type || entry.statusType
     entry.currentModel = target.model ?? entry.currentModel
     if (!target.requiresExplicitClaim) entry.writerReady = true
   }
-  entry.listeners.add(onTaskUpdate)
+  entry.listeners.add(onConversationUpdate)
   return {
-    task: projectedTask(entry),
+    conversation: conversationSnapshot(entry),
     controller: nativeConversationController(entry),
     dispose: () => {
-      entry?.listeners.delete(onTaskUpdate)
-      if (entry && entry.listeners.size === 0) projections.delete(id)
+      entry?.listeners.delete(onConversationUpdate)
+      if (entry && entry.listeners.size === 0) conversations.delete(id)
     }
   }
 }
 
-export function isNativeSessionV3Projection(taskId: string): boolean {
-  return taskId.startsWith(PROJECTION_ID_PREFIX)
+export function isNativeSessionConversationID(conversationId: string): boolean {
+  return conversationId.startsWith(NATIVE_CONVERSATION_ID_PREFIX)
 }
+
+/** @deprecated Compatibility alias for callers not yet migrated to the neutral runtime name. */
+export const isNativeSessionV3Projection = isNativeSessionConversationID
 
 /**
  * Record a model that was recovered from native metadata after this Session was already mounted.
@@ -548,7 +549,7 @@ export function applyDiscoveredNativeSessionModel(
   model: ModelSelection | null
 ): void {
   if (!model) return
-  const entry = projections.get(projectionID(target))
+  const entry = conversations.get(conversationID(target))
   if (!entry || entry.currentModel) return
   entry.currentModel = model
   notify(entry)
