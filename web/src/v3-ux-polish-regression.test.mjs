@@ -76,7 +76,7 @@ assert.match(overrides, /prefers-reduced-motion/)
 
 // Model discovery is machine-scoped for native Sessions and must not restart on object identity churn.
 assert.match(chat, /taskClient\.listAgentModels\(baseConfig, targetAgentID, modelScope \?\? \{\}\)/)
-assert.match(chat, /\[targetAgentID, task\.id, task\.workspace\.path, baseConfig, modelScopeKey, deferModelFallback\]/)
+assert.match(chat, /\[targetAgentID, conversation\.id, conversation\.directory, baseConfig, modelScopeKey, deferModelFallback\]/)
 assert.match(chat, /const modelScopeKey = modelScope \?/)
 assert.match(observer, /const NATIVE_SESSION_MODEL_SCOPE: AgentModelScope = \{\}/)
 assert.match(observer, /deferModelFallback/)
