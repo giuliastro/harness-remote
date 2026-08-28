@@ -96,7 +96,7 @@ test("a failed or cancelled Conversation does not report Ready in its own header
   assert.match(conversation, /function conversationOutcome\(status: string\)/)
   assert.match(conversation, /if \(status === "failed"\) return \{ state: "attention", text: "Needs attention" \}/)
   assert.match(conversation, /if \(status === "cancelled"\) return \{ state: "stopped", text: "Stopped" \}/)
-  assert.match(conversation, /status=\{task\.status\} detail=\{task\.error\?\.message \|\| undefined\}/)
+  assert.match(conversation, /status=\{conversation\.status\} detail=\{conversation\.error\?\.message \|\| undefined\}/)
   assert.match(read("work-thread-detail.css"), /\.tdw-conversation-state\.stopped \{/)
 })
 
