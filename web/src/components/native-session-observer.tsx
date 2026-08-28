@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { api } from "../api"
+import type { ConversationController } from "../conversation-controller"
 import type { NativeSessionSurfaceTarget } from "../native-session-discovery"
 import { resolveNativeSessionTargetModel } from "../native-session-model"
 import {
@@ -59,6 +60,7 @@ function targetForInitialProjection(target: NativeSessionSurfaceTarget): NativeS
  */
 export function NativeSessionObserver({ target, onSessionRefresh, onStateChange }: Props) {
   const [task, setTask] = useState<MachineTask | null>(null)
+  const [controller, setController] = useState<ConversationController | null>(null)
   const [attachmentsSupported, setAttachmentsSupported] = useState(false)
   const [commands, setCommands] = useState<CommandInfo[]>([])
   const taskRef = useRef<MachineTask | null>(null)
@@ -127,6 +129,7 @@ export function NativeSessionObserver({ target, onSessionRefresh, onStateChange 
     const initialTarget = targetForInitialProjection(target)
 
     setTask(null)
+    setController(null)
     taskRef.current = null
     attentionRef.current = false
 
@@ -134,6 +137,7 @@ export function NativeSessionObserver({ target, onSessionRefresh, onStateChange 
     // whole transcript on a network read left this surface stuck on "Loading Session into the v3
     // controller..." whenever that read was slow, which is exactly what a busy daemon produces.
     registration = registerNativeSessionV3Adapter(initialTarget, handleTaskUpdate)
+    setController(registration.controller)
     handleTaskUpdate(registration.task)
 
     // Recovering the last requested native model is enrichment. It refines the already usable
@@ -150,7 +154,7 @@ export function NativeSessionObserver({ target, onSessionRefresh, onStateChange 
     }
   }, [target.key, handleTaskUpdate])
 
-  if (!task) {
+  if (!task || !controller) {
     return <div className="tdw-detail-loading"><LoadingIcon size={20} /> Loading Session into the v3 controller...</div>
   }
 
@@ -163,6 +167,7 @@ export function NativeSessionObserver({ target, onSessionRefresh, onStateChange 
         agents={[agent]}
         modelScope={NATIVE_SESSION_MODEL_SCOPE}
         deferModelFallback
+        controller={controller}
         onTaskUpdate={handleTaskUpdate}
         onWorkspaceRefresh={onSessionRefresh}
         onAttentionChange={handleAttentionChange}
