@@ -184,7 +184,7 @@ function useElapsedSeconds(startedAt?: string): number {
 
   useEffect(() => {
     if (!running) {
-      // No running Run means no clock. Keeping a 1s interval alive here woke the whole conversation
+      // No running turn means no clock. Keeping a 1s interval alive here woke the whole conversation
       // toolbar every second while the agent was idle.
       setElapsed(0)
       return
@@ -420,7 +420,7 @@ export function WorkThreadConversation({
         if (cancelled || loadGeneration.current !== generation) return
         setFeeds((current) => current[target.sessionID] ? current : { ...current, [target.sessionID]: feed })
       } catch {
-        // Durable Task history can outlive a native Session. Persisted Run outcome/error is the safe
+        // Durable Session history can outlive a live transport. Persisted turn outcome/error is the safe
         // fallback; do not invent a transcript association when the Session cannot be read.
       }
     })).finally(() => {
@@ -441,8 +441,8 @@ export function WorkThreadConversation({
   /**
    * What the user just sent, shown from the moment they send it.
    *
-   * Sending used to clear the composer and then show nothing until `continueTask` came back with a
-   * Run, at which point the message appeared - and appeared again, remounted, once that Run carried
+   * Sending used to clear the composer and then show nothing until the continuation came back with a
+   * turn, at which point the message appeared - and appeared again, remounted, once that turn carried
    * a real id and the timeline's key for its row changed from the run's index to that id. On screen
    * that reads as the message flashing in, being removed and being redrawn. The optimistic row
    * closes the gap: same bubble, same place, keyed once. It stands down the moment the real row
@@ -554,17 +554,12 @@ export function WorkThreadConversation({
     reconcileInFlightRef.current = true
     try {
       const prior = conversationRef.current
-      let next = await controller.refreshConversation(baseConfig, prior.id)
-      if (runtimeSignature(next) !== runtimeSignature(prior)
-        || next.title !== prior.title) {
+      const next = await controller.refreshConversation(baseConfig, prior.id)
+      if (runtimeSignature(next) !== runtimeSignature(prior) || next.title !== prior.title) {
         onConversationUpdateRef.current(next)
         conversationRef.current = next
       }
       await Promise.all([refreshCurrentTail(next), refreshAttention(next)])
-    } catch {
-          // Checkpoints are useful orchestration metadata, never a chat blocker.
-        }
-      }
     } catch {
       // A transient reconcile failure must never clear a valid conversation.
     } finally {
@@ -597,7 +592,7 @@ export function WorkThreadConversation({
       onDetail: () => void refreshAttention()
     })
     return () => subscription.close()
-    // These scalar values identify the native stream. Do not depend on the changing Task object or
+    // These scalar values identify the native stream. Do not depend on the changing conversation object or
     // callback identities: doing so reopened the OpenCode stream on every reconcile tick.
   }, [conversation.id, currentTarget?.sessionID, currentTarget?.agentID, currentTarget?.directory, refreshCurrentTail, reconcile, refreshAttention])
 
@@ -640,7 +635,7 @@ export function WorkThreadConversation({
 
   // Only a model verified by the current live catalog is sent explicitly. A null selection is
   // intentional: the controller distinguishes it from an omitted field, which means reuse the
-  // previous Run's model. Null therefore asks the harness for its current native default and cannot
+  // previous turn's model. Null therefore asks the harness for its current native default and cannot
   // resurrect a persisted provider model that has since been removed.
   const selectedModel = models.find((model) => modelKey(model) === targetModelKey)
 
@@ -686,12 +681,12 @@ export function WorkThreadConversation({
     setSending(true)
     setError(null)
     setDraft("")
-    setPendingPrompt({ text, priorTurnID: conversationRef.current.run?.id ?? null, attachments: promptAttachments })
+    setPendingPrompt({ text, priorTurnID: conversationRef.current.currentTurn?.id ?? null, attachments: promptAttachments })
     try {
       const latest = await controller.refreshConversation(baseConfig, conversation.id)
       if (isActive(latest)) {
         onConversationUpdateRef.current(latest)
-        throw new Error(`${agentLabel(agentsRef.current, agentForTurn(latest, latest.run))} is still working. Stop it or wait for the reply before sending another message.`)
+        throw new Error(`${agentLabel(agentsRef.current, agentForTurn(latest, latest.currentTurn))} is still working. Stop it or wait for the reply before sending another message.`)
       }
       const next = await controller.continueConversation(baseConfig, conversation.id, {
         prompt: text,
@@ -760,7 +755,7 @@ export function WorkThreadConversation({
   /**
    * Exactly one row, on exactly one bubble.
    *
-   * A Run's id is on every row the Run produced, the synthetic user message included, so matching on
+   * A turn id is on every row the turn produced, the synthetic user message included, so matching on
    * the id alone put the status row inside the user's own bubble as well as the reply's. The status
    * of a turn belongs to the reply, so the role is part of the match - and `liveTurnID` is already
    * mutually exclusive with the pending bubble, which is the only other place this row can appear.
