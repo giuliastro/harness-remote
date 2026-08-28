@@ -68,7 +68,7 @@ assert.match(mobileParity, /@media \(pointer: coarse\) and \(min-width: 600px\) 
 
 // Native Session chat keeps the mature shared renderer without resurrecting the removed product UI.
 assert.match(chat, /<span>Continue with<\/span>/)
-assert.match(chat, /buildWorkThreadTimeline/)
+assert.match(chat, /buildConversationTimeline/)
 assert.match(overrides, /tdw-conversation-event::before/)
 assert.match(overrides, /uw-activity-group\.uw-tool-running/)
 assert.match(read("components/taskdesk-message-content.tsx"), /status === "running" \? "Working" : status/)
