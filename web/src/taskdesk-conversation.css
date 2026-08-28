@@ -609,3 +609,64 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+
+.tdw-work-thread-conversation .uw-message-attachments {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.tdw-work-thread-conversation .uw-message-attachment {
+  min-width: 0;
+  max-width: min(320px, 100%);
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr);
+  align-items: center;
+  gap: 9px;
+  padding: 7px 9px;
+  border: 1px solid var(--td3-border);
+  border-radius: 10px;
+  background: var(--td3-raise-1);
+}
+
+.tdw-work-thread-conversation .uw-message-attachment img,
+.tdw-work-thread-conversation .uw-message-attachment-icon {
+  width: 42px;
+  height: 42px;
+  border-radius: 8px;
+}
+
+.tdw-work-thread-conversation .uw-message-attachment img {
+  display: block;
+  object-fit: cover;
+  border: 1px solid var(--td3-border-soft);
+}
+
+.tdw-work-thread-conversation .uw-message-attachment-icon {
+  display: grid;
+  place-items: center;
+  color: var(--td3-muted);
+  background: var(--td3-raise-2);
+}
+
+.tdw-work-thread-conversation .uw-message-attachment > span:last-child {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.tdw-work-thread-conversation .uw-message-attachment strong {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--td3-text);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+}
+
+.tdw-work-thread-conversation .uw-message-attachment small {
+  color: var(--td3-muted);
+  font-size: 9px;
+}
