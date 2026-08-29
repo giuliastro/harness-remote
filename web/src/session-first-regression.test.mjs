@@ -88,7 +88,7 @@ assert.ok(modelRecovery.includes('info.model?.providerID') && modelRecovery.incl
 assert.ok(modelRecovery.includes('for (let index = messages.length - 1; index >= 0; index -= 1)'), 'model recovery must choose the newest model-bearing native message regardless of role')
 assert.ok(modelRecovery.includes('PAGE_MODEL_BACKENDS = new Set(["omp", "pi", "codex"])'), 'journal-backed model recovery must remain explicit and scoped')
 
-assert.ok(adapter.includes('function nativeConversationController(entry: ProjectionEntry): ConversationController'), 'native Session behavior must be exposed through an explicit scoped controller')
+assert.ok(adapter.includes('function nativeConversationController(entry: NativeConversationEntry): ConversationController'), 'native Session behavior must be exposed through an explicit scoped controller')
 assert.equal(adapter.includes('api.loadMessagePage ='), false, 'native Session mount must not monkey-patch global transcript reads')
 assert.equal(adapter.includes('taskClient.getWorkThread ='), false, 'native Session mount must not monkey-patch global task reads')
 assert.equal(adapter.includes('taskClient.continueTask ='), false, 'native Session mount must not monkey-patch global send behavior')
@@ -101,7 +101,7 @@ assert.ok(conversationController.includes('export type ConversationController'),
 assert.ok(conversationController.includes('taskConversationController'), 'Task-backed conversations must keep an explicit default controller')
 assert.ok(adapter.includes('probeNativeSessionContinuation(entry.target)'), 'ACP writer claim must happen lazily at the mutation boundary')
 assert.ok(adapter.includes('await ensureWriter(entry)'), 'native Send and Stop must acquire writer ownership transparently')
-assert.ok(adapter.includes('sendNativeSessionPrompt(entry.target, prompt, model, body.attachments ?? [])'), 'the v3 controller adapter must preserve native prompt idempotency while carrying attachments')
+assert.ok(adapter.includes('sendNativeSessionPrompt(entry.target, prompt, model, body.attachments ?? [])'), 'the native conversation controller must preserve native prompt idempotency while carrying attachments')
 assert.ok(adapter.includes('sendNativeSessionCommand(entry.target, body.command.name, body.command.arguments, model)'), 'slash command execution must remain inside the Session-first adapter mutation boundary')
 assert.ok(adapter.includes('stopNativeSession(entry.target, operationToken)'), 'the v3 controller adapter must preserve native Stop idempotency')
 assert.ok(adapter.includes('Cross-agent continuation is disabled until single-Session parity is validated'), 'single-Session validation must block cross-agent continuation')
