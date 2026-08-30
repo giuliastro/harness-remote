@@ -1,19 +1,24 @@
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { streamURL } from './opencode-events.ts'
-import { agentScopedPath, authHeader, baseUrl, hasCredentials, isValidServerConfig, machineBaseUrl } from './serverConfig.ts'
+import { agentScopedPath, authHeader, baseUrl, hasCredentials, isValidServerConfig, machineBaseUrl, normalizeServerHost } from './serverConfig.ts'
 
 const config = (host, port = 4096) => ({ backend: 'opencode', host, port, username: 'opencode', password: 'secret' })
 
 for (const host of ['http:', 'http://', 'https:', 'https://', '', '   ']) {
   assert.equal(isValidServerConfig(config(host)), false, `half-typed host ${JSON.stringify(host)} must be rejected`)
 }
-for (const host of ['Giulio-S7', 'localhost', '192.168.1.64', 'http://192.168.1.64', 'https://example.com', 'http://192']) {
+for (const host of ['Giulio-S7', 'localhost', '192.168.1.64', 'http://192.168.1.64', 'https://example.com', 'http://192', 'HTTP://LOCALHOST/']) {
   assert.equal(isValidServerConfig(config(host)), true, `usable host ${JSON.stringify(host)} must be accepted`)
 }
 assert.equal(isValidServerConfig(config('localhost', 0)), false)
 assert.equal(isValidServerConfig(config('localhost', 70000)), false)
 assert.equal(isValidServerConfig(config('localhost', Number.NaN)), false)
+assert.equal(isValidServerConfig(config('example.com/path')), false)
+assert.equal(isValidServerConfig(config('example.com:4097')), false)
+assert.equal(normalizeServerHost(' LOCALHOST '), 'localhost')
+assert.equal(normalizeServerHost('HTTP://LOCALHOST/'), 'http://localhost')
+assert.equal(normalizeServerHost('192.168.1.64'), '192.168.1.64')
 assert.equal(baseUrl(config('192.168.1.64')), 'http://192.168.1.64:4096')
 assert.equal(baseUrl(config('https://example.com')), 'https://example.com:4096')
 
