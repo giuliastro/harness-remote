@@ -1,3 +1,4 @@
+import { normalizeServerConfig } from "./serverConfig"
 import type { ServerConfig } from "./types"
 
 export const WORKSPACE_MACHINES_STORAGE_KEY = "harness-remote.workspace.machines.v1"
@@ -22,19 +23,24 @@ function normalizeMachine(value: unknown): WorkspaceMachine | null {
   const config = candidate.config
   if (!config || typeof config.host !== "string" || typeof config.port !== "number") return null
   if (typeof config.username !== "string" || typeof config.password !== "string") return null
-  if (!config.host.trim() || !Number.isInteger(config.port) || config.port < 1 || config.port > 65_535) return null
+  const normalized = normalizeServerConfig({
+    backend: "opencode",
+    host: config.host,
+    port: config.port,
+    username: config.username,
+    password: config.password
+  })
+  if (!normalized) return null
 
   return {
-    id: typeof candidate.id === "string" && candidate.id ? candidate.id : machineID(),
+    id: typeof candidate.id === "string" && candidate.id.trim() ? candidate.id.trim() : machineID(),
     name: typeof candidate.name === "string" && candidate.name.trim()
       ? candidate.name.trim()
-      : config.host.trim(),
+      : normalized.host,
     config: {
+      ...normalized,
       backend: "opencode",
-      host: config.host.trim(),
-      port: config.port,
-      username: config.username,
-      password: config.password
+      agentId: undefined
     }
   }
 }
