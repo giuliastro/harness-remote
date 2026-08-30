@@ -129,7 +129,13 @@ jobs:
           retention-days: 7
 
   release:
-    if: startsWith(github.ref, 'refs/tags/v')
+    # Tagged releases keep the normal path. The second clause is a one-shot repair path for the
+    # broken Electron artifacts already published as v3.0.0; the merge commit title is explicit so
+    # ordinary main pushes can never overwrite release assets.
+    if: >-
+      startsWith(github.ref, 'refs/tags/v') ||
+      (github.ref == 'refs/heads/main' &&
+       startsWith(github.event.head_commit.message, 'fix(desktop): repair Harness Remote 3.0.0 Electron release'))
     needs: package
     runs-on: ubuntu-latest
     permissions:
@@ -145,7 +151,7 @@ jobs:
       - name: Wait for Android-owned release
         env:
           GH_TOKEN: ${{ github.token }}
-          TAG: ${{ github.ref_name }}
+          TAG: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || 'v3.0.0' }}
           REPO: ${{ github.repository }}
         run: |
           deadline=$(( $(date +%s) + 600 ))
@@ -160,7 +166,7 @@ jobs:
       - name: Attach desktop artifacts to release
         env:
           GH_TOKEN: ${{ github.token }}
-          TAG: ${{ github.ref_name }}
+          TAG: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || 'v3.0.0' }}
           # This job never checks the repository out, so gh cannot read the remote from a .git
           # directory and every call has to name the repository itself.
           REPO: ${{ github.repository }}
@@ -173,3 +179,24 @@ jobs:
           fi
           printf 'attaching %s\n' "${files[@]}"
           gh release upload "$TAG" "${files[@]}" --repo "$REPO" --clobber
+
+      - name: Record repaired desktop build in release notes
+        if: github.ref == 'refs/heads/main'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: v3.0.0
+          REPO: ${{ github.repository }}
+          BUILD_SHA: ${{ github.sha }}
+        run: |
+          current="$(gh release view "$TAG" --repo "$REPO" --json body --jq .body)"
+          marker="Desktop repair build: \`$BUILD_SHA\`"
+          if printf '%s' "$current" | grep -Fq "$marker"; then
+            exit 0
+          fi
+          {
+            printf '%s\n\n' "$current"
+            printf '## Desktop repair\n\n'
+            printf 'Desktop repair build: \`%s\`\n\n' "$BUILD_SHA"
+            printf 'The Windows, macOS and Linux assets were rebuilt after fixing Session-first WorkspaceMachine → Electron registry synchronization and machine-scoped harness routing. The Android APK is unchanged.\n'
+          } > /tmp/release-notes.md
+          gh release edit "$TAG" --repo "$REPO" --notes-file /tmp/release-notes.md
