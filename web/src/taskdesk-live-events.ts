@@ -8,7 +8,6 @@ import {
   isNativeEventTransport,
   type EventStreamStatus
 } from "./opencode-events"
-import type { SavedServerProfile } from "./serverProfiles"
 import type { ServerConfig } from "./types"
 
 export type TaskDeskLiveEvent = {
@@ -57,12 +56,10 @@ export function taskDeskLiveEvent(name: string | undefined, data: unknown): Task
  * can carry auth headers, Android uses the native SSE plugin, and Electron main owns desktop sockets.
  */
 export function subscribeTaskDeskLiveEvents({
-  profile,
   config,
   onEvent,
   onStatus
 }: {
-  profile: SavedServerProfile
   config: ServerConfig
   onEvent: (event: TaskDeskLiveEvent) => void
   onStatus?: (status: EventStreamStatus) => void
@@ -74,10 +71,8 @@ export function subscribeTaskDeskLiveEvents({
 
   if (isDesktopPlatform()) {
     return createDesktopOpenCodeEventSubscription({
-      profileId: profile.id,
+      config,
       scope: "global",
-      backend: config.backend,
-      agentId: config.agentId,
       onEvent: (event) => emit(event.name, event.data),
       onStatus
     })
