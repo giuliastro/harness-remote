@@ -128,7 +128,6 @@ export function startTaskDeskSessionLiveRefresh({
   }
 
   const subscriptions = targets.map((target) => subscribeTaskDeskLiveEvents({
-    profile: target.profile,
     config: target.config,
     onEvent: (event) => {
       const selected = getSelected()
