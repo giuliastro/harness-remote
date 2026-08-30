@@ -1,0 +1,1323 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Harness Remote 3 — Your sessions. Any coding agent. Any device.</title>
+  <meta name="description" content="Harness Remote 3 is the local-first native-session control plane for Codex CLI, Claude Code, OpenCode, Oh My Pi and PI across desktop, web and Android.">
+  <meta name="theme-color" content="#07090d">
+  <meta name="color-scheme" content="dark">
+  <link rel="canonical" href="https://giuliastro.github.io/harness-remote/v3/">
+  <link rel="icon" href="../app-icon.png">
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://giuliastro.github.io/harness-remote/v3/">
+  <meta property="og:title" content="Harness Remote 3 — Your sessions. Any coding agent. Any device.">
+  <meta property="og:description" content="Keep native coding-agent sessions as the source of truth. Run, resume and hand off work across agents and devices from your own machines.">
+  <meta property="og:image" content="https://raw.githubusercontent.com/giuliastro/harness-remote/648586c6c018d6381441d6fcee95009812e3ae9f/docs/images/rhv3.png">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="Harness Remote 3">
+  <meta name="twitter:description" content="Your sessions. Any coding agent. Any device.">
+  <meta name="twitter:image" content="https://raw.githubusercontent.com/giuliastro/harness-remote/648586c6c018d6381441d6fcee95009812e3ae9f/docs/images/rhv3.png">
+  <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "SoftwareApplication",
+      "name": "Harness Remote 3",
+      "applicationCategory": "DeveloperApplication",
+      "operatingSystem": "Windows, macOS, Linux, Android, Web",
+      "description": "A local-first control plane for native AI coding-agent sessions.",
+      "url": "https://giuliastro.github.io/harness-remote/v3/",
+      "codeRepository": "https://github.com/giuliastro/harness-remote",
+      "license": "https://www.apache.org/licenses/LICENSE-2.0"
+    }
+  </script>
+  <style>
+    :root {
+      --bg: #07090d;
+      --bg-soft: #0b0e14;
+      --panel: rgba(14, 18, 27, .72);
+      --panel-strong: #10151f;
+      --line: rgba(255, 255, 255, .09);
+      --line-bright: rgba(255, 255, 255, .15);
+      --text: #f6f7fb;
+      --muted: #a1a8b8;
+      --faint: #6f7787;
+      --accent: #8b8cff;
+      --accent-2: #55d6be;
+      --accent-3: #b36cff;
+      --good: #62e6a7;
+      --shadow: 0 32px 90px rgba(0, 0, 0, .42);
+      --radius: 24px;
+      --max: 1180px;
+    }
+
+    * { box-sizing: border-box; }
+
+    html {
+      scroll-behavior: smooth;
+      background: var(--bg);
+    }
+
+    body {
+      margin: 0;
+      min-width: 320px;
+      color: var(--text);
+      background:
+        radial-gradient(900px 520px at 50% -40px, rgba(116, 100, 255, .16), transparent 70%),
+        radial-gradient(680px 500px at 5% 32%, rgba(72, 214, 190, .07), transparent 75%),
+        radial-gradient(760px 540px at 95% 42%, rgba(166, 85, 255, .08), transparent 76%),
+        var(--bg);
+      font-family: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+      line-height: 1.55;
+      -webkit-font-smoothing: antialiased;
+      text-rendering: optimizeLegibility;
+      overflow-x: hidden;
+    }
+
+    body::before {
+      content: "";
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      background-image:
+        linear-gradient(rgba(255,255,255,.022) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255,255,255,.022) 1px, transparent 1px);
+      background-size: 44px 44px;
+      mask-image: linear-gradient(to bottom, rgba(0,0,0,.45), transparent 75%);
+      z-index: -1;
+    }
+
+    a { color: inherit; text-decoration: none; }
+    button, a { -webkit-tap-highlight-color: transparent; }
+    img { max-width: 100%; display: block; }
+
+    .shell {
+      width: min(calc(100% - 40px), var(--max));
+      margin: 0 auto;
+    }
+
+    .nav-wrap {
+      position: sticky;
+      top: 0;
+      z-index: 50;
+      padding: 16px 0 0;
+    }
+
+    nav {
+      min-height: 62px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 20px;
+      padding: 10px 12px 10px 16px;
+      border: 1px solid var(--line);
+      background: rgba(7, 9, 13, .72);
+      backdrop-filter: blur(18px) saturate(140%);
+      -webkit-backdrop-filter: blur(18px) saturate(140%);
+      border-radius: 18px;
+      box-shadow: 0 12px 40px rgba(0,0,0,.18);
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 11px;
+      font-weight: 730;
+      letter-spacing: -.02em;
+      white-space: nowrap;
+    }
+
+    .brand-mark {
+      width: 35px;
+      height: 35px;
+      display: grid;
+      place-items: center;
+      border-radius: 11px;
+      background:
+        linear-gradient(145deg, rgba(255,255,255,.13), rgba(255,255,255,.02)),
+        #111722;
+      border: 1px solid rgba(255,255,255,.12);
+      box-shadow: inset 0 1px rgba(255,255,255,.09), 0 9px 24px rgba(0,0,0,.26);
+      font-size: 12px;
+      color: #dfe1ff;
+    }
+
+    .brand small {
+      margin-left: 4px;
+      color: var(--faint);
+      font-weight: 650;
+      font-size: 12px;
+      letter-spacing: .02em;
+    }
+
+    .nav-links {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      color: #bcc2cf;
+      font-size: 13px;
+      font-weight: 570;
+    }
+
+    .nav-links > a:not(.nav-cta) {
+      padding: 9px 11px;
+      border-radius: 10px;
+      transition: .2s ease;
+    }
+
+    .nav-links > a:not(.nav-cta):hover {
+      color: #fff;
+      background: rgba(255,255,255,.055);
+    }
+
+    .nav-cta,
+    .button {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 9px;
+      border-radius: 12px;
+      font-weight: 680;
+      transition: transform .2s ease, background .2s ease, border-color .2s ease, box-shadow .2s ease;
+    }
+
+    .nav-cta {
+      padding: 9px 13px;
+      color: #0b0e13;
+      background: #f2f3f7;
+      border: 1px solid #fff;
+    }
+
+    .nav-cta:hover,
+    .button.primary:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 10px 30px rgba(190, 194, 255, .12);
+    }
+
+    .hero {
+      padding: 104px 0 58px;
+      text-align: center;
+      position: relative;
+    }
+
+    .eyebrow {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 7px 11px;
+      border: 1px solid rgba(151, 153, 255, .2);
+      border-radius: 999px;
+      background: rgba(116, 100, 255, .07);
+      color: #c9caff;
+      font-size: 12px;
+      font-weight: 720;
+      letter-spacing: .055em;
+      text-transform: uppercase;
+    }
+
+    .eyebrow-dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: var(--good);
+      box-shadow: 0 0 0 5px rgba(98, 230, 167, .08), 0 0 18px rgba(98, 230, 167, .45);
+    }
+
+    h1 {
+      max-width: 980px;
+      margin: 24px auto 22px;
+      font-size: clamp(50px, 7vw, 88px);
+      line-height: .98;
+      letter-spacing: -.065em;
+      font-weight: 790;
+      text-wrap: balance;
+    }
+
+    .gradient-text {
+      color: transparent;
+      background: linear-gradient(95deg, #fff 5%, #c4c6ff 43%, #8ee6d6 96%);
+      background-clip: text;
+      -webkit-background-clip: text;
+    }
+
+    .hero-copy {
+      max-width: 790px;
+      margin: 0 auto;
+      color: #adb4c3;
+      font-size: clamp(18px, 2vw, 21px);
+      line-height: 1.62;
+      text-wrap: balance;
+    }
+
+    .hero-copy strong {
+      color: #e8eaf1;
+      font-weight: 650;
+    }
+
+    .hero-actions {
+      margin-top: 32px;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      gap: 11px;
+      flex-wrap: wrap;
+    }
+
+    .button {
+      min-height: 48px;
+      padding: 0 18px;
+      font-size: 14px;
+      border: 1px solid var(--line-bright);
+    }
+
+    .button.primary {
+      color: #0a0c11;
+      background: #f4f5f8;
+      border-color: #fff;
+    }
+
+    .button.secondary {
+      color: #e5e7ee;
+      background: rgba(255,255,255,.045);
+    }
+
+    .button.secondary:hover {
+      transform: translateY(-1px);
+      background: rgba(255,255,255,.075);
+      border-color: rgba(255,255,255,.22);
+    }
+
+    .icon {
+      width: 17px;
+      height: 17px;
+      flex: 0 0 auto;
+    }
+
+    .hero-note {
+      margin-top: 15px;
+      color: #6f7786;
+      font-size: 12px;
+    }
+
+    .agents {
+      margin: 44px auto 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 9px;
+      flex-wrap: wrap;
+    }
+
+    .agent-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 11px;
+      background: rgba(255,255,255,.028);
+      border: 1px solid rgba(255,255,255,.075);
+      border-radius: 999px;
+      color: #aeb4c1;
+      font-size: 12px;
+      font-weight: 620;
+    }
+
+    .agent-chip::before {
+      content: "";
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: #787f8c;
+    }
+
+    .hero-visual {
+      margin-top: 64px;
+      position: relative;
+      perspective: 1200px;
+    }
+
+    .hero-glow {
+      position: absolute;
+      width: 70%;
+      height: 70%;
+      left: 15%;
+      top: 20%;
+      background: radial-gradient(closest-side, rgba(103, 93, 255, .18), transparent);
+      filter: blur(42px);
+      pointer-events: none;
+    }
+
+    .product-frame {
+      position: relative;
+      padding: 8px;
+      border-radius: 23px;
+      background: linear-gradient(145deg, rgba(255,255,255,.14), rgba(255,255,255,.035));
+      border: 1px solid rgba(255,255,255,.12);
+      box-shadow: var(--shadow), inset 0 1px rgba(255,255,255,.08);
+      overflow: hidden;
+      transform: rotateX(1.2deg);
+    }
+
+    .product-frame::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(130deg, rgba(255,255,255,.07), transparent 17%, transparent 78%, rgba(113,93,255,.06));
+      pointer-events: none;
+      z-index: 2;
+    }
+
+    .frame-top {
+      height: 37px;
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      padding: 0 9px;
+      background: rgba(7,9,13,.68);
+      border-radius: 15px 15px 6px 6px;
+    }
+
+    .frame-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #333a47;
+    }
+
+    .frame-title {
+      margin-left: 8px;
+      font-size: 11px;
+      color: #6e7583;
+      letter-spacing: .01em;
+    }
+
+    .screen {
+      border-radius: 6px 6px 15px 15px;
+      overflow: hidden;
+      background: #0c0f14;
+      border: 1px solid rgba(255,255,255,.055);
+    }
+
+    .screen img { width: 100%; }
+
+    .float-label {
+      position: absolute;
+      z-index: 4;
+      padding: 8px 10px;
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      border: 1px solid rgba(255,255,255,.13);
+      border-radius: 11px;
+      background: rgba(12, 15, 22, .84);
+      backdrop-filter: blur(12px);
+      box-shadow: 0 12px 34px rgba(0,0,0,.32);
+      color: #cfd3dc;
+      font-size: 11px;
+      font-weight: 650;
+    }
+
+    .float-label.left {
+      left: -14px;
+      top: 22%;
+    }
+
+    .float-label.right {
+      right: -16px;
+      bottom: 17%;
+    }
+
+    .mini-pulse {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: var(--good);
+      box-shadow: 0 0 12px rgba(98,230,167,.45);
+    }
+
+    section {
+      padding: 92px 0;
+      position: relative;
+    }
+
+    .section-kicker {
+      color: #999cff;
+      font-size: 12px;
+      font-weight: 760;
+      text-transform: uppercase;
+      letter-spacing: .13em;
+      margin-bottom: 13px;
+    }
+
+    h2 {
+      margin: 0;
+      max-width: 820px;
+      font-size: clamp(36px, 4.8vw, 58px);
+      line-height: 1.05;
+      letter-spacing: -.048em;
+      font-weight: 760;
+      text-wrap: balance;
+    }
+
+    .section-intro {
+      max-width: 710px;
+      margin: 18px 0 0;
+      color: var(--muted);
+      font-size: 17px;
+      line-height: 1.7;
+      text-wrap: pretty;
+    }
+
+    .feature-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 14px;
+      margin-top: 42px;
+    }
+
+    .card {
+      border: 1px solid var(--line);
+      background:
+        linear-gradient(145deg, rgba(255,255,255,.037), transparent 36%),
+        var(--panel);
+      border-radius: var(--radius);
+      padding: 26px;
+      overflow: hidden;
+      position: relative;
+    }
+
+    .card::after {
+      content: "";
+      position: absolute;
+      width: 120px;
+      height: 120px;
+      right: -60px;
+      top: -60px;
+      border-radius: 50%;
+      background: rgba(128, 119, 255, .08);
+      filter: blur(16px);
+      pointer-events: none;
+    }
+
+    .card-icon {
+      width: 40px;
+      height: 40px;
+      display: grid;
+      place-items: center;
+      border-radius: 12px;
+      background: rgba(139,140,255,.08);
+      border: 1px solid rgba(151,153,255,.13);
+      color: #c7c9ff;
+      margin-bottom: 28px;
+    }
+
+    .card h3 {
+      margin: 0 0 9px;
+      font-size: 19px;
+      letter-spacing: -.025em;
+    }
+
+    .card p {
+      margin: 0;
+      color: #9098a8;
+      font-size: 14px;
+      line-height: 1.68;
+    }
+
+    .workflow-wrap {
+      margin-top: 48px;
+      padding: 12px;
+      border: 1px solid var(--line);
+      border-radius: 28px;
+      background: rgba(10,13,19,.6);
+      box-shadow: inset 0 1px rgba(255,255,255,.035);
+    }
+
+    .workflow {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 1px;
+      overflow: hidden;
+      border-radius: 18px;
+      background: var(--line);
+    }
+
+    .flow-step {
+      min-height: 218px;
+      padding: 25px;
+      background: #0c1017;
+      position: relative;
+    }
+
+    .flow-num {
+      color: #646d7d;
+      font-size: 11px;
+      font-weight: 760;
+      letter-spacing: .1em;
+      margin-bottom: 50px;
+    }
+
+    .flow-step h3 {
+      margin: 0 0 8px;
+      font-size: 17px;
+      letter-spacing: -.02em;
+    }
+
+    .flow-step p {
+      margin: 0;
+      color: #848d9d;
+      font-size: 13px;
+      line-height: 1.6;
+    }
+
+    .flow-arrow {
+      position: absolute;
+      right: -12px;
+      top: 50%;
+      z-index: 4;
+      width: 24px;
+      height: 24px;
+      display: grid;
+      place-items: center;
+      border-radius: 50%;
+      background: #141923;
+      border: 1px solid #282f3d;
+      color: #7f8795;
+      transform: translateY(-50%);
+    }
+
+    .session-section {
+      display: grid;
+      grid-template-columns: 1.03fr .97fr;
+      gap: 54px;
+      align-items: center;
+    }
+
+    .session-tree {
+      border: 1px solid var(--line);
+      border-radius: 26px;
+      padding: 28px;
+      background:
+        radial-gradient(450px 280px at 80% 10%, rgba(116,100,255,.07), transparent 70%),
+        #0b0f16;
+      box-shadow: 0 28px 70px rgba(0,0,0,.25);
+    }
+
+    .tree-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding-bottom: 20px;
+      border-bottom: 1px solid var(--line);
+      margin-bottom: 20px;
+    }
+
+    .tree-title {
+      font-size: 13px;
+      font-weight: 700;
+      color: #d9dce5;
+    }
+
+    .tree-status {
+      display: inline-flex;
+      gap: 6px;
+      align-items: center;
+      color: #7f8b98;
+      font-size: 11px;
+    }
+
+    .tree-line {
+      display: grid;
+      grid-template-columns: 26px 1fr;
+      gap: 10px;
+      min-height: 68px;
+    }
+
+    .tree-rail {
+      position: relative;
+      display: flex;
+      justify-content: center;
+    }
+
+    .tree-rail::after {
+      content: "";
+      position: absolute;
+      width: 1px;
+      top: 19px;
+      bottom: -9px;
+      background: linear-gradient(#424b5b, #242b37);
+    }
+
+    .tree-line:last-child .tree-rail::after { display: none; }
+
+    .tree-node {
+      width: 11px;
+      height: 11px;
+      margin-top: 7px;
+      z-index: 2;
+      border-radius: 50%;
+      background: #121722;
+      border: 2px solid #8b8cff;
+      box-shadow: 0 0 0 5px rgba(139,140,255,.06);
+    }
+
+    .tree-line:nth-child(3) .tree-node { border-color: #55d6be; box-shadow: 0 0 0 5px rgba(85,214,190,.055); }
+    .tree-line:nth-child(4) .tree-node { border-color: #c07aff; box-shadow: 0 0 0 5px rgba(192,122,255,.055); }
+
+    .tree-content strong {
+      display: block;
+      font-size: 14px;
+      margin-bottom: 3px;
+      color: #e5e7ed;
+    }
+
+    .tree-content span {
+      color: #737c8c;
+      font-size: 12px;
+    }
+
+    .handoff-pill {
+      display: inline-flex;
+      margin-top: 9px;
+      align-items: center;
+      gap: 6px;
+      padding: 5px 8px;
+      border-radius: 7px;
+      border: 1px solid rgba(255,255,255,.075);
+      color: #8f97a6;
+      background: rgba(255,255,255,.025);
+      font-size: 10px;
+      font-weight: 650;
+    }
+
+    .principles {
+      margin-top: 30px;
+      display: grid;
+      gap: 11px;
+    }
+
+    .principle {
+      display: grid;
+      grid-template-columns: 22px 1fr;
+      gap: 10px;
+      color: #9aa2b1;
+      font-size: 14px;
+    }
+
+    .check {
+      width: 19px;
+      height: 19px;
+      display: grid;
+      place-items: center;
+      border-radius: 6px;
+      background: rgba(98,230,167,.075);
+      border: 1px solid rgba(98,230,167,.12);
+      color: #76dfae;
+      font-size: 11px;
+    }
+
+    .ownership {
+      margin-top: 46px;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      border: 1px solid var(--line);
+      border-radius: 28px;
+      overflow: hidden;
+      background: var(--line);
+      gap: 1px;
+    }
+
+    .owner-column {
+      padding: 32px;
+      background: #0c1017;
+    }
+
+    .owner-label {
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: .12em;
+      color: #6e7787;
+      font-weight: 730;
+      margin-bottom: 10px;
+    }
+
+    .owner-column h3 {
+      margin: 0 0 22px;
+      font-size: 23px;
+      letter-spacing: -.03em;
+    }
+
+    .owner-list {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px 16px;
+      color: #929aaa;
+      font-size: 13px;
+    }
+
+    .owner-list span::before {
+      content: "•";
+      color: #5c6573;
+      margin-right: 7px;
+    }
+
+    .privacy-panel {
+      display: grid;
+      grid-template-columns: 1fr .95fr;
+      gap: 30px;
+      align-items: stretch;
+      padding: 10px;
+      border: 1px solid var(--line);
+      border-radius: 30px;
+      background:
+        radial-gradient(500px 300px at 5% 100%, rgba(85,214,190,.065), transparent 75%),
+        rgba(11,15,22,.72);
+    }
+
+    .privacy-copy {
+      padding: 39px 34px;
+    }
+
+    .privacy-copy h2 { font-size: clamp(34px,4vw,52px); }
+
+    .machine-card {
+      padding: 32px;
+      border-radius: 22px;
+      background: #090d13;
+      border: 1px solid rgba(255,255,255,.07);
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      min-height: 360px;
+    }
+
+    .machine-title {
+      display: flex;
+      align-items: center;
+      gap: 11px;
+      font-size: 13px;
+      font-weight: 700;
+      margin-bottom: 19px;
+    }
+
+    .machine-light {
+      width: 9px;
+      height: 9px;
+      border-radius: 50%;
+      background: var(--good);
+      box-shadow: 0 0 15px rgba(98,230,167,.45);
+    }
+
+    .machine-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 20px;
+      padding: 11px 0;
+      border-top: 1px solid rgba(255,255,255,.055);
+      font-size: 12px;
+    }
+
+    .machine-row span:first-child { color: #7f8898; }
+    .machine-row span:last-child { color: #c8ccd5; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+
+    .trust-line {
+      margin-top: 26px;
+      padding: 14px 16px;
+      border-radius: 12px;
+      background: rgba(98,230,167,.045);
+      border: 1px solid rgba(98,230,167,.09);
+      color: #9fb8ad;
+      font-size: 12px;
+      line-height: 1.6;
+    }
+
+    .preview-grid {
+      display: grid;
+      grid-template-columns: .8fr 1.2fr;
+      gap: 26px;
+      align-items: center;
+    }
+
+    .preview-card {
+      border-radius: 26px;
+      padding: 30px;
+      background: linear-gradient(145deg, rgba(139,140,255,.09), rgba(255,255,255,.025));
+      border: 1px solid rgba(151,153,255,.16);
+    }
+
+    .preview-card strong {
+      display: block;
+      margin-bottom: 10px;
+      font-size: 20px;
+      letter-spacing: -.025em;
+    }
+
+    .preview-card p {
+      margin: 0;
+      color: #9299a9;
+      font-size: 14px;
+      line-height: 1.65;
+    }
+
+    .code-box {
+      margin-top: 20px;
+      position: relative;
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      background: #080b10;
+      padding: 18px 56px 18px 18px;
+      color: #aeb6c5;
+      font: 12px/1.65 ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      overflow-x: auto;
+      white-space: pre;
+    }
+
+    .copy {
+      position: absolute;
+      right: 10px;
+      top: 10px;
+      width: 34px;
+      height: 34px;
+      border: 1px solid rgba(255,255,255,.09);
+      border-radius: 9px;
+      background: rgba(255,255,255,.04);
+      color: #9ba3b2;
+      cursor: pointer;
+      display: grid;
+      place-items: center;
+    }
+
+    .copy:hover { background: rgba(255,255,255,.075); color: #fff; }
+
+    .final {
+      padding-top: 106px;
+      padding-bottom: 110px;
+    }
+
+    .final-card {
+      text-align: center;
+      padding: 70px 28px;
+      border-radius: 32px;
+      border: 1px solid rgba(151,153,255,.14);
+      background:
+        radial-gradient(640px 250px at 50% 0%, rgba(116,100,255,.12), transparent 70%),
+        radial-gradient(500px 230px at 50% 100%, rgba(85,214,190,.055), transparent 70%),
+        #0b0e14;
+      box-shadow: 0 30px 100px rgba(0,0,0,.25);
+    }
+
+    .final-card h2 {
+      margin: 0 auto;
+      max-width: 800px;
+    }
+
+    .final-card p {
+      max-width: 650px;
+      margin: 18px auto 0;
+      color: #9ba3b2;
+      font-size: 16px;
+    }
+
+    footer {
+      border-top: 1px solid var(--line);
+      padding: 26px 0 36px;
+      color: #69717f;
+      font-size: 12px;
+    }
+
+    .footer-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 20px;
+    }
+
+    .footer-links {
+      display: flex;
+      gap: 18px;
+      flex-wrap: wrap;
+    }
+
+    .footer-links a:hover { color: #bdc3cf; }
+
+    @media (max-width: 900px) {
+      .nav-links > a:not(.nav-cta) { display: none; }
+      .hero { padding-top: 78px; }
+      .feature-grid { grid-template-columns: 1fr; }
+      .workflow { grid-template-columns: 1fr 1fr; }
+      .flow-arrow { display: none; }
+      .session-section,
+      .privacy-panel,
+      .preview-grid { grid-template-columns: 1fr; }
+      .ownership { grid-template-columns: 1fr; }
+      .float-label { display: none; }
+    }
+
+    @media (max-width: 620px) {
+      .shell { width: min(calc(100% - 24px), var(--max)); }
+      .nav-wrap { padding-top: 10px; }
+      nav { border-radius: 15px; min-height: 56px; }
+      .brand small { display: none; }
+      .nav-cta { padding: 8px 10px; }
+      .hero { padding-top: 62px; }
+      h1 { font-size: clamp(46px, 15vw, 64px); }
+      .hero-copy { font-size: 17px; }
+      .hero-actions { flex-direction: column; }
+      .button { width: 100%; }
+      .agents { margin-top: 34px; }
+      .product-frame { padding: 5px; border-radius: 16px; }
+      .frame-top { height: 29px; }
+      section { padding: 70px 0; }
+      .workflow { grid-template-columns: 1fr; }
+      .flow-step { min-height: 178px; }
+      .flow-num { margin-bottom: 30px; }
+      .owner-list { grid-template-columns: 1fr; }
+      .owner-column { padding: 25px; }
+      .privacy-copy { padding: 28px 20px; }
+      .machine-card { min-height: 320px; padding: 24px; }
+      .final { padding-top: 78px; padding-bottom: 80px; }
+      .final-card { padding: 55px 20px; }
+      .footer-row { flex-direction: column; align-items: flex-start; }
+    }
+
+    @media (prefers-reduced-motion: no-preference) {
+      .hero .eyebrow,
+      .hero h1,
+      .hero-copy,
+      .hero-actions,
+      .agents {
+        animation: rise .75s both cubic-bezier(.2,.7,.25,1);
+      }
+      .hero h1 { animation-delay: .05s; }
+      .hero-copy { animation-delay: .1s; }
+      .hero-actions { animation-delay: .15s; }
+      .agents { animation-delay: .2s; }
+      .product-frame { animation: frame-rise .95s .2s both cubic-bezier(.2,.7,.25,1); }
+      @keyframes rise {
+        from { opacity: 0; transform: translateY(12px); }
+        to { opacity: 1; transform: translateY(0); }
+      }
+      @keyframes frame-rise {
+        from { opacity: 0; transform: translateY(24px) rotateX(3deg) scale(.985); }
+        to { opacity: 1; transform: translateY(0) rotateX(1.2deg) scale(1); }
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="nav-wrap">
+    <div class="shell">
+      <nav aria-label="Primary navigation">
+        <a class="brand" href="#top" aria-label="Harness Remote 3 home">
+          <span class="brand-mark">HR</span>
+          <span>Harness Remote <small>3</small></span>
+        </a>
+        <div class="nav-links">
+          <a href="#why">Why HR3</a>
+          <a href="#sessions">Native Sessions</a>
+          <a href="#local-first">Local-first</a>
+          <a class="nav-cta" href="https://github.com/giuliastro/harness-remote" target="_blank" rel="noopener">
+            <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12 .7a11.5 11.5 0 0 0-3.64 22.41c.58.1.79-.25.79-.56v-2.02c-3.22.7-3.9-1.37-3.9-1.37-.53-1.34-1.29-1.7-1.29-1.7-1.05-.72.08-.71.08-.71 1.17.08 1.78 1.2 1.78 1.2 1.04 1.78 2.72 1.27 3.39.97.1-.75.4-1.27.74-1.56-2.57-.29-5.27-1.28-5.27-5.68 0-1.26.45-2.28 1.19-3.09-.12-.29-.52-1.47.11-3.05 0 0 .97-.31 3.16 1.18a10.9 10.9 0 0 1 5.76 0c2.2-1.49 3.16-1.18 3.16-1.18.63 1.58.23 2.76.11 3.05.74.81 1.19 1.83 1.19 3.09 0 4.41-2.71 5.38-5.29 5.67.42.36.79 1.06.79 2.15v3.19c0 .31.21.67.8.56A11.5 11.5 0 0 0 12 .7Z"/></svg>
+            GitHub
+          </a>
+        </div>
+      </nav>
+    </div>
+  </div>
+
+  <main id="top">
+    <div class="shell">
+      <header class="hero">
+        <div class="eyebrow"><span class="eyebrow-dot"></span> Harness Remote 3 · Session-first preview</div>
+        <h1><span class="gradient-text">Your sessions.</span><br>Any coding agent. Any device.</h1>
+        <p class="hero-copy">
+          A <strong>local-first control plane for native AI coding-agent sessions.</strong>
+          Start work in your normal CLI, pick up the same native Session remotely, and hand the work to another agent when it is the better tool for the next step.
+        </p>
+        <div class="hero-actions">
+          <a class="button primary" href="https://github.com/giuliastro/harness-remote/tree/checkpoint/v3-session-first-working-2026-08-25" target="_blank" rel="noopener">
+            Explore Harness Remote 3
+            <svg class="icon" viewBox="0 0 20 20" aria-hidden="true"><path fill="currentColor" d="M6.1 3.8h9.1v9.1h-1.7V6.7l-8.7 8.7-1.2-1.2 8.7-8.7H6.1V3.8Z"/></svg>
+          </a>
+          <a class="button secondary" href="https://github.com/giuliastro/harness-remote" target="_blank" rel="noopener">
+            <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12 .7a11.5 11.5 0 0 0-3.64 22.41c.58.1.79-.25.79-.56v-2.02c-3.22.7-3.9-1.37-3.9-1.37-.53-1.34-1.29-1.7-1.29-1.7-1.05-.72.08-.71.08-.71 1.17.08 1.78 1.2 1.78 1.2 1.04 1.78 2.72 1.27 3.39.97.1-.75.4-1.27.74-1.56-2.57-.29-5.27-1.28-5.27-5.68 0-1.26.45-2.28 1.19-3.09-.12-.29-.52-1.47.11-3.05 0 0 .97-.31 3.16 1.18a10.9 10.9 0 0 1 5.76 0c2.2-1.49 3.16-1.18 3.16-1.18.63 1.58.23 2.76.11 3.05.74.81 1.19 1.83 1.19 3.09 0 4.41-2.71 5.38-5.29 5.67.42.36.79 1.06.79 2.15v3.19c0 .31.21.67.8.56A11.5 11.5 0 0 0 12 .7Z"/></svg>
+            Star on GitHub
+          </a>
+        </div>
+        <div class="hero-note">Apache-2.0 · Your code, credentials and subscriptions stay on your machines.</div>
+
+        <div class="agents" aria-label="Supported coding agents">
+          <span class="agent-chip">Codex CLI</span>
+          <span class="agent-chip">Claude Code</span>
+          <span class="agent-chip">OpenCode</span>
+          <span class="agent-chip">Oh My Pi</span>
+          <span class="agent-chip">PI</span>
+        </div>
+
+        <div class="hero-visual" aria-label="Harness Remote 3 interface preview">
+          <div class="hero-glow"></div>
+          <div class="product-frame">
+            <div class="frame-top">
+              <span class="frame-dot"></span><span class="frame-dot"></span><span class="frame-dot"></span>
+              <span class="frame-title">Harness Remote 3 · native sessions</span>
+            </div>
+            <div class="screen">
+              <img src="https://raw.githubusercontent.com/giuliastro/harness-remote/648586c6c018d6381441d6fcee95009812e3ae9f/docs/images/rhv3.png" alt="Harness Remote 3 desktop workspace showing native coding-agent sessions" width="1400" height="788">
+            </div>
+            <div class="float-label left"><span class="mini-pulse"></span> Native Session live</div>
+            <div class="float-label right">Machine → Project → Session</div>
+          </div>
+        </div>
+      </header>
+    </div>
+
+    <section id="why">
+      <div class="shell">
+        <div class="section-kicker">One control plane, not another agent</div>
+        <h2>Stop rebuilding your context every time the best agent changes.</h2>
+        <p class="section-intro">
+          Coding agents are becoming specialized. The hard part is no longer choosing one forever — it is keeping the work coherent while moving between them. Harness Remote makes that continuity explicit without flattening every agent into the same fake interface.
+        </p>
+
+        <div class="feature-grid">
+          <article class="card">
+            <div class="card-icon">
+              <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="1.6" d="M7 4.5h10a2.5 2.5 0 0 1 2.5 2.5v10a2.5 2.5 0 0 1-2.5 2.5H7A2.5 2.5 0 0 1 4.5 17V7A2.5 2.5 0 0 1 7 4.5Zm1.5 4h7m-7 3.5h7m-7 3.5h4"/></svg>
+            </div>
+            <h3>Native Sessions stay native</h3>
+            <p>Transcript, tools, reasoning, permissions, memory, compaction and resume semantics remain owned by the harness that actually created the Session.</p>
+          </article>
+
+          <article class="card">
+            <div class="card-icon">
+              <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="1.6" d="M12 4v11m0 0 4-4m-4 4-4-4M5 18.5h14"/></svg>
+            </div>
+            <h3>Start outside. Continue inside.</h3>
+            <p>Begin in your normal coding-agent CLI. Open Harness Remote later and discover, observe or continue the native Session instead of importing it into a proprietary conversation model.</p>
+          </article>
+
+          <article class="card">
+            <div class="card-icon">
+              <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="1.6" d="M5 7.5h10m0 0-3-3m3 3-3 3M19 16.5H9m0 0 3 3m-3-3 3-3"/></svg>
+            </div>
+            <h3>Hand off without pretending</h3>
+            <p>Continue with another harness using explicit objective, decisions, unresolved work and lineage. No claim that hidden vendor context magically transfers between agents.</p>
+          </article>
+        </div>
+
+        <div class="workflow-wrap">
+          <div class="workflow">
+            <div class="flow-step">
+              <div class="flow-num">01 · START</div>
+              <h3>Use your normal CLI</h3>
+              <p>Work with Codex, Claude Code, OpenCode, OMP or PI where your project already lives.</p>
+              <span class="flow-arrow">→</span>
+            </div>
+            <div class="flow-step">
+              <div class="flow-num">02 · PICK UP</div>
+              <h3>Open it remotely</h3>
+              <p>Find the native Session from desktop, web or Android and follow the real activity.</p>
+              <span class="flow-arrow">→</span>
+            </div>
+            <div class="flow-step">
+              <div class="flow-num">03 · HAND OFF</div>
+              <h3>Choose a better agent</h3>
+              <p>Create a linked native Session with explicit context for the next coding agent.</p>
+              <span class="flow-arrow">→</span>
+            </div>
+            <div class="flow-step">
+              <div class="flow-num">04 · RETURN</div>
+              <h3>Keep the lineage</h3>
+              <p>See which Session did what, return to it later, and keep the project history intelligible.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="sessions">
+      <div class="shell session-section">
+        <div>
+          <div class="section-kicker">Session-first architecture</div>
+          <h2>The Session is the product identity — not an implementation detail.</h2>
+          <p class="section-intro">
+            Harness Remote 3 uses a deliberately simple user-facing model: <strong style="color:#dfe2e9">Machine → Project → Native Session</strong>. The control plane surrounds the Session; it does not replace it.
+          </p>
+          <div class="principles">
+            <div class="principle"><span class="check">✓</span><span>Preserve each harness's real transcript and behavior.</span></div>
+            <div class="principle"><span class="check">✓</span><span>Discover sessions that were started outside Harness Remote.</span></div>
+            <div class="principle"><span class="check">✓</span><span>Keep source → target handoff lineage explicit and inspectable.</span></div>
+            <div class="principle"><span class="check">✓</span><span>Avoid lowest-common-denominator controls the harness never advertised.</span></div>
+          </div>
+        </div>
+
+        <div class="session-tree" aria-label="Example linked native sessions">
+          <div class="tree-head">
+            <span class="tree-title">auth-refactor</span>
+            <span class="tree-status"><span class="mini-pulse"></span> workstation</span>
+          </div>
+
+          <div class="tree-line">
+            <div class="tree-rail"><span class="tree-node"></span></div>
+            <div class="tree-content">
+              <strong>OpenCode · Session A</strong>
+              <span>Explore the failing authentication path</span>
+              <div class="handoff-pill">Continue with Codex →</div>
+            </div>
+          </div>
+
+          <div class="tree-line">
+            <div class="tree-rail"><span class="tree-node"></span></div>
+            <div class="tree-content">
+              <strong>Codex CLI · Session B</strong>
+              <span>Implement and validate the fix</span>
+              <div class="handoff-pill">Continue with Claude →</div>
+            </div>
+          </div>
+
+          <div class="tree-line">
+            <div class="tree-rail"><span class="tree-node"></span></div>
+            <div class="tree-content">
+              <strong>Claude Code · Session C</strong>
+              <span>Independent review · native context</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <div class="shell">
+        <div class="section-kicker">A clean ownership boundary</div>
+        <h2>Let the coding agent be the coding agent.</h2>
+        <p class="section-intro">
+          Harness Remote owns the durable coordination layer. The harness keeps ownership of the behavior it already knows how to perform correctly.
+        </p>
+
+        <div class="ownership">
+          <div class="owner-column">
+            <div class="owner-label">Owned by the native harness</div>
+            <h3>The work itself</h3>
+            <div class="owner-list">
+              <span>Transcript</span>
+              <span>Reasoning / activity</span>
+              <span>Tool execution</span>
+              <span>Questions</span>
+              <span>Permissions</span>
+              <span>Context / memory</span>
+              <span>Compaction</span>
+              <span>Resume semantics</span>
+            </div>
+          </div>
+          <div class="owner-column">
+            <div class="owner-label">Owned by Harness Remote</div>
+            <h3>The control plane</h3>
+            <div class="owner-list">
+              <span>Machines</span>
+              <span>Projects</span>
+              <span>Session discovery</span>
+              <span>Remote control</span>
+              <span>Capability discovery</span>
+              <span>Handoff lineage</span>
+              <span>Reconciliation</span>
+              <span>Desktop / web / Android</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="local-first">
+      <div class="shell">
+        <div class="privacy-panel">
+          <div class="privacy-copy">
+            <div class="section-kicker">Local-first by design</div>
+            <h2>Your machine stays the place where the work is real.</h2>
+            <p class="section-intro">
+              Source code, repositories, coding-agent CLIs, credentials, provider subscriptions and native Session persistence stay on the computers you control. Harness Remote gives you a remote surface over that environment instead of asking you to migrate it.
+            </p>
+          </div>
+
+          <div class="machine-card">
+            <div class="machine-title"><span class="machine-light"></span> development-machine · connected</div>
+            <div class="machine-row"><span>Repository</span><span>~/Software/project</span></div>
+            <div class="machine-row"><span>Source code</span><span>local</span></div>
+            <div class="machine-row"><span>Agent credentials</span><span>local</span></div>
+            <div class="machine-row"><span>Native sessions</span><span>local</span></div>
+            <div class="machine-row"><span>Remote surface</span><span>HR3</span></div>
+            <div class="trust-line">
+              Use a trusted LAN or VPN for remote access. Harness Remote is a control plane, not an operating-system sandbox and not a hosted inference proxy.
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <div class="shell preview-grid">
+        <div>
+          <div class="section-kicker">Available now as a preview</div>
+          <h2>Help shape Harness Remote 3.</h2>
+          <p class="section-intro">
+            HR3 is the Session-first development line. The stable release line on <code style="color:#d5d8e1">main</code> remains 2.x while native-session correctness, reconnect behavior and cross-agent continuation are validated against real installations.
+          </p>
+        </div>
+
+        <div class="preview-card">
+          <strong>Try the v3 checkpoint</strong>
+          <p>Clone Harness Remote and switch to the current Session-first checkpoint. The checkpoint is intentionally ahead of the stable release line.</p>
+          <div class="code-box" id="clone-command">git clone https://github.com/giuliastro/harness-remote.git
+cd harness-remote
+git checkout checkpoint/v3-session-first-working-2026-08-25<button class="copy" type="button" aria-label="Copy clone command" title="Copy" onclick="copyCommand()">
+              <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="1.6" d="M9 8.5h8.5V17H9zM6.5 15.5H5A1.5 1.5 0 0 1 3.5 14V6.5A1.5 1.5 0 0 1 5 5h7.5A1.5 1.5 0 0 1 14 6.5V8"/></svg>
+            </button></div>
+          <div style="display:flex; gap:10px; flex-wrap:wrap; margin-top:16px">
+            <a class="button primary" href="https://github.com/giuliastro/harness-remote/tree/checkpoint/v3-session-first-working-2026-08-25" target="_blank" rel="noopener">Open v3 checkpoint</a>
+            <a class="button secondary" href="https://github.com/giuliastro/harness-remote/issues" target="_blank" rel="noopener">Report a workflow</a>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="final">
+      <div class="shell">
+        <div class="final-card">
+          <div class="eyebrow">Harness Remote 3</div>
+          <h2 style="margin-top:22px">Keep ownership of your tools. Keep ownership of your sessions.</h2>
+          <p>Change coding agents without turning your real project history into a collection of disconnected chats.</p>
+          <div class="hero-actions">
+            <a class="button primary" href="https://github.com/giuliastro/harness-remote" target="_blank" rel="noopener">
+              <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12 .7a11.5 11.5 0 0 0-3.64 22.41c.58.1.79-.25.79-.56v-2.02c-3.22.7-3.9-1.37-3.9-1.37-.53-1.34-1.29-1.7-1.29-1.7-1.05-.72.08-.71.08-.71 1.17.08 1.78 1.2 1.78 1.2 1.04 1.78 2.72 1.27 3.39.97.1-.75.4-1.27.74-1.56-2.57-.29-5.27-1.28-5.27-5.68 0-1.26.45-2.28 1.19-3.09-.12-.29-.52-1.47.11-3.05 0 0 .97-.31 3.16 1.18a10.9 10.9 0 0 1 5.76 0c2.2-1.49 3.16-1.18 3.16-1.18.63 1.58.23 2.76.11 3.05.74.81 1.19 1.83 1.19 3.09 0 4.41-2.71 5.38-5.29 5.67.42.36.79 1.06.79 2.15v3.19c0 .31.21.67.8.56A11.5 11.5 0 0 0 12 .7Z"/></svg>
+              View Harness Remote on GitHub
+            </a>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <div class="shell footer-row">
+      <span>Harness Remote · Apache-2.0</span>
+      <div class="footer-links">
+        <a href="https://github.com/giuliastro/harness-remote" target="_blank" rel="noopener">GitHub</a>
+        <a href="https://github.com/giuliastro/harness-remote/blob/checkpoint/v3-session-first-working-2026-08-25/README.md" target="_blank" rel="noopener">README</a>
+        <a href="https://github.com/giuliastro/harness-remote/issues" target="_blank" rel="noopener">Issues</a>
+        <a href="../">Current web client</a>
+      </div>
+    </div>
+  </footer>
+
+  <script>
+    function copyCommand() {
+      const command = "git clone https://github.com/giuliastro/harness-remote.git\\ncd harness-remote\\ngit checkout checkpoint/v3-session-first-working-2026-08-25";
+      navigator.clipboard.writeText(command).then(() => {
+        const button = document.querySelector(".copy");
+        const original = button.innerHTML;
+        button.textContent = "✓";
+        setTimeout(() => { button.innerHTML = original; }, 1400);
+      });
+    }
+  </script>
+</body>
+</html>
