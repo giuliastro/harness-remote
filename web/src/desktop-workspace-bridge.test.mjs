@@ -15,7 +15,7 @@ globalThis.window = {
     platform: { isDesktop: true, os: "linux" },
     replaceProfiles(profiles, revision) {
       calls.replace.push({ profiles, revision })
-      if (calls.replace.length === 1) return firstSyncGate
+      if (profiles.length > 0 && calls.replace.filter((call) => call.profiles.length > 0).length === 1) return firstSyncGate
       return Promise.resolve({
         revision,
         acceptedProfileIDs: profiles.map((profile) => profile.id),
@@ -44,6 +44,12 @@ globalThis.window = {
 
 const bridge = await import("./desktopBridge.ts")
 
+// A fresh renderer must send its canonical snapshot even when it is empty. Otherwise Electron can
+// retain stale profiles loaded from desktop-profiles.json after an application restart.
+await bridge.syncDesktopProfiles([])
+assert.equal(calls.replace.length, 1)
+assert.deepEqual(calls.replace[0].profiles, [])
+
 const machine = {
   id: "machine-local",
   name: "Local",
@@ -64,8 +70,8 @@ const firstRequest = bridge.desktopRequestResult(
 
 await Promise.resolve()
 assert.equal(calls.request.length, 0, "first desktop request must wait for registry acknowledgement")
-assert.equal(calls.replace.length, 1)
-assert.deepEqual(calls.replace[0].profiles, [{
+assert.equal(calls.replace.length, 2)
+assert.deepEqual(calls.replace[1].profiles, [{
   id: "machine-local",
   backend: "opencode",
   host: "http://localhost",
@@ -126,13 +132,5 @@ const lan = {
 }
 await bridge.syncDesktopProfiles([lan])
 assert.equal(bridge.desktopProfileID({ ...lan.config, backend: "omp", agentId: "omp" }), "machine-lan")
-
-// A fresh renderer must send its canonical snapshot even when it is empty. Otherwise Electron can
-// retain stale profiles loaded from desktop-profiles.json after an application restart.
-calls.replace.length = 0
-const restartedBridge = await import("./desktopBridge.ts?renderer-restart")
-await restartedBridge.syncDesktopProfiles([])
-assert.equal(calls.replace.length, 1)
-assert.deepEqual(calls.replace[0].profiles, [])
 
 console.log("desktop workspace bridge regression tests passed")
