@@ -9,6 +9,8 @@ export function normalizeServerHost(host: string): string | null {
   if (!value) return null
 
   const explicitScheme = /^(https?):\/\//i.test(value)
+  // Reject half-typed or unsupported schemes before URL treats e.g. "http:" as a hostname.
+  if (/^[a-z][a-z0-9+.-]*:/i.test(value) && !explicitScheme) return null
   let url: URL
   try {
     url = new URL(explicitScheme ? value : `http://${value}`)
