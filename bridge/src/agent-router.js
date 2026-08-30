@@ -5,7 +5,7 @@ import { normalizeTaskModel } from "./task-model.js"
 
 const AGENT_ROUTE = /^\/v1\/agents\/([^/]+)(\/.*)?$/
 const TASK_WORKTREE_ROUTE = /^\/v1\/tasks\/([^/]+)\/worktree$/
-const MACHINE_ROUTES = new Set(["/v1/projects", "/v1/tasks", "/v1/diagnostics"])
+const MACHINE_ROUTES = new Set(["/v1/machine", "/global/machine", "/v1/projects", "/v1/tasks", "/v1/diagnostics"])
 const HOP_BY_HOP = new Set([
   "connection",
   "keep-alive",
@@ -246,6 +246,10 @@ export function createAgentRoutingServer({
     if (MACHINE_ROUTES.has(requestURL.pathname) || worktreeMatch) {
       if (!authenticateMachineRequest(request, response, config)) return
       try {
+        if (request.method === "GET" && (requestURL.pathname === "/v1/machine" || requestURL.pathname === "/global/machine")) {
+          writeJSON(response, 200, daemon.snapshot())
+          return
+        }
         if (request.method === "GET" && requestURL.pathname === "/v1/diagnostics") {
           writeJSON(response, 200, {
             ...(typeof diagnostics === "function" ? diagnostics() : {}),
