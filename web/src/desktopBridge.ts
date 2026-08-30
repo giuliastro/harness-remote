@@ -42,6 +42,7 @@ let pendingProfiles: DesktopProfile[] | undefined
 let synchronization: Promise<DesktopProfileSyncResult> | undefined
 let synchronizationError: Error | undefined
 let nextRevision = 0
+let hasSynchronized = false
 
 export type DesktopSubscription = { close(): void }
 
@@ -125,6 +126,7 @@ async function drainSynchronization(): Promise<DesktopProfileSyncResult> {
     acknowledgedProfiles.length = 0
     acknowledgedProfiles.push(...payload)
     acknowledgedRevision = result.revision
+    hasSynchronized = true
     synchronizationError = undefined
   }
   return result
@@ -134,7 +136,7 @@ export function syncDesktopProfiles(profiles: readonly DesktopProfileSource[]): 
   const api = bridge()
   if (!api) return Promise.resolve(emptySyncResult())
   const payload = toDesktopProfiles(profiles)
-  if (sameSnapshot(payload, acknowledgedProfiles) && !synchronization) return Promise.resolve(emptySyncResult())
+  if (hasSynchronized && sameSnapshot(payload, acknowledgedProfiles) && !synchronization) return Promise.resolve(emptySyncResult())
   pendingProfiles = payload
   if (!synchronization) {
     synchronization = drainSynchronization().catch((error: unknown) => {
