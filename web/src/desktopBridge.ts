@@ -117,7 +117,7 @@ async function drainSynchronization(): Promise<DesktopProfileSyncResult> {
   while (pendingProfiles !== undefined) {
     const payload = pendingProfiles
     pendingProfiles = undefined
-    if (sameSnapshot(payload, acknowledgedProfiles)) {
+    if (hasSynchronized && sameSnapshot(payload, acknowledgedProfiles)) {
       result = emptySyncResult()
       continue
     }
