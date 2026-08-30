@@ -171,6 +171,20 @@ test('agent-scoped desktop requests preserve their query string', async () => {
   assert.deepEqual(routed.response.data, { url: '/v1/agents/opencode/query?directory=%2Fwork%2Frepo' })
 })
 
+test('machine discovery never carries the backend hint that can divert it into a child harness', async () => {
+  const root = await executeDesktopRequest(localProfile, {
+    path: '/v1/machine',
+    route: { backend: 'opencode' }
+  })
+  assert.deepEqual(root.response.data, { url: '/v1/machine', backend: null })
+
+  const legacyRoot = await executeDesktopRequest(localProfile, {
+    path: '/global/machine',
+    route: { backend: 'opencode' }
+  })
+  assert.deepEqual(legacyRoot.response.data, { url: '/global/machine', backend: null })
+})
+
 test('request routing selects an agent inside the approved root machine profile', async () => {
   const routed = await executeDesktopRequest(localProfile, {
     path: '/echo/session',
@@ -225,6 +239,7 @@ test('desktop requests carry the profile scope the browser sends, and leave mach
   for (const path of ['/v1/machine', '/global/machine', '/v1/projects', '/v1/tasks', '/v1/tasks/abc/launch', '/v1/agents/omp/models']) {
     const machineRequest = await executeDesktopRequest(scoped, { path })
     assert.equal(machineRequest.response.data.url, path, `${path} should reach the daemon unscoped`)
+    assert.equal(machineRequest.response.data.backend, null, `${path} must not carry a backend routing override`)
   }
   const withQuery = await executeDesktopRequest(scoped, { path: '/v1/tasks?limit=1' })
   assert.equal(withQuery.response.data.url, '/v1/tasks?limit=1')
