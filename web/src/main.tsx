@@ -1,9 +1,10 @@
-import React, { useMemo, useState } from "react"
+import React, { useEffect, useMemo, useState } from "react"
 import ReactDOM from "react-dom/client"
 import { Capacitor } from "@capacitor/core"
 import { installAppPreferences } from "./appPreferences"
 import { installCompletionAudioGuard } from "./completion-audio"
 import { StandaloneUniversalWorkspace } from "./components/standalone-universal-workspace"
+import { syncDesktopProfiles, isDesktopPlatform } from "./desktopBridge"
 import { ErrorBoundary } from "./ErrorBoundary"
 import { SERVER_STORAGE_KEYS } from "./storageKeys"
 import {
@@ -41,10 +42,47 @@ installCompletionAudioGuard()
 function HarnessRemoteBoundary() {
   const [revision, setRevision] = useState(0)
   const machines = useMemo(loadWorkspaceMachines, [revision])
+  const [desktopReady, setDesktopReady] = useState(() => !isDesktopPlatform())
+  const [desktopSyncError, setDesktopSyncError] = useState<Error | null>(null)
+
+  // The Session-first workspace talks to the daemon immediately on mount. Electron must therefore
+  // acknowledge the stable WorkspaceMachine allowlist before the workspace is allowed to discover
+  // /v1/machine; otherwise the first request fails locally as "Unknown desktop server profile".
+  useEffect(() => {
+    if (!isDesktopPlatform()) return
+    let cancelled = false
+    void syncDesktopProfiles(machines).then(
+      () => { if (!cancelled) setDesktopReady(true) },
+      (error: unknown) => {
+        if (!cancelled) setDesktopSyncError(error instanceof Error ? error : new Error("Desktop profile synchronization failed"))
+      }
+    )
+    return () => { cancelled = true }
+    // Initial bootstrap only. Later edits synchronize before revision exposes the new machine list.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   const persistMachines = (nextMachines: WorkspaceMachine[]) => {
     persistWorkspaceMachines(nextMachines)
-    setRevision((value) => value + 1)
+    if (!isDesktopPlatform()) {
+      setRevision((value) => value + 1)
+      return
+    }
+    void syncDesktopProfiles(nextMachines).then(
+      () => setRevision((value) => value + 1),
+      (error: unknown) => setDesktopSyncError(error instanceof Error ? error : new Error("Desktop profile synchronization failed"))
+    )
+  }
+
+  if (desktopSyncError) throw desktopSyncError
+  if (!desktopReady) {
+    return (
+      <div className="uw-standalone-host" aria-busy="true">
+        <div className="hr-native-workspace-empty hr-native-startup connecting" role="status">
+          Preparing desktop connection…
+        </div>
+      </div>
+    )
   }
 
   return (
