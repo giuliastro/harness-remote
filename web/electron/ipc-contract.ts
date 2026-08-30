@@ -37,11 +37,18 @@ export type DesktopProfile = {
 
 export type DesktopRequestMethod = "GET" | "POST" | "PATCH" | "DELETE"
 
+export type DesktopRequestRoute = {
+  backend: BackendKind
+  agentId?: string
+}
+
 export type DesktopRequest = {
   path: string
   method?: DesktopRequestMethod
   body?: unknown
   readTimeout?: number
+  /** Harness routing within an already-approved machine endpoint. */
+  route?: DesktopRequestRoute
 }
 
 export type DesktopResponse = {
