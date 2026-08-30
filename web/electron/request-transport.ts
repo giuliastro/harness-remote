@@ -153,7 +153,14 @@ export async function executeDesktopRequest(profile: DesktopProfile, request: De
     controller.abort()
     void activeReader?.cancel().catch(() => undefined)
   }, timeout)
-  const headers: Record<string, string> = { Accept: "application/json", ...routingHeaders(targetProfile, { preflight: false }) }
+  // Machine-control and explicit /v1/agents/<id> routes already carry their destination in the
+  // path. Sending X-Harness-Backend on them is not redundant: the daemon treats that header as a
+  // routing override, so /v1/machine + "opencode" can be diverted into the OpenCode child server.
+  // Browser/Android machine clients never send this hint on machine routes; desktop must match them.
+  const routeHeaders = MACHINE_SCOPED_PATH.test(target.pathname)
+    ? {}
+    : routingHeaders(targetProfile, { preflight: false })
+  const headers: Record<string, string> = { Accept: "application/json", ...routeHeaders }
   if (profile.username && profile.password) {
     headers.Authorization = `Basic ${Buffer.from(`${profile.username}:${profile.password}`, "utf8").toString("base64")}`
   }
