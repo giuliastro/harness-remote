@@ -63,7 +63,7 @@ assert.match(observer, /deferModelFallback/)
 assert.match(serverConfig, /export function routingHeaders\(/)
 assert.ok(serverConfig.includes('return { "X-Harness-Backend": config.backend }'))
 assert.ok(serverConfig.includes('if (preflight && config.backend === "opencode" && !config.agentId?.trim()) return {}'))
-assert.ok(desktopRequestTransport.includes('...routingHeaders(profile, { preflight: false })'))
+assert.ok(desktopRequestTransport.includes('...routingHeaders(targetProfile, { preflight: false })'))
 assert.ok(desktopEventTransport.includes('...routingHeaders(targetProfile, { preflight: false })'))
 assert.ok(desktopEventTransport.includes('const authorization = authHeader(profile)'))
 
