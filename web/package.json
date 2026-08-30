@@ -44,7 +44,7 @@
     "test:completion-audio": "node src/completion-audio-regression.test.mjs",
     "test:completion-timing": "node --experimental-strip-types src/completion-audio-timing.test.mjs",
     "test:native-response": "node --experimental-strip-types src/native-response.test.mjs",
-    "test:desktop": "npm run build:electron && node --test electron/*.test.mjs",
+    "test:desktop": "npm run build:electron && node --test electron/*.test.mjs && node scripts/run-vite-test.mjs src/desktop-workspace-bridge.test.mjs",
     "test:desktop:menu": "npm run build:electron && electron scripts/menu-smoke.mjs",
     "test:native-session-model-lifecycle": "node scripts/run-vite-test.mjs src/native-session-model-lifecycle.test.mjs"
   },
