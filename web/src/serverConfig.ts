@@ -4,10 +4,47 @@ import type { ServerConfig } from "./types.js"
  * Kept free of Capacitor imports so it can be unit tested directly: the rules here
  * decide whether the app is allowed to build a URL at all.
  */
+export function normalizeServerHost(host: string): string | null {
+  const value = host.trim()
+  if (!value) return null
+
+  const explicitScheme = /^(https?):\/\//i.test(value)
+  let url: URL
+  try {
+    url = new URL(explicitScheme ? value : `http://${value}`)
+  } catch {
+    return null
+  }
+  if (url.protocol !== "http:" && url.protocol !== "https:") return null
+  if (!url.hostname || url.username || url.password || url.port || url.search || url.hash) return null
+  if (url.pathname !== "/" && url.pathname !== "") return null
+
+  const hostname = url.hostname.toLowerCase()
+  return explicitScheme ? `${url.protocol}//${hostname}` : hostname
+}
+
+/**
+ * Canonicalize the machine endpoint once. Browser, Android and Electron must all resolve the same
+ * stored machine even when a user typed LOCALHOST, a trailing slash, or invisible credential
+ * whitespace. agentId is routing state, not part of the authorized network endpoint.
+ */
+export function normalizeServerConfig(config: ServerConfig): ServerConfig | null {
+  const host = normalizeServerHost(config.host)
+  if (!host || !Number.isInteger(config.port) || config.port < 1 || config.port > 65_535) return null
+  const agentId = config.agentId?.trim() || undefined
+  return {
+    ...config,
+    host,
+    username: config.username.trim(),
+    password: config.password.trim(),
+    agentId
+  }
+}
+
 export function machineBaseUrl(config: ServerConfig): string {
-  const host = config.host.trim()
-  const schemeMatch = host.match(/^(https?):\/\//)
-  const scheme = schemeMatch ? schemeMatch[1] : "http"
+  const host = normalizeServerHost(config.host) ?? config.host.trim()
+  const schemeMatch = host.match(/^(https?):\/\//i)
+  const scheme = schemeMatch ? schemeMatch[1].toLowerCase() : "http"
   const cleanHost = schemeMatch ? host.slice(schemeMatch[0].length) : host
   return `${scheme}://${cleanHost}:${config.port}`
 }
@@ -86,11 +123,5 @@ export function authHeader(config: ServerConfig): string {
  * every launch.
  */
 export function isValidServerConfig(config: ServerConfig): boolean {
-  if (!config.host.trim() || !Number.isInteger(config.port) || config.port <= 0 || config.port > 65535) return false
-  try {
-    const url = new URL(machineBaseUrl(config))
-    return Boolean(url.hostname)
-  } catch {
-    return false
-  }
+  return normalizeServerConfig(config) !== null
 }
