@@ -1,5 +1,5 @@
 import { agentScopedPath, machineBaseUrl, routingHeaders } from "../src/serverConfig.js"
-import type { DesktopProfile, DesktopRequest, DesktopRequestResult } from "./ipc-contract.js"
+import type { DesktopProfile, DesktopRequest, DesktopRequestResult, DesktopRequestRoute } from "./ipc-contract.js"
 
 export const MAX_RESPONSE_BYTES = 8 * 1024 * 1024
 const DEFAULT_TIMEOUT_MS = 30_000
@@ -7,6 +7,8 @@ const MAX_TIMEOUT_MS = 300_000
 const METHODS = new Set(["GET", "POST", "PATCH", "DELETE"])
 const MAX_PATH_LENGTH = 8192
 const MAX_REQUEST_BODY_BYTES = 2 * 1024 * 1024
+const ROUTE_BACKENDS = new Set<DesktopProfile["backend"]>(["opencode", "omp", "pi", "claude", "codex"])
+const MAX_AGENT_ID_LENGTH = 128
 
 function transportError(code: Exclude<DesktopRequestResult, { ok: true }>["error"]["code"], message: string, status?: number): DesktopRequestResult {
   return { ok: false, error: { code, message, status } }
@@ -77,6 +79,17 @@ function validPath(path: unknown): path is string {
     && !/[\\\u0000-\u001f\u007f]/.test(path)
 }
 
+function routedProfile(profile: DesktopProfile, route: DesktopRequestRoute | undefined): DesktopProfile | null {
+  if (!route) return profile
+  if (!ROUTE_BACKENDS.has(route.backend)) return null
+  if (route.agentId !== undefined) {
+    const agentId = typeof route.agentId === "string" ? route.agentId.trim() : ""
+    if (!agentId || agentId.length > MAX_AGENT_ID_LENGTH || !/^[A-Za-z0-9._-]+$/.test(agentId)) return null
+    return { ...profile, backend: route.backend, agentId }
+  }
+  return { ...profile, backend: route.backend, agentId: undefined }
+}
+
 function targetURL(profile: DesktopProfile, path: string): URL | null {
   if (!validPath(path)) return null
   let approved: URL
@@ -126,7 +139,9 @@ export async function executeDesktopRequest(profile: DesktopProfile, request: De
       return transportError("invalid-payload", "Request body must be JSON-serializable")
     }
   }
-  const target = targetURL(profile, request.path)
+  const targetProfile = routedProfile(profile, request.route)
+  if (!targetProfile) return transportError("invalid-payload", "Request route is invalid")
+  const target = targetURL(targetProfile, request.path)
   if (!target) return transportError("invalid-path", "Request target is outside approved profile")
 
   const timeout = timeoutFor(request.readTimeout)
@@ -138,7 +153,7 @@ export async function executeDesktopRequest(profile: DesktopProfile, request: De
     controller.abort()
     void activeReader?.cancel().catch(() => undefined)
   }, timeout)
-  const headers: Record<string, string> = { Accept: "application/json", ...routingHeaders(profile, { preflight: false }) }
+  const headers: Record<string, string> = { Accept: "application/json", ...routingHeaders(targetProfile, { preflight: false }) }
   if (profile.username && profile.password) {
     headers.Authorization = `Basic ${Buffer.from(`${profile.username}:${profile.password}`, "utf8").toString("base64")}`
   }
