@@ -52,6 +52,44 @@ function routedServer(managed, options = {}) {
   })
 }
 
+test("machine discovery ignores backend routing hints and never enters a child harness", async () => {
+  let bridgeHits = 0
+  const bridgeServer = new BridgeServer()
+  bridgeServer.on("request", (_request, response) => {
+    bridgeHits += 1
+    response.writeHead(200, { "Content-Type": "text/html" })
+    response.end("<html>child harness</html>")
+  })
+  const daemon = daemonWith(
+    { opencode: { id: "opencode", kind: "http", host: {} } },
+    {
+      codex: { state: "available", backend: "codex" },
+      opencode: { state: "available", backend: "opencode" }
+    }
+  )
+  const server = createAgentRoutingServer({
+    daemon,
+    config: { username: "", password: "", corsOrigins: [] },
+    primaryAgentID: "codex",
+    bridgeServer
+  })
+  const port = await listen(server)
+  try {
+    for (const path of ["/v1/machine", "/global/machine"]) {
+      const response = await fetch(`http://127.0.0.1:${port}${path}`, {
+        headers: { "X-Harness-Backend": "opencode" }
+      })
+      assert.equal(response.status, 200)
+      assert.match(response.headers.get("content-type") ?? "", /application\/json/)
+      const snapshot = await response.json()
+      assert.deepEqual(snapshot.agents.map((agent) => agent.id), ["codex", "opencode"])
+    }
+    assert.equal(bridgeHits, 0, "machine discovery must not be delegated to primary or requested harness")
+  } finally {
+    await close(server)
+  }
+})
+
 test("primary ACP agent prefix reuses the normalized bridge routes", async () => {
   const bridgeServer = new BridgeServer()
   bridgeServer.on("request", (request, response) => {
