@@ -11,8 +11,7 @@ import type {
   DesktopRequestResult,
   DesktopResponse
 } from "../electron/ipc-contract"
-import type { SavedServerProfile } from "./serverProfiles"
-import { isValidServerConfig } from "./serverConfig"
+import { normalizeServerConfig } from "./serverConfig"
 import type { ServerConfig } from "./types"
 
 export type DesktopPlatform = { isDesktop: true; os: string; usesNativeMenu?: boolean }
@@ -74,11 +73,27 @@ function sameSnapshot(left: DesktopProfile[], right: DesktopProfile[]): boolean 
   return left.length === right.length && left.every((profile, index) => sameProfile(profile, right[index]))
 }
 
-/** Convert editable renderer profiles into only approved desktop network targets. */
-export function toDesktopProfiles(profiles: SavedServerProfile[]): DesktopProfile[] {
+export type DesktopProfileSource = {
+  id: string
+  config: ServerConfig
+}
+
+/**
+ * Electron authorizes machine endpoints, not individual harness routes. Keep one stable registry
+ * entry per WorkspaceMachine and pass backend/agentId separately with each request/subscription.
+ */
+export function toDesktopProfiles(profiles: readonly DesktopProfileSource[]): DesktopProfile[] {
   return profiles.flatMap((profile) => {
-    if (!isValidServerConfig(profile.config)) return []
-    return [{ id: profile.id, ...profile.config }]
+    const normalized = normalizeServerConfig({ ...profile.config, backend: "opencode", agentId: undefined })
+    if (!normalized) return []
+    return [{
+      id: profile.id,
+      backend: "opencode",
+      host: normalized.host,
+      port: normalized.port,
+      username: normalized.username,
+      password: normalized.password
+    }]
   })
 }
 
@@ -115,7 +130,7 @@ async function drainSynchronization(): Promise<DesktopProfileSyncResult> {
   return result
 }
 
-export function syncDesktopProfiles(profiles: SavedServerProfile[]): Promise<DesktopProfileSyncResult> {
+export function syncDesktopProfiles(profiles: readonly DesktopProfileSource[]): Promise<DesktopProfileSyncResult> {
   const api = bridge()
   if (!api) return Promise.resolve(emptySyncResult())
   const payload = toDesktopProfiles(profiles)
@@ -145,16 +160,21 @@ export function isAndroidPlatform(platform: string): boolean {
   return platform === "android"
 }
 
+function desktopMachineIdentity(config: ServerConfig): string | null {
+  const normalized = normalizeServerConfig({ ...config, backend: "opencode", agentId: undefined })
+  if (!normalized) return null
+  return JSON.stringify([
+    normalized.host,
+    normalized.port,
+    normalized.username,
+    normalized.password
+  ])
+}
+
 export function desktopProfileID(config: ServerConfig): string | null {
-  const profile = acknowledgedProfiles.find((candidate) => {
-    return candidate.backend === config.backend
-      && candidate.host === config.host
-      && candidate.port === config.port
-      && candidate.username === config.username
-      && candidate.password === config.password
-      && candidate.agentId === config.agentId
-  })
-  return profile?.id ?? null
+  const identity = desktopMachineIdentity(config)
+  if (!identity) return null
+  return acknowledgedProfiles.find((candidate) => desktopMachineIdentity(candidate) === identity)?.id ?? null
 }
 
 export function notifyDesktopCompletion(notification: DesktopCompletionNotification): void {
@@ -185,7 +205,13 @@ export async function desktopRequestResult(config: ServerConfig, request: Deskto
   }
   const profileId = desktopProfileID(config)
   if (!profileId) return { ok: false, error: { code: "unknown-profile", message: "Unknown desktop server profile" } }
-  return await api.request(profileId, request)
+  return await api.request(profileId, {
+    ...request,
+    route: {
+      backend: config.backend,
+      ...(config.agentId?.trim() ? { agentId: config.agentId.trim() } : {})
+    }
+  })
 }
 
 export async function desktopRequest(config: ServerConfig, request: DesktopRequest): Promise<DesktopResponse> {
@@ -195,11 +221,9 @@ export async function desktopRequest(config: ServerConfig, request: DesktopReque
 }
 
 export function createDesktopOpenCodeEventSubscription(options: {
-  profileId: string
+  config: ServerConfig
   scope: "global" | "project"
   directory?: string
-  backend?: ServerConfig["backend"]
-  agentId?: string
   onEvent: (event: DesktopEvent) => void
   onStatus?: (status: DesktopEventStatus) => void
 }): DesktopSubscription {
@@ -213,16 +237,15 @@ export function createDesktopOpenCodeEventSubscription(options: {
     }
     try {
       await awaitDesktopProfileSync()
-      if (!acknowledgedProfiles.some((profile) => profile.id === options.profileId)) {
-        throw new Error("Unknown desktop server profile")
-      }
+      const profileId = desktopProfileID(options.config)
+      if (!profileId) throw new Error("Unknown desktop server profile")
       const id = await api.subscribeEvents(
-        options.profileId,
+        profileId,
         {
           scope: options.scope,
           directory: options.directory,
-          backend: options.backend,
-          agentId: options.agentId
+          backend: options.config.backend,
+          agentId: options.config.agentId
         },
         options.onEvent,
         options.onStatus
