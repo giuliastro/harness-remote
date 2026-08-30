@@ -40,6 +40,12 @@ self.addEventListener("fetch", (event) => {
 
   if (request.mode === "navigate") {
     const scope = self.registration.scope
+    const scopeUrl = new URL(scope)
+    const landingPath = `${scopeUrl.pathname}v3/`
+
+    // The HR3 marketing landing lives alongside the app on GitHub Pages. Let the browser
+    // fetch it directly so app-shell caching never replaces the PWA root with landing HTML.
+    if (url.pathname.startsWith(landingPath)) return
     event.respondWith(
       fetch(request)
         .then((response) => {
