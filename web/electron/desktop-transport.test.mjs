@@ -106,6 +106,21 @@ test('validated registry rejects unsafe targets and persists approved profiles',
   assert.equal(persisted.includes(localProfile.password), true)
   await rm(directory, { recursive: true, force: true })
 })
+test('registry reload accepts the canonical workspace snapshot after an Electron restart', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'harness-remote-restart-'))
+  const file = join(directory, 'profiles.json')
+  const first = new ProfileRegistry(file)
+  await first.replace([localProfile], 17)
+
+  const restartedMain = new ProfileRegistry(file)
+  await restartedMain.load()
+  assert.deepEqual(restartedMain.get(localProfile.id), localProfile)
+  const reconciled = await restartedMain.replace([localProfile], 1)
+  assert.deepEqual(reconciled.acceptedProfileIDs, [localProfile.id])
+  assert.deepEqual(reconciled.unchangedProfileIDs, [localProfile.id])
+  await rm(directory, { recursive: true, force: true })
+})
+
 test('registry applies a reloaded renderer snapshot with a restarted client revision', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'harness-remote-revisions-'))
   const registry = new ProfileRegistry(join(directory, 'profiles.json'))
@@ -154,6 +169,25 @@ test('agent-scoped desktop requests preserve their query string', async () => {
     { path: '/query?directory=%2Fwork%2Frepo' }
   )
   assert.deepEqual(routed.response.data, { url: '/v1/agents/opencode/query?directory=%2Fwork%2Frepo' })
+})
+
+test('request routing selects an agent inside the approved root machine profile', async () => {
+  const routed = await executeDesktopRequest(localProfile, {
+    path: '/echo/session',
+    route: { backend: 'codex', agentId: 'pi' }
+  })
+  assert.deepEqual(routed.response.data, { url: '/v1/agents/pi/echo/session', backend: 'codex' })
+
+  const machineRoute = await executeDesktopRequest(localProfile, {
+    path: '/v1/machine',
+    route: { backend: 'pi', agentId: 'pi' }
+  })
+  assert.equal(machineRoute.response.data.url, '/v1/machine')
+
+  assert.equal((await executeDesktopRequest(localProfile, {
+    path: '/echo/session',
+    route: { backend: 'codex', agentId: '../pi' }
+  })).error.code, 'invalid-payload')
 })
 
 test('HTTP errors expose status without matching prose', async () => {
