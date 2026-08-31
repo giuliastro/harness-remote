@@ -127,6 +127,7 @@ assert.ok(liveRefresh.includes('const LIFECYCLE_SETTLE_MS = 900'), 'live refresh
 assert.ok(liveRefresh.includes('const settleAfterLifecycle = () =>'), 'lifecycle recovery must schedule a single coalesced settle pass')
 assert.ok(liveRefresh.includes('onMessage()') && liveRefresh.includes('onIndex()'), 'the settle pass must reconcile transcript and projected lifecycle together')
 assert.ok(liveRefresh.includes('if (lifecycleSettleTimer !== undefined) clearTimeout(lifecycleSettleTimer)'), 'multiple status edges must coalesce instead of creating a polling loop')
+assert.ok(liveRefresh.includes('event.type === "session.error"') && liveRefresh.includes('target.config.backend === "opencode"') && liveRefresh.includes('settleAfterLifecycle()'), 'OpenCode session.error must trigger the bounded lifecycle settle path')
 
 assert.ok(daemon.includes('/prompt_async${query}'), 'managed OpenCode must keep its native asynchronous prompt endpoint')
 assert.ok(daemon.includes('/command${query}'), 'managed OpenCode slash commands must use its native command endpoint')
