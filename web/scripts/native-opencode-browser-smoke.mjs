@@ -18,6 +18,8 @@ const SECOND_REPLY = "OPENCODE-SECOND-REPLY"
 const INTERRUPT_PROMPT = "OPENCODE-TRANSIENT-INTERRUPTION-PROMPT"
 const INTERRUPT_REPLY = "OPENCODE-RECOVERED-FINAL-REPLY"
 const TERMINAL_INTERRUPT_PROMPT = "OPENCODE-TERMINAL-INTERRUPTION-PROMPT"
+const LATE_RECOVERY_PROMPT = "OPENCODE-LATE-RECOVERY-PROMPT"
+const LATE_RECOVERY_REPLY = "OPENCODE-LATE-RECOVERY-FINAL-REPLY"
 const CREATE_TITLE = "OpenCode created from Harness Remote"
 const CREATE_PROMPT = "OPENCODE-CREATED-FIRST-PROMPT"
 const CREATE_REPLY = "OPENCODE-CREATED-FIRST-REPLY"
@@ -95,6 +97,7 @@ function replyFor(prompt) {
   if (prompt === SUCCESS_PROMPT) return SUCCESS_REPLY
   if (prompt === SECOND_PROMPT) return SECOND_REPLY
   if (prompt === INTERRUPT_PROMPT) return INTERRUPT_REPLY
+  if (prompt === LATE_RECOVERY_PROMPT) return LATE_RECOVERY_REPLY
   if (prompt === CREATE_PROMPT) return CREATE_REPLY
   if (prompt === REOPEN_PROMPT) return REOPEN_REPLY
   return `OpenCode reply for ${prompt}`
@@ -344,7 +347,7 @@ function startFakeDaemon() {
         nativePromptDispatches += 1
         ledger.set(ledgerKey, body)
         if (body.text === SUCCESS_PROMPT) appendPendingTurn(sessionID, body.text, requestId)
-        else if (body.text === INTERRUPT_PROMPT || body.text === TERMINAL_INTERRUPT_PROMPT) appendInterruptedTurn(sessionID, body.text, requestId)
+        else if (body.text === INTERRUPT_PROMPT || body.text === TERMINAL_INTERRUPT_PROMPT || body.text === LATE_RECOVERY_PROMPT) appendInterruptedTurn(sessionID, body.text, requestId)
         else appendTurn(sessionID, body.text, requestId)
       }
       if (body.text === SUCCESS_PROMPT) {
@@ -376,6 +379,26 @@ function startFakeDaemon() {
           emitLiveEvent(sessionID, "message.updated")
           emitLiveEvent(sessionID, "session.status")
         }, 2_000)
+        return
+      }
+      if (body.text === LATE_RECOVERY_PROMPT) {
+        sessionStatuses.set(sessionID, { type: "idle" })
+        json(response, 200, { status: "accepted", clientRequestId: requestId })
+        emitLiveEvent(sessionID, "message.updated")
+        emitLiveEvent(sessionID, "session.status")
+        // Stay idle long enough for Harness Remote to confirm the interruption, then reproduce a
+        // slower automatic provider retry. The busy edge must retract the banner before final text.
+        setTimeout(() => {
+          sessionStatuses.set(sessionID, { type: "busy" })
+          emitLiveEvent(sessionID, "session.status")
+          emitLiveEvent(sessionID, "message.updated")
+        }, 1_600)
+        setTimeout(() => {
+          finishInterruptedTurn(sessionID, body.text, requestId)
+          sessionStatuses.set(sessionID, { type: "idle" })
+          emitLiveEvent(sessionID, "message.updated")
+          emitLiveEvent(sessionID, "session.status")
+        }, 3_200)
         return
       }
       if (body.text === TERMINAL_INTERRUPT_PROMPT) {
@@ -593,6 +616,20 @@ async function assertExistingContract(browser, viewport, mobile) {
   assert.equal(await page.getByText(INTERRUPT_PROMPT, { exact: true }).count(), 1)
   assert.equal(await page.getByText(INTERRUPT_REPLY, { exact: true }).count(), 1)
   assert.equal(await page.getByText("Response interrupted", { exact: true }).count(), 0)
+  await waitForReady(page)
+
+  // A slower provider retry can begin after the bounded idle confirmation. In that case the banner
+  // may briefly be correct, but the busy edge must retract it while the agent is working again.
+  await sendPrompt(page, LATE_RECOVERY_PROMPT)
+  const lateBanner = page.getByText("Response interrupted", { exact: true })
+  await lateBanner.waitFor({ state: "visible", timeout: 12_000 })
+  await lateBanner.waitFor({ state: "detached", timeout: 12_000 })
+  assert.equal(
+    await page.getByText(LATE_RECOVERY_REPLY, { exact: true }).count(),
+    0,
+    "late-recovery interruption must be retracted on busy before final text exists"
+  )
+  await page.getByText(LATE_RECOVERY_REPLY, { exact: true }).waitFor({ state: "visible", timeout: 12_000 })
   await waitForReady(page)
 
   // The suppression is not blanket error hiding: if OpenCode stays idle and never produces a final
