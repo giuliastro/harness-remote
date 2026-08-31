@@ -16,6 +16,10 @@ import type { MessageEnvelope, ModelSelection, ServerConfig } from "./types"
 // Keep the value stable so drafts/local UI identity survive the architecture migration.
 const NATIVE_CONVERSATION_ID_PREFIX = "native-session-v3:"
 const PENDING_TRANSCRIPT_CLOCK_SKEW_MS = 2 * 60 * 1000
+// OpenCode can briefly report an idle/interrupted edge while an automatic provider retry is already
+// about to continue the same native turn. Require that non-working state to survive the bounded
+// lifecycle settle pass before turning it into a terminal Conversation state.
+const OPENCODE_IDLE_CONFIRM_MS = 750
 
 type NativeTurnRecord = {
   id: string
@@ -32,6 +36,7 @@ type NativeConversationEntry = {
   updatedAt: number
   statusType: string
   forcedStatus: "running" | "cancelled" | null
+  openCodeIdleObservedAt: number | null
   currentModel: ModelSelection | null
   initialPageCaptured: boolean
   piTailMessages: MessageEnvelope[]
@@ -202,6 +207,33 @@ function nativeAssistantCompleted(message: MessageEnvelope): boolean {
   return typeof info.finish === "string" && Boolean(info.finish.trim())
 }
 
+function assistantHasTerminalText(message: MessageEnvelope): boolean {
+  for (let index = message.parts.length - 1; index >= 0; index -= 1) {
+    const part = message.parts[index]
+    if (part.type === "step-start" || part.type === "step-finish" || part.type === "snapshot" || part.type === "patch") continue
+    if (part.type === "text") return Boolean(part.text?.trim())
+    if (part.type === "reasoning" || part.type === "tool") return false
+  }
+  return false
+}
+
+/**
+ * An OpenCode assistant envelope is message-level, not necessarily user-turn-level. Tool steps can
+ * finish, and a provider/router can emit an interrupted/error envelope, while OpenCode immediately
+ * continues the same user turn. Treat only a newest non-error assistant envelope with a real terminal
+ * finish as transcript proof that the whole turn is done. Ambiguous no-final/error cases are settled
+ * from a stable Session idle state instead.
+ */
+function openCodeAssistantProvesTurnCompleted(message: MessageEnvelope): boolean {
+  if (message.info.role !== "assistant" || message.info.error) return false
+  const info = message.info as MessageEnvelope["info"] & { finish?: unknown }
+  if (typeof info.finish === "string" && info.finish.trim()) {
+    const finish = info.finish.trim().toLowerCase()
+    return finish !== "tool" && finish !== "tool-call" && finish !== "tool-calls" && finish !== "tool_calls"
+  }
+  return Boolean(message.info.time?.completed) && assistantHasTerminalText(message)
+}
+
 function sameModel(left: ModelSelection | null, right: ModelSelection | null): boolean {
   return Boolean(left && right
     && left.providerID === right.providerID
@@ -277,20 +309,19 @@ function reconcileOpenCodeTranscriptStatus(entry: NativeConversationEntry, page:
   }
   if (userIndex < 0) return
 
-  let completedAt = 0
-  let completed = false
+  let latestAssistant: MessageEnvelope | null = null
   for (let index = userIndex + 1; index < page.messages.length; index += 1) {
     const message = page.messages[index]
     if (message.info.role === "user") break
-    if (!nativeAssistantCompleted(message)) continue
-    completed = true
-    completedAt = Math.max(completedAt, Number(message.info.time?.completed) || Number(message.info.time?.created) || 0)
+    if (message.info.role === "assistant") latestAssistant = message
   }
-  if (!completed) return
+  if (!latestAssistant || !openCodeAssistantProvesTurnCompleted(latestAssistant)) return
 
   const priorStatus = conversationStatus(entry)
   entry.statusType = "idle"
   entry.forcedStatus = null
+  entry.openCodeIdleObservedAt = null
+  const completedAt = Number(latestAssistant.info.time?.completed) || Number(latestAssistant.info.time?.created) || 0
   if (completedAt) entry.updatedAt = Math.max(entry.updatedAt, completedAt)
   if (conversationStatus(entry) !== priorStatus) notify(entry)
 }
@@ -529,24 +560,46 @@ function appendAcceptedTurn(entry: NativeConversationEntry, prompt: string, mode
   entry.currentModel = model
   entry.forcedStatus = "running"
   entry.statusType = "running"
+  entry.openCodeIdleObservedAt = null
   return notify(entry)
 }
 
 async function refreshStatus(entry: NativeConversationEntry): Promise<void> {
   // OpenCode's legacy /session/status has changed scope across recent releases and can omit a child
-  // directory Session entirely. More importantly, this read sits in the v3 pre-Send reconciliation
-  // path, so a slow status endpoint delays prompt delivery before OpenCode even starts reasoning.
-  // Once HR accepts an OpenCode prompt, reconcileOpenCodeTranscriptStatus clears Working only after
-  // the same native transcript consumed by the UI contains a terminal assistant envelope.
-  if (entry.target.backend === "opencode") return
+  // directory Session entirely. Never put it back in the idle pre-Send path: a slow status endpoint
+  // must not delay prompt delivery before OpenCode even starts reasoning.
+  //
+  // After HR has accepted a prompt, however, the status read is valuable for the one transcript case
+  // that is intentionally ambiguous: an interruption/error or a completed tool step with no final
+  // answer. Confirm an idle edge across the existing bounded lifecycle-settle window so a sub-second
+  // provider retry never flashes a false terminal error, while a real stopped turn still resolves.
+  if (entry.target.backend === "opencode" && entry.forcedStatus !== "running") return
 
   try {
     const statuses = await api.listStatuses(entry.target.config)
     const next = statuses[entry.target.sessionID]?.type
-    if (typeof next === "string" && next) {
+    if (typeof next !== "string" || !next) return
+
+    if (entry.target.backend === "opencode") {
+      if (nativeSessionIsWorking(next)) {
+        entry.statusType = next
+        entry.openCodeIdleObservedAt = null
+        return
+      }
+      const now = Date.now()
+      if (entry.openCodeIdleObservedAt === null) {
+        entry.openCodeIdleObservedAt = now
+        return
+      }
+      if (now - entry.openCodeIdleObservedAt < OPENCODE_IDLE_CONFIRM_MS) return
       entry.statusType = next
-      if (!nativeSessionIsWorking(next)) entry.forcedStatus = null
+      entry.forcedStatus = null
+      entry.openCodeIdleObservedAt = null
+      return
     }
+
+    entry.statusType = next
+    if (!nativeSessionIsWorking(next)) entry.forcedStatus = null
   } catch {
     // Status is enrichment. The v3 transcript remains the authority when this lightweight read fails.
   }
@@ -650,6 +703,7 @@ function nativeConversationController(entry: NativeConversationEntry): Conversat
       }
       entry.forcedStatus = "cancelled"
       entry.statusType = "idle"
+      entry.openCodeIdleObservedAt = null
       entry.updatedAt = Date.now()
       return notify(entry)
     }
@@ -670,6 +724,7 @@ export function registerNativeSessionV3Adapter(
       updatedAt: now,
       statusType: target.status?.type || "idle",
       forcedStatus: null,
+      openCodeIdleObservedAt: null,
       currentModel: target.model,
       initialPageCaptured: false,
       piTailMessages: [],
