@@ -16,9 +16,10 @@ import type { MessageEnvelope, ModelSelection, ServerConfig } from "./types"
 // Keep the value stable so drafts/local UI identity survive the architecture migration.
 const NATIVE_CONVERSATION_ID_PREFIX = "native-session-v3:"
 const PENDING_TRANSCRIPT_CLOCK_SKEW_MS = 2 * 60 * 1000
-// OpenCode can briefly report an idle/interrupted edge while an automatic provider retry is already
-// about to continue the same native turn. Require that non-working state to survive the bounded
-// lifecycle settle pass before turning it into a terminal Conversation state.
+// OpenCode can briefly report an idle/interrupted edge or a provider error envelope while an
+// automatic retry is already about to continue the same native turn. Require terminal-looking
+// evidence to survive the bounded lifecycle settle pass before turning it into a completed
+// Conversation. The transcript fallback matters because /session/status can omit a child Session.
 const OPENCODE_IDLE_CONFIRM_MS = 750
 // If a provider/router retries after that confirmation window, a later busy edge must still retract
 // the terminal-looking interruption. This watch is event-driven in the normal case; it does not add
@@ -40,6 +41,8 @@ type NativeConversationEntry = {
   updatedAt: number
   statusType: string
   forcedStatus: "running" | "cancelled" | null
+  // First terminal-looking OpenCode observation. Normally this is an idle status edge; when the
+  // legacy status endpoint omits the Session it can instead be the newest assistant error envelope.
   openCodeIdleObservedAt: number | null
   openCodeRecoveryWatchUntil: number
   currentModel: ModelSelection | null
@@ -322,13 +325,30 @@ function reconcileOpenCodeTranscriptStatus(entry: NativeConversationEntry, page:
     if (message.info.role === "user") break
     if (message.info.role === "assistant") latestAssistant = message
   }
-  if (!latestAssistant || !openCodeAssistantProvesTurnCompleted(latestAssistant)) return
+  if (!latestAssistant) return
+
+  const now = Date.now()
+  const completedByTranscript = openCodeAssistantProvesTurnCompleted(latestAssistant)
+  const terminalError = Boolean(latestAssistant.info.error)
+  if (!completedByTranscript) {
+    // A provider/model error envelope is terminal-looking but not definitive on its first edge:
+    // OpenCode may still automatically retry the same turn. Keep the exact #351 debounce semantics,
+    // but let the transcript supply the second observation when /session/status omits this Session.
+    // A real busy status clears openCodeIdleObservedAt in refreshStatus(), so active retries cannot
+    // be completed by this fallback while the status endpoint is actually reporting them.
+    if (!terminalError || entry.forcedStatus !== "running") return
+    if (entry.openCodeIdleObservedAt === null) {
+      entry.openCodeIdleObservedAt = now
+      return
+    }
+    if (now - entry.openCodeIdleObservedAt < OPENCODE_IDLE_CONFIRM_MS) return
+  }
 
   const priorStatus = conversationStatus(entry)
   entry.statusType = "idle"
   entry.forcedStatus = null
   entry.openCodeIdleObservedAt = null
-  entry.openCodeRecoveryWatchUntil = 0
+  entry.openCodeRecoveryWatchUntil = terminalError ? now + OPENCODE_RECOVERY_WATCH_MS : 0
   const completedAt = Number(latestAssistant.info.time?.completed) || Number(latestAssistant.info.time?.created) || 0
   if (completedAt) entry.updatedAt = Math.max(entry.updatedAt, completedAt)
   if (conversationStatus(entry) !== priorStatus) notify(entry)
