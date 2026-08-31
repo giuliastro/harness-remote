@@ -111,7 +111,7 @@ assert.ok(adapter.includes('Cross-agent continuation is disabled until single-Se
 assert.ok(adapter.includes('value === "retry"') && adapter.includes('value === "waiting"'), 'native retry and waiting states must remain working')
 assert.ok(adapter.includes('reconcileOpenCodeTranscriptStatus(entry, page, before)'), 'OpenCode completion must reconcile from the native transcript already consumed by v3')
 assert.ok(adapter.includes('message.info.time?.completed'), 'OpenCode transcript completion must require native terminal metadata, not assistant-text heuristics')
-assert.ok(adapter.includes('if (entry.target.backend === "opencode" && entry.forcedStatus !== "running") return'), 'OpenCode idle/pre-Send reconciliation must not block on the legacy status endpoint')
+assert.ok(adapter.includes('entry.forcedStatus !== "running" && !openCodeRecoveryWatchActive'), 'OpenCode ordinary idle/pre-Send reconciliation must not block on the legacy status endpoint outside a bounded recovery watch')
 assert.ok(adapter.includes('openCodeAssistantProvesTurnCompleted') && adapter.includes('latestAssistant'), 'OpenCode must decide turn completion from the newest assistant envelope, not any intermediate completed step')
 assert.ok(adapter.includes('OPENCODE_IDLE_CONFIRM_MS = 750') && adapter.includes('openCodeIdleObservedAt'), 'OpenCode ambiguous interruptions must require a stable idle state before becoming terminal')
 assert.ok(adapter.includes('OPENCODE_RECOVERY_WATCH_MS') && adapter.includes('openCodeRecoveryWatchUntil'), 'OpenCode must retract a terminal-looking interruption when a bounded late retry becomes busy again')
