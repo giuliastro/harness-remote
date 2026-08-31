@@ -190,6 +190,10 @@ export function startTaskDeskSessionLiveRefresh({
       if (event.type === "session.error" && selectedEvent) {
         throttle("message", 140, onMessage)
         throttle("detail", 250, onDetail)
+        if (target.config.backend === "opencode") {
+          throttle("index", 120, onIndex)
+          settleAfterLifecycle()
+        }
       }
     },
     onStatus: (status) => {
