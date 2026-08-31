@@ -446,7 +446,7 @@ function startFakeDaemon() {
         // OpenCode's legacy status endpoint omits this child Session entirely. The mounted Session
         // must settle from the durable error envelope without requiring navigation away and back.
         emitLiveEvent(sessionID, "message.updated")
-        emitLiveEvent(sessionID, "session.status")
+        emitLiveEvent(sessionID, "session.error")
         return
       }
       json(response, 200, { status: "accepted", clientRequestId: requestId })
