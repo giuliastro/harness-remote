@@ -27,9 +27,14 @@
 }
 
 .hr-native-session-observer .tdw-agent-control.routed {
-  width: min(760px, 100%);
+  /* Harness and Model are one routing decision. Keep the group only as wide as the controls it
+     contains instead of letting the inherited flex: 1 stretch a 760px grid across the toolbar:
+     that unused track space visually detached Model from Harness on wider Session panes. */
+  flex: 0 1 588px;
+  width: min(588px, 100%);
+  max-width: 100%;
   display: grid;
-  grid-template-columns: minmax(150px, .8fr) minmax(220px, 1.4fr);
+  grid-template-columns: minmax(150px, 220px) minmax(220px, 360px);
   gap: 8px;
 }
 
