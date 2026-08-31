@@ -18,6 +18,8 @@ const SECOND_REPLY = "OPENCODE-SECOND-REPLY"
 const INTERRUPT_PROMPT = "OPENCODE-TRANSIENT-INTERRUPTION-PROMPT"
 const INTERRUPT_REPLY = "OPENCODE-RECOVERED-FINAL-REPLY"
 const TERMINAL_INTERRUPT_PROMPT = "OPENCODE-TERMINAL-INTERRUPTION-PROMPT"
+const TERMINAL_ERROR_PROMPT = "OPENCODE-TERMINAL-PROVIDER-ERROR-PROMPT"
+const TERMINAL_ERROR_MESSAGE = "Error from provider (Console): Upstream request failed: Endpoint is unavailable."
 const LATE_RECOVERY_PROMPT = "OPENCODE-LATE-RECOVERY-PROMPT"
 const LATE_RECOVERY_REPLY = "OPENCODE-LATE-RECOVERY-FINAL-REPLY"
 const CREATE_TITLE = "OpenCode created from Harness Remote"
@@ -53,6 +55,7 @@ function initialTranscript() {
 
 let sessionCatalog
 let sessionStatuses
+let statusOmissions
 let transcripts
 let modelCatalogReads
 let promptHttpBodies
@@ -73,6 +76,7 @@ function resetFakeState() {
     time: { created: 1_000, updated: 1_001 }
   }]])
   sessionStatuses = new Map([[SESSION_ID, { type: "idle" }]])
+  statusOmissions = new Set()
   transcripts = new Map([[SESSION_ID, initialTranscript()]])
   modelCatalogReads = 0
   promptHttpBodies = []
@@ -148,6 +152,26 @@ function finishInterruptedTurn(sessionID, prompt, requestId) {
   ))
   const entry = sessionCatalog.get(sessionID)
   if (entry) entry.time.updated = completed
+}
+
+function appendProviderErrorTurn(sessionID, prompt, requestId) {
+  const base = clock
+  clock += 10
+  transcript(sessionID).push(
+    message(sessionID, `oc-user-${requestId}`, "user", prompt, base),
+    {
+      info: {
+        id: `oc-assistant-${requestId}-provider-error`,
+        role: "assistant",
+        sessionID,
+        time: { created: base + 1, completed: base + 2 },
+        error: { name: "ProviderError", message: TERMINAL_ERROR_MESSAGE }
+      },
+      parts: []
+    }
+  )
+  const entry = sessionCatalog.get(sessionID)
+  if (entry) entry.time.updated = base + 2
 }
 
 function appendPendingTurn(sessionID, prompt, requestId) {
@@ -274,10 +298,12 @@ function startFakeDaemon() {
     }
 
     if (request.method === "GET" && url.pathname === "/v1/agents/opencode/session/status") {
-      json(response, 200, Object.fromEntries([...sessionCatalog.keys()].map((sessionID) => [
-        sessionID,
-        sessionStatuses.get(sessionID) || { type: "idle" }
-      ])))
+      json(response, 200, Object.fromEntries([...sessionCatalog.keys()]
+        .filter((sessionID) => !statusOmissions.has(sessionID))
+        .map((sessionID) => [
+          sessionID,
+          sessionStatuses.get(sessionID) || { type: "idle" }
+        ])))
       return
     }
 
@@ -347,6 +373,7 @@ function startFakeDaemon() {
         nativePromptDispatches += 1
         ledger.set(ledgerKey, body)
         if (body.text === SUCCESS_PROMPT) appendPendingTurn(sessionID, body.text, requestId)
+        else if (body.text === TERMINAL_ERROR_PROMPT) appendProviderErrorTurn(sessionID, body.text, requestId)
         else if (body.text === INTERRUPT_PROMPT || body.text === TERMINAL_INTERRUPT_PROMPT || body.text === LATE_RECOVERY_PROMPT) appendInterruptedTurn(sessionID, body.text, requestId)
         else appendTurn(sessionID, body.text, requestId)
       }
@@ -409,6 +436,17 @@ function startFakeDaemon() {
         // A second stable idle edge proves this one really stopped; unlike the transient case there
         // is no intervening busy edge and no recovered final assistant envelope.
         setTimeout(() => emitLiveEvent(sessionID, "session.status"), 1_100)
+        return
+      }
+      if (body.text === TERMINAL_ERROR_PROMPT) {
+        sessionStatuses.set(sessionID, { type: "idle" })
+        statusOmissions.add(sessionID)
+        json(response, 200, { status: "accepted", clientRequestId: requestId })
+        // Reproduce the field bug: the transcript contains a real terminal provider/model error, but
+        // OpenCode's legacy status endpoint omits this child Session entirely. The mounted Session
+        // must settle from the durable error envelope without requiring navigation away and back.
+        emitLiveEvent(sessionID, "message.updated")
+        emitLiveEvent(sessionID, "session.status")
         return
       }
       json(response, 200, { status: "accepted", clientRequestId: requestId })
@@ -641,6 +679,19 @@ async function assertExistingContract(browser, viewport, mobile) {
     1,
     "a stable terminal OpenCode interruption must remain visible"
   )
+
+  await waitForReady(page)
+  await sendPrompt(page, TERMINAL_ERROR_PROMPT)
+  await page.getByText("Turn failed", { exact: true }).waitFor({ state: "visible", timeout: 12_000 })
+  await page.getByText(TERMINAL_ERROR_MESSAGE, { exact: true }).waitFor({ state: "visible", timeout: 12_000 })
+  await waitForReady(page)
+  assert.equal(
+    await page.locator(".tdw-conversation-state.working").count(),
+    0,
+    "a terminal OpenCode provider error must stop Working while the Session remains mounted even when /session/status omits it"
+  )
+  assert.equal(await page.getByText(TERMINAL_ERROR_PROMPT, { exact: true }).count(), 1)
+  assert.equal(await page.getByText("Turn failed", { exact: true }).count(), 1)
 
   assert.equal(await page.getByRole("button", { name: "Continue with another agent" }).count(), 0, "handoff UI must stay disabled")
 
