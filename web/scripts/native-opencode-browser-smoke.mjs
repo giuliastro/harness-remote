@@ -15,6 +15,8 @@ const SUCCESS_PROMPT = "OPENCODE-SUCCESS-PROMPT"
 const SUCCESS_REPLY = "OPENCODE-SINGLE-FINAL-REPLY"
 const SECOND_PROMPT = "OPENCODE-SECOND-PROMPT"
 const SECOND_REPLY = "OPENCODE-SECOND-REPLY"
+const INTERRUPT_PROMPT = "OPENCODE-TRANSIENT-INTERRUPTION-PROMPT"
+const INTERRUPT_REPLY = "OPENCODE-RECOVERED-FINAL-REPLY"
 const CREATE_TITLE = "OpenCode created from Harness Remote"
 const CREATE_PROMPT = "OPENCODE-CREATED-FIRST-PROMPT"
 const CREATE_REPLY = "OPENCODE-CREATED-FIRST-REPLY"
@@ -47,6 +49,7 @@ function initialTranscript() {
 }
 
 let sessionCatalog
+let sessionStatuses
 let transcripts
 let modelCatalogReads
 let promptHttpBodies
@@ -66,6 +69,7 @@ function resetFakeState() {
     external: true,
     time: { created: 1_000, updated: 1_001 }
   }]])
+  sessionStatuses = new Map([[SESSION_ID, { type: "idle" }]])
   transcripts = new Map([[SESSION_ID, initialTranscript()]])
   modelCatalogReads = 0
   promptHttpBodies = []
@@ -89,6 +93,7 @@ function transcript(sessionID) {
 function replyFor(prompt) {
   if (prompt === SUCCESS_PROMPT) return SUCCESS_REPLY
   if (prompt === SECOND_PROMPT) return SECOND_REPLY
+  if (prompt === INTERRUPT_PROMPT) return INTERRUPT_REPLY
   if (prompt === CREATE_PROMPT) return CREATE_REPLY
   if (prompt === REOPEN_PROMPT) return REOPEN_REPLY
   return `OpenCode reply for ${prompt}`
@@ -103,6 +108,42 @@ function appendTurn(sessionID, prompt, requestId) {
   )
   const entry = sessionCatalog.get(sessionID)
   if (entry) entry.time.updated = base + 1
+}
+
+function appendInterruptedTurn(sessionID, prompt, requestId) {
+  const base = clock
+  clock += 10
+  transcript(sessionID).push(
+    message(sessionID, `oc-user-${requestId}`, "user", prompt, base),
+    {
+      info: {
+        id: `oc-assistant-${requestId}-interrupted`,
+        role: "assistant",
+        sessionID,
+        time: { created: base + 1, completed: base + 2 },
+        finish: "tool-calls"
+      },
+      parts: [
+        { id: `oc-assistant-${requestId}-reasoning`, type: "reasoning", text: "Provider retry in progress" },
+        { id: `oc-assistant-${requestId}-step-finish`, type: "step-finish" }
+      ]
+    }
+  )
+  const entry = sessionCatalog.get(sessionID)
+  if (entry) entry.time.updated = base + 2
+}
+
+function finishInterruptedTurn(sessionID, prompt, requestId) {
+  const completed = clock++
+  transcript(sessionID).push(message(
+    sessionID,
+    `oc-assistant-${requestId}-recovered`,
+    "assistant",
+    replyFor(prompt),
+    completed
+  ))
+  const entry = sessionCatalog.get(sessionID)
+  if (entry) entry.time.updated = completed
 }
 
 function appendPendingTurn(sessionID, prompt, requestId) {
@@ -130,8 +171,8 @@ function finishPendingTurn(sessionID, prompt, requestId) {
   if (entry) entry.time.updated = completed
 }
 
-function emitLiveEvent(sessionID) {
-  const frame = `data: ${JSON.stringify({ directory: DIRECTORY, payload: { type: "message.updated", properties: { info: { sessionID } } } })}\n\n`
+function emitLiveEvent(sessionID, type = "message.updated") {
+  const frame = `data: ${JSON.stringify({ directory: DIRECTORY, payload: { type, properties: { info: { sessionID } } } })}\n\n`
   for (const response of [...sseResponses]) {
     try { response.write(frame) }
     catch { sseResponses.delete(response) }
@@ -229,7 +270,10 @@ function startFakeDaemon() {
     }
 
     if (request.method === "GET" && url.pathname === "/v1/agents/opencode/session/status") {
-      json(response, 200, Object.fromEntries([...sessionCatalog.keys()].map((sessionID) => [sessionID, { type: "idle" }])))
+      json(response, 200, Object.fromEntries([...sessionCatalog.keys()].map((sessionID) => [
+        sessionID,
+        sessionStatuses.get(sessionID) || { type: "idle" }
+      ])))
       return
     }
 
@@ -271,6 +315,7 @@ function startFakeDaemon() {
         time: { created: clock, updated: clock }
       }
       sessionCatalog.set(CREATED_SESSION_ID, created)
+      sessionStatuses.set(CREATED_SESSION_ID, { type: "idle" })
       transcripts.set(CREATED_SESSION_ID, [])
       json(response, 200, created)
       return
@@ -298,6 +343,7 @@ function startFakeDaemon() {
         nativePromptDispatches += 1
         ledger.set(ledgerKey, body)
         if (body.text === SUCCESS_PROMPT) appendPendingTurn(sessionID, body.text, requestId)
+        else if (body.text === INTERRUPT_PROMPT) appendInterruptedTurn(sessionID, body.text, requestId)
         else appendTurn(sessionID, body.text, requestId)
       }
       if (body.text === SUCCESS_PROMPT) {
@@ -310,6 +356,25 @@ function startFakeDaemon() {
           finishPendingTurn(sessionID, body.text, requestId)
           emitLiveEvent(sessionID)
         }, 3_000)
+        return
+      }
+      if (body.text === INTERRUPT_PROMPT) {
+        sessionStatuses.set(sessionID, { type: "idle" })
+        json(response, 200, { status: "accepted", clientRequestId: requestId })
+        // Reproduce the field report: one completed OpenCode step with no final text, plus a very
+        // short idle edge, while the provider/router automatically recovers the same user turn.
+        emitLiveEvent(sessionID, "message.updated")
+        emitLiveEvent(sessionID, "session.status")
+        setTimeout(() => {
+          sessionStatuses.set(sessionID, { type: "busy" })
+          emitLiveEvent(sessionID, "session.status")
+        }, 250)
+        setTimeout(() => {
+          finishInterruptedTurn(sessionID, body.text, requestId)
+          sessionStatuses.set(sessionID, { type: "idle" })
+          emitLiveEvent(sessionID, "message.updated")
+          emitLiveEvent(sessionID, "session.status")
+        }, 2_000)
         return
       }
       json(response, 200, { status: "accepted", clientRequestId: requestId })
@@ -496,6 +561,29 @@ async function assertExistingContract(browser, viewport, mobile) {
   assert.equal(await page.getByText(SECOND_PROMPT, { exact: true }).count(), 1)
   assert.equal(await page.getByText(SECOND_REPLY, { exact: true }).count(), 1)
   assert.equal(claimRequests, 0)
+
+  await waitForReady(page)
+  await sendPrompt(page, INTERRUPT_PROMPT)
+  // The fake daemon has already journalled a completed tool step and briefly reported idle. The old
+  // projection interpreted that as a terminal turn and painted the exact false red banner reported
+  // against GLM via TokenRouter, even though the same OpenCode turn resumed automatically.
+  await page.waitForTimeout(700)
+  assert.equal(
+    await page.getByText("Response interrupted", { exact: true }).count(),
+    0,
+    "a transient OpenCode step interruption must not become a terminal red banner"
+  )
+  assert.equal(
+    await page.getByText("The coding agent stopped before producing a final answer.", { exact: true }).count(),
+    0,
+    "OpenCode automatic recovery must stay visually live"
+  )
+  await page.getByText(INTERRUPT_REPLY, { exact: true }).waitFor({ state: "visible", timeout: 15_000 })
+  assert.equal(await page.getByText(INTERRUPT_PROMPT, { exact: true }).count(), 1)
+  assert.equal(await page.getByText(INTERRUPT_REPLY, { exact: true }).count(), 1)
+  assert.equal(await page.getByText("Response interrupted", { exact: true }).count(), 0)
+  await waitForReady(page)
+
   assert.equal(await page.getByRole("button", { name: "Continue with another agent" }).count(), 0, "handoff UI must stay disabled")
 
   const composer = await page.locator(".uw-composer-shell").boundingBox()
