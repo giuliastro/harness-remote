@@ -577,6 +577,18 @@ try {
   assert.equal(await routedControls.getByText("Model", { exact: true }).count(), 1, "Session handoff must keep model selection")
   assert.equal(await page.locator(".tdw-conversation-state").isVisible(), true, "routing controls must not hide the Session state")
 
+  // Harness + Model are one decision and must read as one compact control group. The routed container
+  // used to inherit flex:1 while also declaring a 760px grid, so on a wide Session pane the unused
+  // first track pushed Model noticeably to the right even though the Harness select itself stopped at
+  // 220px. Lock the visible control-to-control gap, not just a CSS token, so cascade regressions fail.
+  const routingHarnessBox = await routedControls.locator("label").filter({ hasText: /^Harness/ }).locator("select").boundingBox()
+  const routingModelBox = await routedControls.locator(".tdw-model-trigger").boundingBox()
+  const routingGroupBox = await routedControls.boundingBox()
+  assert.ok(routingHarnessBox && routingModelBox && routingGroupBox, "routing controls must have measurable desktop geometry")
+  const harnessToModelGap = routingModelBox.x - (routingHarnessBox.x + routingHarnessBox.width)
+  assert.ok(harnessToModelGap >= 0 && harnessToModelGap <= 16, `Harness and Model drifted apart by ${harnessToModelGap}px`)
+  assert.ok(routingGroupBox.width <= 600, `routing control group expanded to ${routingGroupBox.width}px`)
+
   // Attachments stay on their current Session. Switching harness must keep the attachment visible,
   // hide the add-image action and block Send until the user explicitly removes it.
   const attachmentInput = page.locator('.uw-composer-shell input[type="file"]')
