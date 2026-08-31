@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto"
-import { mkdir, readFile, rename, writeFile } from "node:fs/promises"
+import { mkdir, readFile, rename, unlink, writeFile } from "node:fs/promises"
 import path from "node:path"
 import { TranscriptCache } from "./transcript-cache.js"
 import {
@@ -394,10 +394,30 @@ export class AcpService {
     isProtected: (sessionID) => this.#active.has(sessionID)
       || this.#replaying.has(sessionID)
       || this.#loads.has(sessionID)
+      || (this.#snapshotWrites.has(sessionID) && Date.now() - (this.#snapshotWriteStart.get(sessionID) ?? 0) < 10_000)
+      || (this.#dirtySnapshots.has(sessionID) && Date.now() - (this.#dirtyStart.get(sessionID) ?? 0) < 10_000)
       || Boolean(this.#queues.get(sessionID)?.length),
     onEvict: (sessionID) => {
       this.#loaded.delete(sessionID)
       this.#restoredSnapshots.delete(sessionID)
+      this.#todos.delete(sessionID)
+      this.#configOptions.delete(sessionID)
+      this.#commandCatalogs.delete(sessionID)
+      for (const resolve of this.#commandCatalogWaiters.get(sessionID) ?? []) resolve()
+      this.#commandCatalogWaiters.delete(sessionID)
+      this.#actionStates.delete(sessionID)
+      this.#authoritativeActionStates.delete(sessionID)
+      this.#promptAcknowledgements.delete(sessionID)
+      this.#transientFailureMessageIDs.delete(sessionID)
+      this.#chunkMessageIDs.delete(`${sessionID}:user`)
+      this.#chunkMessageIDs.delete(`${sessionID}:assistant`)
+      this.#turnGenerations.delete(sessionID)
+      this.#cancelledSessions.delete(sessionID)
+      this.#promptedSessions.delete(sessionID)
+      this.#queues.delete(sessionID)
+      this.#dirtySnapshots.delete(sessionID)
+      this.#dirtyStart.delete(sessionID)
+      this.#snapshotWriteStart.delete(sessionID)
     }
   })
   #todos = new Map()
@@ -433,7 +453,9 @@ export class AcpService {
   #snapshotDirectory
   #restoredSnapshots = new Set()
   #dirtySnapshots = new Set()
+  #dirtyStart = new Map()
   #snapshotWrites = new Map()
+  #snapshotWriteStart = new Map()
   #preserveListedTimestamps
   #reloadOnHistoryRefresh
   #replaySettleMs
@@ -777,6 +799,15 @@ export class AcpService {
     this.#transientFailureMessageIDs.delete(sessionID)
     this.#chunkMessageIDs.delete(`${sessionID}:user`)
     this.#chunkMessageIDs.delete(`${sessionID}:assistant`)
+    this.#turnGenerations.delete(sessionID)
+    this.#cancelledSessions.delete(sessionID)
+    this.#promptedSessions.delete(sessionID)
+    this.#queues.delete(sessionID)
+    this.#active.delete(sessionID)
+    this.#acpOpenSessions.delete(sessionID)
+    this.#dirtySnapshots.delete(sessionID)
+    this.#dirtyStart.delete(sessionID)
+    this.#snapshotWriteStart.delete(sessionID)
     this.#emit("session.deleted", sessionID)
     this.#persistSnapshot(sessionID)
   }
@@ -1386,11 +1417,17 @@ export class AcpService {
       if (Array.isArray(snapshot.messages)) {
         const fragmented = mergeFragmentedPiSnapshot(snapshot.messages)
         const restored = healPoisonedSnapshot(fragmented)
-        if (restored.length !== fragmented.length) this.#dirtySnapshots.add(sessionID)
+        if (restored.length !== fragmented.length) {
+          this.#dirtySnapshots.add(sessionID)
+          this.#dirtyStart.set(sessionID, Date.now())
+        }
         // A snapshot written mid-turn keeps that turn's open tool calls at `running`. The turn did
         // not survive the restart, so reopening the Session must not present them as live work; the
         // rewrite is left to the next persist rather than forcing one on every restore.
-        if (settleUnfinishedActivity(restored, { historical: true })) this.#dirtySnapshots.add(sessionID)
+        if (settleUnfinishedActivity(restored, { historical: true })) {
+          this.#dirtySnapshots.add(sessionID)
+          this.#dirtyStart.set(sessionID, Date.now())
+        }
         this.#messages.set(sessionID, restored)
       }
       if (Array.isArray(snapshot.todos)) this.#todos.set(sessionID, snapshot.todos)
@@ -1401,13 +1438,28 @@ export class AcpService {
     }
   }
 
+  #withFsTimeout(promise, ms = 5000) {
+    let timer
+    const timeout = new Promise((_, reject) => {
+      timer = setTimeout(() => {
+        const error = new Error(`Filesystem operation timed out after ${ms}ms`)
+        error.code = "FS_TIMEOUT"
+        reject(error)
+      }, ms)
+    })
+    return Promise.race([promise, timeout]).finally(() => clearTimeout(timer))
+  }
+
   #persistSnapshot(sessionID) {
     if (!this.#snapshotDirectory) return
     this.#dirtySnapshots.add(sessionID)
+    this.#dirtyStart.set(sessionID, Date.now())
     if (this.#snapshotWrites.has(sessionID)) return
+    this.#snapshotWriteStart.set(sessionID, Date.now())
     const writing = (async () => {
-      await mkdir(this.#snapshotDirectory, { recursive: true })
+      await this.#withFsTimeout(mkdir(this.#snapshotDirectory, { recursive: true }))
       while (this.#dirtySnapshots.delete(sessionID)) {
+        this.#dirtyStart.delete(sessionID)
         // A transcript the journal can rebuild is not written into the snapshot: the snapshot would
         // only be able to restore it under this process's own ids, and the next read replaces it
         // from the journal anyway. That covers a harness whose journal is authoritative, a Session
@@ -1427,14 +1479,25 @@ export class AcpService {
           deleted: this.#deletedSessions.has(sessionID)
         })
         const target = this.#snapshotPath(sessionID)
-        const temporary = `${target}.${process.pid}.${randomUUID()}.tmp`
-        await writeFile(temporary, snapshot, { mode: 0o600 })
-        await rename(temporary, target)
+        let temporary
+        try {
+          temporary = `${target}.${process.pid}.${randomUUID()}.tmp`
+          await this.#withFsTimeout(writeFile(temporary, snapshot, { mode: 0o600 }))
+          await this.#withFsTimeout(rename(temporary, target))
+          temporary = undefined
+        } finally {
+          if (temporary) unlink(temporary).catch(() => {})
+        }
       }
-    })().catch(() => {
+    })().catch((error) => {
+      if (error?.code !== "FS_TIMEOUT") {
+        this.#dirtySnapshots.delete(sessionID)
+        this.#dirtyStart.delete(sessionID)
+      }
       this.#emit("session.error", sessionID, { message: "Session snapshot could not be saved" })
     }).finally(() => {
       this.#snapshotWrites.delete(sessionID)
+      this.#snapshotWriteStart.delete(sessionID)
     })
     this.#snapshotWrites.set(sessionID, writing)
   }
