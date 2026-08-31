@@ -114,6 +114,7 @@ assert.ok(adapter.includes('message.info.time?.completed'), 'OpenCode transcript
 assert.ok(adapter.includes('if (entry.target.backend === "opencode" && entry.forcedStatus !== "running") return'), 'OpenCode idle/pre-Send reconciliation must not block on the legacy status endpoint')
 assert.ok(adapter.includes('openCodeAssistantProvesTurnCompleted') && adapter.includes('latestAssistant'), 'OpenCode must decide turn completion from the newest assistant envelope, not any intermediate completed step')
 assert.ok(adapter.includes('OPENCODE_IDLE_CONFIRM_MS = 750') && adapter.includes('openCodeIdleObservedAt'), 'OpenCode ambiguous interruptions must require a stable idle state before becoming terminal')
+assert.ok(adapter.includes('OPENCODE_RECOVERY_WATCH_MS') && adapter.includes('openCodeRecoveryWatchUntil'), 'OpenCode must retract a terminal-looking interruption when a bounded late retry becomes busy again')
 assert.ok(adapter.includes('const statuses = await api.listStatuses(entry.target.config)'), 'non-OpenCode projections must retain native status enrichment')
 assert.equal(adapter.includes('WORKING_STATUS_GRACE_MS'), false, 'web adapter must not invent a generic stale-working timeout across harnesses')
 assert.equal(adapter.includes('TaskDeskConversation'), false, 'adapter must not render chat')
