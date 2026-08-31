@@ -114,6 +114,8 @@ assert.ok(adapter.includes('message.info.time?.completed'), 'OpenCode transcript
 assert.ok(adapter.includes('entry.forcedStatus !== "running" && !openCodeRecoveryWatchActive'), 'OpenCode ordinary idle/pre-Send reconciliation must not block on the legacy status endpoint outside a bounded recovery watch')
 assert.ok(adapter.includes('openCodeAssistantProvesTurnCompleted') && adapter.includes('latestAssistant'), 'OpenCode must decide turn completion from the newest assistant envelope, not any intermediate completed step')
 assert.ok(adapter.includes('OPENCODE_IDLE_CONFIRM_MS = 750') && adapter.includes('openCodeIdleObservedAt'), 'OpenCode ambiguous interruptions must require a stable idle state before becoming terminal')
+assert.ok(adapter.includes('const terminalError = Boolean(latestAssistant.info.error)') && adapter.includes('if (!terminalError || entry.forcedStatus !== "running") return'), 'OpenCode terminal provider/model errors must have a transcript fallback when the legacy status endpoint omits the Session')
+assert.ok(adapter.includes('terminalError ? now + OPENCODE_RECOVERY_WATCH_MS : 0'), 'OpenCode transcript-confirmed errors must retain the bounded late-retry recovery window')
 assert.ok(adapter.includes('OPENCODE_RECOVERY_WATCH_MS') && adapter.includes('openCodeRecoveryWatchUntil'), 'OpenCode must retract a terminal-looking interruption when a bounded late retry becomes busy again')
 assert.ok(adapter.includes('const statuses = await api.listStatuses(entry.target.config)'), 'non-OpenCode projections must retain native status enrichment')
 assert.equal(adapter.includes('WORKING_STATUS_GRACE_MS'), false, 'web adapter must not invent a generic stale-working timeout across harnesses')
