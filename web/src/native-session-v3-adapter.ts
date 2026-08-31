@@ -498,23 +498,33 @@ function reconcilePendingPromptFromTranscript(entry: NativeConversationEntry, pa
 
   let completed = false
   let completedAt = 0
+  let latestAssistant: MessageEnvelope | null = null
   for (let index = userIndex + 1; index < page.messages.length; index += 1) {
     const message = page.messages[index]
     if (message.info.role === "user") break
-    if (!nativeAssistantCompleted(message)) continue
+    if (message.info.role === "assistant") latestAssistant = message
+    if (entry.target.backend === "opencode" || !nativeAssistantCompleted(message)) continue
     completed = true
     completedAt = Math.max(
       completedAt,
       Number(message.info.time?.completed) || Number(message.info.time?.created) || 0
     )
   }
+  if (entry.target.backend === "opencode" && latestAssistant) {
+    completed = openCodeAssistantProvesTurnCompleted(latestAssistant)
+    if (completed) {
+      completedAt = Number(latestAssistant.info.time?.completed) || Number(latestAssistant.info.time?.created) || 0
+    }
+  }
   if (completed) {
     entry.statusType = "idle"
     entry.forcedStatus = null
+    entry.openCodeIdleObservedAt = null
     if (completedAt) entry.updatedAt = Math.max(entry.updatedAt, completedAt)
   } else {
     entry.statusType = "running"
     entry.forcedStatus = "running"
+    entry.openCodeIdleObservedAt = null
   }
 
   markPendingNativeSessionPromptAccepted(entry.target)
