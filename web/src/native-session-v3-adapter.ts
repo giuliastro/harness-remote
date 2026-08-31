@@ -20,6 +20,10 @@ const PENDING_TRANSCRIPT_CLOCK_SKEW_MS = 2 * 60 * 1000
 // about to continue the same native turn. Require that non-working state to survive the bounded
 // lifecycle settle pass before turning it into a terminal Conversation state.
 const OPENCODE_IDLE_CONFIRM_MS = 750
+// If a provider/router retries after that confirmation window, a later busy edge must still retract
+// the terminal-looking interruption. This watch is event-driven in the normal case; it does not add
+// fast polling and expires so an old failed turn cannot be resurrected indefinitely.
+const OPENCODE_RECOVERY_WATCH_MS = 2 * 60 * 1000
 
 type NativeTurnRecord = {
   id: string
@@ -37,6 +41,7 @@ type NativeConversationEntry = {
   statusType: string
   forcedStatus: "running" | "cancelled" | null
   openCodeIdleObservedAt: number | null
+  openCodeRecoveryWatchUntil: number
   currentModel: ModelSelection | null
   initialPageCaptured: boolean
   piTailMessages: MessageEnvelope[]
@@ -288,7 +293,9 @@ function reconcileNativeSessionModel(entry: NativeConversationEntry, page: Messa
  * between the browser and OpenCode cannot attach an older completed assistant to a new turn.
  */
 function reconcileOpenCodeTranscriptStatus(entry: NativeConversationEntry, page: MessagePage, before?: string): void {
-  if (entry.target.backend !== "opencode" || before || entry.forcedStatus !== "running") return
+  if (entry.target.backend !== "opencode" || before) return
+  const recoveryWatchActive = entry.openCodeRecoveryWatchUntil > Date.now()
+  if (entry.forcedStatus !== "running" && !recoveryWatchActive) return
 
   const orderedTurns = [...entry.turns.values()].sort((left, right) => left.created - right.created || left.id.localeCompare(right.id))
   const current = orderedTurns[orderedTurns.length - 1]
@@ -321,6 +328,7 @@ function reconcileOpenCodeTranscriptStatus(entry: NativeConversationEntry, page:
   entry.statusType = "idle"
   entry.forcedStatus = null
   entry.openCodeIdleObservedAt = null
+  entry.openCodeRecoveryWatchUntil = 0
   const completedAt = Number(latestAssistant.info.time?.completed) || Number(latestAssistant.info.time?.created) || 0
   if (completedAt) entry.updatedAt = Math.max(entry.updatedAt, completedAt)
   if (conversationStatus(entry) !== priorStatus) notify(entry)
@@ -520,11 +528,13 @@ function reconcilePendingPromptFromTranscript(entry: NativeConversationEntry, pa
     entry.statusType = "idle"
     entry.forcedStatus = null
     entry.openCodeIdleObservedAt = null
+    entry.openCodeRecoveryWatchUntil = 0
     if (completedAt) entry.updatedAt = Math.max(entry.updatedAt, completedAt)
   } else {
     entry.statusType = "running"
     entry.forcedStatus = "running"
     entry.openCodeIdleObservedAt = null
+    entry.openCodeRecoveryWatchUntil = 0
   }
 
   markPendingNativeSessionPromptAccepted(entry.target)
@@ -571,19 +581,24 @@ function appendAcceptedTurn(entry: NativeConversationEntry, prompt: string, mode
   entry.forcedStatus = "running"
   entry.statusType = "running"
   entry.openCodeIdleObservedAt = null
+  entry.openCodeRecoveryWatchUntil = 0
   return notify(entry)
 }
 
 async function refreshStatus(entry: NativeConversationEntry): Promise<void> {
   // OpenCode's legacy /session/status has changed scope across recent releases and can omit a child
-  // directory Session entirely. Never put it back in the idle pre-Send path: a slow status endpoint
-  // must not delay prompt delivery before OpenCode even starts reasoning.
+  // directory Session entirely. Never put it back in the ordinary idle pre-Send path: a slow status
+  // endpoint must not delay prompt delivery before OpenCode even starts reasoning.
   //
   // After HR has accepted a prompt, however, the status read is valuable for the one transcript case
   // that is intentionally ambiguous: an interruption/error or a completed tool step with no final
-  // answer. Confirm an idle edge across the existing bounded lifecycle-settle window so a sub-second
-  // provider retry never flashes a false terminal error, while a real stopped turn still resolves.
-  if (entry.target.backend === "opencode" && entry.forcedStatus !== "running") return
+  // answer. Confirm an idle edge across the existing bounded lifecycle-settle window. If a provider
+  // retry starts after that confirmation, keep a bounded recovery watch so the next busy event can
+  // retract the red interruption immediately rather than waiting for the eventual final answer.
+  const now = Date.now()
+  const openCodeRecoveryWatchActive = entry.target.backend === "opencode"
+    && entry.openCodeRecoveryWatchUntil > now
+  if (entry.target.backend === "opencode" && entry.forcedStatus !== "running" && !openCodeRecoveryWatchActive) return
 
   try {
     const statuses = await api.listStatuses(entry.target.config)
@@ -594,9 +609,15 @@ async function refreshStatus(entry: NativeConversationEntry): Promise<void> {
       if (nativeSessionIsWorking(next)) {
         entry.statusType = next
         entry.openCodeIdleObservedAt = null
+        if (openCodeRecoveryWatchActive && entry.forcedStatus !== "running") {
+          entry.forcedStatus = "running"
+          entry.openCodeRecoveryWatchUntil = 0
+        }
         return
       }
-      const now = Date.now()
+      // Once a terminal-looking interruption has been confirmed, another idle observation during the
+      // recovery watch changes nothing. A later busy edge is the only signal that may resurrect it.
+      if (entry.forcedStatus !== "running") return
       if (entry.openCodeIdleObservedAt === null) {
         entry.openCodeIdleObservedAt = now
         return
@@ -605,6 +626,7 @@ async function refreshStatus(entry: NativeConversationEntry): Promise<void> {
       entry.statusType = next
       entry.forcedStatus = null
       entry.openCodeIdleObservedAt = null
+      entry.openCodeRecoveryWatchUntil = now + OPENCODE_RECOVERY_WATCH_MS
       return
     }
 
@@ -714,6 +736,7 @@ function nativeConversationController(entry: NativeConversationEntry): Conversat
       entry.forcedStatus = "cancelled"
       entry.statusType = "idle"
       entry.openCodeIdleObservedAt = null
+      entry.openCodeRecoveryWatchUntil = 0
       entry.updatedAt = Date.now()
       return notify(entry)
     }
@@ -735,6 +758,7 @@ export function registerNativeSessionV3Adapter(
       statusType: target.status?.type || "idle",
       forcedStatus: null,
       openCodeIdleObservedAt: null,
+      openCodeRecoveryWatchUntil: 0,
       currentModel: target.model,
       initialPageCaptured: false,
       piTailMessages: [],
