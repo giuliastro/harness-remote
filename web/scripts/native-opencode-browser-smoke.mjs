@@ -17,6 +17,7 @@ const SECOND_PROMPT = "OPENCODE-SECOND-PROMPT"
 const SECOND_REPLY = "OPENCODE-SECOND-REPLY"
 const INTERRUPT_PROMPT = "OPENCODE-TRANSIENT-INTERRUPTION-PROMPT"
 const INTERRUPT_REPLY = "OPENCODE-RECOVERED-FINAL-REPLY"
+const TERMINAL_INTERRUPT_PROMPT = "OPENCODE-TERMINAL-INTERRUPTION-PROMPT"
 const CREATE_TITLE = "OpenCode created from Harness Remote"
 const CREATE_PROMPT = "OPENCODE-CREATED-FIRST-PROMPT"
 const CREATE_REPLY = "OPENCODE-CREATED-FIRST-REPLY"
@@ -343,7 +344,7 @@ function startFakeDaemon() {
         nativePromptDispatches += 1
         ledger.set(ledgerKey, body)
         if (body.text === SUCCESS_PROMPT) appendPendingTurn(sessionID, body.text, requestId)
-        else if (body.text === INTERRUPT_PROMPT) appendInterruptedTurn(sessionID, body.text, requestId)
+        else if (body.text === INTERRUPT_PROMPT || body.text === TERMINAL_INTERRUPT_PROMPT) appendInterruptedTurn(sessionID, body.text, requestId)
         else appendTurn(sessionID, body.text, requestId)
       }
       if (body.text === SUCCESS_PROMPT) {
@@ -375,6 +376,16 @@ function startFakeDaemon() {
           emitLiveEvent(sessionID, "message.updated")
           emitLiveEvent(sessionID, "session.status")
         }, 2_000)
+        return
+      }
+      if (body.text === TERMINAL_INTERRUPT_PROMPT) {
+        sessionStatuses.set(sessionID, { type: "idle" })
+        json(response, 200, { status: "accepted", clientRequestId: requestId })
+        emitLiveEvent(sessionID, "message.updated")
+        emitLiveEvent(sessionID, "session.status")
+        // A second stable idle edge proves this one really stopped; unlike the transient case there
+        // is no intervening busy edge and no recovered final assistant envelope.
+        setTimeout(() => emitLiveEvent(sessionID, "session.status"), 1_100)
         return
       }
       json(response, 200, { status: "accepted", clientRequestId: requestId })
@@ -583,6 +594,16 @@ async function assertExistingContract(browser, viewport, mobile) {
   assert.equal(await page.getByText(INTERRUPT_REPLY, { exact: true }).count(), 1)
   assert.equal(await page.getByText("Response interrupted", { exact: true }).count(), 0)
   await waitForReady(page)
+
+  // The suppression is not blanket error hiding: if OpenCode stays idle and never produces a final
+  // reply, the same no-final transcript must eventually resolve to the real terminal interruption.
+  await sendPrompt(page, TERMINAL_INTERRUPT_PROMPT)
+  await page.getByText("Response interrupted", { exact: true }).waitFor({ state: "visible", timeout: 12_000 })
+  assert.equal(
+    await page.getByText("The coding agent stopped before producing a final answer.", { exact: true }).count(),
+    1,
+    "a stable terminal OpenCode interruption must remain visible"
+  )
 
   assert.equal(await page.getByRole("button", { name: "Continue with another agent" }).count(), 0, "handoff UI must stay disabled")
 
