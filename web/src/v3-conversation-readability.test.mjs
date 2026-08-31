@@ -120,3 +120,12 @@ test("a select still looks like a select", () => {
     assert.match(body, /background-color:/, `${selector} must set background-color`)
   }
 })
+
+
+test("routed Harness and Model stay one compact control group", () => {
+  const css = read("native-session-observer.css")
+  const rule = css.match(/\.hr-native-session-observer \.tdw-agent-control\.routed \{[\s\S]*?\n\}/)?.[0] || ""
+  assert.match(rule, /flex: 0 1 588px;/, "routed controls must not inherit the expanding flex: 1")
+  assert.match(rule, /width: min\(588px, 100%\);/)
+  assert.match(rule, /grid-template-columns: minmax\(150px, 220px\) minmax\(220px, 360px\);/)
+})
