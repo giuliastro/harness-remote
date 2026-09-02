@@ -32,7 +32,8 @@ function parseArgumentList(value, fallback) {
   return parsed
 }
 
-function parseBackend(value) {
+function parseBackend(value, { allowOpenCode = false } = {}) {
+  if (allowOpenCode && value === "opencode") return value
   return harnessProfile(value).id
 }
 
@@ -42,10 +43,10 @@ function environmentValue(environment, name) {
 }
 
 
-export function parseConfig(args, environment = process.env) {
-  const backend = parseBackend(environmentValue(environment, "BACKEND") ?? "omp")
-  const profile = harnessProfile(backend)
-  const launch = resolveAcpLaunch(profile)
+export function parseConfig(args, environment = process.env, { allowOpenCodeBackend = false } = {}) {
+  const backend = parseBackend(environmentValue(environment, "BACKEND") ?? "omp", { allowOpenCode: allowOpenCodeBackend })
+  const profile = backend === "opencode" && allowOpenCodeBackend ? null : harnessProfile(backend)
+  const launch = profile ? resolveAcpLaunch(profile) : { command: "", args: [] }
   const acpCommand = environmentValue(environment, "ACP_COMMAND")
   const acpArgs = environmentValue(environment, "ACP_ARGS")
   const root = environmentValue(environment, "ROOT")
@@ -70,11 +71,15 @@ export function parseConfig(args, environment = process.env) {
     const option = args[index]
     switch (option) {
       case "--backend":
-        config.backend = parseBackend(requireValue(args, index, option))
+        config.backend = parseBackend(requireValue(args, index, option), { allowOpenCode: allowOpenCodeBackend })
         {
-          const selected = resolveAcpLaunch(harnessProfile(config.backend))
-          if (!acpCommandOverridden) config.acpCommand = selected.command
-          if (!acpArgsOverridden) config.acpArgs = [...selected.args]
+          const selected = config.backend === "opencode" && allowOpenCodeBackend
+            ? null
+            : resolveAcpLaunch(harnessProfile(config.backend))
+          if (selected) {
+            if (!acpCommandOverridden) config.acpCommand = selected.command
+            if (!acpArgsOverridden) config.acpArgs = [...selected.args]
+          }
         }
         index += 1
         break
