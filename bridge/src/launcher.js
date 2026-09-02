@@ -80,34 +80,41 @@ export function resolveBackend(args, detected = detectBackends()) {
 export function resolveLaunchPlan(args, detected = detectBackends()) {
   const explicit = optionValue(args, "--backend")
   const forceSingle = hasOption(args, "--single")
+  const supported = new Set([...ACP_BACKENDS, "opencode"])
 
-  if (detected.length === 0) {
-    if (explicit) return { mode: "single", backend: explicit, detected }
-    throw new Error("No supported agent CLI was found on PATH. Install/select omp, pi, claude, codex, or opencode, then re-run with --backend if needed.")
+  if (explicit && !supported.has(explicit)) {
+    throw new Error(`Unsupported backend '${explicit}' for Harness Remote startup.`)
   }
 
   if (forceSingle) {
     const backend = explicit ?? (detected.length === 1 ? detected[0] : null)
     if (!backend) {
+      if (detected.length === 0) {
+        throw new Error("No supported agent CLI was found on PATH. Install/select omp, pi, claude, codex, or opencode, then re-run with --backend if needed.")
+      }
       throw new Error(`--single requires --backend when multiple supported agent CLIs are installed (${detected.join(", ")}).`)
     }
     return { mode: "single", backend, detected }
   }
 
-  if (detected.length === 1) return { mode: "single", backend: explicit ?? detected[0], detected }
-
-  if (explicit === "opencode") return { mode: "single", backend: explicit, detected }
-  if (explicit && !ACP_BACKENDS.includes(explicit)) {
-    throw new Error(`Unsupported ACP backend '${explicit}' for machine-daemon startup.`)
+  if (detected.length === 0 && !explicit) {
+    throw new Error("No supported agent CLI was found on PATH. Install/select omp, pi, claude, codex, or opencode, then re-run with --backend if needed.")
   }
 
-  const primary = explicit ?? ACP_BACKENDS.find((backend) => detected.includes(backend))
-  if (!primary) return { mode: "single", backend: detected[0], detected }
+  const effectiveDetected = detected.length ? detected : [explicit]
+  const primary = explicit
+    ?? ACP_BACKENDS.find((backend) => effectiveDetected.includes(backend))
+    ?? (effectiveDetected.includes("opencode") ? "opencode" : null)
+
+  if (!primary) {
+    throw new Error("No supported agent CLI was found on PATH. Install/select omp, pi, claude, codex, or opencode, then re-run with --backend if needed.")
+  }
+
   return {
     mode: "daemon",
     backend: primary,
-    detected,
-    openCode: detected.includes("opencode")
+    detected: effectiveDetected,
+    openCode: effectiveDetected.includes("opencode") || primary === "opencode"
   }
 }
 
@@ -193,7 +200,7 @@ export function lanAddresses(interfaces = networkInterfaces()) {
 }
 
 export function launcherUsage() {
-  return `Usage: harness-remote [options]\n\nQuick start options:\n  --backend <name>       Select omp, pi, claude, codex, or opencode (on multi-agent machines, selects the daemon primary)\n  --single               Force the legacy single-backend path instead of the machine daemon\n  --host <host>          Bind host (quick-start default: 0.0.0.0)\n  --port <port>          Preferred port (OpenCode single-host default: 4096; daemon/ACP default: 4097)\n  --username <username>  Override generated Basic Auth username\n  --password <password>  Override generated Basic Auth password\n  --help                 Show this help\n\nWith one detected agent, Harness starts the existing single-backend path. With multiple detected agents and at least one ACP backend, it starts the machine daemon automatically; OpenCode is included when installed and receives a free loopback port automatically.`
+  return `Usage: harness-remote [options]\n\nQuick start options:\n  --backend <name>       Select omp, pi, claude, codex, or opencode as the machine primary\n  --single               Force the legacy single-backend path instead of the HR3 machine daemon\n  --host <host>          Bind host (quick-start default: 0.0.0.0)\n  --port <port>          Preferred public Machine port (default: 4097)\n  --username <username>  Override generated Basic Auth username\n  --password <password>  Override generated Basic Auth password\n  --help                 Show this help\n\nWithout --single, Harness always starts the HR3 machine daemon, including single-harness and OpenCode-only setups. OpenCode is managed behind a loopback port chosen automatically. Use --single only for the legacy per-harness compatibility endpoint.`
 }
 
 export async function startManagedOpenCode({ host, port, username, password, command = "opencode", Host = ManagedOpenCodeHost } = {}) {
