@@ -11,7 +11,7 @@ Harness Remote 3 changes the normal startup contract. HR2 commonly connected the
 - Existing standalone ACP bridge commands such as `npx --yes ./bridge --backend omp|pi|claude|codex ...` are still supported as compatibility paths. They can expose native Sessions, but they do not provide the complete HR3 Project catalog/new-Session workflow.
 - A direct `opencode serve` process from an HR2 setup is not a Harness Machine endpoint and cannot be added under **Machines** in HR3.
 - HR2 saved server profiles are kept in storage for legacy code paths, but they are not automatically converted into HR3 `workspaceMachines`. After upgrading, add the machine again in **Machines → Add machine**.
-- For the full HR3 experience, stop the old per-harness public endpoints and use the launcher or machine daemon described below. Legacy single-backend startup is intended for compatibility, not as the preferred HR3 onboarding path.
+- For the full HR3 experience, stop the old per-harness public endpoints and use the launcher or machine daemon described below. The launcher now uses the HR3 Machine endpoint even when only one harness is installed; `--single` is the explicit legacy compatibility opt-out.
 
 ## Start a machine and open the client
 
@@ -66,11 +66,11 @@ package has been published.
 
 The launcher inspects `PATH` without executing discovered agent binaries and chooses the least-friction compatible runtime:
 
-- with exactly one supported CLI, it preserves the existing single-backend startup path;
-- with multiple supported CLIs and at least one ACP-backed agent, it starts the machine daemon automatically;
-- the daemon selects one detected ACP backend as its primary host and includes managed OpenCode when OpenCode is installed;
-- `--backend <name>` selects the ACP primary on a multi-agent machine;
-- `--single --backend <name>` explicitly opts out of the daemon and forces the legacy single-backend path;
+- without `--single`, it always starts the HR3 machine daemon, including single-harness setups;
+- OpenCode-only machines are exposed through the same Machine → Project → Session contract as ACP-backed machines;
+- the daemon selects a detected harness as its primary and includes the other detected harnesses it can manage;
+- `--backend <name>` selects the machine primary, including `opencode`;
+- `--single --backend <name>` explicitly opts out of the daemon and forces the legacy per-harness endpoint;
 - if managed OpenCode is included, the launcher chooses a free loopback port automatically instead of assuming 4096 is unused;
 - credentials are generated automatically and kept out of child-process argv;
 - the LAN address and credentials to enter in the client are printed before startup continues.
@@ -83,21 +83,21 @@ For example, on a workstation with Codex, Claude Code and OpenCode installed, th
 harness-remote
 ```
 
-starts one machine daemon instead of failing and asking you to choose a backend. The launcher reports the CLIs it detected, selects an ACP primary, finds a free loopback port for managed OpenCode, and exposes the machine through one authenticated daemon connection.
+starts one machine daemon instead of failing and asking you to choose a backend. The launcher reports the CLIs it detected, selects the machine primary, finds a free loopback port when managed OpenCode is present, and exposes the machine through one authenticated daemon connection.
 
-The current automatic multi-host shape is deliberately precise:
+The automatic shape is now consistent for one or many harnesses:
 
 ```text
 Harness daemon :4097
-  ├── one detected ACP primary (Codex / Claude / OMP / PI)
-  └── OpenCode, when installed, as a managed loopback HTTP host
+  ├── primary detected harness (ACP or OpenCode)
+  └── other detected managed harnesses, when present
 ```
 
-Other detected ACP CLIs are reported by discovery but are not all instantiated concurrently by this startup slice yet. The daemon API and client are already agent-scoped, so adding more ACP host instances does not require another client transport change.
+A single ACP harness therefore still exposes `/v1/machine` and `/v1/projects`, and an OpenCode-only machine keeps its internal `opencode serve` listener private behind the daemon.
 
-## Choose the daemon primary or force one backend
+## Choose the daemon primary or force one legacy backend
 
-On a multi-agent machine, choose the daemon's ACP primary with:
+Choose the machine primary with:
 
 ```bash
 harness-remote --backend codex --root ~/dev
@@ -129,13 +129,19 @@ If OpenCode is present on a multi-agent machine, an existing process already usi
 
 ## OpenCode
 
-When OpenCode is the only selected backend, Harness Remote starts `opencode serve` itself, passes credentials through `OPENCODE_SERVER_USERNAME` and `OPENCODE_SERVER_PASSWORD`, verifies the authenticated health endpoint, prints connection details, and supervises the child process until shutdown.
+OpenCode uses the HR3 machine daemon by default, even when it is the only installed harness:
 
 ```bash
 harness-remote --backend opencode
 ```
 
-When the automatic machine daemon path is selected, OpenCode instead stays on its managed loopback listener and the client reaches it through the daemon's agent-scoped proxy. The phone/web/desktop client therefore does not need direct access to the internal OpenCode port.
+The daemon supervises an internal `opencode serve` listener on loopback and exposes it through the Machine endpoint and agent-scoped proxy. The phone/web/desktop client therefore never needs direct access to the internal OpenCode port.
+
+The old direct OpenCode endpoint is still available only when requested explicitly:
+
+```bash
+harness-remote --single --backend opencode
+```
 
 ## Machine daemon
 
@@ -162,7 +168,7 @@ Agent-scoped requests share the daemon connection:
 /v1/agents/opencode/global/event
 ```
 
-The selected primary ACP agent is routed through the normalized bridge API. Managed OpenCode requests are streamed through the daemon to the loopback process; external credentials are authenticated at the daemon boundary and replaced with the managed host credentials for the internal request. Legacy unprefixed routes remain available during migration.
+A primary ACP agent is routed through the normalized bridge API. When OpenCode is primary, legacy unprefixed routes are routed through the managed HTTP proxy instead. External credentials are authenticated at the daemon boundary and replaced with managed host credentials for internal OpenCode requests.
 
 Managed OpenCode binds to `127.0.0.1` by default even when the daemon binds to `0.0.0.0`. Wider exposure is explicit:
 
