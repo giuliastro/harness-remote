@@ -320,11 +320,13 @@ export function createAgentRoutingServer({
     let route = agentScopedRequest(request)
     if (!route) {
       const matching = requestedBackend && daemon.snapshot().agents.find((agent) => agent.backend === requestedBackend)
-      if (matching && matching.id !== primaryAgentID) {
+      if (matching) {
         route = { agentID: matching.id, path: requestURL.pathname, search: requestURL.search }
-      } else {
+      } else if (bridgeServer) {
         bridgeServer.emit("request", request, response)
         return
+      } else {
+        route = { agentID: primaryAgentID, path: requestURL.pathname, search: requestURL.search }
       }
     }
     route = routedAgentForBackend(daemon, route, requestedBackend)
@@ -336,7 +338,7 @@ export function createAgentRoutingServer({
       return
     }
 
-    if (route.agentID === primaryAgentID) {
+    if (route.agentID === primaryAgentID && bridgeServer) {
       request.url = `${route.path}${route.search}`
       bridgeServer.emit("request", request, response)
       return
