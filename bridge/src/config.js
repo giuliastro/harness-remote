@@ -79,6 +79,9 @@ export function parseConfig(args, environment = process.env, { allowOpenCodeBack
           if (selected) {
             if (!acpCommandOverridden) config.acpCommand = selected.command
             if (!acpArgsOverridden) config.acpArgs = [...selected.args]
+          } else {
+            if (!acpCommandOverridden) config.acpCommand = ""
+            if (!acpArgsOverridden) config.acpArgs = []
           }
         }
         index += 1
