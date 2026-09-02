@@ -17,6 +17,21 @@ test("daemon defaults to one ACP primary plus loopback managed OpenCode", () => 
   assert.equal(parsed.config.port, 4097)
 })
 
+test("daemon accepts OpenCode as the machine primary without inventing an ACP backend", () => {
+  const parsed = parseDaemonOptions(["--backend", "opencode"], { HARNESS_REMOTE_HOST: "127.0.0.1" })
+  assert.equal(parsed.config.backend, "opencode")
+  assert.equal(parsed.config.acpCommand, "")
+  assert.deepEqual(parsed.config.acpArgs, [])
+  assert.equal(parsed.openCode, true)
+})
+
+test("OpenCode primary cannot disable its own managed host", () => {
+  assert.throws(
+    () => parseDaemonOptions(["--backend", "opencode", "--no-opencode"], { HARNESS_REMOTE_HOST: "127.0.0.1" }),
+    /cannot be used when OpenCode is the machine primary/
+  )
+})
+
 test("daemon does not inherit a LAN daemon bind for managed OpenCode", () => {
   const parsed = parseDaemonOptions(["--host", "0.0.0.0"], {
     HARNESS_REMOTE_BACKEND: "codex",
