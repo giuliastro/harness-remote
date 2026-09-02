@@ -76,7 +76,11 @@ export function parseDaemonOptions(args, environment = process.env, detect = res
   const named = bridgeArgs.includes("--backend") || environment.HARNESS_REMOTE_BACKEND || environment.OMP_BRIDGE_BACKEND
   if (!named) bridgeArgs.push("--backend", detect(args).backend)
 
-  return { config: parseConfig(bridgeArgs, environment), ...options }
+  const config = parseConfig(bridgeArgs, environment, { allowOpenCodeBackend: true })
+  if (config.backend === "opencode" && !options.openCode) {
+    throw new Error("--no-opencode cannot be used when OpenCode is the machine primary")
+  }
+  return { config, ...options }
 }
 
 export function daemonUsage() {
@@ -112,8 +116,11 @@ async function main() {
   const identity = await loadMachineIdentity(config.stateDirectory)
   const daemon = new MachineDaemon(identity)
   const plan = resolveLaunchPlan(process.argv.slice(2))
-  const acpBackends = [...new Set([...plan.detected.filter((backend) => backend !== "opencode"), config.backend])]
-  const primaryProfile = harnessProfile(config.backend)
+  const acpBackends = [...new Set([
+    ...plan.detected.filter((backend) => backend !== "opencode"),
+    ...(config.backend === "opencode" ? [] : [config.backend])
+  ])]
+  const primaryProfile = config.backend === "opencode" ? null : harnessProfile(config.backend)
   const acpHosts = new Map()
   for (const backend of acpBackends) {
     const profile = harnessProfile(backend)
@@ -161,8 +168,8 @@ async function main() {
     acp.on("stderr", (line) => process.stderr.write(`[${profile.id}] ${line}\n`))
     acp.on("exit", (error) => process.stderr.write(`[${profile.id}] ${error.message}\n`))
   }
-  const acp = acpHosts.get(primaryProfile.id)
-  if (!acp) throw new Error(`Primary harness ${primaryProfile.id} was not detected`)
+  const acp = primaryProfile ? acpHosts.get(primaryProfile.id) : undefined
+  if (primaryProfile && !acp) throw new Error(`Primary harness ${primaryProfile.id} was not detected`)
 
   if (openCode) {
     const managedOpenCode = new ManagedOpenCodeHost({
@@ -207,14 +214,15 @@ async function main() {
     daemon,
     config,
     primaryAcp: acp,
-    serviceOptions: {
+    primaryAgentID: config.backend,
+    serviceOptions: primaryProfile ? {
       snapshotDirectory: path.join(config.stateDirectory, primaryProfile.id),
       historyLoader: primaryProfile.historyLoader,
       preserveListedTimestamps: primaryProfile.preserveListedTimestamps,
       hiddenSessionIDs: daemon.hostEntry(primaryProfile.id).modelCatalog.hiddenSessionIDs,
       reloadOnHistoryRefresh: primaryProfile.reloadOnHistoryRefresh,
       replaySettleMs: primaryProfile.replaySettleMs
-    }
+    } : undefined
   })
 
   await new Promise((resolve, reject) => {
@@ -231,7 +239,7 @@ async function main() {
   process.stdout.write(`Machine: ${identity.name} (${identity.id})\n`)
   process.stdout.write("Active agents:\n")
   for (const host of daemon.snapshot().agents) {
-    if (host.id === primaryProfile.id) {
+    if (host.id === config.backend) {
       process.stdout.write(`  • ${host.label} - primary (${host.transport.toUpperCase()})\n`)
       continue
     }
