@@ -199,6 +199,37 @@ test("machine server wires registry, routing, native Session operations, task li
   assert.deepEqual(bridgeOptions.machineRegistry.snapshot().agents.map((host) => host.id), ["pi", "opencode"])
 })
 
+test("OpenCode-only machine server does not construct a phantom ACP bridge", () => {
+  const daemon = new MachineDaemon({ id: "machine_http_only", name: "workstation" })
+  daemon.registerManagedHttpHost({
+    id: "opencode",
+    label: "OpenCode",
+    host: new FakeHttpHost(),
+    eager: false
+  })
+
+  let routerOptions
+  const value = createMachineDaemonServer({
+    daemon,
+    config: { backend: "opencode", port: 4097, stateDirectory: "/tmp/hr-http-only" },
+    primaryAgentID: "opencode",
+    sessionOperationLedger: { diagnostics() { return {} } },
+    sessionLinkStore: {},
+    createServer: () => { throw new Error("OpenCode-only startup must not create an ACP bridge") },
+    createRouter: (options) => { routerOptions = options; return { marker: "router" } },
+    createClaimServer: ({ innerServer }) => innerServer,
+    createLaunchServer: ({ innerServer }) => innerServer,
+    createModelServer: ({ innerServer }) => innerServer,
+    createFinishServer: ({ innerServer }) => innerServer,
+    createWorkThreadServerFactory: ({ innerServer }) => innerServer
+  })
+
+  assert.deepEqual(value, { marker: "router" })
+  assert.equal(routerOptions.primaryAgentID, "opencode")
+  assert.equal(routerOptions.bridgeServer, undefined)
+  assert.deepEqual(daemon.snapshot().agents.map((host) => host.id), ["opencode"])
+})
+
 test("machine handoff checkpoints a created target before link enrichment can fail", async () => {
   const daemon = new MachineDaemon({ id: "machine_test", name: "workstation" })
   const codex = new FakeAcp()
