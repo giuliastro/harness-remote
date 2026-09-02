@@ -185,6 +185,32 @@ test("a non-primary ACP agent is dispatched to its own bridge instead of the pri
   }
 })
 
+test("an HTTP primary handles unprefixed compatibility routes without an ACP bridge", async () => {
+  let routed
+  const server = createAgentRoutingServer({
+    daemon: daemonWith(
+      { opencode: { id: "opencode", kind: "http", host: {} } },
+      { opencode: "available" }
+    ),
+    config: { username: "", password: "", corsOrigins: [] },
+    primaryAgentID: "opencode",
+    proxyRequest: async ({ route, response }) => {
+      routed = route
+      response.writeHead(200, { "Content-Type": "application/json" })
+      response.end(JSON.stringify({ ok: true }))
+    }
+  })
+  const port = await listen(server)
+  try {
+    const response = await fetch(`http://127.0.0.1:${port}/session?directory=%2Fwork`)
+    assert.equal(response.status, 200)
+    assert.deepEqual(await response.json(), { ok: true })
+    assert.deepEqual(routed, { agentID: "opencode", path: "/session", search: "?directory=%2Fwork" })
+  } finally {
+    await close(server)
+  }
+})
+
 test("managed HTTP routing replaces client credentials with host credentials", async () => {
   let upstreamRequest
   const upstream = http.createServer((request, response) => {
