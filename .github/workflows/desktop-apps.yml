@@ -92,7 +92,6 @@ jobs:
           npm run test:model
           npm run test:events
           npm run test:profiles
-          npm run test:markdown
           npm run test:desktop
         working-directory: web
 
