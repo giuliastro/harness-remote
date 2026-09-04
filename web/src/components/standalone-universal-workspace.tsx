@@ -12,6 +12,12 @@ import {
 } from "../appPreferences"
 import { ChatIcon, LoadingIcon, RefreshIcon, ServerIcon, SettingsIcon } from "../Icons"
 import { createTranslator, languageOptions, type LanguageCode } from "../i18n"
+import {
+  createBurstLimiter,
+  machinePollIntervalMs,
+  MACHINE_LIVE_REFRESH_BURST_MS,
+  MACHINE_RECONNECT_POLL_MS
+} from "../machine-live-refresh"
 import { discoverMachine, machineAgentStateLabel } from "../machineClient"
 import {
   discoverAgentNativeSessions,
@@ -24,6 +30,7 @@ import { migrateNativeSessionMachineStorage } from "../native-session-machine-id
 import { nativeSessionTransferredContext } from "../native-session-prompt"
 import type { NativeSessionRouteMachine } from "../native-session-routing"
 import type { MachineSnapshot, Session } from "../types"
+import { subscribeTaskDeskLiveEvents } from "../taskdesk-live-events"
 import {
   createWorkspaceMachine,
   type WorkspaceMachine
@@ -53,8 +60,6 @@ const RAIL_WIDTH_STEP = 16
 // machine that was already confirmed online is demoted to offline.
 const MACHINE_DISCOVERY_RETRY_MS = 350
 const MACHINE_OFFLINE_FAILURE_THRESHOLD = 3
-const MACHINE_NORMAL_POLL_MS = 10_000
-const MACHINE_RECONNECT_POLL_MS = 1_500
 
 async function discoverMachineWithRetry(config: WorkspaceMachine["config"]): Promise<MachineSnapshot | null> {
   const fresh = () => discoverMachine(config, { allowCachedOnTransportFailure: false })
@@ -321,6 +326,9 @@ function NativeSessionsWorkspace({
   const [loaded, setLoaded] = useState(machines.length === 0)
   const [refreshing, setRefreshing] = useState(false)
   const [revision, setRevision] = useState(0)
+  // Which machines currently hold a live event stream. A streaming machine reports its own changes,
+  // so it does not need the discovery timer; one that does not stream still does.
+  const [liveMachines, setLiveMachines] = useState<Record<string, boolean>>({})
   const [selected, setSelected] = useState<NativeSessionSurfaceTarget | null>(null)
   const [selectedState, setSelectedState] = useState<NativeSessionVisualState | undefined>(undefined)
   const [selectedLinks, setSelectedLinks] = useState<NativeSessionLink[]>([])
@@ -442,9 +450,48 @@ function NativeSessionsWorkspace({
     runtime.state === "online" && Boolean(runtime.snapshot) && Boolean(runtime.error)
   ).length
 
+  // Endpoint identity, not array identity: the parent rebuilds the machine list on every persist,
+  // and re-subscribing on each render would tear down healthy streams.
+  const streamEndpoints = machines
+    .map((machine) => [machine.id, machine.config.host, machine.config.port, machine.config.username, machine.config.password].join("\u0000"))
+    .join("\u0001")
+  const streamTargets = useMemo(
+    () => machines.map((machine) => ({ id: machine.id, config: machine.config })),
+    // Deliberately keyed by the endpoint signature above, not by the array identity.
+    [streamEndpoints]
+  )
+
+  useEffect(() => {
+    if (streamTargets.length === 0) {
+      setLiveMachines({})
+      return
+    }
+    const limiter = createBurstLimiter(MACHINE_LIVE_REFRESH_BURST_MS)
+    const refresh = () => setRevision((value) => value + 1)
+    const subscriptions = streamTargets.map(({ id, config }) => subscribeTaskDeskLiveEvents({
+      config,
+      onEvent: () => limiter.request(refresh),
+      onStatus: (status) => {
+        const connected = status.type === "connected"
+        setLiveMachines((current) => current[id] === connected ? current : { ...current, [id]: connected })
+        // A stream that just came back was silent for however long it was down, so the snapshot it
+        // would otherwise wait for the timer to fetch is already stale.
+        if (connected) limiter.request(refresh)
+      }
+    }))
+    return () => {
+      limiter.cancel()
+      for (const subscription of subscriptions) subscription.close()
+    }
+  }, [streamTargets])
+
   useEffect(() => {
     if (!loaded) return
-    const interval = reconnectingCount > 0 ? MACHINE_RECONNECT_POLL_MS : MACHINE_NORMAL_POLL_MS
+    const interval = machinePollIntervalMs({
+      reconnecting: reconnectingCount > 0,
+      machineCount: streamTargets.length,
+      connectedStreamCount: streamTargets.filter(({ id }) => liveMachines[id]).length
+    })
     const timer = window.setInterval(() => {
       if (document.visibilityState === "visible") setRevision((value) => value + 1)
     }, interval)
@@ -456,7 +503,7 @@ function NativeSessionsWorkspace({
       window.clearInterval(timer)
       document.removeEventListener("visibilitychange", onVisibility)
     }
-  }, [loaded, reconnectingCount])
+  }, [loaded, reconnectingCount, streamTargets, liveMachines])
 
   const onlineCount = runtimes.filter((runtime) => runtime.state === "online").length
   const loadingCount = runtimes.filter((runtime) => runtime.state === "loading").length
