@@ -15,6 +15,15 @@ export const MACHINE_STREAM_POLL_MS = 60_000
  * /v1/machine, so collapse a burst into one leading and one trailing refresh.
  */
 export const MACHINE_LIVE_REFRESH_BURST_MS = 400
+/**
+ * A stream in any of these states is recovering or flapping. While recovery is in flight, poll
+ * machine snapshots aggressively instead of waiting out the normal cadence.
+ */
+export function isStreamReconnecting(status: string | { type: string } | undefined | null): boolean {
+  if (!status) return false
+  const type = typeof status === "string" ? status : status.type
+  return type === "reconnecting" || type === "connection-error" || type === "closed"
+}
 
 export function machinePollIntervalMs({
   reconnecting,

@@ -14,6 +14,7 @@ import { ChatIcon, LoadingIcon, RefreshIcon, ServerIcon, SettingsIcon } from "..
 import { createTranslator, languageOptions, type LanguageCode } from "../i18n"
 import {
   createBurstLimiter,
+  isStreamReconnecting,
   machinePollIntervalMs,
   MACHINE_LIVE_REFRESH_BURST_MS,
   MACHINE_RECONNECT_POLL_MS
@@ -329,6 +330,7 @@ function NativeSessionsWorkspace({
   // Which machines currently hold a live event stream. A streaming machine reports its own changes,
   // so it does not need the discovery timer; one that does not stream still does.
   const [liveMachines, setLiveMachines] = useState<Record<string, boolean>>({})
+  const [reconnectingStreams, setReconnectingStreams] = useState<Record<string, boolean>>({})
   const [selected, setSelected] = useState<NativeSessionSurfaceTarget | null>(null)
   const [selectedState, setSelectedState] = useState<NativeSessionVisualState | undefined>(undefined)
   const [selectedLinks, setSelectedLinks] = useState<NativeSessionLink[]>([])
@@ -464,6 +466,7 @@ function NativeSessionsWorkspace({
   useEffect(() => {
     if (streamTargets.length === 0) {
       setLiveMachines({})
+      setReconnectingStreams({})
       return
     }
     const limiter = createBurstLimiter(MACHINE_LIVE_REFRESH_BURST_MS)
@@ -473,7 +476,9 @@ function NativeSessionsWorkspace({
       onEvent: () => limiter.request(refresh),
       onStatus: (status) => {
         const connected = status.type === "connected"
+        const reconnecting = isStreamReconnecting(status.type)
         setLiveMachines((current) => current[id] === connected ? current : { ...current, [id]: connected })
+        setReconnectingStreams((current) => current[id] === reconnecting ? current : { ...current, [id]: reconnecting })
         // A stream that just came back was silent for however long it was down, so the snapshot it
         // would otherwise wait for the timer to fetch is already stale.
         if (connected) limiter.request(refresh)
@@ -485,10 +490,12 @@ function NativeSessionsWorkspace({
     }
   }, [streamTargets])
 
+  const reconnectingStreamCount = streamTargets.filter(({ id }) => reconnectingStreams[id]).length
+
   useEffect(() => {
     if (!loaded) return
     const interval = machinePollIntervalMs({
-      reconnecting: reconnectingCount > 0,
+      reconnecting: reconnectingCount > 0 || reconnectingStreamCount > 0,
       machineCount: streamTargets.length,
       connectedStreamCount: streamTargets.filter(({ id }) => liveMachines[id]).length
     })
@@ -503,7 +510,7 @@ function NativeSessionsWorkspace({
       window.clearInterval(timer)
       document.removeEventListener("visibilitychange", onVisibility)
     }
-  }, [loaded, reconnectingCount, streamTargets, liveMachines])
+  }, [loaded, reconnectingCount, reconnectingStreamCount, streamTargets, liveMachines])
 
   const onlineCount = runtimes.filter((runtime) => runtime.state === "online").length
   const loadingCount = runtimes.filter((runtime) => runtime.state === "loading").length
