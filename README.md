@@ -186,7 +186,7 @@ See [REFERENCE.md](REFERENCE.md) for detailed security and backend notes.
 
 ## Quick start
 
-> **Upgrading from Harness Remote 2.x?** HR3 uses a **Machine daemon** as its normal connection contract, not the old per-harness server profile model. Old standalone ACP bridge commands still start and can expose native Sessions, but they are a legacy compatibility path and do not provide the complete HR3 Machine → Project → Session workflow. A direct 2.x-style `opencode serve` endpoint is **not** an HR3 Machine endpoint. Saved 2.x server profiles are also not automatically imported into the new Machines list, so add the machine again after upgrading. For HR3, prefer the launcher/daemon setup below and connect through **Machines → Add machine**.
+> **Upgrading from Harness Remote 2.x?** HR3 uses a **Machine daemon** as its normal connection contract, not the old per-harness server profile model. The normal `harness-remote` launcher now exposes that Machine contract even when only one harness is installed, including OpenCode-only machines. Old standalone ACP bridges and direct OpenCode endpoints remain available only as explicit legacy compatibility paths such as `--single`; they do not provide the complete HR3 Machine → Project → Session workflow. Saved 2.x server profiles are also not automatically imported into the new Machines list, so add the machine again after upgrading.
 
 ### 1. Start Harness Remote on the machine with your code
 
@@ -290,7 +290,7 @@ The official `v3.0.0` release supports OpenCode, OMP, PI, Codex CLI and Claude C
 
 Post-release work intentionally prioritizes Session correctness and maintainability over broad orchestration. Cross-machine handoff is a separate follow-up, and architectural cleanup must start from current `main` rather than reviving pre-release checkpoint/draft branches.
 
-The automatic multi-agent launcher is still being expanded: the current release can expose one selected ACP-backed primary alongside managed OpenCode, while additional concurrent ACP host instances remain follow-up work.
+The launcher is machine-first: normal startup exposes the HR3 Machine endpoint for single- or multi-harness setups, and OpenCode can be the machine primary without requiring an ACP harness. The explicit `--single` path remains only for legacy per-harness compatibility.
 
 That focus is deliberate. A remote coding-agent UI is only useful if you can trust that the Session you see is the Session that actually exists.
 

@@ -44,12 +44,16 @@ test("escalates a second shutdown signal from SIGTERM to SIGKILL", () => {
 
 test("uses an explicit backend on a fresh environment with no detected CLI", () => {
   assert.equal(resolveBackend(["--backend", "claude"], []), "claude")
-  assert.deepEqual(resolveLaunchPlan(["--backend", "claude"], []), { mode: "single", backend: "claude", detected: [] })
+  assert.deepEqual(resolveLaunchPlan(["--backend", "claude"], []), { mode: "daemon", backend: "claude", detected: ["claude"], openCode: false })
 })
 
-test("auto-selects exactly one detected backend", () => {
+test("auto-selects exactly one detected backend into the HR3 machine daemon", () => {
   assert.equal(resolveBackend([], ["omp"]), "omp")
-  assert.deepEqual(resolveLaunchPlan([], ["omp"]), { mode: "single", backend: "omp", detected: ["omp"] })
+  assert.deepEqual(resolveLaunchPlan([], ["omp"]), { mode: "daemon", backend: "omp", detected: ["omp"], openCode: false })
+})
+
+test("OpenCode-only startup uses the HR3 machine daemon", () => {
+  assert.deepEqual(resolveLaunchPlan([], ["opencode"]), { mode: "daemon", backend: "opencode", detected: ["opencode"], openCode: true })
 })
 
 test("starts the machine daemon automatically when multiple agents are detected", () => {
@@ -62,11 +66,12 @@ test("uses --backend to select the daemon primary", () => {
 
 test("uses --single as the daemon opt-out", () => {
   assert.deepEqual(resolveLaunchPlan(["--single", "--backend", "claude"], ["codex", "claude", "opencode"]), { mode: "single", backend: "claude", detected: ["codex", "claude", "opencode"] })
+  assert.deepEqual(resolveLaunchPlan(["--single"], ["opencode"]), { mode: "single", backend: "opencode", detected: ["opencode"] })
   assert.throws(() => resolveLaunchPlan(["--single"], ["codex", "claude"]), /--single requires --backend/)
 })
 
-test("keeps explicit OpenCode on the single-host path", () => {
-  assert.deepEqual(resolveLaunchPlan(["--backend", "opencode"], ["codex", "opencode"]), { mode: "single", backend: "opencode", detected: ["codex", "opencode"] })
+test("explicit OpenCode selects the HTTP primary without leaving the machine daemon", () => {
+  assert.deepEqual(resolveLaunchPlan(["--backend", "opencode"], ["codex", "opencode"]), { mode: "daemon", backend: "opencode", detected: ["codex", "opencode"], openCode: true })
 })
 
 test("starts a daemon without OpenCode when multiple ACP agents are detected", () => {

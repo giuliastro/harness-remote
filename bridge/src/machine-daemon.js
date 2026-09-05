@@ -205,7 +205,10 @@ export function createMachineDaemonServer({
   sessionOperationLedger,
   sessionLinkStore
 }) {
-  const bridgeServer = createServer({ config, acp: primaryAcp, machineRegistry: daemon.registry, serviceOptions })
+  const primaryEntry = daemon.hostEntry(primaryAgentID)
+  const bridgeServer = primaryEntry?.kind === "acp" && primaryAcp
+    ? createServer({ config, acp: primaryAcp, machineRegistry: daemon.registry, serviceOptions })
+    : undefined
   const scopedAcpServers = new Map()
   // Writer ownership belongs to one live adapter process. An adapter that exits takes every loaded
   // Session with it, so remembering a claim across a restart made Stop skip the reload it needs and
@@ -219,7 +222,7 @@ export function createMachineDaemonServer({
     })
   }
   const acpBridgeServer = (agentID) => {
-    if (agentID === primaryAgentID) return bridgeServer
+    if (agentID === primaryAgentID && bridgeServer) return bridgeServer
     const cached = scopedAcpServers.get(agentID)
     if (cached) return cached
     const entry = daemon.hostEntry(agentID)
@@ -242,7 +245,7 @@ export function createMachineDaemonServer({
   const operations = sessionOperationLedger ?? new SessionOperationLedger({ machineID, stateDirectory })
   const links = sessionLinkStore ?? new SessionLinkStore({ machineID, stateDirectory })
   const acpService = (agentID) => {
-    const server = agentID === primaryAgentID ? bridgeServer : acpBridgeServer(agentID)
+    const server = agentID === primaryAgentID && bridgeServer ? bridgeServer : acpBridgeServer(agentID)
     return server?.acpService
   }
   const claimedAgents = new Set()
@@ -634,7 +637,7 @@ export function createMachineDaemonServer({
     diagnostics: () => ({
       ...daemon.diagnostics(),
       services: Object.fromEntries([
-        [primaryAgentID, bridgeServer.acpService?.diagnostics?.()],
+        ...(bridgeServer ? [[primaryAgentID, bridgeServer.acpService?.diagnostics?.()]] : []),
         ...[...scopedAcpServers.entries()].map(([agentID, server]) => [agentID, server.acpService?.diagnostics?.()])
       ].filter(([, value]) => value)),
       // Session-first control-plane state. Writer claims are per live adapter process, so a count
