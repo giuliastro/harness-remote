@@ -28,6 +28,39 @@ type ModelGroup = {
 }
 const MAX_VISIBLE_MODEL_GROUPS = 100
 
+const REASONING_VARIANT_ORDER = new Map([
+  ["off", 0],
+  ["none", 0],
+  ["minimal", 1],
+  ["low", 2],
+  ["medium", 3],
+  ["high", 4],
+  ["xhigh", 5],
+  ["max", 6],
+  ["ultra", 7]
+])
+
+function normalizedVariant(value?: string): string {
+  return String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/^extra[-_ ]?high$/, "xhigh")
+}
+
+function compareModelVariants(left: ModelOption, right: ModelOption): number {
+  const leftVariant = normalizedVariant(left.variant)
+  const rightVariant = normalizedVariant(right.variant)
+  const leftRank = REASONING_VARIANT_ORDER.get(leftVariant)
+  const rightRank = REASONING_VARIANT_ORDER.get(rightVariant)
+
+  if (leftRank !== undefined || rightRank !== undefined) {
+    if (leftRank === undefined) return 1
+    if (rightRank === undefined) return -1
+    if (leftRank !== rightRank) return leftRank - rightRank
+  }
+
+  return leftVariant.localeCompare(rightVariant)
+}
 
 export function modelOptionKey(model: Pick<ModelOption, "providerID" | "modelID" | "variant">): string {
   return `${model.providerID}|${model.modelID}|${model.variant || ""}`
@@ -61,7 +94,7 @@ function groupModels(models: ModelOption[]): ModelGroup[] {
     const base = options.find((option) => !option.variant) || options.find((option) => option.isDefault) || options[0]
     const variants = options
       .filter((option) => Boolean(option.variant))
-      .sort((left, right) => String(left.variant).localeCompare(String(right.variant)))
+      .sort(compareModelVariants)
     return {
       id,
       providerID: base.providerID,
