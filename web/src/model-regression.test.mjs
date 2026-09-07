@@ -26,14 +26,8 @@ assert.match(conversation, /<ModelPicker/, 'the Session controller must render t
 assert.match(picker, /Search model, provider, variant/, 'model catalog must remain searchable')
 assert.match(picker, /Harness default/, 'an unavailable catalog must fall back honestly to the harness default')
 assert.match(picker, /groupModels/, 'variants must stay grouped with their base model')
-assert.match(picker, /\.sort\(compareModelVariants\)/, 'reasoning variants must use semantic ordering instead of alphabetical ordering')
-const reasoningOrderStart = picker.indexOf('const REASONING_VARIANT_ORDER')
-const reasoningOrderEnd = picker.indexOf('function normalizedVariant', reasoningOrderStart)
-const reasoningOrderSource = picker.slice(reasoningOrderStart, reasoningOrderEnd)
-const expectedReasoningOrder = ['"low"', '"medium"', '"high"', '"xhigh"', '"max"', '"ultra"']
-const reasoningPositions = expectedReasoningOrder.map((variant) => reasoningOrderSource.indexOf(variant))
-assert.ok(reasoningPositions.every((position) => position >= 0), 'the reasoning scale must include the known effort levels')
-assert.deepEqual(reasoningPositions, [...reasoningPositions].sort((left, right) => left - right), 'known reasoning effort levels must remain ordered low → medium → high → xhigh → max → ultra')
+assert.match(picker, /const variants = options\.filter\(\(option\) => Boolean\(option\.variant\)\)/, 'variant grouping must preserve the catalog order advertised by the harness')
+assert.doesNotMatch(picker, /variant[^\n]*localeCompare|sort\(compareModelVariants\)|REASONING_VARIANT_ORDER/, 'the picker must not infer or alphabetically reorder variant semantics')
 assert.match(create, /api\.createSession\(config, title\?\.trim\(\) \|\| undefined, undefined, directory\)/, 'new native Sessions must not invent a stale explicit model')
 
 console.log('Session-first model regression tests passed')
