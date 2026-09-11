@@ -16,6 +16,7 @@
  * taskdesk-workspace-navigation.css from taskdesk-mobile-navigation.css. */
 import "./native-session-home.css"
 import "./native-session-home-ux.css"
+import "./native-session-attention-inbox.css"
 import "./model-picker.css"
 import "./taskdesk-conversation.css"
 import "./taskdesk-conversation-fixes.css"
