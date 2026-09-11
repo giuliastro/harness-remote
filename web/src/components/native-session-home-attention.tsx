@@ -24,6 +24,12 @@ type AttentionTarget = NativeSessionAttentionLiveTarget & {
   machineName: string
 }
 
+type AttentionActivation = {
+  machineID: string
+  agentID: string
+  sessionID: string
+}
+
 type AttentionScope = {
   target: AttentionTarget
   index: NativeSessionAttentionIndex
@@ -138,6 +144,7 @@ export function NativeSessionHome(props: Props) {
   const [openError, setOpenError] = useState<string | null>(null)
   const [baseAttentionCount, setBaseAttentionCount] = useState(0)
   const generationRef = useRef(0)
+  const pendingActivationRef = useRef<AttentionActivation | null>(null)
   const notificationStateRef = useRef<NativeSessionAttentionNotificationState>({
     scopes: { ...EMPTY_NATIVE_SESSION_ATTENTION_NOTIFICATION_STATE.scopes }
   })
@@ -203,14 +210,17 @@ export function NativeSessionHome(props: Props) {
     }
   }, [openingKey, props.selectedKey, rememberAndOpen])
 
-  const activateAttention = useCallback((activation: { machineID: string; agentID: string; sessionID: string }) => {
+  const activateAttention = useCallback((activation: AttentionActivation) => {
     const target = [...targetsRef.current.values()].find((candidate) =>
       candidate.machineID === activation.machineID && candidate.agent.id === activation.agentID
     )
     if (!target) {
-      setOpenError("The machine or harness for this notification is not currently available.")
+      // A cold Android launch can deliver the PendingIntent before machine discovery has completed.
+      // Keep the exact identity and retry when the matching capability-scoped target appears.
+      pendingActivationRef.current = activation
       return
     }
+    pendingActivationRef.current = null
     void openAttentionSession(target, activation.sessionID)
   }, [openAttentionSession])
 
@@ -247,6 +257,17 @@ export function NativeSessionHome(props: Props) {
 
   useEffect(() => subscribeDesktopAttentionActivation(activateAttention), [activateAttention])
   useEffect(() => subscribeAndroidAttentionActivation(activateAttention), [activateAttention])
+
+  useEffect(() => {
+    const pending = pendingActivationRef.current
+    if (!pending) return
+    const target = attentionTargets.find((candidate) =>
+      candidate.machineID === pending.machineID && candidate.agent.id === pending.agentID
+    )
+    if (!target) return
+    pendingActivationRef.current = null
+    void openAttentionSession(target, pending.sessionID)
+  }, [openAttentionSession, targetSignature])
 
   useEffect(() => {
     const generation = ++generationRef.current
