@@ -1,6 +1,16 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { api } from "../api"
 import type { ConversationController } from "../conversation-controller"
+import { continueNativeSessionAcrossMachine } from "../cross-machine-continuation"
+import {
+  loadCrossMachineProjectRoute,
+  requireTargetRouteProject,
+  type CrossMachineProjectRoute
+} from "../cross-machine-route-projects"
+import {
+  planCrossMachineContinuation,
+  type CrossMachineRoutePlan
+} from "../cross-machine-route-plan"
 import type { NativeSessionSurfaceTarget } from "../native-session-discovery"
 import { canCreateNativeSession } from "../native-session-create"
 import { resolveNativeSessionTargetModel } from "../native-session-model"
@@ -149,30 +159,84 @@ export function NativeSessionObserver({
   }), [target.agentID, target.agentLabel, target.backend, target.transport, target.canStop, target.modelsSupported, attachmentsSupported, commands.length])
 
   const routableRoutes = useMemo<NativeSessionRouteMachine[]>(() => routes.flatMap((machine) => {
-    if (machine.machineID !== target.machineID) return []
     const available = machine.agents.filter((candidate) => canCreateNativeSession(candidate))
+    if (machine.machineID !== target.machineID) {
+      return available.length ? [{ ...machine, agents: available }] : []
+    }
     const current = available.some((candidate) => candidate.id === target.agentID)
       ? available
       : [agent, ...available.filter((candidate) => candidate.id !== target.agentID)]
     return [{ ...machine, agents: current }]
   }), [routes, target.machineID, target.agentID, agent])
 
-  const handleRoutedContinue = useCallback(async (input: NativeSessionRouteContinueInput) => {
-    if (!interactionEnabled) throw new Error("The machine is reconnecting. Continue will be available when the connection is healthy again.")
-    const machine = routableRoutes.find((candidate) => candidate.machineID === input.machineID)
-    const targetAgent = machine?.agents.find((candidate) => candidate.id === input.agentID)
-    if (!machine || !targetAgent) throw new Error("That harness is no longer available on this machine.")
-    const next = await continueNativeSessionOnRoute({
+  const routeMachine = useCallback((machineID: string): NativeSessionRouteMachine => {
+    const machine = routableRoutes.find((candidate) => candidate.machineID === machineID)
+    if (!machine) throw new Error("That machine is no longer available for continuation.")
+    return machine
+  }, [routableRoutes])
+
+  const loadRouteProjects = useCallback(async (machineID: string): Promise<CrossMachineProjectRoute> => {
+    const machine = routeMachine(machineID)
+    return loadCrossMachineProjectRoute({ source: target, targetMachine: machine })
+  }, [routeMachine, target])
+
+  const planRoute = useCallback(async ({
+    machineID,
+    agentID,
+    projectID
+  }: {
+    machineID: string
+    agentID: string
+    projectID: string
+  }): Promise<CrossMachineRoutePlan> => {
+    const machine = routeMachine(machineID)
+    const targetAgent = machine.agents.find((candidate) => candidate.id === agentID)
+    if (!targetAgent) throw new Error("That harness is no longer available on the target machine.")
+    return planCrossMachineContinuation({
       source: target,
       targetMachine: machine,
       targetAgent,
-      prompt: input.prompt,
-      attachments: input.attachments,
-      model: input.model
+      targetProjectId: projectID
     })
+  }, [routeMachine, target])
+
+  const handleRoutedContinue = useCallback(async (input: NativeSessionRouteContinueInput) => {
+    if (!interactionEnabled) throw new Error("The machine is reconnecting. Continue will be available when the connection is healthy again.")
+    const machine = routeMachine(input.machineID)
+    const targetAgent = machine.agents.find((candidate) => candidate.id === input.agentID)
+    if (!targetAgent) throw new Error("That harness is no longer available on this machine.")
+
+    let next: NativeSessionSurfaceTarget
+    if (machine.machineID === target.machineID) {
+      next = await continueNativeSessionOnRoute({
+        source: target,
+        targetMachine: machine,
+        targetAgent,
+        prompt: input.prompt,
+        attachments: input.attachments,
+        model: input.model
+      })
+    } else {
+      if (!input.projectID) throw new Error("Choose a Project on the target machine before continuing.")
+      const projectRoute = await loadCrossMachineProjectRoute({ source: target, targetMachine: machine })
+      const targetProject = requireTargetRouteProject(machine.machineID, input.projectID, projectRoute.targetProjects)
+      const result = await continueNativeSessionAcrossMachine({
+        source: target,
+        sourceProjectId: projectRoute.sourceProject.id,
+        targetMachine: machine,
+        targetProjectId: targetProject.id,
+        targetAgent,
+        prompt: input.prompt,
+        attachments: input.attachments,
+        model: input.model,
+        confirmedProjectContinuity: input.confirmedProjectContinuity === true
+      })
+      next = result.target
+    }
+
     onSessionRefresh?.()
     onOpenSession?.(next)
-  }, [routableRoutes, target, onSessionRefresh, onOpenSession, interactionEnabled])
+  }, [routeMachine, target, onSessionRefresh, onOpenSession, interactionEnabled])
 
   useEffect(() => {
     let registration: ReturnType<typeof registerNativeSessionV3Adapter> | undefined
@@ -238,6 +302,8 @@ export function NativeSessionObserver({
         routing={onOpenSession && routableRoutes.length ? {
           currentMachineID: target.machineID,
           machines: routableRoutes,
+          loadCrossMachineProjects: loadRouteProjects,
+          planCrossMachineRoute: planRoute,
           onContinue: handleRoutedContinue
         } : undefined}
       />
