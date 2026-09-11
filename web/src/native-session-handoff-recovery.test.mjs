@@ -1,4 +1,5 @@
 import assert from "node:assert/strict"
+import { acknowledgeCrossMachineTargetSession, createCrossMachineTargetSession } from "./cross-machine-target-client.ts"
 import { acknowledgeNativeSessionHandoff, handoffNativeSession } from "./native-session-handoff.ts"
 
 class MemoryStorage {
@@ -136,6 +137,123 @@ try {
   }
   await handoffNativeSession(source, "omp", "Source", model)
   assert.notEqual(retryBody.clientRequestId, "definite-rejection", "after a proven rejection a new resource-creation attempt may use a new id")
+} finally {
+  globalThis.fetch = originalFetch
+  if (originalStorage === undefined) delete globalThis.localStorage
+  else globalThis.localStorage = originalStorage
+}
+
+// Cross-machine target creation has the same exactly-once resource rule, but its recovery identity
+// additionally binds the destination machine + Project + harness. The target path is never supplied
+// by the client; the daemon resolves it from projectId.
+try {
+  const storage = new MemoryStorage()
+  globalThis.localStorage = storage
+  const crossStorageKey = "harness-remote.cross-machine-target.v1:machine-1:pi:source-1"
+  const targetConfig = {
+    backend: "codex",
+    agentId: "stale-agent-routing-must-not-own-machine-route",
+    host: "target.example",
+    port: 5099,
+    username: "",
+    password: ""
+  }
+  const input = {
+    source,
+    targetMachineID: "machine-2",
+    targetConfig,
+    projectId: "machine-2:repo",
+    targetAgentID: "codex",
+    title: "Source",
+    model: { providerID: "openai", modelID: "gpt-5.6", variant: "high" }
+  }
+
+  const bodies = []
+  const urls = []
+  globalThis.fetch = async (url, options) => {
+    urls.push(String(url))
+    const body = JSON.parse(options.body)
+    bodies.push(body)
+    return new Response(JSON.stringify({
+      status: "accepted",
+      clientRequestId: body.clientRequestId,
+      result: {
+        target: { machineID: "machine-2", agentID: "codex", sessionID: "target-cross-1", directory: "/target/repo" }
+      }
+    }), { status: 200, headers: { "Content-Type": "application/json" } })
+  }
+
+  const first = await createCrossMachineTargetSession(input)
+  assert.equal(first.status, "accepted")
+  assert.match(urls[0], /target\.example:5099\/v1\/session-handoff-target$/)
+  assert.deepEqual(bodies[0].source, source.ref)
+  assert.equal(bodies[0].projectId, "machine-2:repo")
+  assert.equal(bodies[0].targetAgentID, "codex")
+  assert.deepEqual(bodies[0].model, { providerID: "openai", modelID: "gpt-5.6" })
+  assert.equal(bodies[0].variant, "high")
+  assert.equal(Object.hasOwn(bodies[0], "directory"), false, "target directory must be resolved only by the target daemon Project catalog")
+  const durableRequestId = JSON.parse(storage.getItem(crossStorageKey)).clientRequestId
+  assert.equal(first.clientRequestId, durableRequestId)
+
+  await createCrossMachineTargetSession(input)
+  assert.equal(bodies[1].clientRequestId, durableRequestId, "accepted creation must still reuse the same id until the caller persists and acknowledges the target")
+  await assert.rejects(
+    () => createCrossMachineTargetSession({ ...input, targetAgentID: "claude" }),
+    /previous cross-machine target creation is unresolved/,
+    "one unresolved source creation must not be redirected to another target"
+  )
+  assert.equal(bodies.length, 2, "conflicting target selection must fail before network I/O")
+
+  acknowledgeCrossMachineTargetSession(source)
+  assert.equal(storage.getItem(crossStorageKey), null)
+
+  globalThis.fetch = async () => { throw new Error("lost target response") }
+  await assert.rejects(
+    () => createCrossMachineTargetSession(input),
+    /Target creation status is unknown/,
+  )
+  const ambiguousId = JSON.parse(storage.getItem(crossStorageKey)).clientRequestId
+
+  let recoveredBody
+  globalThis.fetch = async (_url, options) => {
+    recoveredBody = JSON.parse(options.body)
+    return new Response(JSON.stringify({
+      status: "accepted",
+      clientRequestId: recoveredBody.clientRequestId,
+      result: {
+        target: { machineID: "machine-2", agentID: "codex", sessionID: "target-cross-recovered", directory: "/target/repo" }
+      }
+    }), { status: 200, headers: { "Content-Type": "application/json" } })
+  }
+  const recovered = await createCrossMachineTargetSession(input)
+  assert.equal(recovered.clientRequestId, ambiguousId)
+  assert.equal(recoveredBody.clientRequestId, ambiguousId, "lost responses must reconcile the original target creation instead of replaying with a new id")
+
+  globalThis.fetch = async () => new Response(JSON.stringify({ error: "Unknown project: machine-2:repo" }), {
+    status: 404,
+    headers: { "Content-Type": "application/json" }
+  })
+  await assert.rejects(() => createCrossMachineTargetSession(input), /Unknown project/)
+  assert.equal(storage.getItem(crossStorageKey), null, "a definite target-side 4xx may release the creation key")
+
+  let attemptedWithoutRecoveryStorage = false
+  globalThis.localStorage = {
+    get length() { return 0 },
+    key() { return null },
+    getItem() { return null },
+    setItem() { throw new Error("storage full") },
+    removeItem() {},
+    clear() {}
+  }
+  globalThis.fetch = async () => {
+    attemptedWithoutRecoveryStorage = true
+    throw new Error("network should not be reached")
+  }
+  await assert.rejects(
+    () => createCrossMachineTargetSession(input),
+    /Cannot persist cross-machine handoff recovery state/
+  )
+  assert.equal(attemptedWithoutRecoveryStorage, false, "cross-machine resource creation must not start without durable recovery state")
 } finally {
   globalThis.fetch = originalFetch
   if (originalStorage === undefined) delete globalThis.localStorage
