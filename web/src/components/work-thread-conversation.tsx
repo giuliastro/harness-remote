@@ -92,6 +92,8 @@ type Props = {
   deferModelFallback?: boolean
   /** Explicit I/O boundary. Native Sessions provide a Session-scoped controller. */
   controller: ConversationController
+  /** A background native recovery read must rehydrate the mounted transcript, not only runtime state. */
+  transcriptRefreshToken?: number
   /** Backend mutations/catalog reads pause while the owning machine is reconnecting. */
   interactionEnabled?: boolean
   /** Surface a Session-scoped transport failure to the machine runtime immediately. */
@@ -320,6 +322,7 @@ export function WorkThreadConversation({
   modelScope,
   deferModelFallback = false,
   controller,
+  transcriptRefreshToken = 0,
   interactionEnabled = true,
   onConnectionIssue,
   routing
@@ -680,6 +683,11 @@ export function WorkThreadConversation({
     })
   }, [baseConfig, controller])
 
+  useEffect(() => {
+    if (!interactionEnabled || !transcriptRefreshToken) return
+    void refreshCurrentTail()
+  }, [interactionEnabled, refreshCurrentTail, transcriptRefreshToken])
+
   const refreshAttention = useCallback(async (sourceConversation?: ConversationRuntime) => {
     if (attentionInFlightRef.current) return
     const currentConversation = sourceConversation ?? conversationRef.current
@@ -712,18 +720,23 @@ export function WorkThreadConversation({
   const reconcile = useCallback(async () => {
     if (reconcileInFlightRef.current) return
     reconcileInFlightRef.current = true
+    const prior = conversationRef.current
+    // Transcript durability and lifecycle status are independent OpenCode streams. Start the
+    // selected tail read before status enrichment so a stalled /session/status cannot hide a
+    // response that is already persisted in /session/:id/message.
+    const tailRefresh = refreshCurrentTail(prior)
+    const attentionRefresh = refreshAttention(prior)
     try {
-      const prior = conversationRef.current
       const next = await controller.refreshConversation(baseConfig, prior.id)
       if (runtimeSignature(next) !== runtimeSignature(prior) || next.title !== prior.title) {
         onConversationUpdateRef.current(next)
         conversationRef.current = next
       }
-      await Promise.all([refreshCurrentTail(next), refreshAttention(next)])
     } catch (reason) {
       if (isTransportFailure(reason)) onConnectionIssueRef.current?.()
       // A transient reconcile failure must never clear a valid conversation.
     } finally {
+      await Promise.allSettled([tailRefresh, attentionRefresh])
       reconcileInFlightRef.current = false
     }
   }, [baseConfig, controller, refreshCurrentTail, refreshAttention])
