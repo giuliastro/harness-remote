@@ -47,6 +47,8 @@ function HarnessRemoteBoundary() {
   const machines = useMemo(loadWorkspaceMachines, [revision])
   const machinesRef = useRef(machines)
   machinesRef.current = machines
+  const pairingInFlightRef = useRef(new Set<string>())
+  const pairedGrantRef = useRef(new Set<string>())
   const [desktopReady, setDesktopReady] = useState(() => !isDesktopPlatform())
   const [desktopSyncError, setDesktopSyncError] = useState<Error | null>(null)
   const [pairingNotice, setPairingNotice] = useState<PairingNotice | null>(null)
@@ -81,15 +83,23 @@ function HarnessRemoteBoundary() {
   }
 
   useEffect(() => subscribeAndroidMachinePairing((activation) => {
+    const grantKey = `${activation.endpoint}\u0000${activation.token}`
+    if (pairedGrantRef.current.has(grantKey) || pairingInFlightRef.current.has(grantKey)) return
+    pairingInFlightRef.current.add(grantKey)
     setPairingNotice({ kind: "working", text: "Connecting to this machine…" })
     void claimMachinePairing(activation).then(
       (paired) => {
+        pairingInFlightRef.current.delete(grantKey)
+        pairedGrantRef.current.add(grantKey)
         const nextMachines = upsertPairedMachine(machinesRef.current, paired)
         machinesRef.current = nextMachines
         persistMachines(nextMachines)
         setPairingNotice({ kind: "success", text: `${paired.name} is connected.` })
       },
       (error: unknown) => {
+        // A transport failure does not imply the daemon consumed the grant. A re-scan therefore gets
+        // another chance until the server itself reports used/expired.
+        pairingInFlightRef.current.delete(grantKey)
         setPairingNotice({
           kind: "error",
           text: error instanceof Error ? error.message : "Machine pairing failed."
