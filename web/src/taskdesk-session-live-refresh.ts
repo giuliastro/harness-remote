@@ -156,9 +156,11 @@ export function startTaskDeskSessionLiveRefresh({
         return
       }
 
-      // OpenCode and ACP adapters can expose permission/question lifecycle events with different
-      // suffixes. They all mean the selected conversation detail must be re-read immediately.
+      // Permission/question changes affect the global Attention Inbox even when another Session is
+      // open. Refresh the lightweight index once per event burst; only the selected Session needs its
+      // detail surface refreshed. This keeps non-selected attention live without transcript polling.
       if (isAttentionEvent(event.type)) {
+        throttle("index", 120, onIndex)
         if (selectedEvent) throttle("detail", 80, onDetail)
         return
       }
