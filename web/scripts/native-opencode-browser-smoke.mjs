@@ -1,6 +1,7 @@
 import assert from "node:assert/strict"
 import http from "node:http"
 import { spawn } from "node:child_process"
+import { fileURLToPath } from "node:url"
 import { chromium } from "playwright"
 
 const PREVIEW_PORT = 4176
@@ -27,6 +28,8 @@ const CREATE_PROMPT = "OPENCODE-CREATED-FIRST-PROMPT"
 const CREATE_REPLY = "OPENCODE-CREATED-FIRST-REPLY"
 const REOPEN_PROMPT = "OPENCODE-CREATED-REOPEN-PROMPT"
 const REOPEN_REPLY = "OPENCODE-CREATED-REOPEN-REPLY"
+const LOST_EVENT_PROMPT = "OPENCODE-PERSISTED-WITHOUT-FINAL-EVENT-PROMPT"
+const LOST_EVENT_REPLY = "OPENCODE-PERSISTED-WITHOUT-FINAL-EVENT-REPLY"
 
 function textPart(id, text) {
   return { id, type: "text", text }
@@ -56,6 +59,7 @@ function initialTranscript() {
 let sessionCatalog
 let sessionStatuses
 let statusOmissions
+let statusHangs
 let transcripts
 let modelCatalogReads
 let promptHttpBodies
@@ -77,6 +81,7 @@ function resetFakeState() {
   }]])
   sessionStatuses = new Map([[SESSION_ID, { type: "idle" }]])
   statusOmissions = new Set()
+  statusHangs = new Set()
   transcripts = new Map([[SESSION_ID, initialTranscript()]])
   modelCatalogReads = 0
   promptHttpBodies = []
@@ -104,6 +109,7 @@ function replyFor(prompt) {
   if (prompt === LATE_RECOVERY_PROMPT) return LATE_RECOVERY_REPLY
   if (prompt === CREATE_PROMPT) return CREATE_REPLY
   if (prompt === REOPEN_PROMPT) return REOPEN_REPLY
+  if (prompt === LOST_EVENT_PROMPT) return LOST_EVENT_REPLY
   return `OpenCode reply for ${prompt}`
 }
 
@@ -298,6 +304,7 @@ function startFakeDaemon() {
     }
 
     if (request.method === "GET" && url.pathname === "/v1/agents/opencode/session/status") {
+      if (statusHangs.size > 0) return
       json(response, 200, Object.fromEntries([...sessionCatalog.keys()]
         .filter((sessionID) => !statusOmissions.has(sessionID))
         .map((sessionID) => [
@@ -372,7 +379,7 @@ function startFakeDaemon() {
       if (!ledger.has(ledgerKey)) {
         nativePromptDispatches += 1
         ledger.set(ledgerKey, body)
-        if (body.text === SUCCESS_PROMPT) appendPendingTurn(sessionID, body.text, requestId)
+        if (body.text === SUCCESS_PROMPT || body.text === LOST_EVENT_PROMPT) appendPendingTurn(sessionID, body.text, requestId)
         else if (body.text === TERMINAL_ERROR_PROMPT) appendProviderErrorTurn(sessionID, body.text, requestId)
         else if (body.text === INTERRUPT_PROMPT || body.text === TERMINAL_INTERRUPT_PROMPT || body.text === LATE_RECOVERY_PROMPT) appendInterruptedTurn(sessionID, body.text, requestId)
         else appendTurn(sessionID, body.text, requestId)
@@ -387,6 +394,16 @@ function startFakeDaemon() {
           finishPendingTurn(sessionID, body.text, requestId)
           emitLiveEvent(sessionID)
         }, 3_000)
+        return
+      }
+      if (body.text === LOST_EVENT_PROMPT) {
+        statusHangs.add(sessionID)
+        json(response, 200, { status: "accepted", clientRequestId: requestId })
+        // The native assistant envelope exists immediately, but the final persisted reply arrives
+        // without a trailing live event. Keep /session/status hanging too: the mounted UI must use
+        // the bounded transcript recovery rather than waiting for lifecycle enrichment.
+        emitLiveEvent(sessionID, "message.updated")
+        setTimeout(() => finishPendingTurn(sessionID, body.text, requestId), 3_000)
         return
       }
       if (body.text === INTERRUPT_PROMPT) {
@@ -478,8 +495,8 @@ function startFakeDaemon() {
 }
 
 function startPreview() {
-  const command = process.platform === "win32" ? "npm.cmd" : "npm"
-  return spawn(command, ["run", "preview", "--", "--host", "127.0.0.1", "--port", String(PREVIEW_PORT), "--strictPort"], {
+  const viteCLI = fileURLToPath(new URL("../node_modules/vite/bin/vite.js", import.meta.url))
+  return spawn(process.execPath, [viteCLI, "preview", "--host", "127.0.0.1", "--port", String(PREVIEW_PORT), "--strictPort"], {
     stdio: ["ignore", "pipe", "pipe"],
     detached: process.platform !== "win32"
   })
@@ -534,12 +551,17 @@ async function waitFor(predicate, description, timeout = 12_000) {
 }
 
 async function openSession(page, title) {
-  await page.locator('.hr-native-workspace[aria-label="Sessions"]').waitFor({ state: "visible" })
-  await page.getByRole("button", { name: new RegExp(title.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")) }).click()
-  await page.locator(".hr-native-session-observer").waitFor({ state: "visible" })
-  await page.locator(".tdw-work-thread-conversation").waitFor({ state: "visible" })
-  await page.locator(".uw-composer-shell").waitFor({ state: "visible" })
-  assert.equal(await page.getByRole("button", { name: "Continue this Session" }).count(), 0, "OpenCode Session open must not require a Continue unlock step")
+  try {
+    await page.locator('.hr-native-home[aria-label="Sessions"]').waitFor({ state: "visible" })
+    await page.getByRole("button", { name: new RegExp(title.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")) }).click()
+    await page.locator(".hr-native-session-observer").waitFor({ state: "visible" })
+    await page.locator(".tdw-work-thread-conversation").waitFor({ state: "visible" })
+    await page.locator(".uw-composer-shell").waitFor({ state: "visible" })
+    assert.equal(await page.getByRole("button", { name: "Continue this Session" }).count(), 0, "OpenCode Session open must not require a Continue unlock step")
+  } catch (error) {
+    console.error("OpenCode smoke page before openSession failure:", await page.locator("body").innerText().catch(() => "<body unavailable>"))
+    throw error
+  }
 }
 
 async function waitForReady(page) {
@@ -570,9 +592,38 @@ async function chooseHighVariant(page) {
   await page.getByRole("button", { name: "high", exact: true }).click()
 }
 
+async function assertPersistedReplyWithoutLiveEvent(page, label) {
+  await waitForReady(page)
+  await sendPrompt(page, LOST_EVENT_PROMPT)
+
+  const pending = page.locator(".uw-message-pending").last()
+  await pending.waitFor({ state: "visible", timeout: 2_000 })
+  assert.equal(
+    await page.getByText(LOST_EVENT_REPLY, { exact: true }).count(),
+    0,
+    `${label}: the persisted reply must not be visible before the delayed transcript update`
+  )
+
+  await page.getByText(LOST_EVENT_REPLY, { exact: true }).waitFor({ state: "visible", timeout: 20_000 })
+  await pending.waitFor({ state: "detached", timeout: 10_000 })
+  await waitForReady(page)
+  assert.equal(
+    await page.locator(".tdw-conversation-state.working").count(),
+    0,
+    `${label}: a persisted OpenCode reply must settle the Session while it remains mounted`
+  )
+  assert.equal(
+    await page.locator(".uw-activity-group.uw-tool-running").count(),
+    0,
+    `${label}: the completed OpenCode reply must not leave an Activity spinning`
+  )
+  assert.equal(await page.getByText(LOST_EVENT_PROMPT, { exact: true }).count(), 1, `${label}: prompt duplicated`)
+  assert.equal(await page.getByText(LOST_EVENT_REPLY, { exact: true }).count(), 1, `${label}: reply duplicated`)
+}
+
 async function assertExistingContract(browser, viewport, mobile) {
   resetFakeState()
-  const context = await browser.newContext({ viewport, isMobile: mobile, hasTouch: mobile, deviceScaleFactor: 1 })
+  const context = await browser.newContext({ viewport, isMobile: mobile, hasTouch: mobile, deviceScaleFactor: 1, locale: "en-US" })
   const page = await context.newPage()
   await seed(page)
   await page.goto(APP_ORIGIN, { waitUntil: "domcontentloaded" })
@@ -693,6 +744,8 @@ async function assertExistingContract(browser, viewport, mobile) {
   assert.equal(await page.getByText(TERMINAL_ERROR_PROMPT, { exact: true }).count(), 1)
   assert.equal(await page.getByText("Turn failed", { exact: true }).count(), 1)
 
+  if (mobile) await assertPersistedReplyWithoutLiveEvent(page, "existing OpenCode Session")
+
   assert.equal(await page.getByRole("button", { name: "Continue with another agent" }).count(), 0, "handoff UI must stay disabled")
 
   const composer = await page.locator(".uw-composer-shell").boundingBox()
@@ -705,7 +758,7 @@ async function assertExistingContract(browser, viewport, mobile) {
 
 async function assertCreateContract(browser, viewport, mobile) {
   resetFakeState()
-  const context = await browser.newContext({ viewport, isMobile: mobile, hasTouch: mobile, deviceScaleFactor: 1 })
+  const context = await browser.newContext({ viewport, isMobile: mobile, hasTouch: mobile, deviceScaleFactor: 1, locale: "en-US" })
   const page = await context.newPage()
   await seed(page)
   await page.goto(APP_ORIGIN, { waitUntil: "domcontentloaded" })
@@ -748,6 +801,11 @@ async function assertCreateContract(browser, viewport, mobile) {
   assert.equal(await page.getByText(REOPEN_PROMPT, { exact: true }).count(), 1)
   assert.equal(await page.getByText(REOPEN_REPLY, { exact: true }).count(), 1)
   assert.equal(claimRequests, 0, "OpenCode must never acquire ACP writer ownership")
+
+  // This is the field failure: a newly created Session receives an empty assistant envelope, then
+  // persists the real reply without a trailing live event while /session/status is unavailable.
+  // The mounted Session must show the reply and stop both its Working state and Activity spinner.
+  await assertPersistedReplyWithoutLiveEvent(page, "newly created OpenCode Session")
 
   await context.close()
 }
