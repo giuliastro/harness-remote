@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ComponentProps } from "react"
 import { notifyDesktopAttention, subscribeDesktopAttentionActivation } from "../desktopBridge"
-import { subscribeAndroidAttentionActivation } from "../native-session-attention-android"
 import { discoverAgentNativeSessionPage, nativeSessionSurfaceTarget, type NativeSessionSurfaceTarget } from "../native-session-discovery"
 import { loadNativeSessionAttentionIndex, type NativeSessionAttentionIndex, type NativeSessionAttentionIndexItem } from "../native-session-attention-index"
 import { startNativeSessionAttentionLiveRefresh, type NativeSessionAttentionLiveTarget } from "../native-session-attention-live"
@@ -22,12 +21,6 @@ type Props = ComponentProps<typeof NativeSessionHomeBase>
 type AttentionTarget = NativeSessionAttentionLiveTarget & {
   machineID: string
   machineName: string
-}
-
-type AttentionActivation = {
-  machineID: string
-  agentID: string
-  sessionID: string
 }
 
 type AttentionScope = {
@@ -144,7 +137,6 @@ export function NativeSessionHome(props: Props) {
   const [openError, setOpenError] = useState<string | null>(null)
   const [baseAttentionCount, setBaseAttentionCount] = useState(0)
   const generationRef = useRef(0)
-  const pendingActivationRef = useRef<AttentionActivation | null>(null)
   const notificationStateRef = useRef<NativeSessionAttentionNotificationState>({
     scopes: { ...EMPTY_NATIVE_SESSION_ATTENTION_NOTIFICATION_STATE.scopes }
   })
@@ -210,20 +202,6 @@ export function NativeSessionHome(props: Props) {
     }
   }, [openingKey, props.selectedKey, rememberAndOpen])
 
-  const activateAttention = useCallback((activation: AttentionActivation) => {
-    const target = [...targetsRef.current.values()].find((candidate) =>
-      candidate.machineID === activation.machineID && candidate.agent.id === activation.agentID
-    )
-    if (!target) {
-      // A cold Android launch can deliver the PendingIntent before machine discovery has completed.
-      // Keep the exact identity and retry when the matching capability-scoped target appears.
-      pendingActivationRef.current = activation
-      return
-    }
-    pendingActivationRef.current = null
-    void openAttentionSession(target, activation.sessionID)
-  }, [openAttentionSession])
-
   const refreshAttentionTarget = useCallback(async (candidate: NativeSessionAttentionLiveTarget, generation: number) => {
     const target = targetsRef.current.get(candidate.key)
     if (!target) return
@@ -246,8 +224,6 @@ export function NativeSessionHome(props: Props) {
 
     setScopes((current) => {
       const previous = current[candidate.key]
-      // A partial refresh must not make a previously known authorization disappear. Keep the last
-      // complete item set while exposing the new incomplete/error metadata until a full read lands.
       const index = !result.complete && previous
         ? { ...result, items: previous.index.items }
         : result
@@ -255,19 +231,16 @@ export function NativeSessionHome(props: Props) {
     })
   }, [])
 
-  useEffect(() => subscribeDesktopAttentionActivation(activateAttention), [activateAttention])
-  useEffect(() => subscribeAndroidAttentionActivation(activateAttention), [activateAttention])
-
-  useEffect(() => {
-    const pending = pendingActivationRef.current
-    if (!pending) return
-    const target = attentionTargets.find((candidate) =>
-      candidate.machineID === pending.machineID && candidate.agent.id === pending.agentID
+  useEffect(() => subscribeDesktopAttentionActivation((activation) => {
+    const target = [...targetsRef.current.values()].find((candidate) =>
+      candidate.machineID === activation.machineID && candidate.agent.id === activation.agentID
     )
-    if (!target) return
-    pendingActivationRef.current = null
-    void openAttentionSession(target, pending.sessionID)
-  }, [openAttentionSession, targetSignature])
+    if (!target) {
+      setOpenError("The machine or harness for this notification is not currently available.")
+      return
+    }
+    void openAttentionSession(target, activation.sessionID)
+  }), [openAttentionSession])
 
   useEffect(() => {
     const generation = ++generationRef.current
@@ -319,10 +292,6 @@ export function NativeSessionHome(props: Props) {
   const counts = useMemo(() => attentionInboxCounts(inbox.map((entry) => entry.item)), [inbox])
   const incomplete = Object.values(scopes).some((scope) => !scope.index.complete)
 
-  // The base rail already reports generic status/error attention. Add explicit pending question /
-  // permission Sessions so the mobile badge still carries global attention when the rail is hidden.
-  // In normal harness behavior these sets are disjoint: a blocked permission keeps the native
-  // Session working/waiting rather than changing its discovery status to a generic attention error.
   useEffect(() => {
     props.onAttentionCountChange?.(baseAttentionCount + counts.total)
   }, [baseAttentionCount, counts.total, props.onAttentionCountChange])
