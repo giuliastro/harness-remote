@@ -1,5 +1,6 @@
 import http from "node:http"
 import { randomBytes, timingSafeEqual } from "node:crypto"
+import { createRequire } from "node:module"
 import { networkInterfaces } from "node:os"
 import { allowedOrigin, applyCorsHeaders, writeJSON } from "./http-policy.js"
 
@@ -8,6 +9,7 @@ export const PAIRING_TTL_MS = 5 * 60 * 1_000
 export const PAIRING_TOKEN_MAX_LENGTH = 256
 const MAX_PAIRING_BODY_BYTES = 4_096
 const VIRTUAL_INTERFACE = /^(docker|br-|veth|virbr|tun|tap|utun)/i
+const require = createRequire(import.meta.url)
 
 function sameToken(expected, candidate) {
   if (typeof expected !== "string" || typeof candidate !== "string") return false
@@ -98,15 +100,45 @@ export function machinePairingLinks(config, grant, interfaces = networkInterface
   })
 }
 
-/** Startup output keeps long-lived credentials as a manual fallback, but the link itself contains
- * only a high-entropy one-time grant. It is intentionally plain text for now: the URI is QR-ready
- * without introducing a QR/package dependency into the bridge. */
-export function announceMachinePairing(config, grant, { write = (text) => process.stdout.write(text), interfaces } = {}) {
+/**
+ * Keep QR rendering outside the pairing authority contract. A source checkout that has not installed
+ * the optional presentation dependency still gets the exact same one-time URI as plain text; npx and
+ * normal installs render the compact terminal QR because qrcode-terminal is installed by package.json.
+ */
+export function renderPairingQRCode(uri, { load = () => require("qrcode-terminal") } = {}) {
+  try {
+    const qrcode = load()
+    if (!qrcode || typeof qrcode.generate !== "function") return null
+    let output = ""
+    qrcode.generate(uri, { small: true }, (rendered) => {
+      if (typeof rendered === "string") output = rendered
+    })
+    return output.trim() ? output : null
+  } catch {
+    return null
+  }
+}
+
+/** Startup output keeps long-lived credentials as a manual fallback, while the QR/link itself contains
+ * only a high-entropy one-time grant. Render one QR for the preferred LAN endpoint and keep every
+ * discovered endpoint as text so multi-interface machines remain recoverable without guessing. */
+export function announceMachinePairing(config, grant, {
+  write = (text) => process.stdout.write(text),
+  interfaces,
+  renderQR = renderPairingQRCode
+} = {}) {
   const links = machinePairingLinks(config, grant, interfaces)
   if (!links.length) return []
   write("\nPair a phone (one use, valid for 5 minutes):\n")
+  const qr = renderQR(links[0].uri)
+  if (qr) {
+    write(`${qr}\n`)
+    write(`Scan the QR above for ${links[0].endpoint}.\n`)
+  }
+  if (links.length > 1) write("If that network is not reachable from your phone, use another link below.\n")
+  write("Pairing links:\n")
   for (const { uri } of links) write(`  ${uri}\n`)
-  write("Open or scan one of these links in Harness Remote. The link does not contain the daemon password.\n")
+  write("The QR/link contains a one-time token, not the daemon password.\n")
   return links
 }
 

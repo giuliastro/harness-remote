@@ -186,7 +186,7 @@ See [REFERENCE.md](REFERENCE.md) for detailed security and backend notes.
 
 ## Quick start
 
-> **Upgrading from Harness Remote 2.x?** HR3 uses a **Machine daemon** as its normal connection contract, not the old per-harness server profile model. Old standalone ACP bridge commands still start and can expose native Sessions, but they are a legacy compatibility path and do not provide the complete HR3 Machine → Project → Session workflow. A direct 2.x-style `opencode serve` endpoint is **not** an HR3 Machine endpoint. Saved 2.x server profiles are also not automatically imported into the new Machines list, so add the machine again after upgrading. For HR3, prefer the launcher/daemon setup below and connect through **Machines → Add machine**.
+> **Upgrading from Harness Remote 2.x?** HR3 uses a **Machine daemon** as its normal connection contract, not the old per-harness server profile model. Old standalone ACP bridge commands still start and can expose native Sessions, but they are a legacy compatibility path and do not provide the complete HR3 Machine → Project → Session workflow. A direct 2.x-style `opencode serve` endpoint is **not** an HR3 Machine endpoint. Saved 2.x server profiles are also not automatically imported into the new Machines list, so add the machine again after upgrading. For HR3, prefer the launcher/daemon setup below; Android can pair from its short-lived QR, while **Machines → Add machine** remains the manual fallback.
 
 ### 1. Start Harness Remote on the machine with your code
 
@@ -208,11 +208,13 @@ npx github:giuliastro/harness-remote \
 
 `--root` defines the directory boundary Harness Remote may browse when you select Projects.
 
-The launcher detects supported CLIs on `PATH`, starts the compatible local runtime and prints the connection details.
+The launcher detects supported CLIs on `PATH`, starts the compatible local runtime and, for the HR3 machine daemon, prints a compact pairing QR. The QR contains a 256-bit one-time token valid for five minutes — not the long-lived daemon password. Plain pairing links and the normal connection details are printed as fallback.
 
-### 2. Connect from desktop or Android
+### 2. Pair Android or add the machine manually
 
-Open **Machines → Add machine** and enter the address, port, username and password printed by the launcher.
+On Android, scan/open the QR. Harness Remote claims the one-time token and imports the machine automatically. The token can be used only once.
+
+If the phone cannot reach the preferred LAN address, use one of the alternate pairing links printed by the launcher. Desktop, web and Android can always use **Machines → Add machine** with the address, port, username and password printed by the launcher.
 
 One machine endpoint exposes the harnesses managed by that machine — you do not need a separate public endpoint for every coding agent.
 
