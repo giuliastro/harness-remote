@@ -28,9 +28,15 @@ npx github:giuliastro/harness-remote \
   --cors http://localhost:5173
 ```
 
-`--root` is the directory boundary used when choosing Projects. The launcher prints the machine
-address and credentials you will enter in the client, the harnesses that will be available through
-that machine, and the next step to add it under **Machines → Add machine**.
+`--root` is the directory boundary used when choosing Projects. When the HR3 machine-daemon path is
+selected, startup prints a compact QR code plus a short-lived pairing link. On Android, scan/open that
+QR and Harness Remote imports the machine automatically; the QR contains a one-time token valid for
+five minutes, **not** the daemon password. The link can be used once.
+
+If QR rendering is unavailable in a source checkout, the same one-time pairing link is still printed
+as text. Host, port, username and password are also printed and remain the manual fallback. Pairing
+is currently a machine-daemon HR3 feature; legacy single-backend bridges keep their existing manual
+connection flow.
 
 To use the web/PWA frontend from a checkout:
 
@@ -44,8 +50,8 @@ Open the URL Vite prints, normally `http://localhost:5173`, then choose **Machin
 machine** and enter the address, port, username and password from the launcher. The `--cors` value
 above permits that browser origin; use the exact origin if you host the frontend elsewhere.
 
-Desktop and Android clients use the same machine address and credentials. Open the installed client
-and add the machine there; they do not need browser CORS configuration.
+Desktop and Android clients use the same machine address and credentials. Android can use the
+scan-first pairing flow above; manual **Machines → Add machine** remains available on every client.
 
 From a local repository checkout, the equivalent launcher command is:
 
@@ -58,6 +64,10 @@ npm start -- \
   --root "$HOME/Software" \
   --cors http://localhost:5173
 ```
+
+Run `npm install` once at the repository root if you want the checkout to render the terminal QR;
+without that presentation dependency the launcher deliberately falls back to the same one-time text
+link instead of making startup fail.
 
 When installed as a repository/package binary, the command is `harness-remote`. The root package
 remains private: the GitHub/repository launch path is intentional and does not imply that an npm
@@ -75,6 +85,8 @@ The launcher inspects `PATH` without executing discovered agent binaries and cho
 - `--single --backend <name>` explicitly opts out of the daemon and forces the legacy single-backend path;
 - if managed OpenCode is included, the launcher chooses a free loopback port automatically instead of assuming 4096 is unused;
 - credentials are generated automatically and kept out of child-process argv;
+- the HR3 machine daemon creates a 256-bit in-memory one-time pairing grant with a five-minute TTL;
+- startup renders a QR for the preferred LAN endpoint when the terminal QR renderer is installed, and always prints the one-time links as a fallback;
 - the LAN address, credentials, available harnesses and next client action are printed before startup continues.
 
 The supported CLI names are `omp`, `pi`, `claude`, `codex`, and `opencode`.
