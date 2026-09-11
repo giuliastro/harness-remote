@@ -18,6 +18,12 @@ function validIdentity(value) {
     && [value.machineID, value.agentID, value.sessionID, value.directory].every((entry) => typeof entry === "string" && entry)
 }
 
+function invalidLink(message) {
+  const error = new Error(message)
+  error.code = "invalid_request"
+  return error
+}
+
 function normalizedTransferredContext(value) {
   if (value === undefined || value === null || value === "") return undefined
   if (typeof value !== "string") throw new Error("Transferred Session context must be text")
@@ -97,7 +103,7 @@ export class SessionLinkStore {
   async addHandoff({ source, target, createdAt = new Date().toISOString(), transferredContext }) {
     if (!validIdentity(source) || !validIdentity(target)) throw new Error("Native Session link requires complete source and target identities")
     if (!this.#isLocalLink(source, target)) {
-      throw new Error("Native Session link must include a Session owned by this machine")
+      throw invalidLink("Native Session link must include a Session owned by this machine")
     }
     const context = normalizedTransferredContext(transferredContext)
     return this.#serial(async () => {
