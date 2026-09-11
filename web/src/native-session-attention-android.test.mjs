@@ -45,6 +45,9 @@ test("native Attention notifications are fail-closed display only and deep-link 
 test("Android notification activation reuses the existing explicit Inbox Session opener", () => {
   assert.match(home, /subscribeAndroidAttentionActivation\(activateAttention\)/)
   assert.match(home, /candidate\.machineID === activation\.machineID && candidate\.agent\.id === activation\.agentID/)
+  assert.match(home, /pendingActivationRef\.current = activation/,
+    "cold-start activation must survive until machine discovery catches up")
+  assert.match(home, /pendingActivationRef\.current = null[\s\S]*openAttentionSession\(target, pending\.sessionID\)/)
   assert.match(home, /openAttentionSession\(target, activation\.sessionID\)/)
   assert.doesNotMatch(home, /subscribeAndroidAttentionActivation[\s\S]*loadMessages/)
 })
