@@ -8,5 +8,5 @@ test("Android native SSE uses a finite read watchdog so sleep or Wi-Fi loss can 
   assert.match(source, /STALL_TIMEOUT_MS\s*=\s*30000/)
   assert.match(source, /setReadTimeout\(STALL_TIMEOUT_MS\)/)
   assert.doesNotMatch(source, /setReadTimeout\(0\)/)
-  assert.match(source, /publishStatus\("reconnecting"/)
+  assert.match(source, /publishStatus\(subscriptionID,\s*"reconnecting"/)
 })
