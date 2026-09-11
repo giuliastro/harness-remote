@@ -4,9 +4,11 @@ const calls = {
   replace: [],
   request: [],
   subscribe: [],
-  unsubscribe: []
+  unsubscribe: [],
+  attention: []
 }
 
+let attentionActivation
 let releaseFirstSync
 const firstSyncGate = new Promise((resolve) => { releaseFirstSync = resolve })
 
@@ -44,6 +46,16 @@ globalThis.window = {
       return Promise.resolve()
     },
     notifyCompletion() { return Promise.resolve() },
+    notifyAttention(notification) {
+      calls.attention.push(notification)
+      return Promise.resolve()
+    },
+    onAttentionActivated(callback) {
+      attentionActivation = callback
+      return () => {
+        if (attentionActivation === callback) attentionActivation = undefined
+      }
+    },
     onMenuCommand() { return () => {} },
     setApplicationMenu() { return Promise.resolve(true) }
   }
@@ -138,6 +150,24 @@ assert.deepEqual(calls.subscribe[0].options, {
   agentId: "pi"
 })
 subscription.close()
+
+const notification = {
+  title: "Authorization required",
+  body: "write_file\nThe Session remains blocked until you allow or deny this request.",
+  overlayDescription: "Authorization required · Local · Codex",
+  target: { machineID: "native-machine", agentID: "codex", sessionID: "session-123" }
+}
+bridge.notifyDesktopAttention(notification)
+await Promise.resolve()
+assert.deepEqual(calls.attention, [notification])
+
+const activated = []
+const unsubscribeAttention = bridge.subscribeDesktopAttentionActivation((target) => activated.push(target))
+attentionActivation?.(notification.target)
+assert.deepEqual(activated, [notification.target])
+unsubscribeAttention()
+attentionActivation?.({ machineID: "other", agentID: "codex", sessionID: "ignored" })
+assert.equal(activated.length, 1, "unsubscribed attention activation must not leak callbacks")
 
 const lan = {
   id: "machine-lan",

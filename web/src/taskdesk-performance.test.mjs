@@ -26,7 +26,7 @@ test("Session list and global Attention Inbox never fan out transcript reads for
   assert.doesNotMatch(home, /discoverMachineNativeSessions/)
   assert.match(attentionHome, /loadNativeSessionAttentionIndex/, "attention previews must use the small pending-request index")
   assert.doesNotMatch(attentionHome, /loadMessagePage|loadLatestMessage|startTaskDeskSessionLiveRefresh/, "attention previews must not touch transcript I/O")
-  assert.match(attentionHome, /async function openInboxEntry[\s\S]*discoverAgentNativeSessionPage/, "older native history may be paged only after an Inbox item is explicitly opened")
+  assert.match(attentionHome, /openAttentionSession[\s\S]*discoverAgentNativeSessionPage/, "older native history may be paged only after an Inbox item or notification is explicitly opened")
 })
 
 test("Session detail keeps bounded paging and memoized transcript rendering", () => {

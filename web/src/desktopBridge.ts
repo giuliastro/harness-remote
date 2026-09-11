@@ -1,4 +1,6 @@
 import type {
+  DesktopAttentionNotification,
+  DesktopAttentionTarget,
   DesktopCompletionNotification,
   DesktopEvent,
   DesktopEventStatus,
@@ -27,6 +29,8 @@ export type DesktopBridgeAPI = {
   ): Promise<string>
   unsubscribeEvents(subscriptionId: string): Promise<void>
   notifyCompletion(notification: DesktopCompletionNotification): Promise<void>
+  notifyAttention(notification: DesktopAttentionNotification): Promise<void>
+  onAttentionActivated(callback: (target: DesktopAttentionTarget) => void): () => void
   onMenuCommand(callback: (command: DesktopMenuCommand) => void): () => void
   setApplicationMenu(template: DesktopMenuTemplate): Promise<boolean>
 }
@@ -181,6 +185,14 @@ export function desktopProfileID(config: ServerConfig): string | null {
 
 export function notifyDesktopCompletion(notification: DesktopCompletionNotification): void {
   void bridge()?.notifyCompletion(notification).catch(() => undefined)
+}
+
+export function notifyDesktopAttention(notification: DesktopAttentionNotification): void {
+  void bridge()?.notifyAttention(notification).catch(() => undefined)
+}
+
+export function subscribeDesktopAttentionActivation(callback: (target: DesktopAttentionTarget) => void): () => void {
+  return bridge()?.onAttentionActivated(callback) ?? (() => undefined)
 }
 
 export function subscribeDesktopMenuCommands(callback: (command: DesktopMenuCommand) => void): () => void {

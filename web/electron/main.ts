@@ -4,10 +4,10 @@ import { dirname, join } from "node:path"
 import { fileURLToPath, pathToFileURL } from "node:url"
 import { buildApplicationMenu } from "./app-menu.js"
 import { DesktopEventTransport } from "./event-transport.js"
-import { IPC_CHANNELS, parseDesktopMenuTemplate } from "./ipc-contract.js"
+import { IPC_CHANNELS, parseDesktopAttentionNotification, parseDesktopMenuTemplate } from "./ipc-contract.js"
 import { DesktopProfileError, ProfileRegistry } from "./profile-registry.js"
 import { executeDesktopRequest } from "./request-transport.js"
-import type { DesktopCompletionNotification, DesktopEventSubscriptionOptions, DesktopMenuCommand, DesktopRequest } from "./ipc-contract.js"
+import type { DesktopAttentionNotification, DesktopCompletionNotification, DesktopEventSubscriptionOptions, DesktopMenuCommand, DesktopRequest } from "./ipc-contract.js"
 import { MIN_WINDOW_HEIGHT, MIN_WINDOW_WIDTH, restoredBounds as calculateRestoredBounds } from "./window-state.js"
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const isDevelopment = !app.isPackaged
@@ -109,6 +109,27 @@ function notifyCompletion(notification: DesktopCompletionNotification): void {
   // silently never appeared. Resized down because an overlay is drawn at 16x16.
   const icon = nativeImage.createFromPath(join(app.getAppPath(), "dist/app-icon.png")).resize({ width: 16, height: 16 })
   if (!icon.isEmpty()) mainWindow.setOverlayIcon(icon, notification.overlayDescription)
+}
+
+function activateAttention(notification: DesktopAttentionNotification): void {
+  const window = mainWindow
+  if (!window || window.isDestroyed()) return
+  if (window.isMinimized()) window.restore()
+  if (!window.isVisible()) window.show()
+  window.focus()
+  window.webContents.send(IPC_CHANNELS.attentionActivated, notification.target)
+}
+
+function notifyAttention(notification: DesktopAttentionNotification): void {
+  const window = mainWindow
+  if (!window || window.isDestroyed() || (window.isFocused() && !window.isMinimized())) return
+  if (!Notification.isSupported()) return
+  const nativeNotification = new Notification({ title: notification.title, body: notification.body })
+  nativeNotification.on("click", () => activateAttention(notification))
+  nativeNotification.show()
+  if (!isWindows) return
+  const icon = nativeImage.createFromPath(join(app.getAppPath(), "dist/app-icon.png")).resize({ width: 16, height: 16 })
+  if (!icon.isEmpty()) window.setOverlayIcon(icon, notification.overlayDescription)
 }
 
 function createWindow(): BrowserWindow {
@@ -244,6 +265,12 @@ function installIPC(): void {
       throw new Error("Notification payload is invalid")
     }
     notifyCompletion(candidate as DesktopCompletionNotification)
+  })
+  ipcMain.handle(IPC_CHANNELS.notifyAttention, async (event, notification: unknown) => {
+    ensureTrustedSender(event)
+    const parsed = parseDesktopAttentionNotification(notification)
+    if (!parsed) throw new Error("Attention notification payload is invalid")
+    notifyAttention(parsed)
   })
 }
 

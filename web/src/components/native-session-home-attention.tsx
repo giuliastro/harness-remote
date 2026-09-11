@@ -1,7 +1,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ComponentProps } from "react"
+import { notifyDesktopAttention, subscribeDesktopAttentionActivation } from "../desktopBridge"
 import { discoverAgentNativeSessionPage, nativeSessionSurfaceTarget, type NativeSessionSurfaceTarget } from "../native-session-discovery"
 import { loadNativeSessionAttentionIndex, type NativeSessionAttentionIndex, type NativeSessionAttentionIndexItem } from "../native-session-attention-index"
 import { startNativeSessionAttentionLiveRefresh, type NativeSessionAttentionLiveTarget } from "../native-session-attention-live"
+import { desktopAttentionNotification } from "../native-session-attention-notification-presentation"
+import {
+  EMPTY_NATIVE_SESSION_ATTENTION_NOTIFICATION_STATE,
+  reconcileNativeSessionAttentionNotifications,
+  type NativeSessionAttentionNotificationState
+} from "../native-session-attention-notifications"
 import type { MachineAgentHost, ServerConfig } from "../types"
 import { NativeSessionHome as NativeSessionHomeBase } from "./native-session-home-base"
 import "../native-session-attention-inbox.css"
@@ -130,6 +137,9 @@ export function NativeSessionHome(props: Props) {
   const [openError, setOpenError] = useState<string | null>(null)
   const [baseAttentionCount, setBaseAttentionCount] = useState(0)
   const generationRef = useRef(0)
+  const notificationStateRef = useRef<NativeSessionAttentionNotificationState>({
+    scopes: { ...EMPTY_NATIVE_SESSION_ATTENTION_NOTIFICATION_STATE.scopes }
+  })
 
   const attentionTargets = useMemo<AttentionTarget[]>(() => props.sources.flatMap(({ machine, snapshot, state }) => {
     if (!snapshot || state !== "online") return []
@@ -160,6 +170,38 @@ export function NativeSessionHome(props: Props) {
   const targetsRef = useRef<Map<string, AttentionTarget>>(new Map())
   targetsRef.current = new Map(attentionTargets.map((target) => [target.key, target]))
 
+  const rememberAndOpen = useCallback((target: NativeSessionSurfaceTarget) => {
+    setKnownTargets((current) => ({ ...current, [target.key]: target }))
+    props.onOpen(target)
+  }, [props.onOpen])
+
+  const openAttentionSession = useCallback(async (target: AttentionTarget, sessionID: string) => {
+    const key = sessionKey(target, sessionID)
+    if (props.selectedKey === key || openingKey) return
+    setOpeningKey(key)
+    setOpenError(null)
+    try {
+      let cursor: string | undefined
+      const seen = new Set<string>()
+      for (;;) {
+        const page = await discoverAgentNativeSessionPage(target.baseConfig, target.agent, cursor)
+        const record = page.records.find((candidate) => candidate.session.id === sessionID)
+        if (record) {
+          rememberAndOpen(nativeSessionSurfaceTarget(target.machineID, target.baseConfig, record))
+          return
+        }
+        if (!page.nextCursor || seen.has(page.nextCursor)) break
+        seen.add(page.nextCursor)
+        cursor = page.nextCursor
+      }
+      throw new Error("This Session is no longer available in the native history.")
+    } catch (reason) {
+      setOpenError(reason instanceof Error ? reason.message : String(reason))
+    } finally {
+      setOpeningKey(null)
+    }
+  }, [openingKey, props.selectedKey, rememberAndOpen])
+
   const refreshAttentionTarget = useCallback(async (candidate: NativeSessionAttentionLiveTarget, generation: number) => {
     const target = targetsRef.current.get(candidate.key)
     if (!target) return
@@ -167,6 +209,19 @@ export function NativeSessionHome(props: Props) {
     if (generationRef.current !== generation) return
     const latest = targetsRef.current.get(candidate.key)
     if (!latest) return
+
+    const notificationResult = reconcileNativeSessionAttentionNotifications(notificationStateRef.current, [{
+      machineID: latest.machineID,
+      machineName: latest.machineName,
+      agentID: latest.agent.id,
+      agentLabel: latest.agent.label,
+      index: result
+    }])
+    notificationStateRef.current = notificationResult.state
+    for (const notification of notificationResult.notifications) {
+      notifyDesktopAttention(desktopAttentionNotification(notification))
+    }
+
     setScopes((current) => {
       const previous = current[candidate.key]
       // A partial refresh must not make a previously known authorization disappear. Keep the last
@@ -177,6 +232,17 @@ export function NativeSessionHome(props: Props) {
       return { ...current, [candidate.key]: { target: latest, index } }
     })
   }, [])
+
+  useEffect(() => subscribeDesktopAttentionActivation((activation) => {
+    const target = [...targetsRef.current.values()].find((candidate) =>
+      candidate.machineID === activation.machineID && candidate.agent.id === activation.agentID
+    )
+    if (!target) {
+      setOpenError("The machine or harness for this notification is not currently available.")
+      return
+    }
+    void openAttentionSession(target, activation.sessionID)
+  }), [openAttentionSession])
 
   useEffect(() => {
     const generation = ++generationRef.current
@@ -236,38 +302,6 @@ export function NativeSessionHome(props: Props) {
     props.onAttentionCountChange?.(baseAttentionCount + counts.total)
   }, [baseAttentionCount, counts.total, props.onAttentionCountChange])
 
-  const rememberAndOpen = useCallback((target: NativeSessionSurfaceTarget) => {
-    setKnownTargets((current) => ({ ...current, [target.key]: target }))
-    props.onOpen(target)
-  }, [props.onOpen])
-
-  async function openInboxEntry(entry: InboxEntry) {
-    const key = sessionKey(entry.target, entry.item.sessionID)
-    if (props.selectedKey === key || openingKey) return
-    setOpeningKey(key)
-    setOpenError(null)
-    try {
-      let cursor: string | undefined
-      const seen = new Set<string>()
-      for (;;) {
-        const page = await discoverAgentNativeSessionPage(entry.target.baseConfig, entry.target.agent, cursor)
-        const record = page.records.find((candidate) => candidate.session.id === entry.item.sessionID)
-        if (record) {
-          rememberAndOpen(nativeSessionSurfaceTarget(entry.target.machineID, entry.target.baseConfig, record))
-          return
-        }
-        if (!page.nextCursor || seen.has(page.nextCursor)) break
-        seen.add(page.nextCursor)
-        cursor = page.nextCursor
-      }
-      throw new Error("This Session is no longer available in the native history.")
-    } catch (reason) {
-      setOpenError(reason instanceof Error ? reason.message : String(reason))
-    } finally {
-      setOpeningKey(null)
-    }
-  }
-
   return (
     <>
       {inbox.length || incomplete ? (
@@ -294,7 +328,7 @@ export function NativeSessionHome(props: Props) {
                     type="button"
                     className={`hr-native-attention-row ${presentation.className}${selected ? " selected" : ""}`}
                     key={`${entry.target.key}:${entry.item.sessionID}`}
-                    onClick={() => void openInboxEntry(entry)}
+                    onClick={() => void openAttentionSession(entry.target, entry.item.sessionID)}
                     disabled={openingKey === key}
                     aria-current={selected ? "page" : undefined}
                     aria-label={`${presentation.label}: ${known?.title || entry.item.sessionID}, ${entry.target.agent.label}, ${entry.target.machineName}`}
