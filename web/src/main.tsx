@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react"
+import React, { useEffect, useMemo, useRef, useState } from "react"
 import ReactDOM from "react-dom/client"
 import { Capacitor } from "@capacitor/core"
 import { installAppPreferences } from "./appPreferences"
@@ -6,6 +6,7 @@ import { installCompletionAudioGuard } from "./completion-audio"
 import { StandaloneUniversalWorkspace } from "./components/standalone-universal-workspace"
 import { syncDesktopProfiles, isDesktopPlatform } from "./desktopBridge"
 import { ErrorBoundary } from "./ErrorBoundary"
+import { claimMachinePairing, subscribeAndroidMachinePairing, upsertPairedMachine } from "./machine-pairing"
 import { SERVER_STORAGE_KEYS } from "./storageKeys"
 import {
   loadWorkspaceMachines,
@@ -28,6 +29,7 @@ import "./session-first-workbench.css"
 import "./conversation-base.css"
 import "./session-first-centering-fix.css"
 import "./session-handoff-routing.css"
+import "./machine-pairing.css"
 // Loaded last: the ported controls refine rules the sheets above already set, and settling those
 // ties by load order is what keeps the port free of `!important`.
 import "./beautiful-ui-controls.css"
@@ -35,12 +37,21 @@ import "./beautiful-ui-controls.css"
 installAppPreferences()
 installCompletionAudioGuard()
 
+type PairingNotice = {
+  kind: "working" | "success" | "error"
+  text: string
+}
 
 function HarnessRemoteBoundary() {
   const [revision, setRevision] = useState(0)
   const machines = useMemo(loadWorkspaceMachines, [revision])
+  const machinesRef = useRef(machines)
+  machinesRef.current = machines
+  const pairingInFlightRef = useRef(new Set<string>())
+  const pairedGrantRef = useRef(new Set<string>())
   const [desktopReady, setDesktopReady] = useState(() => !isDesktopPlatform())
   const [desktopSyncError, setDesktopSyncError] = useState<Error | null>(null)
+  const [pairingNotice, setPairingNotice] = useState<PairingNotice | null>(null)
 
   // The Session-first workspace talks to the daemon immediately on mount. Electron must therefore
   // acknowledge the stable WorkspaceMachine allowlist before the workspace is allowed to discover
@@ -71,6 +82,32 @@ function HarnessRemoteBoundary() {
     )
   }
 
+  useEffect(() => subscribeAndroidMachinePairing((activation) => {
+    const grantKey = `${activation.endpoint}\u0000${activation.token}`
+    if (pairedGrantRef.current.has(grantKey) || pairingInFlightRef.current.has(grantKey)) return
+    pairingInFlightRef.current.add(grantKey)
+    setPairingNotice({ kind: "working", text: "Connecting to this machine…" })
+    void claimMachinePairing(activation).then(
+      (paired) => {
+        pairingInFlightRef.current.delete(grantKey)
+        pairedGrantRef.current.add(grantKey)
+        const nextMachines = upsertPairedMachine(machinesRef.current, paired)
+        machinesRef.current = nextMachines
+        persistMachines(nextMachines)
+        setPairingNotice({ kind: "success", text: `${paired.name} is connected.` })
+      },
+      (error: unknown) => {
+        // A transport failure does not imply the daemon consumed the grant. A re-scan therefore gets
+        // another chance until the server itself reports used/expired.
+        pairingInFlightRef.current.delete(grantKey)
+        setPairingNotice({
+          kind: "error",
+          text: error instanceof Error ? error.message : "Machine pairing failed."
+        })
+      }
+    )
+  }), [])
+
   if (desktopSyncError) throw desktopSyncError
   if (!desktopReady) {
     return (
@@ -83,10 +120,22 @@ function HarnessRemoteBoundary() {
   }
 
   return (
-    <StandaloneUniversalWorkspace
-      machines={machines}
-      onPersistMachines={persistMachines}
-    />
+    <>
+      <StandaloneUniversalWorkspace
+        machines={machines}
+        onPersistMachines={persistMachines}
+      />
+      {pairingNotice ? (
+        <div
+          className={`hr-machine-pairing-notice ${pairingNotice.kind}`}
+          role={pairingNotice.kind === "error" ? "alert" : "status"}
+          aria-live="polite"
+        >
+          <span><strong>Machine pairing</strong>{pairingNotice.text}</span>
+          <button type="button" onClick={() => setPairingNotice(null)} aria-label="Dismiss machine pairing status">×</button>
+        </div>
+      ) : null}
+    </>
   )
 }
 

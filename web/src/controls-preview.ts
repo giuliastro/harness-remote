@@ -44,6 +44,7 @@ import "./session-first-workbench.css"
 import "./conversation-base.css"
 import "./session-first-centering-fix.css"
 import "./session-handoff-routing.css"
+import "./machine-pairing.css"
 import "./beautiful-ui-controls.css"
 
 /** Same list, same order as `main.tsx` - `beautiful-ui-controls.test.mjs` asserts the two match, so
