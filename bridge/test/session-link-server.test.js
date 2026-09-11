@@ -83,7 +83,7 @@ test("cross-machine Session-link endpoint accepts the same edge on both particip
   try {
     assert.equal((await register(sourcePort)).status, 200)
     assert.equal((await register(targetPort)).status, 200)
-    assert.equal((await register(unrelatedPort)).status, 500)
+    assert.equal((await register(unrelatedPort)).status, 400)
 
     const sourceQuery = new URLSearchParams(link.source)
     const targetQuery = new URLSearchParams(link.target)
