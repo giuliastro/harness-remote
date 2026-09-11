@@ -1,0 +1,55 @@
+.hr-machine-pairing-notice {
+  position: fixed;
+  right: max(16px, env(safe-area-inset-right));
+  bottom: max(76px, calc(env(safe-area-inset-bottom) + 68px));
+  z-index: 1200;
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  max-width: min(420px, calc(100vw - 32px));
+  padding: 12px 12px 12px 14px;
+  border: 1px solid var(--tdw-border, rgba(127, 127, 127, .28));
+  border-radius: 12px;
+  background: var(--tdw-surface, Canvas);
+  box-shadow: 0 12px 36px rgba(0, 0, 0, .18);
+}
+
+.hr-machine-pairing-notice > span {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+  line-height: 1.35;
+}
+
+.hr-machine-pairing-notice > span strong {
+  font-size: 12px;
+  letter-spacing: .02em;
+}
+
+.hr-machine-pairing-notice > button {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  padding: 0 3px;
+  opacity: .7;
+}
+
+.hr-machine-pairing-notice.success {
+  border-inline-start-width: 4px;
+}
+
+.hr-machine-pairing-notice.error {
+  border-inline-start-width: 4px;
+}
+
+@media (max-width: 640px) {
+  .hr-machine-pairing-notice {
+    left: 12px;
+    right: 12px;
+    bottom: max(76px, calc(env(safe-area-inset-bottom) + 68px));
+    max-width: none;
+  }
+}
