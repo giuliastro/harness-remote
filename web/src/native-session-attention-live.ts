@@ -6,10 +6,6 @@ export type NativeSessionAttentionLiveTarget = {
   key: string
   baseConfig: ServerConfig
   agent: MachineAgentHost
-  /** Present for the global Session rail. Kept optional so isolated controller tests and older callers
-   * can still use the live-refresh primitive without enabling native Android notifications. */
-  machineID?: string
-  machineName?: string
 }
 
 type Subscribe = typeof subscribeTaskDeskLiveEvents
@@ -56,21 +52,9 @@ export function startNativeSessionAttentionLiveRefresh({
     .filter(({ agent }) => supportsAttention(agent))
     .map((target) => subscribe({
       config: nativeSessionConfig(target.baseConfig, target.agent),
-      ...(target.machineID && target.machineName ? {
-        nativeAttention: {
-          machineID: target.machineID,
-          machineName: target.machineName,
-          agentID: target.agent.id,
-          agentLabel: target.agent.label,
-          questions: target.agent.capabilities.questions === true,
-          permissions: target.agent.capabilities.permissions === true
-        }
-      } : {}),
       onEvent: (event) => {
         if (isAttentionEvent(event.type)) schedule(target)
       },
-      // A reconnect proves an event gap may have happened while the transport was unavailable.
-      // Re-read the tiny attention list once; do not wait for another permission/question edge.
       onStatus: (status) => {
         if (status.type === "connected") schedule(target)
       }
