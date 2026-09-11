@@ -4,6 +4,7 @@ import test from "node:test"
 import {
   claimMachinePairing,
   parseMachinePairingActivation,
+  scanAndroidMachinePairing,
   upsertPairedMachine
 } from "./machine-pairing.ts"
 
@@ -23,6 +24,22 @@ test("pairing activation accepts only the private explicit daemon endpoint shape
   assert.equal(parseMachinePairingActivation(pairingURL("http://user:secret@192.168.1.20:4097")), null)
   assert.equal(parseMachinePairingActivation(pairingURL("http://192.168.1.20")), null)
   assert.equal(parseMachinePairingActivation(pairingURL("http://192.168.1.20:4097/path")), null)
+})
+
+test("Android in-app scanner accepts only Harness Remote pairing QR values", async () => {
+  const expected = parseMachinePairingActivation(pairingURL())
+  assert.deepEqual(await scanAndroidMachinePairing({
+    platform: "android",
+    scan: async () => ({ value: pairingURL() })
+  }), expected)
+  assert.equal(await scanAndroidMachinePairing({
+    platform: "android",
+    scan: async () => ({ cancelled: true })
+  }), null)
+  await assert.rejects(() => scanAndroidMachinePairing({
+    platform: "android",
+    scan: async () => ({ value: "https://example.com/not-a-pairing-code" })
+  }), /not a valid Harness Remote machine pairing code/i)
 })
 
 test("native pairing claim exchanges the one-time token for the existing daemon credentials", async () => {
@@ -93,13 +110,22 @@ test("re-pairing updates an existing endpoint in place instead of duplicating it
   assert.equal(result[0].config.password, "new-secret")
 })
 
-test("Android packaging exposes only the pairing deep-link host and the app imports it at the storage boundary", () => {
+test("Android packaging exposes deep-link and in-app QR pairing without CAMERA permission", () => {
   const sync = readFileSync(new URL("../scripts/sync-native-live-events.mjs", import.meta.url), "utf8")
   const main = readFileSync(new URL("./main.tsx", import.meta.url), "utf8")
+  const activity = readFileSync(new URL("../native-android/MainActivity.java", import.meta.url), "utf8")
+  const scanner = readFileSync(new URL("../native-android/PairingScannerPlugin.java", import.meta.url), "utf8")
   assert.match(sync, /android:scheme="harnessremote" android:host="pair"/)
   assert.match(sync, /android\.intent\.category\.BROWSABLE/)
+  assert.match(sync, /play-services-code-scanner:16\.1\.0/)
+  assert.match(sync, /barcode_ui/)
+  assert.doesNotMatch(sync, /android\.permission\.CAMERA/)
+  assert.match(activity, /registerPlugin\(PairingScannerPlugin\.class\)/)
+  assert.match(scanner, /Barcode\.FORMAT_QR_CODE/)
+  assert.match(scanner, /enableAutoZoom\(\)/)
   assert.match(main, /subscribeAndroidMachinePairing/)
-  assert.match(main, /claimMachinePairing\(activation\)/)
+  assert.match(main, /scanAndroidMachinePairing\(\)/)
+  assert.match(main, />Scan QR code</)
   assert.match(main, /upsertPairedMachine\(machinesRef\.current, paired\)/)
   assert.match(main, /persistMachines\(nextMachines\)/)
 })
