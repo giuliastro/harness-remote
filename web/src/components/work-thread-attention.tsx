@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react"
 import { api } from "../api"
+import { classifyNativeSessionAttention } from "../native-session-attention"
 import type { PermissionRequest, QuestionRequest, ServerConfig } from "../types"
 
 type Props = {
@@ -22,6 +23,8 @@ export function WorkThreadAttention({ config, directory, questions, permissions,
   const [custom, setCustom] = useState<CustomMap>({})
   const [submitting, setSubmitting] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const attention = classifyNativeSessionAttention({ questions, permissions })
+  const authorizationRequired = attention.kind === "authorization"
 
   useEffect(() => {
     setAnswers({})
@@ -80,10 +83,18 @@ export function WorkThreadAttention({ config, directory, questions, permissions,
   }
 
   return (
-    <section className="tdw-attention bui-approval" aria-label="Agent needs your input" aria-live="polite">
+    <section
+      className="tdw-attention bui-approval"
+      aria-label={authorizationRequired ? "Authorization required" : "Agent needs your input"}
+      aria-live="polite"
+    >
       <div className="tdw-attention-heading">
-        <span><i className="bui-approval-dot" aria-hidden="true" />Needs your input</span>
-        <strong>The coding agent is waiting for a decision.</strong>
+        <span><i className="bui-approval-dot" aria-hidden="true" />{authorizationRequired ? "Authorization required" : "Needs your input"}</span>
+        <strong>
+          {authorizationRequired
+            ? "The coding agent is blocked until you allow or deny this request."
+            : "The coding agent is waiting for your answer."}
+        </strong>
       </div>
 
       {questions.map((request) => (
@@ -135,13 +146,14 @@ export function WorkThreadAttention({ config, directory, questions, permissions,
 
       {permissions.map((request) => (
         <div className="tdw-attention-card" key={request.id}>
-          <strong>Permission required</strong>
+          <strong>Authorization required</strong>
           <p>{request.permission}</p>
           {request.patterns?.length ? (
             <div className="bui-approval-scopes" aria-label="Requested scope">
               {request.patterns.map((pattern) => <code key={pattern}>{pattern}</code>)}
             </div>
           ) : null}
+          <p>If you do nothing, this request remains blocked.</p>
           <div className="tdw-attention-actions">
             <button type="button" className="tdw-button secondary bui-approval-deny" disabled={submitting === request.id} onClick={() => void respondPermission(request, "reject")}>Deny</button>
             <button type="button" className="tdw-button secondary" disabled={submitting === request.id} onClick={() => void respondPermission(request, "once")}>Allow once</button>
