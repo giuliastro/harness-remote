@@ -2,6 +2,7 @@ import assert from "node:assert/strict"
 import { readFileSync } from "node:fs"
 import { appendCursorPage, refreshCursorPage, sessionTreeRows } from "./components/native-session-home.tsx"
 import { canCreateNativeSession } from "./native-session-create.ts"
+import { classifyNativeSessionAttention, sessionNeedsAttention } from "./native-session-attention.ts"
 
 function item(id, parentID) {
   return {
@@ -114,6 +115,50 @@ assert.equal(canCreateNativeSession({
   capabilities: { sessions: true, prompt: true }
 }), false, "an unavailable harness must not be offered for native create")
 
+const permission = {
+  id: "permission-1",
+  sessionID: "session-1",
+  permission: "edit",
+  patterns: ["src/**"],
+  metadata: {},
+  always: []
+}
+const question = {
+  id: "question-1",
+  sessionID: "session-1",
+  questions: [{ question: "Which option?", header: "Choice", options: [] }]
+}
+
+assert.deepEqual(classifyNativeSessionAttention({ status: { type: "working" }, permissions: [permission], questions: [question] }), {
+  kind: "authorization",
+  requiresUserAction: true,
+  failClosed: true,
+  reason: "permission"
+}, "an explicit harness permission must outrank generic working/question state")
+assert.deepEqual(classifyNativeSessionAttention({ questions: [question] }), {
+  kind: "recoverable",
+  requiresUserAction: true,
+  failClosed: true,
+  reason: "question"
+}, "a harness question needs input but must not be flattened into authorization")
+for (const type of ["rejected", "permission-denied", "forbidden", "fail_closed"]) {
+  const state = classifyNativeSessionAttention({ status: { type } })
+  assert.equal(state.kind, "rejected", `${type} must remain fail-closed rather than looking retryable`)
+  assert.equal(state.failClosed, true)
+  assert.equal(state.requiresUserAction, false)
+}
+for (const type of ["error", "failed", "needs-attention", "blocked", "disconnected", "offline"]) {
+  assert.equal(classifyNativeSessionAttention({ status: { type } }).kind, "recoverable", `${type} must surface as recoverable attention`)
+  assert.equal(sessionNeedsAttention({ status: { type } }), true)
+}
+for (const type of ["completed", "done", "finished", "succeeded"]) {
+  assert.equal(classifyNativeSessionAttention({ status: { type } }).kind, "informational", `${type} is informational rather than a request for action`)
+  assert.equal(sessionNeedsAttention({ status: { type } }), false)
+}
+for (const type of ["working", "waiting", "retry", "busy", "running", "in_progress", "ready", "something-new"]) {
+  assert.equal(classifyNativeSessionAttention({ status: { type } }).kind, "none", `${type} must not be promoted into attention without evidence`)
+}
+
 const source = readFileSync(new URL("./components/native-session-home.tsx", import.meta.url), "utf8")
 assert.match(source, /presentationOverrides/, "live detail status must survive selecting another Session")
 assert.match(source, /\{ \.\.\.current, \[selectedKey\]: selectedState \}/, "the status bridge must be keyed by native Session identity")
@@ -143,4 +188,10 @@ assert.match(source, /entry\.nextCursor[\s\S]*loadOlderSessions/, "older native 
 assert.match(source, /refreshCursorPage\(existing, firstRecords, page\.nextCursor/, "a recurring first-page refresh must preserve the manual pagination tail")
 assert.match(source, /agent\.processID/, "adapter restarts must invalidate connection-bound ACP cursors")
 
-console.log("native Session Home tree, create parity and stable-selection UX tests passed")
+const attentionSource = readFileSync(new URL("./components/work-thread-attention.tsx", import.meta.url), "utf8")
+assert.match(attentionSource, /classifyNativeSessionAttention/, "the detail surface must use the shared attention state model")
+assert.match(attentionSource, /Authorization required/, "permissions must be visibly distinct from generic input")
+assert.match(attentionSource, /blocked until you allow or deny/, "authorization UI must explain that the agent remains blocked")
+assert.match(attentionSource, /If you do nothing, this request remains blocked/, "authorization UI must state the consequence of no response")
+
+console.log("native Session Home tree, create parity, attention semantics and stable-selection UX tests passed")
