@@ -42,16 +42,27 @@ test("handoff link survives restart and remains only metadata between real nativ
   }
 })
 
-test("Session links stay machine-local", async () => {
-  const stateDirectory = await mkdtemp(path.join(tmpdir(), "harness-session-links-scope-"))
+test("cross-machine lineage is replicated only by participating machines", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "harness-session-links-cross-machine-"))
+  const crossTarget = { ...target, machineID: "machine-2", directory: "/other/repo" }
+  const createdAt = "2026-09-11T17:20:00.000Z"
+  const expected = { type: "handoff", source, target: crossTarget, createdAt }
   try {
-    const store = new SessionLinkStore({ machineID: "machine-1", stateDirectory })
+    const sourceStore = new SessionLinkStore({ machineID: "machine-1", stateDirectory: path.join(root, "source") })
+    const targetStore = new SessionLinkStore({ machineID: "machine-2", stateDirectory: path.join(root, "target") })
+    const unrelatedStore = new SessionLinkStore({ machineID: "machine-3", stateDirectory: path.join(root, "unrelated") })
+
+    assert.deepEqual(await sourceStore.addHandoff({ source, target: crossTarget, createdAt }), expected)
+    assert.deepEqual(await targetStore.addHandoff({ source, target: crossTarget, createdAt }), expected)
+    assert.deepEqual(await sourceStore.listFor(source), [expected])
+    assert.deepEqual(await targetStore.listFor(crossTarget), [expected])
+
     await assert.rejects(
-      () => store.addHandoff({ source, target: { ...target, machineID: "machine-2" } }),
-      /stay inside their machine scope/
+      () => unrelatedStore.addHandoff({ source, target: crossTarget, createdAt }),
+      /must include a Session owned by this machine/
     )
   } finally {
-    await rm(stateDirectory, { recursive: true, force: true })
+    await rm(root, { recursive: true, force: true })
   }
 })
 
