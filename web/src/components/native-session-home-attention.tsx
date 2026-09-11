@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ComponentProps } from "react"
 import { notifyDesktopAttention, subscribeDesktopAttentionActivation } from "../desktopBridge"
+import { subscribeAndroidAttentionActivation } from "../native-session-attention-android"
 import { discoverAgentNativeSessionPage, nativeSessionSurfaceTarget, type NativeSessionSurfaceTarget } from "../native-session-discovery"
 import { loadNativeSessionAttentionIndex, type NativeSessionAttentionIndex, type NativeSessionAttentionIndexItem } from "../native-session-attention-index"
 import { startNativeSessionAttentionLiveRefresh, type NativeSessionAttentionLiveTarget } from "../native-session-attention-live"
@@ -202,6 +203,17 @@ export function NativeSessionHome(props: Props) {
     }
   }, [openingKey, props.selectedKey, rememberAndOpen])
 
+  const activateAttention = useCallback((activation: { machineID: string; agentID: string; sessionID: string }) => {
+    const target = [...targetsRef.current.values()].find((candidate) =>
+      candidate.machineID === activation.machineID && candidate.agent.id === activation.agentID
+    )
+    if (!target) {
+      setOpenError("The machine or harness for this notification is not currently available.")
+      return
+    }
+    void openAttentionSession(target, activation.sessionID)
+  }, [openAttentionSession])
+
   const refreshAttentionTarget = useCallback(async (candidate: NativeSessionAttentionLiveTarget, generation: number) => {
     const target = targetsRef.current.get(candidate.key)
     if (!target) return
@@ -233,16 +245,8 @@ export function NativeSessionHome(props: Props) {
     })
   }, [])
 
-  useEffect(() => subscribeDesktopAttentionActivation((activation) => {
-    const target = [...targetsRef.current.values()].find((candidate) =>
-      candidate.machineID === activation.machineID && candidate.agent.id === activation.agentID
-    )
-    if (!target) {
-      setOpenError("The machine or harness for this notification is not currently available.")
-      return
-    }
-    void openAttentionSession(target, activation.sessionID)
-  }), [openAttentionSession])
+  useEffect(() => subscribeDesktopAttentionActivation(activateAttention), [activateAttention])
+  useEffect(() => subscribeAndroidAttentionActivation(activateAttention), [activateAttention])
 
   useEffect(() => {
     const generation = ++generationRef.current
