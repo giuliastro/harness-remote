@@ -1,7 +1,6 @@
 import assert from "node:assert/strict"
 import test from "node:test"
 import { sameMachineConnection } from "./machineConnection.ts"
-import "./machine-pairing.test.mjs"
 
 const connection = (overrides = {}) => ({
   backend: "opencode",
