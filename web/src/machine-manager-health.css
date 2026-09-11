@@ -1,0 +1,55 @@
+.uw-machine-connection-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  width: fit-content;
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.uw-machine-connection-state > i {
+  width: 8px;
+  height: 8px;
+  flex: 0 0 8px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.uw-machine-connection-state.checking {
+  color: var(--td3-yellow-text);
+}
+
+.uw-machine-connection-state.online {
+  color: var(--td3-green-text);
+}
+
+.uw-machine-connection-state.offline {
+  color: var(--td3-red-text);
+}
+
+.uw-machine-connection-error {
+  display: block;
+  max-width: 62ch;
+  color: var(--td3-red-text);
+  font-size: 12px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.uw-machine-config-card[data-machine-state="offline"] {
+  border-color: var(--td3-red-soft);
+}
+
+.uw-machine-config-card[data-machine-state="checking"] {
+  border-color: var(--td3-yellow-soft);
+}
+
+@media (max-width: 720px) {
+  .uw-machine-connection-error {
+    max-width: none;
+  }
+
+  .uw-machine-config-actions .uw-manager-button[data-machine-retry] {
+    order: -1;
+  }
+}
