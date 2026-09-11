@@ -31,7 +31,7 @@
     "test:settings": "node src/settings-regression.test.mjs && node src/v3-ux-polish-regression.test.mjs",
     "test:v3-product-ui": "node --experimental-strip-types --test src/v3-conversation-input-performance.test.mjs src/workspace-runtime-merge.test.mjs src/workspace-machines.test.mjs src/v3-dialog-accessibility.test.mjs src/v3-workspace-navigation.test.mjs src/v3-composer-accessibility.test.mjs src/v3-offline-visibility.test.mjs src/v3-crash-recovery.test.mjs src/v3-terminology.test.mjs src/v3-topbar-layout.test.mjs src/v3-conversation-readability.test.mjs src/beautiful-ui-controls.test.mjs src/v3-mobile-keyboard-polish.test.mjs src/v3-v2-parity.test.mjs src/machine-live-refresh.test.mjs",
     "test:model": "node src/model-regression.test.mjs",
-    "test:events": "node --experimental-strip-types src/opencode-events.test.mjs",
+    "test:events": "node --experimental-strip-types src/opencode-events.test.mjs && node src/native-live-events-multiplex.test.mjs",
     "test:profiles": "node --experimental-strip-types src/server-profiles.test.mjs",
     "test:config": "node --experimental-strip-types src/server-config.test.mjs",
     "test:attachments": "node --experimental-strip-types src/attachments.test.mjs",
