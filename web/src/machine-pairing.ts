@@ -37,8 +37,9 @@ function normalizedPairingEndpoint(value: string): string | null {
   return `${endpoint.protocol}//${endpoint.hostname}:${port}`
 }
 
-/** Accept only the private URI emitted by the HR3 machine daemon startup pairing grant. */
-export function parseMachinePairingActivation(url: string, now = Date.now()): MachinePairingActivation | null {
+/** Accept only the private URI emitted by the HR3 machine daemon startup pairing grant. Expiry is
+ * checked during claim so opening an old QR produces an explicit user-visible error rather than a no-op. */
+export function parseMachinePairingActivation(url: string): MachinePairingActivation | null {
   let parsed: URL
   try { parsed = new URL(url) } catch { return null }
   if (parsed.protocol !== "harnessremote:" || parsed.hostname !== "pair") return null
@@ -48,7 +49,7 @@ export function parseMachinePairingActivation(url: string, now = Date.now()): Ma
   const expiresAt = Number(parsed.searchParams.get("expires"))
   const endpoint = endpointRaw ? normalizedPairingEndpoint(endpointRaw) : null
   if (!endpoint || !token || !TOKEN_PATTERN.test(token)) return null
-  if (!Number.isFinite(expiresAt) || expiresAt <= now) return null
+  if (!Number.isFinite(expiresAt) || expiresAt <= 0) return null
   return { endpoint, token, expiresAt }
 }
 
