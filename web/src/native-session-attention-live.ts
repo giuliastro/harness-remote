@@ -1,5 +1,5 @@
 import { nativeSessionConfig } from "./native-session-discovery"
-import { subscribeTaskDeskLiveEvents, type TaskDeskLiveEvent } from "./taskdesk-live-events"
+import { subscribeTaskDeskLiveEvents } from "./taskdesk-live-events"
 import type { MachineAgentHost, ServerConfig } from "./types"
 
 export type NativeSessionAttentionLiveTarget = {
@@ -8,14 +8,7 @@ export type NativeSessionAttentionLiveTarget = {
   agent: MachineAgentHost
 }
 
-type EventStatus = { type: string }
-type LiveSubscription = { close(): void }
-type Subscribe = (input: {
-  config: ServerConfig
-  onEvent: (event: TaskDeskLiveEvent) => void
-  onStatus?: (status: EventStatus) => void
-}) => LiveSubscription
-
+type Subscribe = typeof subscribeTaskDeskLiveEvents
 type Timer = ReturnType<typeof setTimeout>
 
 function supportsAttention(agent: MachineAgentHost): boolean {
