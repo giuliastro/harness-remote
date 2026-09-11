@@ -11,6 +11,33 @@ const DISCOVERY_STALE_GRACE_MS = 45_000
 const discoveryCache = new Map<string, { snapshot: MachineSnapshot; at: number }>()
 const projectCache = new Map<string, { projects: MachineProject[]; at: number }>()
 
+export type ApprovalDecisionIdentity = {
+  machineID: string
+  agentID: string
+  sessionID: string
+  directory: string
+}
+
+export type ApprovalDecisionRecord = ApprovalDecisionIdentity & {
+  type: "authorization-decision"
+  requestID: string
+  requestedAction: string
+  boundary: string[]
+  decision: "once" | "always" | "reject"
+  semantics: "one-shot" | "harness-reusable" | "denied"
+  decidedAt: string
+  explanation?: string
+}
+
+export type ApprovalDecisionInput = ApprovalDecisionIdentity & {
+  requestID: string
+  requestedAction: string
+  boundary?: string[]
+  decision: "once" | "always" | "reject"
+  decidedAt: string
+  explanation?: string
+}
+
 function headers(config: ServerConfig): Record<string, string> {
   const value: Record<string, string> = { Accept: "application/json" }
   if (hasCredentials(config)) value.Authorization = authHeader(config)
@@ -78,6 +105,28 @@ function recentCachedProjects(config: ServerConfig): MachineProject[] | null {
 
 export function noMachineStatus(status: number | undefined): boolean {
   return status === 404 || status === 503
+}
+
+function unsupportedOptionalMachineMetadataStatus(status: number | undefined): boolean {
+  return status === 404 || status === 405 || status === 501
+}
+
+function approvalDecisionRecords(value: unknown): ApprovalDecisionRecord[] {
+  const parsed = parseJSONValue(value, "approval decision")
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return []
+  const decisions = (parsed as { decisions?: unknown }).decisions
+  if (!Array.isArray(decisions)) return []
+  return decisions.filter((decision): decision is ApprovalDecisionRecord => Boolean(
+    decision
+      && typeof decision === "object"
+      && (decision as ApprovalDecisionRecord).type === "authorization-decision"
+      && typeof (decision as ApprovalDecisionRecord).machineID === "string"
+      && typeof (decision as ApprovalDecisionRecord).agentID === "string"
+      && typeof (decision as ApprovalDecisionRecord).sessionID === "string"
+      && typeof (decision as ApprovalDecisionRecord).requestID === "string"
+      && typeof (decision as ApprovalDecisionRecord).requestedAction === "string"
+      && ["once", "always", "reject"].includes((decision as ApprovalDecisionRecord).decision)
+  ))
 }
 
 /**
@@ -190,6 +239,75 @@ export async function listMachineProjects(config: ServerConfig): Promise<Machine
   }
   if (!response.ok) throw new Error(`HTTP ${response.status}`)
   return rememberProjects(config, machineProjects(await response.json()))
+}
+
+/**
+ * Persist observational authorization metadata only after the native harness has accepted the real
+ * permission reply. Old daemons simply return false so rolling upgrades never turn audit metadata
+ * into a prerequisite for controlling a Session.
+ */
+export async function recordApprovalDecision(config: ServerConfig, decision: ApprovalDecisionInput): Promise<boolean> {
+  const path = "/v1/approval-decisions"
+  if (isDesktopPlatform()) {
+    const result = await desktopRequestResult(config, { path, method: "POST", body: decision })
+    if (!result.ok) {
+      if (result.error.code === "http" && unsupportedOptionalMachineMetadataStatus(result.error.status)) return false
+      throw new Error(result.error.message)
+    }
+    return true
+  }
+
+  const target = `${machineBaseUrl(config)}${path}`
+  const requestHeaders = { ...headers(config), "Content-Type": "application/json" }
+  if (Capacitor.isNativePlatform()) {
+    let response
+    try {
+      response = await CapacitorHttp.post({ url: target, headers: requestHeaders, data: decision, connectTimeout: 12_000, readTimeout: 12_000 })
+    } catch { throw new Error(`Cannot reach ${config.host}:${config.port}.`) }
+    if (unsupportedOptionalMachineMetadataStatus(response.status)) return false
+    if (response.status >= 400) throw new Error(`HTTP ${response.status}`)
+    return true
+  }
+
+  let response: Response
+  try {
+    response = await fetch(target, { method: "POST", headers: requestHeaders, body: JSON.stringify(decision) })
+  } catch { throw new Error(`Cannot reach ${config.host}:${config.port}.`) }
+  if (unsupportedOptionalMachineMetadataStatus(response.status)) return false
+  if (!response.ok) throw new Error(`HTTP ${response.status}`)
+  return true
+}
+
+/** Read durable decision metadata from the machine so another client can explain prior choices. */
+export async function listApprovalDecisions(config: ServerConfig, identity: ApprovalDecisionIdentity): Promise<ApprovalDecisionRecord[]> {
+  const params = new URLSearchParams(identity)
+  const path = `/v1/approval-decisions?${params.toString()}`
+  if (isDesktopPlatform()) {
+    const result = await desktopRequestResult(config, { path })
+    if (!result.ok) {
+      if (result.error.code === "http" && unsupportedOptionalMachineMetadataStatus(result.error.status)) return []
+      throw new Error(result.error.message)
+    }
+    return approvalDecisionRecords(result.response.data)
+  }
+
+  const target = `${machineBaseUrl(config)}${path}`
+  if (Capacitor.isNativePlatform()) {
+    let response
+    try {
+      response = await CapacitorHttp.get({ url: target, headers: headers(config), connectTimeout: 12_000, readTimeout: 12_000 })
+    } catch { throw new Error(`Cannot reach ${config.host}:${config.port}.`) }
+    if (unsupportedOptionalMachineMetadataStatus(response.status)) return []
+    if (response.status >= 400) throw new Error(`HTTP ${response.status}`)
+    return approvalDecisionRecords(response.data)
+  }
+
+  let response: Response
+  try { response = await fetch(target, { headers: headers(config) }) }
+  catch { throw new Error(`Cannot reach ${config.host}:${config.port}.`) }
+  if (unsupportedOptionalMachineMetadataStatus(response.status)) return []
+  if (!response.ok) throw new Error(`HTTP ${response.status}`)
+  return approvalDecisionRecords(await response.json())
 }
 
 export function selectableMachineAgents(machine: MachineSnapshot): MachineSnapshot["agents"] {
