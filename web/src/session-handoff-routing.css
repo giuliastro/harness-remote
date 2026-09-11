@@ -16,23 +16,58 @@
 .hr-native-session-observer .tdw-route-preview > small { margin-left: auto; font-size: 10.5px; }
 .hr-native-session-observer .tdw-route-preview.active { animation: hrsf-working-pulse 1.9s ease-in-out infinite; }
 
+/* Native identity is control-plane information, not decoration. Keep harness / machine / Project and
+   the harness-owned Session id readable even when the title is long or the pane is narrow. */
+.hr-native-session-eyebrow {
+  flex-wrap: wrap;
+  overflow: visible;
+  row-gap: 3px;
+  white-space: normal;
+}
+.hr-native-session-eyebrow > span:first-child {
+  color: var(--td3-blue-text);
+  font-weight: 750;
+}
+.hr-native-session-eyebrow > span,
+.hr-native-session-eyebrow > strong {
+  max-width: min(280px, 36vw);
+  white-space: nowrap;
+}
+.hr-native-workspace-session-header code {
+  max-width: min(260px, 28vw);
+  padding: 3px 7px;
+  border: 1px solid var(--td3-border-soft);
+  border-radius: 7px;
+  background: var(--td3-field);
+  color: var(--td3-muted);
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+}
+
 .hr-session-lineage {
   flex: none;
   display: grid;
-  gap: 7px;
-  padding: 7px 14px;
+  gap: 8px;
+  padding: 8px 14px;
   border-bottom: 1px solid var(--td3-border-soft);
-  background: var(--td3-chrome);
+  background: linear-gradient(180deg, var(--td3-chrome), color-mix(in srgb, var(--td3-blue-soft) 30%, var(--td3-chrome)));
 }
-.hr-session-lineage-links { display: flex; flex-wrap: wrap; gap: 6px; }
+.hr-session-lineage-links {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(280px, 100%), 1fr));
+  gap: 7px;
+}
 .hr-session-lineage-link {
-  min-height: 34px;
+  position: relative;
+  min-width: 0;
+  min-height: 42px;
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
-  gap: 7px;
-  padding: 5px 9px;
+  gap: 8px;
+  padding: 6px 10px 6px 11px;
   border: 1px solid var(--td3-border);
+  border-left: 3px solid var(--td3-blue-border);
   border-radius: 9px;
   background: var(--td3-control);
   color: var(--td3-text-2);
@@ -41,9 +76,31 @@
   cursor: pointer;
 }
 .hr-session-lineage-link:hover,
-.hr-session-lineage-link:focus-visible { border-color: var(--td3-blue-border); background: var(--td3-blue-soft); outline: 0; }
-.hr-session-lineage-link > span { color: var(--td3-muted); font-size: 10px; font-weight: 700; text-transform: uppercase; }
-.hr-session-lineage-link > strong { min-width: 0; overflow: hidden; color: var(--td3-text); font-size: 11.5px; text-overflow: ellipsis; white-space: nowrap; }
+.hr-session-lineage-link:focus-visible {
+  border-color: var(--td3-blue-border);
+  background: var(--td3-blue-soft);
+  outline: 2px solid transparent;
+}
+.hr-session-lineage-link > span {
+  padding: 2px 5px;
+  border: 1px solid var(--td3-blue-border);
+  border-radius: 999px;
+  color: var(--td3-blue-text);
+  background: var(--td3-blue-soft);
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: .02em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.hr-session-lineage-link > strong {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--td3-text);
+  font-size: 11.5px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .hr-session-lineage-link > strong i { padding: 0 3px; opacity: .42; font-style: normal; }
 .hr-session-lineage-link > small { color: var(--td3-blue-text); font-size: 10.5px; white-space: nowrap; }
 
@@ -68,10 +125,21 @@
   .hr-native-session-observer .tdw-route-preview { display: grid; grid-template-columns: 1fr auto; gap: 2px 8px; padding: 6px 8px; }
   .hr-native-session-observer .tdw-route-preview > strong { justify-self: end; }
   .hr-native-session-observer .tdw-route-preview > small { grid-column: 1 / -1; margin-left: 0; }
-  .hr-session-lineage { gap: 5px; padding: 5px 8px; }
-  .hr-session-lineage-links { display: grid; grid-template-columns: 1fr; }
-  .hr-session-lineage-link { min-height: 44px; grid-template-columns: auto minmax(0, 1fr); padding: 6px 8px; }
-  .hr-session-lineage-link > small { grid-column: 2; }
+  .hr-native-session-eyebrow { gap: 3px 5px; }
+  .hr-native-session-eyebrow > span,
+  .hr-native-session-eyebrow > strong { max-width: calc(100vw - 78px); }
+  .hr-native-workspace-session-header code { max-width: min(52vw, 220px); }
+  .hr-session-lineage { gap: 6px; padding: 6px 8px; }
+  .hr-session-lineage-links { grid-template-columns: 1fr; }
+  .hr-session-lineage-link {
+    min-height: 50px;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 3px 8px;
+    padding: 7px 9px;
+  }
+  .hr-session-lineage-link > span { width: max-content; max-width: 100%; grid-column: 1 / -1; }
+  .hr-session-lineage-link > strong { grid-column: 1; }
+  .hr-session-lineage-link > small { grid-column: 2; grid-row: 2; }
   .hr-session-transfer-context > summary { min-height: 40px; }
   .hr-session-transfer-context > summary span { display: none; }
   .hr-session-transfer-context > pre { max-height: 28dvh; font-size: 10.5px; }
