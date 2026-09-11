@@ -36,7 +36,9 @@ test("the removed Conversation-first product UI stays deleted", () => {
 
 test("primary product surface is Machine -> Project -> native Session", () => {
   const shell = read("./components/standalone-universal-workspace.tsx")
-  const home = read("./components/native-session-home.tsx")
+  const publicHome = read("./components/native-session-home.tsx")
+  const home = read("./components/native-session-home-base.tsx")
+  const attentionHome = read("./components/native-session-home-attention.tsx")
   const observer = read("./components/native-session-observer.tsx")
   const sharedChat = read("./components/work-thread-conversation.tsx")
 
@@ -46,10 +48,13 @@ test("primary product surface is Machine -> Project -> native Session", () => {
   assert.match(shell, /const requestRefresh = useCallback\([\s\S]*setRevision[\s\S]*setListRevision/, 'refresh must re-read both machines and native Sessions')
   assert.match(shell, /onRefreshComplete=\{completeSessionRefresh\}/, 'the top bar must remain busy until its requested Session refresh settles')
   assert.match(shell, /<NativeSessionObserver/)
+  assert.match(publicHome, /native-session-home-attention/, 'the public Session rail must compose the global Attention Inbox')
   assert.match(home, /hr-native-machine-group/)
   assert.match(home, /hr-native-project-group/)
   assert.match(home, /hr-native-session-row/)
   assert.match(home, /sessionTreeRows/)
+  assert.match(attentionHome, /<NativeSessionHomeBase/, 'the Inbox must wrap rather than replace the mature Session browser')
+  assert.match(attentionHome, /Authorization required/, 'permissions must be globally visible as authorization, not generic attention')
   assert.match(observer, /<WorkThreadConversation/)
   assert.match(sharedChat, /buildConversationTimeline/)
   assert.match(sharedChat, /<TaskDeskConversation/)
@@ -57,7 +62,7 @@ test("primary product surface is Machine -> Project -> native Session", () => {
 
 test("Session-first workspace keeps machines projects harness filters models and settings", () => {
   const standalone = read("./components/standalone-universal-workspace.tsx")
-  const home = read("./components/native-session-home.tsx")
+  const home = read("./components/native-session-home-base.tsx")
   const observer = read("./components/native-session-observer.tsx")
   const picker = read("./components/model-picker.tsx")
 
@@ -76,7 +81,7 @@ test("Session-first workspace keeps machines projects harness filters models and
 
 test("native Session metadata actions belong to the open Session, not the navigation rail", () => {
   const standalone = read("./components/standalone-universal-workspace.tsx")
-  const home = read("./components/native-session-home.tsx")
+  const home = read("./components/native-session-home-base.tsx")
   const actions = read("./components/native-session-actions.tsx")
   const rename = read("./components/native-session-rename.tsx")
 
@@ -112,6 +117,7 @@ test("Session chat keeps bounded paging live events attention Stop and startup f
   const parts = read("./conversation-parts.ts")
   const overrides = read("./conversation-control-plane-overrides.css")
   const messageContent = read("./components/taskdesk-message-content.tsx")
+  const attentionHome = read("./components/native-session-home-attention.tsx")
 
   assert.match(chat, /INITIAL_PAGE_SIZE = 200/)
   assert.match(chat, /OLDER_PAGE_SIZE = 500/)
@@ -122,6 +128,9 @@ test("Session chat keeps bounded paging live events attention Stop and startup f
   assert.match(chat, /api\.loadQuestions/)
   assert.match(chat, /api\.loadPermissions/)
   assert.match(chat, /onStop=\{working && interactionEnabled \? stop : undefined\}/)
+  assert.match(attentionHome, /loadNativeSessionAttentionIndex/, 'global attention must use the small capability-driven read model')
+  assert.match(attentionHome, /startNativeSessionAttentionLiveRefresh/, 'global attention must use a dedicated live controller')
+  assert.doesNotMatch(attentionHome, /startTaskDeskSessionLiveRefresh|loadMessagePage|continueConversation|stopConversation/, 'global attention events must not read transcripts or invoke Session writers')
   assert.match(shared, /ThinkingIndicator/)
   assert.match(shared, /sending \|\| \(waiting && showWaitingIndicator\)/)
   assert.match(parts, /if \(forceRunning\) return "running"/)
