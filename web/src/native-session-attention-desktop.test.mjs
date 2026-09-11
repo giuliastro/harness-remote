@@ -2,7 +2,6 @@ import assert from "node:assert/strict"
 import { readFileSync } from "node:fs"
 import test from "node:test"
 import { desktopAttentionNotification } from "./native-session-attention-notification-presentation.ts"
-import "./native-session-attention-android.test.mjs"
 
 function event(overrides = {}) {
   return {
