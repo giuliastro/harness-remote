@@ -27,10 +27,11 @@ test("pairing activation accepts only the private explicit daemon endpoint shape
 })
 
 test("Android in-app scanner accepts only Harness Remote pairing QR values", async () => {
-  const expected = parseMachinePairingActivation(pairingURL())
+  const url = pairingURL()
+  const expected = parseMachinePairingActivation(url)
   assert.deepEqual(await scanAndroidMachinePairing({
     platform: "android",
-    scan: async () => ({ value: pairingURL() })
+    scan: async () => ({ value: url })
   }), expected)
   assert.equal(await scanAndroidMachinePairing({
     platform: "android",
@@ -125,7 +126,7 @@ test("Android packaging exposes deep-link and in-app QR pairing without CAMERA p
   assert.match(scanner, /enableAutoZoom\(\)/)
   assert.match(main, /subscribeAndroidMachinePairing/)
   assert.match(main, /scanAndroidMachinePairing\(\)/)
-  assert.match(main, />Scan QR code</)
+  assert.match(main, /"Scan QR code"/)
   assert.match(main, /upsertPairedMachine\(machinesRef\.current, paired\)/)
   assert.match(main, /persistMachines\(nextMachines\)/)
 })
