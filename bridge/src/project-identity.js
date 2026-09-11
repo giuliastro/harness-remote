@@ -31,9 +31,10 @@ export function canonicalGitRemote(value) {
   const remote = String(value ?? "").trim()
   if (!remote) return ""
 
-  // Common SCP-style SSH syntax: git@github.com:owner/repo.git
+  // Common SCP-style SSH syntax: git@github.com:owner/repo.git. URL schemes contain a colon too,
+  // but must be parsed as URLs first so credentials never become part of the repository path.
   const scp = /^(?:[^@/]+@)?([^:/]+):(.+)$/.exec(remote)
-  if (scp && !/^[A-Za-z]:[\\/]/.test(remote)) {
+  if (!remote.includes("://") && scp && !/^[A-Za-z]:[\\/]/.test(remote)) {
     return `${scp[1].toLowerCase()}/${stripGitSuffix(scp[2].replace(/^\/+/, ""))}`
   }
 
