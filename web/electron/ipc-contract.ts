@@ -37,6 +37,39 @@ export type DesktopAttentionNotification = DesktopCompletionNotification & {
   target: DesktopAttentionTarget
 }
 
+function boundedText(value: unknown, maxLength: number): value is string {
+  return typeof value === "string"
+    && value.length > 0
+    && value.length <= maxLength
+    && !/[\u0000-\u001f\u007f]/.test(value)
+}
+
+/** Attention notifications cross the renderer/main-process boundary and their target is later echoed
+ * back on click, so validate both presentation text and Native Session identity before displaying. */
+export function parseDesktopAttentionNotification(value: unknown): DesktopAttentionNotification | null {
+  if (!value || typeof value !== "object") return null
+  const candidate = value as Partial<DesktopAttentionNotification>
+  if (!boundedText(candidate.title, 120)
+    || !boundedText(candidate.body, 1000)
+    || !boundedText(candidate.overlayDescription, 240)
+    || !candidate.target
+    || typeof candidate.target !== "object") return null
+  const target = candidate.target as Partial<DesktopAttentionTarget>
+  if (!boundedText(target.machineID, 240)
+    || !boundedText(target.agentID, 240)
+    || !boundedText(target.sessionID, 512)) return null
+  return {
+    title: candidate.title,
+    body: candidate.body,
+    overlayDescription: candidate.overlayDescription,
+    target: {
+      machineID: target.machineID,
+      agentID: target.agentID,
+      sessionID: target.sessionID
+    }
+  }
+}
+
 export type DesktopProfile = {
   id: string
   backend: BackendKind
@@ -184,10 +217,7 @@ const ACCELERATOR_PATTERN = /^([A-Za-z0-9]+\+)*[A-Za-z0-9,.\/\\[\]`'-]+$/
  *  than trusted: bounded, printable, and free of the control characters a native menu would render
  *  as garbage. */
 function menuText(value: unknown, maxLength: number): value is string {
-  return typeof value === "string"
-    && value.length > 0
-    && value.length <= maxLength
-    && !/[\u0000-\u001f\u007f]/.test(value)
+  return boundedText(value, maxLength)
 }
 
 function parseMenuItem(value: unknown): DesktopMenuItemDescriptor | null {
