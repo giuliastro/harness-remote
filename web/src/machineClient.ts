@@ -133,15 +133,15 @@ function approvalDecisionRecords(value: unknown): ApprovalDecisionRecord[] {
  * Best-effort daemon discovery. A legacy bridge/OpenCode server, or a bridge without a machine
  * registry configured, returns null so every pre-daemon saved profile keeps working as before.
  *
- * Mobile radios and WebViews can briefly drop an otherwise healthy request while switching network
- * state. A short in-memory grace period keeps the already-rendered workspace stable during that
- * transient transport failure instead of making the whole app look unconfigured for one poll.
+ * A stale snapshot is never used unless a caller explicitly opts into the short transport-failure
+ * grace. Health/configuration surfaces therefore report the current reachability truth instead of
+ * presenting old agents as online after the daemon has stopped.
  */
 export async function discoverMachine(
   config: ServerConfig,
   options: { allowCachedOnTransportFailure?: boolean } = {}
 ): Promise<MachineSnapshot | null> {
-  const allowCachedOnTransportFailure = options.allowCachedOnTransportFailure !== false
+  const allowCachedOnTransportFailure = options.allowCachedOnTransportFailure === true
   if (isDesktopPlatform()) {
     const result = await desktopRequestResult(config, { path: "/v1/machine" })
     if (!result.ok) {
