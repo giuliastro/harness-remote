@@ -1,7 +1,7 @@
 import { App } from "@capacitor/app"
 import { Capacitor, CapacitorHttp, type PluginListenerHandle } from "@capacitor/core"
-import { machineBaseUrl, normalizeServerConfig } from "./serverConfig"
-import type { WorkspaceMachine } from "./workspaceMachines"
+import { machineBaseUrl, normalizeServerConfig } from "./serverConfig.ts"
+import type { WorkspaceMachine } from "./workspaceMachines.ts"
 
 export type MachinePairingActivation = {
   endpoint: string
