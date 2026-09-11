@@ -4,7 +4,8 @@ import test from "node:test"
 
 const read = (name) => readFileSync(new URL(name, import.meta.url), "utf8")
 const workspace = read("./components/standalone-universal-workspace.tsx")
-const home = read("./components/native-session-home.tsx")
+const home = read("./components/native-session-home-base.tsx")
+const attentionHome = read("./components/native-session-home-attention.tsx")
 const workbenchCss = read("./session-first-workbench.css")
 
 test("the retired Conversation workspace stays absent", () => {
@@ -55,6 +56,7 @@ test("Session list navigation groups real native Sessions by machine and Project
   assert.match(home, /sessionTreeRows\(group\.sessions\)/)
   assert.match(home, /onClick=\{\(\) => \{ if \(!deleting\) open\(item\) \}\}/)
   assert.match(home, /disabled=\{deleting\}/)
+  assert.match(attentionHome, /<NativeSessionHomeBase/, "global Attention must compose, not replace, native Session navigation")
 })
 
 test("new Session is created through the native Session path rather than a Conversation task", () => {

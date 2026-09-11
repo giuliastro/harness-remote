@@ -159,7 +159,7 @@ for (const type of ["working", "waiting", "retry", "busy", "running", "in_progre
   assert.equal(classifyNativeSessionAttention({ status: { type } }).kind, "none", `${type} must not be promoted into attention without evidence`)
 }
 
-const source = readFileSync(new URL("./components/native-session-home.tsx", import.meta.url), "utf8")
+const source = readFileSync(new URL("./components/native-session-home-base.tsx", import.meta.url), "utf8")
 assert.match(source, /presentationOverrides/, "live detail status must survive selecting another Session")
 assert.match(source, /\{ \.\.\.current, \[selectedKey\]: selectedState \}/, "the status bridge must be keyed by native Session identity")
 assert.match(source, /setPresentationOverrides\(\{\}\)[\s\S]*setRecords\(uniqueSessionRecords/, "a successful native discovery must retire temporary presentation overrides")
@@ -187,6 +187,14 @@ assert.doesNotMatch(source, /discoverMachineNativeSessions/, "the recurring rail
 assert.match(source, /entry\.nextCursor[\s\S]*loadOlderSessions/, "older native Session pages must require an explicit user action")
 assert.match(source, /refreshCursorPage\(existing, firstRecords, page\.nextCursor/, "a recurring first-page refresh must preserve the manual pagination tail")
 assert.match(source, /agent\.processID/, "adapter restarts must invalidate connection-bound ACP cursors")
+
+const inboxSource = readFileSync(new URL("./components/native-session-home-attention.tsx", import.meta.url), "utf8")
+assert.match(inboxSource, /loadNativeSessionAttentionIndex/, "the global Inbox must use the capability-driven pending-request index")
+assert.match(inboxSource, /startNativeSessionAttentionLiveRefresh/, "the global Inbox must use its dedicated attention event path")
+assert.match(inboxSource, /!result\.complete && previous[\s\S]*items: previous\.index\.items/, "a partial refresh must fail closed and preserve known pending attention")
+assert.match(inboxSource, /async function openInboxEntry[\s\S]*discoverAgentNativeSessionPage/, "native history lookup must happen only when a user opens an Inbox item")
+assert.match(inboxSource, /Authorization required/, "global permissions must remain visibly distinct from generic attention")
+assert.doesNotMatch(inboxSource, /startTaskDeskSessionLiveRefresh|loadMessagePage|continueConversation|stopConversation/, "global attention must stay outside transcript and Session writer paths")
 
 const attentionSource = readFileSync(new URL("./components/work-thread-attention.tsx", import.meta.url), "utf8")
 assert.match(attentionSource, /classifyNativeSessionAttention/, "the detail surface must use the shared attention state model")

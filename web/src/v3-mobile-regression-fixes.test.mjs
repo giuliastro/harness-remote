@@ -8,7 +8,8 @@ const read = (name) => readFileSync(path.join(here, name), "utf8").replace(/\r\n
 
 const main = read("main.tsx")
 const workspace = read("components/standalone-universal-workspace.tsx")
-const home = read("components/native-session-home.tsx")
+const home = read("components/native-session-home-base.tsx")
+const attentionHome = read("components/native-session-home-attention.tsx")
 const workbench = read("session-first-workbench.css")
 const navigation = read("session-first-navigation.css")
 
@@ -43,6 +44,7 @@ assert.match(home, /hr-native-project-group/)
 assert.match(home, /hr-native-session-row/)
 assert.match(home, /toggleMachineCollapsed/)
 assert.match(home, /toggleProjectCollapsed/)
+assert.match(attentionHome, /hr-native-attention-inbox/, "global attention must stay visible on the same mobile Sessions surface")
 assert.match(workbench, /@media \(max-width: 780px\)/)
 assert.match(workbench, /\.hr-native-workspace-body \{[\s\S]*grid-template-columns: 1fr/)
 assert.match(workbench, /\.hr-native-workspace-list \{[\s\S]*width: 100%/)

@@ -6,7 +6,8 @@ const read = (name) => readFileSync(new URL(name, import.meta.url), "utf8")
 const timeline = read("./work-thread-timeline.ts")
 const chat = read("./components/work-thread-conversation.tsx")
 const standalone = read("./components/standalone-universal-workspace.tsx")
-const home = read("./components/native-session-home.tsx")
+const home = read("./components/native-session-home-base.tsx")
+const attentionHome = read("./components/native-session-home-attention.tsx")
 const actions = read("./components/native-session-actions.tsx")
 
 test("the synthetic shared-chat timeline role is not named after the old product", () => {
@@ -23,7 +24,7 @@ test("the retired Conversation-first product UI is absent", () => {
 })
 
 test("no user-facing copy in the Session-first shell says Task or TaskDesk", () => {
-  const copy = [standalone, home, actions, chat]
+  const copy = [standalone, home, attentionHome, actions, chat]
     .join("\n")
     .replace(/^\s*\/\/.*$/gm, "")
     .replace(/\/\*[\s\S]*?\*\//g, "")
@@ -37,4 +38,6 @@ test("the visible product hierarchy names native Sessions directly", () => {
   assert.match(standalone, /t\("nav\.sessions"\)/)
   assert.match(home, /t\("sf\.newSession"\)/)
   assert.match(home, /t\("sf\.searchSessions"\)/)
+  assert.match(attentionHome, /Authorization required/)
+  assert.match(attentionHome, /Needs attention/)
 })
