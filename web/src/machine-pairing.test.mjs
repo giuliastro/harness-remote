@@ -111,7 +111,7 @@ test("re-pairing updates an existing endpoint in place instead of duplicating it
   assert.equal(result[0].config.password, "new-secret")
 })
 
-test("Android packaging exposes deep-link and in-app QR pairing without CAMERA permission", () => {
+test("Android packaging exposes deep-link and in-app QR pairing without CAMERA or notification permission", () => {
   const sync = readFileSync(new URL("../scripts/sync-native-live-events.mjs", import.meta.url), "utf8")
   const main = readFileSync(new URL("./main.tsx", import.meta.url), "utf8")
   const activity = readFileSync(new URL("../native-android/MainActivity.java", import.meta.url), "utf8")
@@ -121,6 +121,7 @@ test("Android packaging exposes deep-link and in-app QR pairing without CAMERA p
   assert.match(sync, /play-services-code-scanner:16\.1\.0/)
   assert.match(sync, /barcode_ui/)
   assert.doesNotMatch(sync, /android\.permission\.CAMERA/)
+  assert.doesNotMatch(sync, /POST_NOTIFICATIONS/)
   assert.match(activity, /registerPlugin\(PairingScannerPlugin\.class\)/)
   assert.match(scanner, /Barcode\.FORMAT_QR_CODE/)
   assert.match(scanner, /enableAutoZoom\(\)/)
