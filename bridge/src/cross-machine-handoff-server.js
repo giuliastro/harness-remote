@@ -4,6 +4,7 @@ import { authenticateDaemonRequest, writeJSON } from "./http-policy.js"
 
 const TARGET_HANDOFF_ROUTE = "/v1/session-handoff-target"
 const MAX_BODY_BYTES = 1_000_000
+const TARGET_CREATION_LEDGER_NAMESPACE = "cross-machine-handoff"
 
 function requestError(message, code = "invalid_request") {
   const error = new Error(message)
@@ -82,14 +83,17 @@ function signature(input) {
 /**
  * SessionOperationLedger requires an agent/session tuple because its original consumers mutate one
  * local native Session. A cross-machine target does not have a target Session yet, so use a reserved
- * opaque scope derived from the complete source identity. The hash prevents collisions between two
+ * ledger namespace plus an opaque scope derived from the complete source identity. Target harness,
+ * Project/model/title/variant deliberately do not change this key: they live in the mutation
+ * signature, so reusing one source-scoped clientRequestId with changed target semantics conflicts
+ * instead of silently creating a second resource. The hash also prevents collisions between two
  * machines whose harnesses happen to use the same native Session id and never exposes a path in
- * diagnostics. It is a ledger key only; it is never presented as a native Session identity.
+ * diagnostics. Neither field is ever presented as a native Session identity.
  */
 export function targetCreationLedgerIdentity(input) {
   const sourceDigest = createHash("sha256").update(JSON.stringify(input.source)).digest("hex")
   return {
-    agentID: input.targetAgentID,
+    agentID: TARGET_CREATION_LEDGER_NAMESPACE,
     sessionID: `handoff-source:${sourceDigest}`,
     clientRequestId: input.clientRequestId
   }
