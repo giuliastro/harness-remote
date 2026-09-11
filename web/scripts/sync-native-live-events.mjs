@@ -14,14 +14,6 @@ for (const file of ["MainActivity.java", "LiveEventsPlugin.java"]) {
 if (!existsSync(manifest)) throw new Error("Android manifest not found after Capacitor sync")
 let manifestText = readFileSync(manifest, "utf8")
 let changed = false
-const notificationPermission = "android.permission.POST_NOTIFICATIONS"
-if (!manifestText.includes(notificationPermission)) {
-  manifestText = manifestText.replace(
-    /(<manifest\b[^>]*>)/,
-    `$1\n    <uses-permission android:name="${notificationPermission}" />`
-  )
-  changed = true
-}
 
 // A phone camera / QR scanner opens this custom URI through MainActivity. The token itself remains
 // short-lived and one-use; this filter merely lets Android deliver the URI to Capacitor App.
@@ -41,4 +33,4 @@ if (!manifestText.includes(pairingMarker)) {
 }
 
 if (changed) writeFileSync(manifest, manifestText)
-console.log("Synced Harness Remote live-events plugin, Attention permission and machine-pairing deep link")
+console.log("Synced Harness Remote live-events plugin and machine-pairing deep link")
