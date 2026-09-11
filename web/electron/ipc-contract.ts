@@ -6,6 +6,8 @@ export const IPC_CHANNELS = Object.freeze({
   subscribeEvents: "desktop:events:subscribe",
   unsubscribeEvents: "desktop:events:unsubscribe",
   notifyCompletion: "desktop:completion:notify",
+  notifyAttention: "desktop:attention:notify",
+  attentionActivated: "desktop:attention:activated",
   event: "desktop:events:event",
   menuCommand: "desktop:menu:command",
   setMenu: "desktop:menu:set"
@@ -23,6 +25,16 @@ export type DesktopCompletionNotification = {
   title: string
   body: string
   overlayDescription: string
+}
+
+export type DesktopAttentionTarget = {
+  machineID: string
+  agentID: string
+  sessionID: string
+}
+
+export type DesktopAttentionNotification = DesktopCompletionNotification & {
+  target: DesktopAttentionTarget
 }
 
 export type DesktopProfile = {
