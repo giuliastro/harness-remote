@@ -91,6 +91,7 @@ function serviceHarness({ firstPrompt, preflight = exactPreflight() } = {}) {
     acknowledge: 0,
     links: [],
     promptIds: [],
+    promptInputs: [],
     marked: 0,
     preflight: 0
   }
@@ -118,6 +119,7 @@ function serviceHarness({ firstPrompt, preflight = exactPreflight() } = {}) {
     async registerSessionLink(config, link) { calls.links.push({ host: config.host, link }) },
     async sendFirstPrompt(input) {
       calls.promptIds.push(input.clientRequestId)
+      calls.promptInputs.push(input)
       if (firstPrompt) return firstPrompt(input, calls)
       return { status: "accepted", clientRequestId: input.clientRequestId }
     },
@@ -128,7 +130,13 @@ function serviceHarness({ firstPrompt, preflight = exactPreflight() } = {}) {
 
 function continuationInput(services, overrides = {}) {
   return {
-    source: sourceTarget(),
+    source: {
+      ...sourceTarget(),
+      // Representative source-side authorization from #371's boundary acceptance scenario. It is
+      // deliberately present on the source so the test can prove that continuity does not imply
+      // permission inheritance on another machine/runtime.
+      permission: [{ permission: "bash", pattern: "deploy production", action: "allow" }]
+    },
     sourceProjectId: "source-project",
     targetMachine: targetMachine(),
     targetProjectId: "target-project",
@@ -167,6 +175,8 @@ test("lost first-prompt response retries the same target and prompt request id",
   assert.equal(calls.links.length, 4, "the same lineage edge is retried on both machine-local stores")
   assert.deepEqual(calls.links.map((entry) => entry.host), ["source.local", "target.local", "source.local", "target.local"])
   assert.match(calls.links[0].link.transferredContext, /remaining failure/)
+  assert.doesNotMatch(calls.links[0].link.transferredContext, /deploy production/, "source authorization must not leak into portable context")
+  assert.equal(calls.promptInputs[0].target.permission, undefined, "first-prompt target must not inherit source authority")
   assert.equal(calls.marked, 1)
   assert.equal(result.target.machineID, "machine-b")
   assert.equal(result.target.sessionID, "target-1")
