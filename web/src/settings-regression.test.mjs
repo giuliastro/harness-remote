@@ -4,7 +4,7 @@ import { existsSync, readFileSync } from 'node:fs'
 const read = (name) => readFileSync(new URL(name, import.meta.url), 'utf8')
 const main = read('./main.tsx')
 const standalone = read('./components/standalone-universal-workspace.tsx')
-const home = read('./components/native-session-home.tsx')
+const home = read('./components/native-session-home-base.tsx')
 const observer = read('./components/native-session-observer.tsx')
 const machineClient = read('./machineClient.ts')
 const taskClient = read('./taskClient.ts')
