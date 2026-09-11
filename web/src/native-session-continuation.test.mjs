@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import { probeNativeSessionContinuation } from './native-session-continuation.ts'
 import './cross-machine-continuation.test.mjs'
+import './cross-machine-route-projects.test.mjs'
 
 function target(overrides = {}) {
   return {
