@@ -8,6 +8,10 @@ import {
   matchesFederatedSessionQuery,
   projectFederatedSession
 } from "./native-session-federation.ts"
+import {
+  federatedMoreStatesLabel,
+  federatedOperationalStateLabel
+} from "./native-session-federation-labels.ts"
 
 function session(overrides = {}) {
   return {
@@ -86,7 +90,22 @@ test("federated projection extends search to machine, Project, harness and model
   assert.equal(matchesFederatedSessionQuery(projection, "claude"), false)
 })
 
-test("Session rail consumes the federated read model for Project/model scopes and search", () => {
+test("operational state labels cover every supported language", () => {
+  const expected = {
+    en: ["More states", "Failed", "Completed", "Recent"],
+    it: ["Altri stati", "Non riuscite", "Completate", "Recenti"],
+    "zh-TW": ["其他狀態", "失敗", "已完成", "最近"],
+    "zh-CN": ["其他状态", "失败", "已完成", "最近"]
+  }
+  for (const [language, labels] of Object.entries(expected)) {
+    assert.equal(federatedMoreStatesLabel(language), labels[0])
+    assert.equal(federatedOperationalStateLabel("failed", language), labels[1])
+    assert.equal(federatedOperationalStateLabel("completed", language), labels[2])
+    assert.equal(federatedOperationalStateLabel("recent", language), labels[3])
+  }
+})
+
+test("Session rail consumes the federated read model for scopes, search and operational state", () => {
   const source = readFileSync(new URL("./components/native-session-home-base.tsx", import.meta.url), "utf8")
   assert.match(source, /projectFederatedSession/, "the rail must project already-discovered Sessions through the federation read model")
   assert.match(source, /projectFilter/, "Project must be a visible client-side scope")
@@ -94,4 +113,10 @@ test("Session rail consumes the federated read model for Project/model scopes an
   assert.match(source, /projection\.projectKey/, "Project filtering must use the stable federated Project identity")
   assert.match(source, /projection\.modelKey/, "model filtering must use the normalized federated model identity")
   assert.match(source, /matchesFederatedSessionQuery\(projection, query\)/, "search must include federated machine, Project, harness and model metadata")
+  assert.match(source, /liveStateForItem/, "only explicit live observations may override a native discovery bucket")
+  assert.match(source, /projectFederatedSession\([\s\S]*liveStateForItem\(item\)/, "federation must not reuse the generic UI presentation as authority")
+  assert.match(source, /projection\.bucket !== filter/, "operational filters must use the federated bucket")
+  assert.match(source, /setFilter\("active"\)/, "the Live shortcut must map to the active federated bucket")
+  assert.match(source, /federatedOperationalStateLabel/, "failed/completed/recent filters must use localized operational labels")
+  assert.doesNotMatch(source, /filter === "working"/, "legacy presentation-only Working filtering must not return")
 })
