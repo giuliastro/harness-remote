@@ -1,16 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { api } from "../api"
 import type { ConversationController } from "../conversation-controller"
-import { continueNativeSessionAcrossMachine } from "../cross-machine-continuation"
-import {
-  loadCrossMachineProjectRoute,
-  requireTargetRouteProject,
-  type CrossMachineProjectRoute
-} from "../cross-machine-route-projects"
-import {
-  planCrossMachineContinuation,
-  type CrossMachineRoutePlan
-} from "../cross-machine-route-plan"
 import type { NativeSessionSurfaceTarget } from "../native-session-discovery"
 import { canCreateNativeSession } from "../native-session-create"
 import { resolveNativeSessionTargetModel } from "../native-session-model"
@@ -28,6 +18,7 @@ import type { ConversationRuntime } from "../conversation-runtime"
 import type { AgentModelScope } from "../taskClient"
 import type { CommandInfo, MachineAgentHost } from "../types"
 import { LoadingIcon } from "../Icons"
+import { CrossMachineContinuePanel } from "./cross-machine-continue-panel"
 import { WorkThreadConversation } from "./work-thread-conversation"
 import "../native-session-observer.css"
 
@@ -50,7 +41,6 @@ function visualState(conversation: ConversationRuntime, attention = false): Nati
   if (nativeSessionIsWorking(conversation.status)) return "working"
   return "ready"
 }
-
 
 export { nativeSessionIsWorking }
 
@@ -169,74 +159,34 @@ export function NativeSessionObserver({
     return [{ ...machine, agents: current }]
   }), [routes, target.machineID, target.agentID, agent])
 
-  const routeMachine = useCallback((machineID: string): NativeSessionRouteMachine => {
-    const machine = routableRoutes.find((candidate) => candidate.machineID === machineID)
-    if (!machine) throw new Error("That machine is no longer available for continuation.")
-    return machine
-  }, [routableRoutes])
-
-  const loadRouteProjects = useCallback(async (machineID: string): Promise<CrossMachineProjectRoute> => {
-    const machine = routeMachine(machineID)
-    return loadCrossMachineProjectRoute({ source: target, targetMachine: machine })
-  }, [routeMachine, target])
-
-  const planRoute = useCallback(async ({
-    machineID,
-    agentID,
-    projectID
-  }: {
-    machineID: string
-    agentID: string
-    projectID: string
-  }): Promise<CrossMachineRoutePlan> => {
-    const machine = routeMachine(machineID)
-    const targetAgent = machine.agents.find((candidate) => candidate.id === agentID)
-    if (!targetAgent) throw new Error("That harness is no longer available on the target machine.")
-    return planCrossMachineContinuation({
-      source: target,
-      targetMachine: machine,
-      targetAgent,
-      targetProjectId: projectID
-    })
-  }, [routeMachine, target])
+  // Keep the mature composer scoped to same-machine harness switching. Cross-machine continuation
+  // has a separate explicit panel until that newer state machine has enough product-smoke coverage
+  // to be safely folded into the composer without destabilizing ordinary Session sends.
+  const sameMachineRoutes = useMemo(
+    () => routableRoutes.filter((machine) => machine.machineID === target.machineID),
+    [routableRoutes, target.machineID]
+  )
+  const crossMachineRoutes = useMemo(
+    () => routableRoutes.filter((machine) => machine.machineID !== target.machineID),
+    [routableRoutes, target.machineID]
+  )
 
   const handleRoutedContinue = useCallback(async (input: NativeSessionRouteContinueInput) => {
     if (!interactionEnabled) throw new Error("The machine is reconnecting. Continue will be available when the connection is healthy again.")
-    const machine = routeMachine(input.machineID)
-    const targetAgent = machine.agents.find((candidate) => candidate.id === input.agentID)
-    if (!targetAgent) throw new Error("That harness is no longer available on this machine.")
-
-    let next: NativeSessionSurfaceTarget
-    if (machine.machineID === target.machineID) {
-      next = await continueNativeSessionOnRoute({
-        source: target,
-        targetMachine: machine,
-        targetAgent,
-        prompt: input.prompt,
-        attachments: input.attachments,
-        model: input.model
-      })
-    } else {
-      if (!input.projectID) throw new Error("Choose a Project on the target machine before continuing.")
-      const projectRoute = await loadCrossMachineProjectRoute({ source: target, targetMachine: machine })
-      const targetProject = requireTargetRouteProject(machine.machineID, input.projectID, projectRoute.targetProjects)
-      const result = await continueNativeSessionAcrossMachine({
-        source: target,
-        sourceProjectId: projectRoute.sourceProject.id,
-        targetMachine: machine,
-        targetProjectId: targetProject.id,
-        targetAgent,
-        prompt: input.prompt,
-        attachments: input.attachments,
-        model: input.model,
-        confirmedProjectContinuity: input.confirmedProjectContinuity === true
-      })
-      next = result.target
-    }
-
+    const machine = sameMachineRoutes.find((candidate) => candidate.machineID === input.machineID)
+    const targetAgent = machine?.agents.find((candidate) => candidate.id === input.agentID)
+    if (!machine || !targetAgent) throw new Error("That harness is no longer available on this machine.")
+    const next = await continueNativeSessionOnRoute({
+      source: target,
+      targetMachine: machine,
+      targetAgent,
+      prompt: input.prompt,
+      attachments: input.attachments,
+      model: input.model
+    })
     onSessionRefresh?.()
     onOpenSession?.(next)
-  }, [routeMachine, target, onSessionRefresh, onOpenSession, interactionEnabled])
+  }, [sameMachineRoutes, target, onSessionRefresh, onOpenSession, interactionEnabled])
 
   useEffect(() => {
     let registration: ReturnType<typeof registerNativeSessionV3Adapter> | undefined
@@ -285,6 +235,17 @@ export function NativeSessionObserver({
 
   return (
     <div className="hr-native-session-observer writable">
+      {onOpenSession && crossMachineRoutes.length ? (
+        <CrossMachineContinuePanel
+          source={target}
+          routes={crossMachineRoutes}
+          interactionEnabled={interactionEnabled}
+          onOpenSession={onOpenSession}
+          onSessionRefresh={onSessionRefresh}
+          onConnectionIssue={onConnectionIssue}
+        />
+      ) : null}
+
       <WorkThreadConversation
         key={target.key}
         conversation={conversation}
@@ -299,11 +260,9 @@ export function NativeSessionObserver({
         commands={commands}
         interactionEnabled={interactionEnabled}
         onConnectionIssue={onConnectionIssue}
-        routing={onOpenSession && routableRoutes.length ? {
+        routing={onOpenSession && sameMachineRoutes.length ? {
           currentMachineID: target.machineID,
-          machines: routableRoutes,
-          loadCrossMachineProjects: loadRouteProjects,
-          planCrossMachineRoute: planRoute,
+          machines: sameMachineRoutes,
           onContinue: handleRoutedContinue
         } : undefined}
       />
