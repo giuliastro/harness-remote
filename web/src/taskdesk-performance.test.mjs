@@ -16,13 +16,17 @@ test("Session-first chat keeps live refresh with slow bounded reconciliation", (
   assert.match(liveRefresh, /document\.addEventListener\("visibilitychange"/)
 })
 
-test("Session list never fans out transcript reads for card previews", () => {
-  const home = read("./components/native-session-home.tsx")
+test("Session list and global Attention Inbox never fan out transcript reads for previews", () => {
+  const home = read("./components/native-session-home-base.tsx")
+  const attentionHome = read("./components/native-session-home-attention.tsx")
   assert.doesNotMatch(home, /loadMessagePage/)
   assert.doesNotMatch(home, /loadLatestMessage/)
   assert.match(home, /discoverAgentNativeSessionPage\(machine\.config, agent\)/)
   assert.match(home, /loadOlderSessions/)
   assert.doesNotMatch(home, /discoverMachineNativeSessions/)
+  assert.match(attentionHome, /loadNativeSessionAttentionIndex/, "attention previews must use the small pending-request index")
+  assert.doesNotMatch(attentionHome, /loadMessagePage|loadLatestMessage|startTaskDeskSessionLiveRefresh/, "attention previews must not touch transcript I/O")
+  assert.match(attentionHome, /async function openInboxEntry[\s\S]*discoverAgentNativeSessionPage/, "older native history may be paged only after an Inbox item is explicitly opened")
 })
 
 test("Session detail keeps bounded paging and memoized transcript rendering", () => {
@@ -55,7 +59,7 @@ test("ACP bridge retains lightweight Session indexing, cursor paging and diagnos
 
 test("mobile Session-first shell is native list plus detail, not the retired TaskDesk panes", () => {
   const shell = read("./components/standalone-universal-workspace.tsx")
-  const home = read("./components/native-session-home.tsx")
+  const home = read("./components/native-session-home-base.tsx")
   const navigation = read("./session-first-navigation.css")
 
   assert.match(shell, /<NativeSessionHome/)
@@ -81,8 +85,10 @@ test("Android back unwinds Session-first surfaces before exiting", () => {
 test("Session-first never repairs its own rendered tree from a MutationObserver", () => {
   const main = read("./main.tsx")
   const shell = read("./components/standalone-universal-workspace.tsx")
-  const home = read("./components/native-session-home.tsx")
+  const home = read("./components/native-session-home-base.tsx")
+  const attentionHome = read("./components/native-session-home-attention.tsx")
   assert.doesNotMatch(main, /MutationObserver/)
   assert.doesNotMatch(shell, /MutationObserver/)
   assert.doesNotMatch(home, /MutationObserver/)
+  assert.doesNotMatch(attentionHome, /MutationObserver/)
 })
