@@ -27,6 +27,13 @@ type InboxEntry = {
   complete: boolean
 }
 
+export type AttentionInboxCounts = {
+  authorization: number
+  recoverable: number
+  rejected: number
+  total: number
+}
+
 const ATTENTION_FALLBACK_MS = 30_000
 
 function supportsAttention(agent: MachineAgentHost): boolean {
@@ -68,7 +75,47 @@ function entrySummary(item: NativeSessionAttentionIndexItem): string {
 }
 
 function attentionRank(item: NativeSessionAttentionIndexItem): number {
-  return item.attention.kind === "authorization" ? 0 : 1
+  switch (item.attention.kind) {
+    case "authorization": return 0
+    case "rejected": return 1
+    case "recoverable": return 2
+    default: return 3
+  }
+}
+
+function attentionPresentation(item: NativeSessionAttentionIndexItem): {
+  className: "authorization" | "recoverable" | "rejected"
+  label: string
+  consequence?: string
+} {
+  if (item.attention.kind === "authorization") {
+    return {
+      className: "authorization",
+      label: "Authorization required",
+      consequence: "If you do nothing, this request stays blocked."
+    }
+  }
+  if (item.attention.kind === "rejected") {
+    return {
+      className: "rejected",
+      label: "Request rejected",
+      consequence: "This request was rejected and will not proceed automatically."
+    }
+  }
+  return {
+    className: "recoverable",
+    label: item.attention.reason === "question" ? "Needs input" : "Needs attention"
+  }
+}
+
+export function attentionInboxCounts(items: NativeSessionAttentionIndexItem[]): AttentionInboxCounts {
+  return items.reduce<AttentionInboxCounts>((counts, item) => {
+    if (item.attention.kind === "authorization") counts.authorization += 1
+    else if (item.attention.kind === "recoverable") counts.recoverable += 1
+    else if (item.attention.kind === "rejected") counts.rejected += 1
+    counts.total += 1
+    return counts
+  }, { authorization: 0, recoverable: 0, rejected: 0, total: 0 })
 }
 
 /**
@@ -178,6 +225,7 @@ export function NativeSessionHome(props: Props) {
       || left.item.sessionID.localeCompare(right.item.sessionID)
     ), [scopes])
 
+  const counts = useMemo(() => attentionInboxCounts(inbox.map((entry) => entry.item)), [inbox])
   const incomplete = Object.values(scopes).some((scope) => !scope.index.complete)
 
   // The base rail already reports generic status/error attention. Add explicit pending question /
@@ -185,8 +233,8 @@ export function NativeSessionHome(props: Props) {
   // In normal harness behavior these sets are disjoint: a blocked permission keeps the native
   // Session working/waiting rather than changing its discovery status to a generic attention error.
   useEffect(() => {
-    props.onAttentionCountChange?.(baseAttentionCount + inbox.length)
-  }, [baseAttentionCount, inbox.length, props.onAttentionCountChange])
+    props.onAttentionCountChange?.(baseAttentionCount + counts.total)
+  }, [baseAttentionCount, counts.total, props.onAttentionCountChange])
 
   const rememberAndOpen = useCallback((target: NativeSessionSurfaceTarget) => {
     setKnownTargets((current) => ({ ...current, [target.key]: target }))
@@ -225,8 +273,13 @@ export function NativeSessionHome(props: Props) {
       {inbox.length || incomplete ? (
         <section className="hr-native-attention-inbox" aria-label="Attention Inbox" aria-live="polite">
           <div className="hr-native-attention-heading">
-            <span><strong>Attention</strong><small>{inbox.length} pending</small></span>
-            {incomplete ? <em title="One or more attention endpoints could not be refreshed.">Some status may be stale</em> : null}
+            <span className="hr-native-attention-title"><strong>Attention</strong><small>{counts.total} pending</small></span>
+            <span className="hr-native-attention-counts" aria-label="Attention summary">
+              {counts.authorization ? <small className="authorization" title="Authorization required">{counts.authorization} auth</small> : null}
+              {counts.recoverable ? <small className="recoverable" title="Needs input or recoverable attention">{counts.recoverable} input</small> : null}
+              {counts.rejected ? <small className="rejected" title="Rejected or fail-closed">{counts.rejected} rejected</small> : null}
+              {incomplete ? <em title="One or more attention endpoints could not be refreshed.">Some status may be stale</em> : null}
+            </span>
           </div>
           {inbox.length ? (
             <div className="hr-native-attention-list">
@@ -234,22 +287,22 @@ export function NativeSessionHome(props: Props) {
                 const key = sessionKey(entry.target, entry.item.sessionID)
                 const selected = props.selectedKey === key
                 const known = knownTargets[key]
-                const authorization = entry.item.attention.kind === "authorization"
+                const presentation = attentionPresentation(entry.item)
                 const permission = entry.item.permissions[0]
                 return (
                   <button
                     type="button"
-                    className={`hr-native-attention-row ${authorization ? "authorization" : "recoverable"}${selected ? " selected" : ""}`}
+                    className={`hr-native-attention-row ${presentation.className}${selected ? " selected" : ""}`}
                     key={`${entry.target.key}:${entry.item.sessionID}`}
                     onClick={() => void openInboxEntry(entry)}
                     disabled={openingKey === key}
                     aria-current={selected ? "page" : undefined}
-                    aria-label={`${authorization ? "Authorization required" : "Needs attention"}: ${known?.title || entry.item.sessionID}, ${entry.target.agent.label}, ${entry.target.machineName}`}
+                    aria-label={`${presentation.label}: ${known?.title || entry.item.sessionID}, ${entry.target.agent.label}, ${entry.target.machineName}`}
                   >
                     <span className="hr-native-attention-copy">
-                      <strong>{authorization ? "Authorization required" : "Needs attention"}</strong>
+                      <strong>{presentation.label}</strong>
                       <small>{entrySummary(entry.item)}</small>
-                      {authorization ? <em>If you do nothing, this request stays blocked.</em> : null}
+                      {presentation.consequence ? <em>{presentation.consequence}</em> : null}
                     </span>
                     <span className="hr-native-attention-identity">
                       <strong>{known?.title || `Session ${shortSessionID(entry.item.sessionID)}`}</strong>
