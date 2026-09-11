@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 
 const observer = readFileSync(new URL('./components/native-session-observer.tsx', import.meta.url), 'utf8')
+const crossMachinePanel = readFileSync(new URL('./components/cross-machine-continue-panel.tsx', import.meta.url), 'utf8')
 const adapter = readFileSync(new URL('./native-session-v3-adapter.ts', import.meta.url), 'utf8')
 const workThread = readFileSync(new URL('./components/work-thread-conversation.tsx', import.meta.url), 'utf8')
 const nativeModel = readFileSync(new URL('./native-session-model.ts', import.meta.url), 'utf8')
@@ -21,6 +22,25 @@ assert.equal(observer.includes('startTaskDeskSessionLiveRefresh'), false, 'obser
 assert.equal(observer.includes('sendNativeSessionPrompt'), false, 'observer must not own a parallel send controller')
 assert.equal(observer.includes('stopNativeSession'), false, 'observer must not own a parallel Stop controller')
 assert.equal(observer.includes('ModelSelectionControl'), false, 'observer must not own a parallel model picker')
+
+// Cross-machine continuation is intentionally isolated from the mature same-machine composer. This
+// protects normal Session sends while the newer route state machine gains browser/mobile coverage.
+assert.ok(observer.includes('const sameMachineRoutes = useMemo'), 'same-machine routing must remain an explicit isolated set')
+assert.ok(observer.includes('const crossMachineRoutes = useMemo'), 'cross-machine destinations must remain an explicit isolated set')
+assert.ok(observer.includes('<CrossMachineContinuePanel'), 'cross-machine continuation must use its explicit safety surface')
+assert.ok(observer.includes('routes={crossMachineRoutes}'), 'the cross-machine panel must never receive the source-machine route')
+assert.ok(observer.includes('machines: sameMachineRoutes'), 'the mature composer must stay scoped to same-machine harness routing')
+assert.equal(observer.includes('machines: routableRoutes'), false, 'cross-machine routes must not silently enter the mature composer yet')
+
+assert.ok(crossMachinePanel.includes('loadCrossMachineProjectRoute'), 'cross-machine selection must resolve canonical machine-local Projects')
+assert.ok(crossMachinePanel.includes('planCrossMachineContinuation'), 'cross-machine UI must preflight Project continuity before mutation')
+assert.ok(crossMachinePanel.includes('continueNativeSessionAcrossMachine'), 'the final UI mutation must use the crash-safe orchestrator')
+assert.ok(crossMachinePanel.includes('confirmedProjectContinuity: confirmationRequired && confirmed'), 'diverged workspaces must require explicit user confirmation')
+assert.ok(crossMachinePanel.includes('plan?.disposition === "blocked"'), 'repository/history mismatch must be visibly blocked')
+assert.ok(crossMachinePanel.includes('taskClient.listAgentModels'), 'target model choice must come from the selected harness current catalog')
+assert.ok(crossMachinePanel.includes('attachments: []'), 'the first cross-machine UI must make its no-attachment boundary explicit')
+assert.ok(crossMachinePanel.includes('Attachments and source permissions are not transferred.'), 'the authority and attachment boundary must be visible in the UI')
+assert.ok(crossMachinePanel.indexOf('planCrossMachineContinuation') < crossMachinePanel.indexOf('continueNativeSessionAcrossMachine'), 'read-only planning must exist before the mutation path')
 
 assert.ok(adapter.includes('async loadMessagePage(config, sessionID, directory, before, limit, refreshHistory)'), 'adapter must observe the pages requested by the v3 controller through its scoped boundary')
 assert.equal(adapter.includes('api.loadMessagePage ='), false, 'native Session mounting must not mutate the shared API client')
