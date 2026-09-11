@@ -1,7 +1,7 @@
 export type MachineManagerHealth<TSnapshot> =
   | { state: "checking"; snapshot?: TSnapshot }
   | { state: "online"; snapshot: TSnapshot }
-  | { state: "offline"; error?: string }
+  | { state: "offline"; snapshot?: TSnapshot; error?: string }
 
 export function checkingMachineHealth<TSnapshot>(
   previous?: MachineManagerHealth<TSnapshot>
