@@ -63,6 +63,79 @@ function safeURL(value) {
   }
 }
 
+function authorization(user = process.env.HR_USER ?? "", pass = process.env.HR_PASS ?? "") {
+  return `Basic ${Buffer.from(`${user}:${pass}`, "utf8").toString("base64")}`
+}
+
+function preflightAgent(agentID, agents) {
+  const agent = agents.find((candidate) => candidate?.id === agentID)
+  return {
+    id: agentID,
+    registered: Boolean(agent),
+    backend: agent?.backend ?? null,
+    transport: agent?.transport ?? null,
+    state: agent?.state ?? null,
+    modelCatalog: agent?.modelCatalog
+      ? {
+          configured: true,
+          source: agent.modelCatalog.source ?? null,
+          cachedModels: agent.modelCatalog.cachedModels ?? 0,
+          phase: agent.modelCatalog.phase ?? null
+        }
+      : { configured: false, source: null, cachedModels: 0, phase: null }
+  }
+}
+
+export async function preflightDaemon({
+  harnesses,
+  urlRoot = process.env.HR_URL ?? "http://127.0.0.1:4097",
+  user = process.env.HR_USER ?? "",
+  pass = process.env.HR_PASS ?? "",
+  fetchImpl = globalThis.fetch,
+  timeoutMs = 10_000
+}) {
+  const root = urlRoot.replace(/\/$/, "")
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), timeoutMs)
+  try {
+    const response = await fetchImpl(`${root}/v1/diagnostics`, {
+      headers: { Accept: "application/json", Authorization: authorization(user, pass) },
+      signal: controller.signal
+    })
+    const text = await response.text()
+    let data
+    try { data = text ? JSON.parse(text) : {} } catch { data = {} }
+
+    if (!response.ok) {
+      const detail = response.status === 401
+        ? "Daemon rejected the supplied credentials."
+        : `Diagnostics endpoint returned HTTP ${response.status}.`
+      return { passed: false, status: response.status, error: detail, machineID: null, agents: [], missingHarnesses: [...harnesses], missingModelCatalogs: [] }
+    }
+
+    const agents = Array.isArray(data?.agents) ? data.agents : []
+    const selected = harnesses.map((agentID) => preflightAgent(agentID, agents))
+    const missingHarnesses = selected.filter((agent) => !agent.registered).map((agent) => agent.id)
+    const missingModelCatalogs = selected.filter((agent) => agent.registered && !agent.modelCatalog.configured).map((agent) => agent.id)
+    return {
+      passed: missingHarnesses.length === 0 && missingModelCatalogs.length === 0,
+      status: response.status,
+      error: null,
+      machineID: data?.machine?.id ?? null,
+      agents: selected,
+      missingHarnesses,
+      missingModelCatalogs
+    }
+  } catch (error) {
+    const message = error?.name === "AbortError"
+      ? `Diagnostics preflight timed out after ${timeoutMs}ms.`
+      : `Could not reach daemon diagnostics: ${error instanceof Error ? error.message : String(error)}`
+    return { passed: false, status: 0, error: message, machineID: null, agents: [], missingHarnesses: [...harnesses], missingModelCatalogs: [] }
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
 function gitCommit() {
   try {
     return execFileSync("git", ["rev-parse", "HEAD"], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim()
@@ -80,7 +153,7 @@ export function defaultReportPath(cwd = process.cwd(), date = new Date()) {
 }
 
 export function gateUsage() {
-  return `Usage: npm run gate:real-harness -- [options]\n\nOptions:\n  --harnesses <list>  Comma-separated harnesses to verify (default: ${SUPPORTED_HARNESSES.join(",")})\n  --mode <mode>       release (default) or control-plane\n  --report <path>     JSON evidence report path (default: artifacts/real-harness-gate-<timestamp>.json)\n  --help              Show this help\n\nShared soak settings still use HR_URL, HR_USER, HR_PASS, HR_DIR_A, HR_DIR_B, HR_CYCLES, HR_TURN_BUDGET_MS and HR_ECHO_MARKERS. Release mode always disables HR_ALLOW_TURN_ERRORS. Use --mode control-plane when inference is unavailable; that mode is recorded as not release-eligible.`
+  return `Usage: npm run gate:real-harness -- [options]\n\nOptions:\n  --harnesses <list>  Comma-separated harnesses to verify (default: ${SUPPORTED_HARNESSES.join(",")})\n  --mode <mode>       release (default) or control-plane\n  --report <path>     JSON evidence report path (default: artifacts/real-harness-gate-<timestamp>.json)\n  --help              Show this help\n\nThe gate first checks /v1/diagnostics and stops early if the daemon is unreachable, credentials are rejected, a requested harness is not registered, or model discovery is not configured. Shared soak settings use HR_URL, HR_USER, HR_PASS, HR_DIR_A, HR_DIR_B, HR_CYCLES, HR_TURN_BUDGET_MS and HR_ECHO_MARKERS. Release mode always disables HR_ALLOW_TURN_ERRORS. Use --mode control-plane when inference is unavailable; that mode is recorded as not release-eligible.`
 }
 
 async function runSoak({ primary, secondary, mode, soakPath }) {
@@ -109,7 +182,20 @@ async function runSoak({ primary, secondary, mode, soakPath }) {
   }
 }
 
-export async function runGate({ harnesses, mode, reportPath, soakPath = fileURLToPath(new URL("./session-first-soak.mjs", import.meta.url)) }) {
+function persistReport(reportPath, report) {
+  fs.mkdirSync(path.dirname(reportPath), { recursive: true })
+  fs.writeFileSync(reportPath, `${JSON.stringify(report, null, 2)}\n`, "utf8")
+  console.log(`\nEvidence report: ${reportPath}`)
+  console.log(`Verdict: ${report.verdict}`)
+}
+
+export async function runGate({
+  harnesses,
+  mode,
+  reportPath,
+  soakPath = fileURLToPath(new URL("./session-first-soak.mjs", import.meta.url)),
+  preflight = preflightDaemon
+}) {
   const echoMarkers = process.env.HR_ECHO_MARKERS !== "0"
   const eligibility = releaseEligibility({ mode, echoMarkers })
   const plan = buildHarnessPlan(harnesses)
@@ -120,21 +206,35 @@ export async function runGate({ harnesses, mode, reportPath, soakPath = fileURLT
   console.log(`Evidence: ${eligibility.evidence}`)
   console.log(eligibility.note)
 
-  for (const pair of plan) {
-    console.log(`\n========================================`)
-    console.log(`Primary ${pair.primary} / secondary ${pair.secondary}`)
-    console.log(`========================================`)
-    const result = await runSoak({ ...pair, mode, soakPath })
-    runs.push(result)
-    if (!result.passed) {
-      console.error(`Gate leg failed for ${pair.primary} (exit ${result.exitCode}${result.signal ? `, signal ${result.signal}` : ""}).`)
+  console.log("\n== daemon preflight ==")
+  const preflightResult = await preflight({ harnesses })
+  if (preflightResult.passed) {
+    for (const agent of preflightResult.agents) {
+      console.log(`  ok   ${agent.id}: registered, model discovery=${agent.modelCatalog.source ?? "configured"}`)
+    }
+  } else {
+    console.error(`  FAIL ${preflightResult.error ?? "Daemon preflight failed."}`)
+    if (preflightResult.missingHarnesses?.length) console.error(`       missing harnesses: ${preflightResult.missingHarnesses.join(", ")}`)
+    if (preflightResult.missingModelCatalogs?.length) console.error(`       model discovery unavailable: ${preflightResult.missingModelCatalogs.join(", ")}`)
+  }
+
+  if (preflightResult.passed) {
+    for (const pair of plan) {
+      console.log(`\n========================================`)
+      console.log(`Primary ${pair.primary} / secondary ${pair.secondary}`)
+      console.log(`========================================`)
+      const result = await runSoak({ ...pair, mode, soakPath })
+      runs.push(result)
+      if (!result.passed) {
+        console.error(`Gate leg failed for ${pair.primary} (exit ${result.exitCode}${result.signal ? `, signal ${result.signal}` : ""}).`)
+      }
     }
   }
 
-  const allPassed = runs.every((run) => run.passed)
+  const allPassed = preflightResult.passed && runs.length === plan.length && runs.every((run) => run.passed)
   const verdict = !allPassed ? "failed" : eligibility.releaseEligible ? "verified" : "control-plane-only"
   const report = {
-    schemaVersion: 1,
+    schemaVersion: 2,
     kind: "harness-remote-real-harness-gate",
     generatedAt: new Date().toISOString(),
     source: { commit: gitCommit() },
@@ -150,14 +250,12 @@ export async function runGate({ harnesses, mode, reportPath, soakPath = fileURLT
       echoMarkers,
       allowTurnErrors: mode === "control-plane"
     },
+    preflight: preflightResult,
     runs,
     verdict
   }
 
-  fs.mkdirSync(path.dirname(reportPath), { recursive: true })
-  fs.writeFileSync(reportPath, `${JSON.stringify(report, null, 2)}\n`, "utf8")
-  console.log(`\nEvidence report: ${reportPath}`)
-  console.log(`Verdict: ${verdict}`)
+  persistReport(reportPath, report)
   return report
 }
 
