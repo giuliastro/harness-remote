@@ -143,6 +143,7 @@ test("machine server wires registry, routing, native Session operations, task li
   let bridgeOptions
   let routerOptions
   let claimOptions
+  let crossMachineHandoffOptions
   let launchOptions
   let modelOptions
   let finishOptions
@@ -150,6 +151,7 @@ test("machine server wires registry, routing, native Session operations, task li
   const bridgeServer = { marker: "bridge", acpService: { async claimSession() { return true }, async prompt() {}, async abort() {} } }
   const routedServer = { marker: "router" }
   const claimServer = { marker: "session-claim" }
+  const crossMachineHandoffServer = { marker: "cross-machine-handoff" }
   const launchServer = { marker: "launch" }
   const modelServer = { marker: "models" }
   const finishServer = { marker: "finish" }
@@ -165,6 +167,7 @@ test("machine server wires registry, routing, native Session operations, task li
     createServer: (options) => { bridgeOptions = options; return bridgeServer },
     createRouter: (options) => { routerOptions = options; return routedServer },
     createClaimServer: (options) => { claimOptions = options; return claimServer },
+    createCrossMachineHandoffServerFactory: (options) => { crossMachineHandoffOptions = options; return crossMachineHandoffServer },
     createLaunchServer: (options) => { launchOptions = options; return launchServer },
     createModelServer: (options) => { modelOptions = options; return modelServer },
     createFinishServer: (options) => { finishOptions = options; return finishServer },
@@ -185,7 +188,11 @@ test("machine server wires registry, routing, native Session operations, task li
   assert.equal(typeof claimOptions.handoffSession, "function")
   assert.equal(typeof claimOptions.reconcileHandoff, "function")
   assert.equal(claimOptions.operationLedger, fakeLedger)
-  assert.equal(launchOptions.innerServer, claimServer)
+  assert.equal(crossMachineHandoffOptions.innerServer, claimServer)
+  assert.equal(crossMachineHandoffOptions.operationLedger, fakeLedger)
+  assert.equal(typeof crossMachineHandoffOptions.createTargetSession, "function")
+  assert.equal(typeof crossMachineHandoffOptions.reconcileTargetSession, "function")
+  assert.equal(launchOptions.innerServer, crossMachineHandoffServer)
   assert.equal(typeof launchOptions.taskRunController.launch, "function")
   assert.equal(modelOptions.innerServer, launchServer)
   assert.equal(modelOptions.daemon, daemon)
