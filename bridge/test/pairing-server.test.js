@@ -1,7 +1,13 @@
 import assert from "node:assert/strict"
 import http from "node:http"
 import test from "node:test"
-import { OneTimePairingGrant, createPairingServer } from "../src/pairing-server.js"
+import {
+  OneTimePairingGrant,
+  PAIRING_TTL_MS,
+  createOneTimePairingGrant,
+  createPairingServer,
+  machinePairingLinks
+} from "../src/pairing-server.js"
 
 async function listen(server) {
   await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve))
@@ -9,7 +15,7 @@ async function listen(server) {
   return `http://127.0.0.1:${address.port}`
 }
 function close(server) { return new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve())) }
-function config() { return { username: "harness", password: "secret-password", corsOrigins: [] } }
+function config() { return { host: "0.0.0.0", port: 4097, username: "harness", password: "secret-password", corsOrigins: [] } }
 function machine() { return { id: "machine-1", name: "Dev workstation" } }
 function grant(overrides = {}) {
   return new OneTimePairingGrant({ token: "one-time-token", expiresAt: 2_000, now: () => 1_000, ...overrides })
@@ -22,6 +28,29 @@ async function claim(base, token = "one-time-token") {
     body: JSON.stringify({ token })
   })
 }
+
+test("generated pairing grant is high entropy and expires after the short bootstrap window", () => {
+  const generated = createOneTimePairingGrant({
+    now: () => 10_000,
+    randomBytesImpl: (size) => {
+      assert.equal(size, 32)
+      return Buffer.alloc(size, 0xab)
+    }
+  })
+  assert.match(generated.token, /^[A-Za-z0-9_-]{40,}$/)
+  assert.equal(generated.expiresAt, 10_000 + PAIRING_TTL_MS)
+})
+
+test("scan-ready pairing links contain the one-time grant but never Basic Auth credentials", () => {
+  const links = machinePairingLinks(config(), grant(), {
+    eth0: [{ family: "IPv4", internal: false, address: "192.168.1.44" }]
+  })
+  assert.equal(links.length, 1)
+  assert.equal(links[0].endpoint, "http://192.168.1.44:4097")
+  assert.match(links[0].uri, /^harnessremote:\/\/pair\?/)
+  assert.match(links[0].uri, /token=one-time-token/)
+  assert.doesNotMatch(links[0].uri, /secret-password|harness%3A|username|password/)
+})
 
 test("pairing claim returns the existing daemon credentials without Basic Auth", async () => {
   const innerServer = http.createServer((_request, response) => { response.writeHead(401); response.end() })
