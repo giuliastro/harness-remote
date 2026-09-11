@@ -192,7 +192,7 @@ const inboxSource = readFileSync(new URL("./components/native-session-home-atten
 assert.match(inboxSource, /loadNativeSessionAttentionIndex/, "the global Inbox must use the capability-driven pending-request index")
 assert.match(inboxSource, /startNativeSessionAttentionLiveRefresh/, "the global Inbox must use its dedicated attention event path")
 assert.match(inboxSource, /!result\.complete && previous[\s\S]*items: previous\.index\.items/, "a partial refresh must fail closed and preserve known pending attention")
-assert.match(inboxSource, /async function openInboxEntry[\s\S]*discoverAgentNativeSessionPage/, "native history lookup must happen only when a user opens an Inbox item")
+assert.match(inboxSource, /openAttentionSession[\s\S]*discoverAgentNativeSessionPage/, "native history lookup must happen only when a user opens an Inbox item or notification")
 assert.match(inboxSource, /Authorization required/, "global permissions must remain visibly distinct from generic attention")
 assert.doesNotMatch(inboxSource, /startTaskDeskSessionLiveRefresh|loadMessagePage|continueConversation|stopConversation/, "global attention must stay outside transcript and Session writer paths")
 
