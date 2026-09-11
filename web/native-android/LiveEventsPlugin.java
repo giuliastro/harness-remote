@@ -14,6 +14,8 @@ import java.io.InputStreamReader;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
@@ -23,62 +25,100 @@ import java.util.concurrent.atomic.AtomicBoolean;
 public class LiveEventsPlugin extends Plugin {
     private static final int CONNECT_TIMEOUT_MS = 10000;
     // The daemon writes an SSE heartbeat every 10 seconds. A 30 second period with no bytes means
-    // the socket is stale after sleep, backgrounding, Wi-Fi handoff or a brief network loss. The
-    // previous infinite read timeout could leave Android permanently blocked in readLine() while the
-    // native Session kept working. Let the existing reconnect loop own that failure instead.
+    // the socket is stale after sleep, backgrounding, Wi-Fi handoff or a brief network loss.
     private static final int STALL_TIMEOUT_MS = 30000;
+    private static final int MAX_SUBSCRIPTION_ID_LENGTH = 240;
 
-    private final ExecutorService executor = Executors.newSingleThreadExecutor();
-    private final AtomicBoolean stopped = new AtomicBoolean(true);
-    private volatile Future<?> task;
-    private volatile HttpURLConnection connection;
+    /**
+     * One Android plugin instance serves the whole WebView. Session detail, the global Attention
+     * Inbox and multiple machines may all subscribe concurrently, so stream ownership must be keyed
+     * instead of letting the most recent start() cancel every earlier socket.
+     */
+    private static final class StreamHandle {
+        final AtomicBoolean stopped = new AtomicBoolean(false);
+        volatile Future<?> task;
+        volatile HttpURLConnection connection;
+    }
+
+    private final ExecutorService executor = Executors.newCachedThreadPool();
+    private final Map<String, StreamHandle> streams = new ConcurrentHashMap<>();
 
     @PluginMethod
     public void start(PluginCall call) {
+        String subscriptionID = call.getString("subscriptionID");
         String url = call.getString("url");
         String username = call.getString("username", "");
         String password = call.getString("password", "");
+        String backend = call.getString("backend", "");
+        if (!validSubscriptionID(subscriptionID)) {
+            call.reject("Missing or invalid subscription ID");
+            return;
+        }
         if (url == null || url.isEmpty()) {
             call.reject("Missing event stream URL");
             return;
         }
-        stopStream();
-        stopped.set(false);
-        task = executor.submit(() -> runStream(url, username, password));
+
+        // Replacing the same logical subscription is safe and does not disturb any sibling stream.
+        stopStream(subscriptionID, false);
+        StreamHandle handle = new StreamHandle();
+        streams.put(subscriptionID, handle);
+        handle.task = executor.submit(() -> runStream(subscriptionID, handle, url, username, password, backend));
         call.resolve();
     }
 
     @PluginMethod
     public void stop(PluginCall call) {
-        stopStream();
+        String subscriptionID = call.getString("subscriptionID");
+        if (!validSubscriptionID(subscriptionID)) {
+            call.reject("Missing or invalid subscription ID");
+            return;
+        }
+        stopStream(subscriptionID, true);
         call.resolve();
     }
 
     @Override
     protected void handleOnDestroy() {
-        stopStream();
+        for (String subscriptionID : streams.keySet()) stopStream(subscriptionID, false);
+        streams.clear();
         executor.shutdownNow();
     }
 
-    private void stopStream() {
-        stopped.set(true);
-        HttpURLConnection activeConnection = connection;
-        if (activeConnection != null) activeConnection.disconnect();
-        Future<?> activeTask = task;
-        if (activeTask != null) activeTask.cancel(true);
-        connection = null;
-        task = null;
-        publishStatus("closed", null, null);
+    private boolean validSubscriptionID(String value) {
+        return value != null && !value.isEmpty() && value.length() <= MAX_SUBSCRIPTION_ID_LENGTH;
     }
 
-    private void runStream(String endpoint, String username, String password) {
+    private void stopStream(String subscriptionID, boolean publishClosed) {
+        StreamHandle handle = streams.remove(subscriptionID);
+        if (handle == null) return;
+        handle.stopped.set(true);
+        HttpURLConnection activeConnection = handle.connection;
+        if (activeConnection != null) activeConnection.disconnect();
+        Future<?> activeTask = handle.task;
+        if (activeTask != null) activeTask.cancel(true);
+        handle.connection = null;
+        handle.task = null;
+        if (publishClosed) publishStatus(subscriptionID, "closed", null, null);
+    }
+
+    private void runStream(
+        String subscriptionID,
+        StreamHandle handle,
+        String endpoint,
+        String username,
+        String password,
+        String backend
+    ) {
         int delayMs = 1000;
-        while (!stopped.get()) {
+        while (!handle.stopped.get() && streams.get(subscriptionID) == handle) {
+            HttpURLConnection current = null;
             try {
-                HttpURLConnection current = (HttpURLConnection) new URL(endpoint).openConnection();
-                connection = current;
+                current = (HttpURLConnection) new URL(endpoint).openConnection();
+                handle.connection = current;
                 current.setRequestMethod("GET");
                 current.setRequestProperty("Accept", "text/event-stream");
+                if (backend != null && !backend.isEmpty()) current.setRequestProperty("X-Harness-Backend", backend);
                 if (!username.isEmpty() || !password.isEmpty()) {
                     String credentials = username + ":" + password;
                     String encoded = Base64.encodeToString(credentials.getBytes(StandardCharsets.UTF_8), Base64.NO_WRAP);
@@ -92,18 +132,17 @@ public class LiveEventsPlugin extends Plugin {
                     throw new IllegalStateException("HTTP " + status + "; expected text/event-stream");
                 }
                 delayMs = 1000;
-                publishStatus("connected", null, null);
-                readFrames(current.getInputStream());
+                publishStatus(subscriptionID, "connected", null, null);
+                readFrames(subscriptionID, handle, current.getInputStream());
             } catch (Exception error) {
-                if (stopped.get()) break;
-                publishStatus("connection-error", error.getMessage(), null);
+                if (handle.stopped.get() || streams.get(subscriptionID) != handle) break;
+                publishStatus(subscriptionID, "connection-error", error.getMessage(), null);
             } finally {
-                HttpURLConnection current = connection;
                 if (current != null) current.disconnect();
-                connection = null;
+                if (handle.connection == current) handle.connection = null;
             }
-            if (!stopped.get()) {
-                publishStatus("reconnecting", null, delayMs);
+            if (!handle.stopped.get() && streams.get(subscriptionID) == handle) {
+                publishStatus(subscriptionID, "reconnecting", null, delayMs);
                 try {
                     Thread.sleep(delayMs);
                 } catch (InterruptedException ignored) {
@@ -115,14 +154,14 @@ public class LiveEventsPlugin extends Plugin {
         }
     }
 
-    private void readFrames(InputStream inputStream) throws Exception {
+    private void readFrames(String subscriptionID, StreamHandle handle, InputStream inputStream) throws Exception {
         try (BufferedReader reader = new BufferedReader(new InputStreamReader(inputStream, StandardCharsets.UTF_8))) {
             StringBuilder data = new StringBuilder();
             String line;
-            while (!stopped.get() && (line = reader.readLine()) != null) {
+            while (!handle.stopped.get() && streams.get(subscriptionID) == handle && (line = reader.readLine()) != null) {
                 if (line.isEmpty()) {
                     if (data.length() > 0) {
-                        publishEvent(data.toString());
+                        publishEvent(subscriptionID, data.toString());
                         data.setLength(0);
                     }
                     continue;
@@ -136,14 +175,16 @@ public class LiveEventsPlugin extends Plugin {
         }
     }
 
-    private void publishEvent(String data) {
+    private void publishEvent(String subscriptionID, String data) {
         JSObject payload = new JSObject();
+        payload.put("subscriptionID", subscriptionID);
         payload.put("data", data);
         notifyListeners("event", payload);
     }
 
-    private void publishStatus(String type, String error, Integer delayMs) {
+    private void publishStatus(String subscriptionID, String type, String error, Integer delayMs) {
         JSObject payload = new JSObject();
+        payload.put("subscriptionID", subscriptionID);
         payload.put("type", type);
         if (error != null) payload.put("error", error);
         if (delayMs != null) payload.put("delayMs", delayMs);
