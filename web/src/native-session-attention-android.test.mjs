@@ -39,7 +39,7 @@ test("native Attention notifications are fail-closed display only and deep-link 
   assert.match(native, /appendQueryParameter\("agentID", context\.agentID\)/)
   assert.match(native, /appendQueryParameter\("sessionID", sessionID\)/)
   assert.match(native, /If you do nothing, this request stays blocked\./)
-  assert.doesNotMatch(native, /\/session\/.*\/message|loadMessages|promptAsync|permission.*reply/i)
+  assert.doesNotMatch(native, /\/session\/.*\/message|loadMessages|promptAsync|\/permission\/.*\/reply|\/question\/.*\/reply/i)
 })
 
 test("Android notification activation reuses the existing explicit Inbox Session opener", () => {
