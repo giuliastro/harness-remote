@@ -44,13 +44,21 @@ function boundedText(value: unknown, maxLength: number): value is string {
     && !/[\u0000-\u001f\u007f]/.test(value)
 }
 
+function boundedNotificationBody(value: unknown, maxLength: number): value is string {
+  return typeof value === "string"
+    && value.length > 0
+    && value.length <= maxLength
+    && !/[\u0000-\u0009\u000b-\u001f\u007f]/.test(value)
+}
+
 /** Attention notifications cross the renderer/main-process boundary and their target is later echoed
- * back on click, so validate both presentation text and Native Session identity before displaying. */
+ * back on click, so validate both presentation text and Native Session identity before displaying.
+ * The body alone may contain line feeds because its product copy is intentionally multi-line. */
 export function parseDesktopAttentionNotification(value: unknown): DesktopAttentionNotification | null {
   if (!value || typeof value !== "object") return null
   const candidate = value as Partial<DesktopAttentionNotification>
   if (!boundedText(candidate.title, 120)
-    || !boundedText(candidate.body, 1000)
+    || !boundedNotificationBody(candidate.body, 1000)
     || !boundedText(candidate.overlayDescription, 240)
     || !candidate.target
     || typeof candidate.target !== "object") return null
