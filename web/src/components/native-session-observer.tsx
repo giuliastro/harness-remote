@@ -80,6 +80,7 @@ export function NativeSessionObserver({
 }: Props) {
   const [conversation, setConversation] = useState<ConversationRuntime | null>(null)
   const [controller, setController] = useState<ConversationController | null>(null)
+  const [transcriptRefreshToken, setTranscriptRefreshToken] = useState(0)
   const [attachmentsSupported, setAttachmentsSupported] = useState(false)
   const [commands, setCommands] = useState<CommandInfo[]>([])
   const conversationRef = useRef<ConversationRuntime | null>(null)
@@ -97,6 +98,10 @@ export function NativeSessionObserver({
     attentionRef.current = attention
     const current = conversationRef.current
     if (current) onStateChangeRef.current?.(visualState(current, attention))
+  }, [])
+
+  const handleTranscriptRefresh = useCallback(() => {
+    setTranscriptRefreshToken((current) => current + 1)
   }, [])
 
   useEffect(() => {
@@ -181,14 +186,14 @@ export function NativeSessionObserver({
     // Mount the mature controller on the Session itself, before any model enrichment. Gating the
     // whole transcript on a network read left this surface stuck on "Loading Session into the v3
     // controller..." whenever that read was slow, which is exactly what a busy daemon produces.
-    registration = registerNativeSessionV3Adapter(initialTarget, handleConversationUpdate)
+    registration = registerNativeSessionV3Adapter(initialTarget, handleConversationUpdate, handleTranscriptRefresh)
     setController(registration.controller)
     handleConversationUpdate(registration.conversation)
 
     return () => {
       registration?.dispose()
     }
-  }, [target.key, handleConversationUpdate])
+  }, [target.key, handleConversationUpdate, handleTranscriptRefresh])
 
   useEffect(() => {
     if (!interactionEnabled) return
@@ -224,6 +229,7 @@ export function NativeSessionObserver({
         modelScope={NATIVE_SESSION_MODEL_SCOPE}
         deferModelFallback
         controller={controller}
+        transcriptRefreshToken={transcriptRefreshToken}
         onConversationUpdate={handleConversationUpdate}
         onAttentionChange={handleAttentionChange}
         commands={commands}

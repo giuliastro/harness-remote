@@ -59,6 +59,7 @@ type NativeConversationEntry = {
   writerClaimInFlight: Promise<void> | null
   turns: Map<string, NativeTurnRecord>
   listeners: Set<(conversation: ConversationRuntime) => void>
+  transcriptListeners: Set<() => void>
 }
 
 const conversations = new Map<string, NativeConversationEntry>()
@@ -242,6 +243,16 @@ function openCodeAssistantProvesTurnCompleted(message: MessageEnvelope): boolean
   return Boolean(message.info.time?.completed) && assistantHasTerminalText(message)
 }
 
+function openCodeAssistantHasActivity(message: MessageEnvelope): boolean {
+  if (message.info.role !== "assistant") return false
+  if (message.info.error) return true
+  const info = message.info as MessageEnvelope["info"] & { finish?: unknown }
+  return Boolean(
+    message.parts.length
+    || (typeof info.finish === "string" && info.finish.trim())
+  )
+}
+
 function sameModel(left: ModelSelection | null, right: ModelSelection | null): boolean {
   return Boolean(left && right
     && left.providerID === right.providerID
@@ -300,13 +311,18 @@ function reconcileOpenCodeTranscriptStatus(entry: NativeConversationEntry, page:
   const recoveryWatchActive = entry.openCodeRecoveryWatchUntil > Date.now()
   if (entry.forcedStatus !== "running" && !recoveryWatchActive) return
 
+  const now = Date.now()
   const latestAssistant = latestOpenCodeAssistantForCurrentTurn(entry, page)
   if (!latestAssistant) return
-  clearOpenCodeSilentTurn(entry)
-
-  const now = Date.now()
   const completedByTranscript = openCodeAssistantProvesTurnCompleted(latestAssistant)
   const terminalError = Boolean(latestAssistant.info.error)
+  if (!completedByTranscript && !terminalError) {
+    // OpenCode creates an empty assistant envelope before the first token. It is not evidence that
+    // the turn has left the silent phase: keep the bounded recovery timer alive until the envelope
+    // is completed or contains a terminal error.
+    return
+  }
+  clearOpenCodeSilentTurn(entry)
   if (!completedByTranscript) {
     // A provider/model error envelope is terminal-looking but not definitive on its first edge:
     // OpenCode may still automatically retry the same turn. Keep the exact #351 debounce semantics,
@@ -384,24 +400,43 @@ async function settleOpenCodeSilentTurn(entry: NativeConversationEntry, turnID: 
   const newestTurn = orderedTurns[orderedTurns.length - 1]
   if (entry.target.backend !== "opencode" || newestTurn?.id !== turnID) return
 
+  const retry = () => {
+    const ordered = [...entry.turns.values()].sort((left, right) => left.created - right.created || left.id.localeCompare(right.id))
+    const newest = ordered[ordered.length - 1]
+    if (entry.forcedStatus === "running" && newest?.id === turnID) armOpenCodeSilentTurnRecovery(entry, turnID)
+  }
+
+  let page: MessagePage
   try {
-    const [statuses, page] = await Promise.all([
-      api.listStatuses(entry.target.config, entry.target.directory),
-      api.loadMessagePage(entry.target.config, entry.target.sessionID, entry.target.directory, undefined, 200, true)
-    ])
+    // Read the transcript first. The status endpoint is legacy enrichment and can hang or omit a
+    // child Session; it must never prevent a persisted final answer from reaching the UI.
+    page = await api.loadMessagePage(entry.target.config, entry.target.sessionID, entry.target.directory, undefined, 200, true)
     captureUserTurns(entry, page)
     reconcileOpenCodeTranscriptStatus(entry, page)
-    // Any assistant envelope is a real response lifecycle. It may still be streaming, but it is no
-    // longer the silent provider failure this recovery is for.
-    if (latestOpenCodeAssistantForCurrentTurn(entry, page)) return
-
-    const reported = statuses[entry.target.sessionID]?.type
-    if (nativeSessionIsWorking(reported)) {
-      armOpenCodeSilentTurnRecovery(entry, turnID)
+    const latestAssistant = latestOpenCodeAssistantForCurrentTurn(entry, page)
+    if (latestAssistant && openCodeAssistantHasActivity(latestAssistant)) {
+      notifyTranscript(entry)
       return
     }
   } catch {
-    // A transport read cannot prove that the native prompt failed. Keep its ordinary live state.
+    // A transport read cannot prove that the native prompt failed. Keep a bounded retry alive.
+    retry()
+    return
+  }
+
+  let statuses: Record<string, { type?: string }> | null = null
+  try {
+    statuses = await api.listStatuses(entry.target.config, entry.target.directory)
+  } catch {
+    // Status is optional enrichment. The next bounded recovery or ordinary tail refresh can still
+    // discover a response without converting a slow status read into a false failure.
+    retry()
+    return
+  }
+
+  const reported = statuses[entry.target.sessionID]?.type
+  if (nativeSessionIsWorking(reported)) {
+    retry()
     return
   }
 
@@ -507,6 +542,10 @@ function notify(entry: NativeConversationEntry): ConversationRuntime {
   const conversation = conversationSnapshot(entry)
   for (const listener of entry.listeners) listener(conversation)
   return conversation
+}
+
+function notifyTranscript(entry: NativeConversationEntry): void {
+  for (const listener of entry.transcriptListeners) listener()
 }
 
 function captureUserTurns(entry: NativeConversationEntry, page: MessagePage, before?: string): void {
@@ -835,7 +874,8 @@ function nativeConversationController(entry: NativeConversationEntry): Conversat
 
 export function registerNativeSessionV3Adapter(
   target: NativeSessionSurfaceTarget,
-  onConversationUpdate: (conversation: ConversationRuntime) => void
+  onConversationUpdate: (conversation: ConversationRuntime) => void,
+  onTranscriptRefresh?: () => void
 ): { conversation: ConversationRuntime; controller: ConversationController; dispose: () => void } {
   const id = conversationID(target)
   let entry = conversations.get(id)
@@ -857,7 +897,8 @@ export function registerNativeSessionV3Adapter(
       writerReady: !target.requiresExplicitClaim,
       writerClaimInFlight: null,
       turns: new Map(),
-      listeners: new Set()
+      listeners: new Set(),
+      transcriptListeners: new Set()
     }
     conversations.set(id, entry)
   } else {
@@ -867,15 +908,15 @@ export function registerNativeSessionV3Adapter(
     if (!target.requiresExplicitClaim) entry.writerReady = true
   }
   entry.listeners.add(onConversationUpdate)
+  if (onTranscriptRefresh) entry.transcriptListeners.add(onTranscriptRefresh)
   return {
     conversation: conversationSnapshot(entry),
     controller: nativeConversationController(entry),
     dispose: () => {
       entry?.listeners.delete(onConversationUpdate)
-      if (entry && entry.listeners.size === 0) {
-        clearOpenCodeSilentTurn(entry)
-        conversations.delete(id)
-      }
+      if (onTranscriptRefresh) entry?.transcriptListeners.delete(onTranscriptRefresh)
+      if (entry && entry.listeners.size === 0) clearOpenCodeSilentTurn(entry)
+      if (entry && entry.listeners.size === 0) conversations.delete(id)
     }
   }
 }
