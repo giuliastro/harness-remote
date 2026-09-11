@@ -1,5 +1,14 @@
 package ai.harness.remote;
 
+import android.Manifest;
+import android.app.Notification;
+import android.app.NotificationChannel;
+import android.app.NotificationManager;
+import android.app.PendingIntent;
+import android.content.Intent;
+import android.content.pm.PackageManager;
+import android.net.Uri;
+import android.os.Build;
 import android.util.Base64;
 
 import com.getcapacitor.JSObject;
@@ -8,6 +17,9 @@ import com.getcapacitor.PluginCall;
 import com.getcapacitor.PluginMethod;
 import com.getcapacitor.annotation.CapacitorPlugin;
 
+import org.json.JSONArray;
+import org.json.JSONObject;
+
 import java.io.BufferedReader;
 import java.io.InputStream;
 import java.io.InputStreamReader;
@@ -15,6 +27,7 @@ import java.net.HttpURLConnection;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -28,6 +41,35 @@ public class LiveEventsPlugin extends Plugin {
     // the socket is stale after sleep, backgrounding, Wi-Fi handoff or a brief network loss.
     private static final int STALL_TIMEOUT_MS = 30000;
     private static final int MAX_SUBSCRIPTION_ID_LENGTH = 240;
+    private static final int MAX_ATTENTION_ID_LENGTH = 512;
+    private static final int NOTIFICATION_PERMISSION_REQUEST = 7401;
+    private static final String ATTENTION_CHANNEL_ID = "harness_remote_attention";
+    private static final AtomicBoolean notificationPermissionRequested = new AtomicBoolean(false);
+
+    private static final class AttentionContext {
+        final String machineID;
+        final String machineName;
+        final String agentID;
+        final String agentLabel;
+        final boolean questions;
+        final boolean permissions;
+
+        AttentionContext(
+            String machineID,
+            String machineName,
+            String agentID,
+            String agentLabel,
+            boolean questions,
+            boolean permissions
+        ) {
+            this.machineID = machineID;
+            this.machineName = machineName;
+            this.agentID = agentID;
+            this.agentLabel = agentLabel;
+            this.questions = questions;
+            this.permissions = permissions;
+        }
+    }
 
     /**
      * One Android plugin instance serves the whole WebView. Session detail, the global Attention
@@ -36,8 +78,14 @@ public class LiveEventsPlugin extends Plugin {
      */
     private static final class StreamHandle {
         final AtomicBoolean stopped = new AtomicBoolean(false);
+        final Set<String> seenAttentionRequests = ConcurrentHashMap.newKeySet();
+        final AttentionContext attention;
         volatile Future<?> task;
         volatile HttpURLConnection connection;
+
+        StreamHandle(AttentionContext attention) {
+            this.attention = attention;
+        }
     }
 
     private final ExecutorService executor = Executors.newCachedThreadPool();
@@ -59,11 +107,18 @@ public class LiveEventsPlugin extends Plugin {
             return;
         }
 
+        AttentionContext attention = parseAttentionContext(url);
+        if (attention != null) {
+            ensureAttentionChannel();
+            requestNotificationPermissionIfNeeded();
+        }
+
         // Replacing the same logical subscription is safe and does not disturb any sibling stream.
         stopStream(subscriptionID, false);
-        StreamHandle handle = new StreamHandle();
+        StreamHandle handle = new StreamHandle(attention);
         streams.put(subscriptionID, handle);
-        handle.task = executor.submit(() -> runStream(subscriptionID, handle, url, username, password, backend));
+        String endpoint = stripFragment(url);
+        handle.task = executor.submit(() -> runStream(subscriptionID, handle, endpoint, username, password, backend));
         call.resolve();
     }
 
@@ -87,6 +142,43 @@ public class LiveEventsPlugin extends Plugin {
 
     private boolean validSubscriptionID(String value) {
         return value != null && !value.isEmpty() && value.length() <= MAX_SUBSCRIPTION_ID_LENGTH;
+    }
+
+    private String cleanAttentionValue(String value) {
+        if (value == null) return null;
+        String normalized = value.trim();
+        if (normalized.isEmpty() || normalized.length() > MAX_ATTENTION_ID_LENGTH) return null;
+        for (int index = 0; index < normalized.length(); index++) {
+            char character = normalized.charAt(index);
+            if (character < 0x20 || character == 0x7f) return null;
+        }
+        return normalized;
+    }
+
+    private AttentionContext parseAttentionContext(String endpoint) {
+        try {
+            String fragment = new URL(endpoint).getRef();
+            if (fragment == null || fragment.isEmpty()) return null;
+            Uri metadata = Uri.parse("https://harness.remote/?" + fragment);
+            if (!"1".equals(metadata.getQueryParameter("hrAttention"))) return null;
+            String machineID = cleanAttentionValue(metadata.getQueryParameter("machineID"));
+            String machineName = cleanAttentionValue(metadata.getQueryParameter("machineName"));
+            String agentID = cleanAttentionValue(metadata.getQueryParameter("agentID"));
+            String agentLabel = cleanAttentionValue(metadata.getQueryParameter("agentLabel"));
+            boolean questions = "1".equals(metadata.getQueryParameter("questions"));
+            boolean permissions = "1".equals(metadata.getQueryParameter("permissions"));
+            if (machineID == null || machineName == null || agentID == null || agentLabel == null || (!questions && !permissions)) {
+                return null;
+            }
+            return new AttentionContext(machineID, machineName, agentID, agentLabel, questions, permissions);
+        } catch (Exception ignored) {
+            return null;
+        }
+    }
+
+    private String stripFragment(String endpoint) {
+        int index = endpoint.indexOf('#');
+        return index >= 0 ? endpoint.substring(0, index) : endpoint;
     }
 
     private void stopStream(String subscriptionID, boolean publishClosed) {
@@ -161,7 +253,9 @@ public class LiveEventsPlugin extends Plugin {
             while (!handle.stopped.get() && streams.get(subscriptionID) == handle && (line = reader.readLine()) != null) {
                 if (line.isEmpty()) {
                     if (data.length() > 0) {
-                        publishEvent(subscriptionID, data.toString());
+                        String frame = data.toString();
+                        maybeNotifyAttention(handle, frame);
+                        publishEvent(subscriptionID, frame);
                         data.setLength(0);
                     }
                     continue;
@@ -172,6 +266,169 @@ public class LiveEventsPlugin extends Plugin {
                     data.append(value.startsWith(" ") ? value.substring(1) : value);
                 }
             }
+        }
+    }
+
+    private JSONObject eventPayload(String data) {
+        try {
+            JSONObject envelope = new JSONObject(data);
+            JSONObject payload = envelope.optJSONObject("payload");
+            return payload != null ? payload : envelope;
+        } catch (Exception ignored) {
+            return null;
+        }
+    }
+
+    private String firstText(JSONObject object, String... names) {
+        if (object == null) return null;
+        for (String name : names) {
+            String value = object.optString(name, "").trim();
+            if (!value.isEmpty()) return value;
+        }
+        return null;
+    }
+
+    private String requestKey(String family, JSONObject properties, String raw) {
+        String requestID = firstText(properties, "id", "requestID", "permissionID");
+        return family + ":" + (requestID != null ? requestID : Integer.toHexString(raw.hashCode()));
+    }
+
+    private void maybeNotifyAttention(StreamHandle handle, String raw) {
+        AttentionContext context = handle.attention;
+        if (context == null) return;
+        JSONObject payload = eventPayload(raw);
+        if (payload == null) return;
+        String type = payload.optString("type", "");
+        JSONObject properties = payload.optJSONObject("properties");
+        if (properties == null) return;
+
+        boolean questionAsked = context.questions && ("question.asked".equals(type) || "question.v2.asked".equals(type));
+        boolean permissionAsked = context.permissions && ("permission.asked".equals(type) || "permission.v2.asked".equals(type));
+        if (!questionAsked && !permissionAsked) {
+            if (type.startsWith("question.") && (type.endsWith(".replied") || type.endsWith(".rejected"))) {
+                handle.seenAttentionRequests.remove(requestKey("question", properties, raw));
+            } else if (type.startsWith("permission.") && (type.endsWith(".replied") || type.endsWith(".rejected"))) {
+                handle.seenAttentionRequests.remove(requestKey("permission", properties, raw));
+            }
+            return;
+        }
+
+        String sessionID = firstText(properties, "sessionID", "sessionId");
+        if (sessionID == null) return;
+        String family = questionAsked ? "question" : "permission";
+        String key = requestKey(family, properties, raw);
+        if (!handle.seenAttentionRequests.add(key)) return;
+
+        String title;
+        String body;
+        if (permissionAsked) {
+            title = "Authorization required";
+            String action = firstText(properties, "permission", "title", "name");
+            JSONObject metadata = properties.optJSONObject("metadata");
+            String explanation = firstText(metadata, "reason", "description", "message");
+            JSONArray patterns = properties.optJSONArray("patterns");
+            String boundary = patterns != null && patterns.length() > 0 ? patterns.optString(0, "").trim() : "";
+            body = compactBody(
+                action != null ? action : "Permission requested",
+                explanation,
+                !boundary.isEmpty() ? "Boundary: " + boundary : null,
+                "If you do nothing, this request stays blocked.",
+                context.machineName + " · " + context.agentLabel
+            );
+        } else {
+            title = "Input required";
+            String question = null;
+            JSONArray questions = properties.optJSONArray("questions");
+            if (questions != null && questions.length() > 0) {
+                JSONObject first = questions.optJSONObject(0);
+                question = firstText(first, "question", "header");
+            }
+            body = compactBody(
+                question != null ? question : "The coding agent is waiting for your input.",
+                context.machineName + " · " + context.agentLabel
+            );
+        }
+        showAttentionNotification(context, sessionID, key, title, body);
+    }
+
+    private String compactBody(String... parts) {
+        StringBuilder body = new StringBuilder();
+        for (String part : parts) {
+            if (part == null) continue;
+            String value = part.trim();
+            if (value.isEmpty()) continue;
+            if (body.length() > 0) body.append('\n');
+            body.append(value);
+            if (body.length() >= 1000) break;
+        }
+        return body.length() > 1000 ? body.substring(0, 1000) : body.toString();
+    }
+
+    private void ensureAttentionChannel() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return;
+        NotificationManager manager = getContext().getSystemService(NotificationManager.class);
+        if (manager == null || manager.getNotificationChannel(ATTENTION_CHANNEL_ID) != null) return;
+        NotificationChannel channel = new NotificationChannel(
+            ATTENTION_CHANNEL_ID,
+            "Harness Remote attention",
+            NotificationManager.IMPORTANCE_DEFAULT
+        );
+        channel.setDescription("Coding-agent permissions and questions that require your attention");
+        manager.createNotificationChannel(channel);
+    }
+
+    private void requestNotificationPermissionIfNeeded() {
+        if (Build.VERSION.SDK_INT < 33 || getActivity() == null) return;
+        if (getContext().checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED) return;
+        if (!notificationPermissionRequested.compareAndSet(false, true)) return;
+        getActivity().runOnUiThread(() -> getActivity().requestPermissions(
+            new String[] { Manifest.permission.POST_NOTIFICATIONS },
+            NOTIFICATION_PERMISSION_REQUEST
+        ));
+    }
+
+    private void showAttentionNotification(
+        AttentionContext context,
+        String sessionID,
+        String requestKey,
+        String title,
+        String body
+    ) {
+        NotificationManager manager = (NotificationManager) getContext().getSystemService(android.content.Context.NOTIFICATION_SERVICE);
+        if (manager == null) return;
+
+        Uri target = new Uri.Builder()
+            .scheme("harnessremote")
+            .authority("attention")
+            .appendQueryParameter("machineID", context.machineID)
+            .appendQueryParameter("agentID", context.agentID)
+            .appendQueryParameter("sessionID", sessionID)
+            .build();
+        Intent intent = new Intent(getContext(), MainActivity.class)
+            .setAction("ai.harness.remote.ATTENTION." + Integer.toHexString((requestKey + sessionID).hashCode()))
+            .setData(target)
+            .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP);
+        int pendingFlags = PendingIntent.FLAG_UPDATE_CURRENT;
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) pendingFlags |= PendingIntent.FLAG_IMMUTABLE;
+        int notificationID = (context.machineID + context.agentID + sessionID + requestKey).hashCode() & 0x7fffffff;
+        PendingIntent contentIntent = PendingIntent.getActivity(getContext(), notificationID, intent, pendingFlags);
+
+        int smallIcon = getContext().getApplicationInfo().icon;
+        if (smallIcon == 0) smallIcon = android.R.drawable.ic_dialog_info;
+        Notification.Builder builder = Build.VERSION.SDK_INT >= Build.VERSION_CODES.O
+            ? new Notification.Builder(getContext(), ATTENTION_CHANNEL_ID)
+            : new Notification.Builder(getContext());
+        builder
+            .setSmallIcon(smallIcon)
+            .setContentTitle(title)
+            .setContentText(body.replace('\n', ' '))
+            .setStyle(new Notification.BigTextStyle().bigText(body))
+            .setContentIntent(contentIntent)
+            .setAutoCancel(true);
+        try {
+            manager.notify(notificationID, builder.build());
+        } catch (SecurityException ignored) {
+            // Android 13+ may deny notification permission. The in-app Inbox remains authoritative.
         }
     }
 

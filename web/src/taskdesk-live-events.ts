@@ -15,6 +15,15 @@ export type TaskDeskLiveEvent = {
   sessionID?: string
 }
 
+export type NativeAttentionStreamContext = {
+  machineID: string
+  machineName: string
+  agentID: string
+  agentLabel: string
+  questions: boolean
+  permissions: boolean
+}
+
 type Subscription = { close(): void }
 
 function text(value: unknown): string | undefined {
@@ -52,17 +61,40 @@ export function taskDeskLiveEvent(name: string | undefined, data: unknown): Task
 }
 
 /**
+ * The native Android plugin owns the socket after WebView timers are paused. Carry only routing and
+ * display identity in the URL fragment: fragments are stripped before the HTTP request and contain
+ * no credentials. Generic Session streams do not receive this metadata and therefore cannot emit
+ * Attention notifications.
+ */
+export function nativeAttentionEventStreamURL(url: string, context?: NativeAttentionStreamContext): string {
+  if (!context) return url
+  const parsed = new URL(url)
+  parsed.hash = new URLSearchParams({
+    hrAttention: "1",
+    machineID: context.machineID,
+    machineName: context.machineName,
+    agentID: context.agentID,
+    agentLabel: context.agentLabel,
+    questions: context.questions ? "1" : "0",
+    permissions: context.permissions ? "1" : "0"
+  }).toString()
+  return parsed.toString()
+}
+
+/**
  * Use the transport already proven by Classic on each platform. Browser and Electron fetch streams
  * can carry auth headers, Android uses the native SSE plugin, and Electron main owns desktop sockets.
  */
 export function subscribeTaskDeskLiveEvents({
   config,
   onEvent,
-  onStatus
+  onStatus,
+  nativeAttention
 }: {
   config: ServerConfig
   onEvent: (event: TaskDeskLiveEvent) => void
   onStatus?: (status: EventStreamStatus) => void
+  nativeAttention?: NativeAttentionStreamContext
 }): Subscription {
   const emit = (name: string | undefined, data: unknown) => {
     const normalized = taskDeskLiveEvent(name, data)
@@ -81,7 +113,7 @@ export function subscribeTaskDeskLiveEvents({
   const stream = api.eventStream(config)
   if (isNativeEventTransport()) {
     return createNativeOpenCodeEventSubscription({
-      url: stream.url,
+      url: nativeAttentionEventStreamURL(stream.url, nativeAttention),
       username: config.username,
       password: config.password,
       backend: config.backend,
