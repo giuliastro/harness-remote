@@ -1,4 +1,6 @@
 #!/usr/bin/env node
+import { catalogFingerprint, catalogOwnershipEvidence } from "./session-first-soak-evidence.mjs"
+
 /*
  * Session-first model-lifecycle soak probe.
  *
@@ -205,16 +207,17 @@ const primaryCatalog = await catalog(PRIMARY)
 const secondaryCatalog = await catalog(SECONDARY)
 log(`  ${PRIMARY}: ${primaryCatalog.models.length} models in ${primaryCatalog.ms}ms (${primaryCatalog.attempts} request(s))${primaryCatalog.error ? ` error=${primaryCatalog.error}` : ""}`)
 log(`  ${SECONDARY}: ${secondaryCatalog.models.length} models in ${secondaryCatalog.ms}ms (${secondaryCatalog.attempts} request(s))${secondaryCatalog.error ? ` error=${secondaryCatalog.error}` : ""}`)
-check(primaryCatalog.models.length > 0, `${PRIMARY} advertises a model catalog`)
-// Two harnesses may legitimately be configured against the same provider, so overlapping model ids
-// are expected. What must not happen is one harness answering with the other's catalog, so compare
-// the catalogs as a whole rather than requiring them to be disjoint.
-const primaryKeys = primaryCatalog.models.map((model) => `${model.providerID}/${model.modelID}/${model.variant ?? ""}`).sort()
-const secondaryKeys = secondaryCatalog.models.map((model) => `${model.providerID}/${model.modelID}/${model.variant ?? ""}`).sort()
-check(
-  primaryKeys.join("|") !== secondaryKeys.join("|"),
-  `each harness answers with its own catalog, not the other's (${PRIMARY}=${primaryKeys.length}, ${SECONDARY}=${secondaryKeys.length})`
-)
+const ownership = catalogOwnershipEvidence({
+  primary: PRIMARY,
+  secondary: SECONDARY,
+  primaryModels: primaryCatalog.models,
+  secondaryModels: secondaryCatalog.models,
+  state: stableState(await diagnostics())
+})
+for (const evidence of ownership.checks) check(evidence.ok, evidence.message)
+if (ownership.catalogsIdentical) {
+  log("  note identical normalized catalogs are valid; isolation is proven by agent-scoped diagnostics and Session routing")
+}
 
 const models = distinctModels(primaryCatalog.models, 3)
 check(models.length >= 2, `${PRIMARY} offers at least two distinct models to switch between (${models.length})`)
@@ -270,7 +273,8 @@ for (let cycle = 1; cycle <= CYCLES; cycle += 1) {
   expected[name].push(marker)
   userTurns[name] += 1
   log(`  cycle ${cycle}: ${SECONDARY}=${away.models.length} ${PRIMARY}=${back.models.length} session=${secondarySession.status} prompt(${model.modelID})=${result.data?.status}`)
-  check(back.models.length === primaryCatalog.models.length, `cycle ${cycle}: ${PRIMARY} catalog unchanged after visiting ${SECONDARY}`)
+  check(catalogFingerprint(away.models) === ownership.secondaryFingerprint, `cycle ${cycle}: ${SECONDARY} catalog unchanged while switching away and back`)
+  check(catalogFingerprint(back.models) === ownership.primaryFingerprint, `cycle ${cycle}: ${PRIMARY} catalog unchanged after visiting ${SECONDARY}`)
   check(result.data?.status === "accepted", `cycle ${cycle}: ${PRIMARY} prompt accepted after harness switch and model change`)
   const answered = await waitForTurn(PRIMARY, sessionID, directory, marker, expected[name].length)
   check(answered.found, `cycle ${cycle}: ${name} completed ${marker} in ${answered.ms}ms`)

@@ -60,6 +60,18 @@ A successful strict run writes a report under `artifacts/real-harness-gate-<time
 
 The report deliberately contains no username, password, prompt body or model catalog. It records the commit when available, platform/architecture/Node version, endpoint without URL credentials, harness pairs, durations, exit status, evidence strength and final verdict.
 
+## Preflight
+
+Before any long-running soak starts, the gate calls the daemon diagnostics endpoint once and verifies the requested release surface:
+
+- the daemon is reachable and accepts the supplied credentials;
+- every selected harness is registered on that daemon;
+- every selected harness has model discovery configured.
+
+If any of those checks fail, no soak process is launched. The JSON report still gets written with `verdict: "failed"` and a concise `preflight` section showing the missing harnesses or model-discovery configuration. This makes startup/configuration failures distinct from Session/inference failures and avoids spending several minutes on legs that cannot succeed.
+
+The preflight report contains only non-sensitive harness metadata such as id, backend, transport, state, model-catalog source and cached-model count. It does not persist credentials or full model inventories.
+
 ## Run a subset while developing
 
 A two-or-more harness subset is useful before the full release run:
@@ -111,7 +123,7 @@ or set `HR_GATE_REPORT`.
 
 ## Existing soak command
 
-For focused diagnosis of one primary/secondary pair, the underlying probe is now exposed directly:
+For focused diagnosis of one primary/secondary pair, the underlying probe is exposed directly:
 
 ```bash
 HR_PRIMARY=pi \
@@ -126,9 +138,17 @@ Useful environment controls include `HR_CYCLES`, `HR_TURN_BUDGET_MS`, `HR_DIR_A`
 
 ## Interpreting catalog checks
 
-Two different harnesses can legitimately advertise overlapping, or even identical, provider/model inventories. Catalog equality by itself is therefore not proof of cross-harness leakage. Release evidence should focus on agent-scoped requests, Native Session identity, prompt routing and stable per-agent diagnostics rather than assuming model names must differ.
+Two different harnesses can legitimately advertise overlapping, or even identical, provider/model inventories. Catalog equality by itself is therefore not proof of cross-harness leakage and is no longer treated as a failure.
 
-The legacy soak currently retains a conservative whole-catalog inequality assertion. If two selected harnesses intentionally expose the exact same normalized catalog, treat that specific failure as an **inconclusive tooling limitation**, not evidence that the runtime is broken, and do not mark the release `verified` until the probe has been rerun with an unambiguous isolation check.
+The soak now proves the relevant ownership invariants instead:
+
+- both agent-scoped model endpoints return usable catalogs;
+- diagnostics expose separate registered entries for the primary and secondary harness;
+- each entry owns a populated model-catalog diagnostic with an explicit source;
+- the primary and secondary catalog fingerprints remain individually stable while the test repeatedly switches between harnesses;
+- Native Session creation and prompt routing continue to target the requested harness and Session.
+
+If two harnesses intentionally expose exactly the same normalized model inventory, the soak prints that fact as a note and continues. This avoids a false negative without weakening the isolation checks that actually matter.
 
 ## Release record
 
