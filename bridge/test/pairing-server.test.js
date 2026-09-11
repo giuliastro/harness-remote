@@ -4,9 +4,11 @@ import test from "node:test"
 import {
   OneTimePairingGrant,
   PAIRING_TTL_MS,
+  announceMachinePairing,
   createOneTimePairingGrant,
   createPairingServer,
-  machinePairingLinks
+  machinePairingLinks,
+  renderPairingQRCode
 } from "../src/pairing-server.js"
 
 async function listen(server) {
@@ -50,6 +52,53 @@ test("scan-ready pairing links contain the one-time grant but never Basic Auth c
   assert.match(links[0].uri, /^harnessremote:\/\/pair\?/)
   assert.match(links[0].uri, /token=one-time-token/)
   assert.doesNotMatch(links[0].uri, /secret-password|harness%3A|username|password/)
+})
+
+test("terminal QR renderer asks for compact output and returns the generated code", () => {
+  let received
+  const output = renderPairingQRCode("harnessremote://pair?token=abc", {
+    load: () => ({
+      generate(input, options, callback) {
+        received = { input, options }
+        callback("QR-CODE")
+      }
+    })
+  })
+  assert.equal(output, "QR-CODE")
+  assert.deepEqual(received, {
+    input: "harnessremote://pair?token=abc",
+    options: { small: true }
+  })
+})
+
+test("terminal QR renderer fails open to the plain pairing link when the presentation dependency is unavailable", () => {
+  const output = renderPairingQRCode("harnessremote://pair?token=abc", {
+    load: () => { throw new Error("module not installed") }
+  })
+  assert.equal(output, null)
+})
+
+test("startup pairing announcement renders one preferred QR and keeps alternate LAN links as text", () => {
+  let output = ""
+  let renderedURI
+  const links = announceMachinePairing(config(), grant(), {
+    interfaces: {
+      eth0: [{ family: "IPv4", internal: false, address: "192.168.1.44" }],
+      wlan0: [{ family: "IPv4", internal: false, address: "192.168.1.45" }]
+    },
+    write: (text) => { output += text },
+    renderQR: (uri) => {
+      renderedURI = uri
+      return "<QR>"
+    }
+  })
+  assert.equal(links.length, 2)
+  assert.equal(renderedURI, links[0].uri)
+  assert.match(output, /<QR>/)
+  assert.match(output, /Scan the QR above for http:\/\/192\.168\.1\.44:4097/)
+  assert.match(output, /192\.168\.1\.45%3A4097/)
+  assert.match(output, /one-time token, not the daemon password/i)
+  assert.doesNotMatch(output, /secret-password/)
 })
 
 test("pairing claim returns the existing daemon credentials without Basic Auth", async () => {
