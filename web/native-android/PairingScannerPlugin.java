@@ -5,10 +5,10 @@ import com.getcapacitor.Plugin;
 import com.getcapacitor.PluginCall;
 import com.getcapacitor.PluginMethod;
 import com.getcapacitor.annotation.CapacitorPlugin;
-import com.google.android.gms.codescanner.GmsBarcodeScanner;
-import com.google.android.gms.codescanner.GmsBarcodeScannerOptions;
-import com.google.android.gms.codescanner.GmsBarcodeScanning;
 import com.google.mlkit.vision.barcode.common.Barcode;
+import com.google.mlkit.vision.codescanner.GmsBarcodeScanner;
+import com.google.mlkit.vision.codescanner.GmsBarcodeScannerOptions;
+import com.google.mlkit.vision.codescanner.GmsBarcodeScanning;
 
 @CapacitorPlugin(name = "PairingScanner")
 public class PairingScannerPlugin extends Plugin {
