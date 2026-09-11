@@ -40,7 +40,8 @@ assert.ok(crossMachinePanel.includes('plan?.disposition === "blocked"'), 'reposi
 assert.ok(crossMachinePanel.includes('taskClient.listAgentModels'), 'target model choice must come from the selected harness current catalog')
 assert.ok(crossMachinePanel.includes('attachments: []'), 'the first cross-machine UI must make its no-attachment boundary explicit')
 assert.ok(crossMachinePanel.includes('Attachments and source permissions are not transferred.'), 'the authority and attachment boundary must be visible in the UI')
-assert.ok(crossMachinePanel.indexOf('planCrossMachineContinuation') < crossMachinePanel.indexOf('continueNativeSessionAcrossMachine'), 'read-only planning must exist before the mutation path')
+assert.ok(crossMachinePanel.includes('&& planReady'), 'the mutation button must remain gated on a completed safe plan or explicit review confirmation')
+assert.ok(crossMachinePanel.includes('if (!canSend || !machine || !agent || !projectRoute || !targetProject || !plan) return'), 'the submit path must enforce the same plan gate instead of trusting disabled-button presentation')
 
 assert.ok(adapter.includes('async loadMessagePage(config, sessionID, directory, before, limit, refreshHistory)'), 'adapter must observe the pages requested by the v3 controller through its scoped boundary')
 assert.equal(adapter.includes('api.loadMessagePage ='), false, 'native Session mounting must not mutate the shared API client')
