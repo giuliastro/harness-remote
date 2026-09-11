@@ -84,6 +84,7 @@ export function subscribeTaskDeskLiveEvents({
       url: stream.url,
       username: config.username,
       password: config.password,
+      backend: config.backend,
       onEvent: (event) => emit(event.name, event.data),
       onStatus
     })
