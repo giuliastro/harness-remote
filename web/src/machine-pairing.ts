@@ -170,20 +170,19 @@ export function upsertPairedMachine(machines: WorkspaceMachine[], paired: Worksp
   return next
 }
 
-/** Capacitor receives both warm appUrlOpen activations and cold launch URLs. */
+/** Capacitor receives both warm appUrlOpen activations and cold launch URLs. Duplicate delivery is
+ * intentionally left to the claim coordinator: a failed network attempt must remain retryable with
+ * the same still-valid one-time token. */
 export function subscribeAndroidMachinePairing(
   onActivation: (activation: MachinePairingActivation) => void
 ): () => void {
   if (Capacitor.getPlatform() !== "android") return () => undefined
   let closed = false
   let handle: PluginListenerHandle | undefined
-  const seen = new Set<string>()
   const emit = (url: string | undefined) => {
-    if (closed || !url || seen.has(url)) return
+    if (closed || !url) return
     const activation = parseMachinePairingActivation(url)
-    if (!activation) return
-    seen.add(url)
-    onActivation(activation)
+    if (activation) onActivation(activation)
   }
 
   void App.addListener("appUrlOpen", ({ url }) => emit(url)).then((created) => {
