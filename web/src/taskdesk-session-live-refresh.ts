@@ -1,6 +1,6 @@
 import { App as CapacitorApp } from "@capacitor/app"
 import { Capacitor, type PluginListenerHandle } from "@capacitor/core"
-import type { SavedServerProfile } from "./serverProfiles"
+import type { SavedServerProfile } from "./workspaceMachines"
 import { subscribeTaskDeskLiveEvents } from "./taskdesk-live-events"
 import type { ServerConfig } from "./types"
 

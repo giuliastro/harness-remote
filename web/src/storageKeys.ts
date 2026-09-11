@@ -1,10 +1,3 @@
-import {
-  ACTIVE_BACKEND_STORAGE_KEY,
-  ACTIVE_PROFILE_STORAGE_KEY,
-  BACKEND_STORAGE_KEYS,
-  LEGACY_STORAGE_KEY,
-  SERVER_PROFILES_STORAGE_KEY
-} from "./serverProfiles"
 import { WORKSPACE_MACHINES_STORAGE_KEY } from "./workspaceMachines"
 
 /**
@@ -18,17 +11,5 @@ import { WORKSPACE_MACHINES_STORAGE_KEY } from "./workspaceMachines"
  */
 export const SERVER_STORAGE_KEYS = [
   WORKSPACE_MACHINES_STORAGE_KEY,
-  "harness-remote.sessionRailWidth.v1",
-  LEGACY_STORAGE_KEY,
-  ACTIVE_BACKEND_STORAGE_KEY,
-  BACKEND_STORAGE_KEYS.opencode,
-  BACKEND_STORAGE_KEYS.omp,
-  BACKEND_STORAGE_KEYS.pi,
-  BACKEND_STORAGE_KEYS.claude,
-  BACKEND_STORAGE_KEYS.codex,
-  "opencode.remote.model",
-  "opencode.remote.agent",
-  "opencode.remote.newSessionDirectory",
-  SERVER_PROFILES_STORAGE_KEY,
-  ACTIVE_PROFILE_STORAGE_KEY
+  "harness-remote.sessionRailWidth.v1"
 ]

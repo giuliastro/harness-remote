@@ -13,14 +13,14 @@ function packageJson(directory) {
   return JSON.parse(readFileSync(path.join(directory, "package.json"), "utf8"))
 }
 
-test("root and bridge packages expose the daemon through the executable wrapper", () => {
-  assert.equal(packageJson(repoRoot).bin["harness-remote-daemon"], "./bridge/src/daemon-bin.js")
-  assert.equal(packageJson(bridgeRoot).bin["harness-remote-daemon"], "./src/daemon-bin.js")
+test("root and bridge packages expose the daemon bin directly to daemon-cli", () => {
+  assert.equal(packageJson(repoRoot).bin["harness-remote-daemon"], "./bridge/src/daemon-cli.js")
+  assert.equal(packageJson(bridgeRoot).bin["harness-remote-daemon"], "./src/daemon-cli.js")
 })
 
-test("daemon npm bin wrapper actually executes daemon-cli", () => {
-  const wrapper = path.join(bridgeRoot, "src", "daemon-bin.js")
-  const result = spawnSync(process.execPath, [wrapper, "--help"], {
+test("daemon npm bin executes daemon-cli directly", () => {
+  const entrypoint = path.join(bridgeRoot, "src", "daemon-cli.js")
+  const result = spawnSync(process.execPath, [entrypoint, "--help"], {
     cwd: repoRoot,
     encoding: "utf8",
     env: {

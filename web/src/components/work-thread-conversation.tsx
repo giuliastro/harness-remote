@@ -6,7 +6,7 @@ import type { ConversationController } from "../conversation-controller"
 import { conversationTurnSessionID, conversationTurns, type ConversationRuntime, type ConversationTurn } from "../conversation-runtime"
 import { mergeLatestMessagePage, prependOlderMessagePage } from "../message-pages"
 import type { NativeSessionRouteContinueInput, NativeSessionRouteMachine } from "../native-session-routing"
-import type { SavedServerProfile } from "../serverProfiles"
+import type { SavedServerProfile } from "../workspaceMachines"
 import { taskClient, type AgentModelScope } from "../taskClient"
 import { startTaskDeskSessionLiveRefresh } from "../taskdesk-session-live-refresh"
 import type {

@@ -1,4 +1,4 @@
-import { normalizeServerConfig } from "./serverConfig"
+import { normalizeServerConfig } from "./serverConfig.ts"
 import type { ServerConfig } from "./types"
 
 export const WORKSPACE_MACHINES_STORAGE_KEY = "harness-remote.workspace.machines.v1"
@@ -8,6 +8,7 @@ export type WorkspaceMachine = {
   name: string
   config: ServerConfig
 }
+export type SavedServerProfile = WorkspaceMachine
 
 function machineID(): string {
   return globalThis.crypto?.randomUUID?.() ?? `machine-${Date.now()}-${Math.random().toString(36).slice(2)}`

@@ -1,5 +1,5 @@
 import http from "node:http"
-import { allowedOrigin, applyCorsHeaders, matchesCredentials, writeJSON } from "./http-policy.js"
+import { authenticateDaemonRequest, writeJSON } from "./http-policy.js"
 import { ManagedEventFanout } from "./managed-event-fanout.js"
 import { normalizeTaskModel } from "./task-model.js"
 
@@ -61,20 +61,6 @@ async function readJSONBody(request) {
   return body ? JSON.parse(body) : {}
 }
 
-function authenticateMachineRequest(request, response, config) {
-  applyCorsHeaders(request, response, config)
-  if (request.method === "OPTIONS") {
-    response.writeHead(allowedOrigin(request, config) ? 204 : 403)
-    response.end()
-    return false
-  }
-  if (!matchesCredentials(request, config)) {
-    response.writeHead(401, { "WWW-Authenticate": 'Basic realm="Harness Remote Daemon"' })
-    response.end()
-    return false
-  }
-  return true
-}
 
 export function agentScopedRequest(request) {
   const url = new URL(request.url ?? "/", `http://${request.headers.host ?? "localhost"}`)
@@ -244,7 +230,7 @@ export function createAgentRoutingServer({
 
     const worktreeMatch = TASK_WORKTREE_ROUTE.exec(requestURL.pathname)
     if (MACHINE_ROUTES.has(requestURL.pathname) || worktreeMatch) {
-      if (!authenticateMachineRequest(request, response, config)) return
+      if (!authenticateDaemonRequest(request, response, config)) return
       try {
         if (request.method === "GET" && (requestURL.pathname === "/v1/machine" || requestURL.pathname === "/global/machine")) {
           writeJSON(response, 200, daemon.snapshot())
@@ -331,7 +317,7 @@ export function createAgentRoutingServer({
 
     const optionalPayload = unsupportedOptionalRead(daemon, route, request.method)
     if (optionalPayload !== undefined) {
-      if (!authenticateMachineRequest(request, response, config)) return
+      if (!authenticateDaemonRequest(request, response, config)) return
       writeJSON(response, 200, optionalPayload)
       return
     }
@@ -342,17 +328,7 @@ export function createAgentRoutingServer({
       return
     }
 
-    applyCorsHeaders(request, response, config)
-    if (request.method === "OPTIONS") {
-      response.writeHead(allowedOrigin(request, config) ? 204 : 403)
-      response.end()
-      return
-    }
-    if (!matchesCredentials(request, config)) {
-      response.writeHead(401, { "WWW-Authenticate": 'Basic realm="Harness Remote Daemon"' })
-      response.end()
-      return
-    }
+    if (!authenticateDaemonRequest(request, response, config)) return
 
     const entry = daemon.hostEntry(route.agentID)
     if (!entry) {

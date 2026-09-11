@@ -1,5 +1,7 @@
 #!/usr/bin/env node
+import fs from "node:fs"
 import path from "node:path"
+import { fileURLToPath } from "node:url"
 import { AcpClient } from "./acp-client.js"
 import { AcpAgentModelCatalog, HttpAgentModelCatalog } from "./agent-model-catalog.js"
 import { parseConfig, usage as bridgeUsage } from "./config.js"
@@ -261,7 +263,16 @@ async function main() {
   process.on("SIGTERM", shutdown)
 }
 
-if (process.argv[1]?.endsWith("daemon-cli.js")) {
+function isDirectInvocation() {
+  if (!process.argv[1]) return false
+  try {
+    return fs.realpathSync(process.argv[1]) === fs.realpathSync(fileURLToPath(import.meta.url))
+  } catch {
+    return path.resolve(process.argv[1]) === path.resolve(fileURLToPath(import.meta.url))
+  }
+}
+
+if (isDirectInvocation()) {
   main().catch((error) => {
     process.stderr.write(`${error.message}\n`)
     process.exitCode = 1
