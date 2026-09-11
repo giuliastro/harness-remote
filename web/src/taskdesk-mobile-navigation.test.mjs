@@ -22,12 +22,14 @@ test("mobile opens a native Session explicitly and returns to the Session list w
 })
 
 test("mobile Session list keeps Machine -> Project -> Session navigation", () => {
-  const home = read("./components/native-session-home.tsx")
+  const home = read("./components/native-session-home-base.tsx")
+  const attentionHome = read("./components/native-session-home-attention.tsx")
   assert.match(home, /hr-native-machine-group/)
   assert.match(home, /hr-native-project-group/)
   assert.match(home, /hr-native-session-row/)
   assert.match(home, /toggleMachineCollapsed/)
   assert.match(home, /toggleProjectCollapsed/)
+  assert.match(attentionHome, /hr-native-attention-inbox/, "mobile rail must surface global pending attention above the native Session list")
   assert.match(sessionFirstWorkbench, /\.hr-native-home \{[\s\S]*?padding-inline: 8px/)
   assert.match(sessionFirstWorkbench, /\.hr-native-session-row \{[\s\S]*?min-height: 58px/)
   assert.match(sessionFirstWorkbench, /\.hr-native-session-search input \{[\s\S]*?font-size: 16px/)
