@@ -107,7 +107,9 @@ export function federatedProjectIdentity({
   label: string
 } {
   const path = projectPath || session.project?.worktree || session.directory || ""
-  const name = projectName || session.project?.name || path.split(/[\\/]/).filter(Boolean).at(-1) || "Project"
+  const segments = path.split(/[\\/]/).filter(Boolean)
+  const pathLabel = segments.length ? segments[segments.length - 1] : ""
+  const name = projectName || session.project?.name || pathLabel || "Project"
   return {
     key: `${machineID}:${path}`,
     label: name
