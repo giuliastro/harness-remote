@@ -1,5 +1,6 @@
 import assert from "node:assert/strict"
 import { loadNativeSessionAttentionIndex } from "./native-session-attention-index.ts"
+import { startNativeSessionAttentionLiveRefresh } from "./native-session-attention-live.ts"
 
 const baseConfig = {
   backend: "codex",
@@ -21,6 +22,18 @@ function agent(id, capabilities) {
   }
 }
 
+function liveAgent(id, backend, capabilities) {
+  return {
+    id,
+    label: id,
+    backend,
+    transport: backend === "opencode" ? "http" : "acp",
+    managed: true,
+    state: "available",
+    capabilities
+  }
+}
+
 const question = (id, sessionID) => ({
   id,
   sessionID,
@@ -35,6 +48,8 @@ const permission = (id, sessionID) => ({
   metadata: {},
   always: []
 })
+
+const tick = (milliseconds = 5) => new Promise((resolve) => setTimeout(resolve, milliseconds))
 
 {
   let calls = 0
@@ -111,4 +126,97 @@ const permission = (id, sessionID) => ({
   assert.equal(result.items[0].attention.kind, "recoverable")
 }
 
-console.log("native Session capability-driven attention index tests passed")
+{
+  const subscriptions = []
+  const controller = startNativeSessionAttentionLiveRefresh({
+    targets: [
+      { key: "open", baseConfig, agent: liveAgent("opencode", "opencode", { questions: true, permissions: true }) },
+      { key: "codex", baseConfig, agent: liveAgent("codex", "codex", { questions: false, permissions: false }) }
+    ],
+    onRefresh: () => {},
+    subscribe: (input) => {
+      subscriptions.push(input)
+      return { close() {} }
+    },
+    delayMs: 0
+  })
+
+  assert.equal(subscriptions.length, 1, "only capability-enabled harnesses should consume a live stream")
+  assert.equal(subscriptions[0].config.agentId, "opencode")
+  assert.equal(subscriptions[0].config.backend, "opencode")
+  controller.close()
+}
+
+{
+  const subscriptions = []
+  const refreshed = []
+  const target = { key: "machine:opencode", baseConfig, agent: liveAgent("opencode", "opencode", { questions: true }) }
+  const controller = startNativeSessionAttentionLiveRefresh({
+    targets: [target],
+    onRefresh: (value) => refreshed.push(value.key),
+    subscribe: (input) => {
+      subscriptions.push(input)
+      return { close() {} }
+    },
+    delayMs: 0
+  })
+
+  subscriptions[0].onEvent({ type: "message.updated", sessionID: "s1" })
+  subscriptions[0].onEvent({ type: "permission.updated", sessionID: "s1" })
+  subscriptions[0].onEvent({ type: "permission.replied", sessionID: "s1" })
+  subscriptions[0].onEvent({ type: "question.asked", sessionID: "s2" })
+  await tick()
+
+  assert.deepEqual(refreshed, ["machine:opencode"], "bursty attention edges must become one small index refresh")
+  controller.close()
+}
+
+{
+  let subscription
+  const refreshed = []
+  const target = { key: "machine:opencode", baseConfig, agent: liveAgent("opencode", "opencode", { permissions: true }) }
+  const controller = startNativeSessionAttentionLiveRefresh({
+    targets: [target],
+    onRefresh: (value) => refreshed.push(value.key),
+    subscribe: (input) => {
+      subscription = input
+      return { close() {} }
+    },
+    delayMs: 0
+  })
+
+  subscription.onStatus({ type: "reconnecting" })
+  await tick()
+  assert.deepEqual(refreshed, [])
+  subscription.onStatus({ type: "connected" })
+  await tick()
+  assert.deepEqual(refreshed, ["machine:opencode"], "reconnect must recover attention edges that may have been missed")
+  controller.close()
+}
+
+{
+  const subscriptions = []
+  let refreshes = 0
+  const controller = startNativeSessionAttentionLiveRefresh({
+    targets: [
+      { key: "a", baseConfig, agent: liveAgent("open-a", "opencode", { questions: true }) },
+      { key: "b", baseConfig, agent: liveAgent("open-b", "opencode", { permissions: true }) }
+    ],
+    onRefresh: () => { refreshes += 1 },
+    subscribe: (input) => {
+      const record = { input, closed: false }
+      subscriptions.push(record)
+      return { close() { record.closed = true } }
+    },
+    delayMs: 20
+  })
+
+  subscriptions[0].input.onEvent({ type: "question.asked", sessionID: "s1" })
+  controller.close()
+  await tick(30)
+
+  assert.equal(refreshes, 0, "closing the workspace must cancel a pending attention refresh")
+  assert.equal(subscriptions.every((record) => record.closed), true, "every capability stream must be closed")
+}
+
+console.log("native Session capability-driven attention index and live refresh tests passed")
