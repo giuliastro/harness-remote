@@ -31,6 +31,10 @@ function normalizedTransferredContext(value) {
  * A link does not own either Session or create a second conversation identity. It records that
  * Harness Remote deliberately handed work from one native Session to another and may retain the
  * exact bounded context string used for that handoff so the UI can explain it after reopening.
+ *
+ * Cross-machine links are replicated metadata, not shared authority: a daemon stores an edge only
+ * when at least one endpoint belongs to that daemon. The same A -> B edge may therefore be present
+ * on machine A and machine B, while an unrelated machine C must reject it.
  */
 export class SessionLinkStore {
   #machineID
@@ -46,6 +50,10 @@ export class SessionLinkStore {
     this.#path = path.join(stateDirectory, "session-links.json")
   }
 
+  #isLocalLink(source, target) {
+    return source.machineID === this.#machineID || target.machineID === this.#machineID
+  }
+
   async #load() {
     if (this.#loaded) return
     this.#loaded = true
@@ -55,7 +63,7 @@ export class SessionLinkStore {
       for (const link of parsed.links) {
         if (!link || typeof link !== "object" || link.type !== "handoff") continue
         if (!validIdentity(link.source) || !validIdentity(link.target)) continue
-        if (link.source.machineID !== this.#machineID || link.target.machineID !== this.#machineID) continue
+        if (!this.#isLocalLink(link.source, link.target)) continue
         this.#links.set(linkKey(link.source, link.target), link)
       }
     } catch (error) {
@@ -88,8 +96,8 @@ export class SessionLinkStore {
 
   async addHandoff({ source, target, createdAt = new Date().toISOString(), transferredContext }) {
     if (!validIdentity(source) || !validIdentity(target)) throw new Error("Native Session link requires complete source and target identities")
-    if (source.machineID !== this.#machineID || target.machineID !== this.#machineID) {
-      throw new Error("Native Session links must stay inside their machine scope")
+    if (!this.#isLocalLink(source, target)) {
+      throw new Error("Native Session link must include a Session owned by this machine")
     }
     const context = normalizedTransferredContext(transferredContext)
     return this.#serial(async () => {
