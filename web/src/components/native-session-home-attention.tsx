@@ -81,6 +81,7 @@ export function NativeSessionHome(props: Props) {
   const [knownTargets, setKnownTargets] = useState<Record<string, NativeSessionSurfaceTarget>>({})
   const [openingKey, setOpeningKey] = useState<string | null>(null)
   const [openError, setOpenError] = useState<string | null>(null)
+  const [baseAttentionCount, setBaseAttentionCount] = useState(0)
   const generationRef = useRef(0)
 
   const attentionTargets = useMemo<AttentionTarget[]>(() => props.sources.flatMap(({ machine, snapshot, state }) => {
@@ -179,6 +180,14 @@ export function NativeSessionHome(props: Props) {
 
   const incomplete = Object.values(scopes).some((scope) => !scope.index.complete)
 
+  // The base rail already reports generic status/error attention. Add explicit pending question /
+  // permission Sessions so the mobile badge still carries global attention when the rail is hidden.
+  // In normal harness behavior these sets are disjoint: a blocked permission keeps the native
+  // Session working/waiting rather than changing its discovery status to a generic attention error.
+  useEffect(() => {
+    props.onAttentionCountChange?.(baseAttentionCount + inbox.length)
+  }, [baseAttentionCount, inbox.length, props.onAttentionCountChange])
+
   const rememberAndOpen = useCallback((target: NativeSessionSurfaceTarget) => {
     setKnownTargets((current) => ({ ...current, [target.key]: target }))
     props.onOpen(target)
@@ -255,7 +264,7 @@ export function NativeSessionHome(props: Props) {
           {openError ? <div className="hr-native-attention-error" role="alert">{openError}</div> : null}
         </section>
       ) : null}
-      <NativeSessionHomeBase {...props} onOpen={rememberAndOpen} />
+      <NativeSessionHomeBase {...props} onAttentionCountChange={setBaseAttentionCount} onOpen={rememberAndOpen} />
     </>
   )
 }
