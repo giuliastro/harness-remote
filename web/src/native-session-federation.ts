@@ -88,6 +88,9 @@ export function federatedSessionBucket(
   if (liveState === "working") return "active"
   if (liveState === "attention") return "attention"
   if (liveState === "stopped") return "failed"
+  // Ready is a live observation that the Session is no longer working. It is intentionally Recent
+  // rather than Completed because the detail presentation alone cannot prove native completion.
+  if (liveState === "ready") return "recent"
 
   const type = normalizedStatus(status)
   if (FAILED_STATUS.has(type)) return "failed"

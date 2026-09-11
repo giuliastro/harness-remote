@@ -1,4 +1,5 @@
 import assert from "node:assert/strict"
+import { readFileSync } from "node:fs"
 import test from "node:test"
 import {
   federatedModelIdentity,
@@ -38,7 +39,7 @@ test("operational buckets distinguish active, attention, failure, completion and
 })
 
 test("live presentation wins over stale discovery state without inventing stronger semantics", () => {
-  assert.equal(federatedSessionBucket({ type: "working" }, "ready"), "active", "ready alone must not erase a still-active native status")
+  assert.equal(federatedSessionBucket({ type: "working" }, "ready"), "recent", "live Ready must retire stale active discovery without pretending completion")
   assert.equal(federatedSessionBucket({ type: "completed" }, "working"), "active")
   assert.equal(federatedSessionBucket({ type: "working" }, "attention"), "attention")
   assert.equal(federatedSessionBucket({ type: "working" }, "stopped"), "failed")
@@ -83,4 +84,14 @@ test("federated projection extends search to machine, Project, harness and model
     assert.equal(matchesFederatedSessionQuery(projection, query), true, query)
   }
   assert.equal(matchesFederatedSessionQuery(projection, "claude"), false)
+})
+
+test("Session rail consumes the federated read model for Project/model scopes and search", () => {
+  const source = readFileSync(new URL("./components/native-session-home-base.tsx", import.meta.url), "utf8")
+  assert.match(source, /projectFederatedSession/, "the rail must project already-discovered Sessions through the federation read model")
+  assert.match(source, /projectFilter/, "Project must be a visible client-side scope")
+  assert.match(source, /modelFilter/, "model must be a visible client-side scope")
+  assert.match(source, /projection\.projectKey/, "Project filtering must use the stable federated Project identity")
+  assert.match(source, /projection\.modelKey/, "model filtering must use the normalized federated model identity")
+  assert.match(source, /matchesFederatedSessionQuery\(projection, query\)/, "search must include federated machine, Project, harness and model metadata")
 })
