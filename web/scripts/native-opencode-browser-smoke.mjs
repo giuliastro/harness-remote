@@ -379,7 +379,7 @@ function startFakeDaemon() {
       if (!ledger.has(ledgerKey)) {
         nativePromptDispatches += 1
         ledger.set(ledgerKey, body)
-        if (body.text === SUCCESS_PROMPT) appendPendingTurn(sessionID, body.text, requestId)
+        if (body.text === SUCCESS_PROMPT || body.text === LOST_EVENT_PROMPT) appendPendingTurn(sessionID, body.text, requestId)
         else if (body.text === TERMINAL_ERROR_PROMPT) appendProviderErrorTurn(sessionID, body.text, requestId)
         else if (body.text === INTERRUPT_PROMPT || body.text === TERMINAL_INTERRUPT_PROMPT || body.text === LATE_RECOVERY_PROMPT) appendInterruptedTurn(sessionID, body.text, requestId)
         else appendTurn(sessionID, body.text, requestId)
@@ -592,6 +592,35 @@ async function chooseHighVariant(page) {
   await page.getByRole("button", { name: "high", exact: true }).click()
 }
 
+async function assertPersistedReplyWithoutLiveEvent(page, label) {
+  await waitForReady(page)
+  await sendPrompt(page, LOST_EVENT_PROMPT)
+
+  const pending = page.locator(".uw-message-pending").last()
+  await pending.waitFor({ state: "visible", timeout: 2_000 })
+  assert.equal(
+    await page.getByText(LOST_EVENT_REPLY, { exact: true }).count(),
+    0,
+    `${label}: the persisted reply must not be visible before the delayed transcript update`
+  )
+
+  await page.getByText(LOST_EVENT_REPLY, { exact: true }).waitFor({ state: "visible", timeout: 20_000 })
+  await pending.waitFor({ state: "detached", timeout: 10_000 })
+  await waitForReady(page)
+  assert.equal(
+    await page.locator(".tdw-conversation-state.working").count(),
+    0,
+    `${label}: a persisted OpenCode reply must settle the Session while it remains mounted`
+  )
+  assert.equal(
+    await page.locator(".uw-activity-group.uw-tool-running").count(),
+    0,
+    `${label}: the completed OpenCode reply must not leave an Activity spinning`
+  )
+  assert.equal(await page.getByText(LOST_EVENT_PROMPT, { exact: true }).count(), 1, `${label}: prompt duplicated`)
+  assert.equal(await page.getByText(LOST_EVENT_REPLY, { exact: true }).count(), 1, `${label}: reply duplicated`)
+}
+
 async function assertExistingContract(browser, viewport, mobile) {
   resetFakeState()
   const context = await browser.newContext({ viewport, isMobile: mobile, hasTouch: mobile, deviceScaleFactor: 1, locale: "en-US" })
@@ -715,14 +744,7 @@ async function assertExistingContract(browser, viewport, mobile) {
   assert.equal(await page.getByText(TERMINAL_ERROR_PROMPT, { exact: true }).count(), 1)
   assert.equal(await page.getByText("Turn failed", { exact: true }).count(), 1)
 
-  if (mobile) {
-    await waitForReady(page)
-    await sendPrompt(page, LOST_EVENT_PROMPT)
-    await page.getByText(LOST_EVENT_REPLY, { exact: true }).waitFor({ state: "visible", timeout: 20_000 })
-    assert.equal(await page.getByText(LOST_EVENT_PROMPT, { exact: true }).count(), 1)
-    assert.equal(await page.getByText(LOST_EVENT_REPLY, { exact: true }).count(), 1)
-    assert.equal(await page.locator(".tdw-conversation-state.working").count(), 0, "a persisted OpenCode reply must settle even when the final live event and status read are unavailable")
-  }
+  if (mobile) await assertPersistedReplyWithoutLiveEvent(page, "existing OpenCode Session")
 
   assert.equal(await page.getByRole("button", { name: "Continue with another agent" }).count(), 0, "handoff UI must stay disabled")
 
@@ -779,6 +801,11 @@ async function assertCreateContract(browser, viewport, mobile) {
   assert.equal(await page.getByText(REOPEN_PROMPT, { exact: true }).count(), 1)
   assert.equal(await page.getByText(REOPEN_REPLY, { exact: true }).count(), 1)
   assert.equal(claimRequests, 0, "OpenCode must never acquire ACP writer ownership")
+
+  // This is the field failure: a newly created Session receives an empty assistant envelope, then
+  // persists the real reply without a trailing live event while /session/status is unavailable.
+  // The mounted Session must show the reply and stop both its Working state and Activity spinner.
+  await assertPersistedReplyWithoutLiveEvent(page, "newly created OpenCode Session")
 
   await context.close()
 }
