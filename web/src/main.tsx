@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from "react"
+import { createPortal } from "react-dom"
 import ReactDOM from "react-dom/client"
 import { Capacitor } from "@capacitor/core"
 import { installAppPreferences } from "./appPreferences"
@@ -46,6 +47,44 @@ installCompletionAudioGuard()
 type PairingNotice = {
   kind: "working" | "success" | "error"
   text: string
+}
+
+function AndroidMachinePairingEditorAction({
+  busy,
+  onScan
+}: {
+  busy: boolean
+  onScan: () => Promise<void>
+}) {
+  const [target, setTarget] = useState<HTMLElement | null>(null)
+
+  useEffect(() => {
+    if (Capacitor.getPlatform() !== "android") return
+    const root = document.getElementById("root")
+    if (!root) return
+
+    const updateTarget = () => {
+      setTarget(document.querySelector<HTMLElement>(".uw-machine-editor-actions"))
+    }
+    updateTarget()
+    const observer = new MutationObserver(updateTarget)
+    observer.observe(root, { childList: true, subtree: true })
+    return () => observer.disconnect()
+  }, [])
+
+  if (!target) return null
+  return createPortal(
+    <button
+      type="button"
+      className="uw-manager-button"
+      data-machine-pairing-scan
+      disabled={busy}
+      onClick={() => void onScan()}
+    >
+      {busy ? "Opening scanner…" : "Scan QR code"}
+    </button>,
+    target
+  )
 }
 
 function HarnessRemoteBoundary() {
@@ -144,25 +183,13 @@ function HarnessRemoteBoundary() {
     )
   }
 
-  const showFirstRunScanner = machines.length === 0 && Capacitor.getPlatform() === "android"
-
   return (
     <>
       <StandaloneUniversalWorkspace
         machines={machines}
         onPersistMachines={persistMachines}
       />
-      {showFirstRunScanner ? (
-        <section className="hr-machine-pairing-first-run" aria-label="Quick machine pairing">
-          <span>
-            <strong>Quick setup</strong>
-            Scan the QR code shown by the Harness Remote daemon on your computer, or enter the connection details manually.
-          </span>
-          <button type="button" className="tdw-button primary" disabled={pairingScanBusy} onClick={() => void scanPairingQR()}>
-            {pairingScanBusy ? "Opening scanner…" : "Scan QR code"}
-          </button>
-        </section>
-      ) : null}
+      <AndroidMachinePairingEditorAction busy={pairingScanBusy} onScan={scanPairingQR} />
       {pairingNotice ? (
         <div
           className={`hr-machine-pairing-notice ${pairingNotice.kind}`}
