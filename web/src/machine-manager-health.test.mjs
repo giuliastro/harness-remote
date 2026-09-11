@@ -1,5 +1,7 @@
 import assert from "node:assert/strict"
+import { readFileSync } from "node:fs"
 import test from "node:test"
+import "./machine-pairing.test.mjs"
 import {
   availableMachineAgentCount,
   checkingMachineHealth,
@@ -30,4 +32,10 @@ test("manager footer counts available agents only from confirmed online machines
     offline: offlineMachineHealth("connection refused")
   }
   assert.equal(availableMachineAgentCount(checks), 1)
+})
+
+test("machine discovery never presents a cached online snapshot unless a caller explicitly opts in", () => {
+  const source = readFileSync(new URL("./machineClient.ts", import.meta.url), "utf8")
+  assert.match(source, /allowCachedOnTransportFailure = options\.allowCachedOnTransportFailure === true/)
+  assert.doesNotMatch(source, /allowCachedOnTransportFailure = options\.allowCachedOnTransportFailure !== false/)
 })
