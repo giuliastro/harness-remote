@@ -47,6 +47,15 @@ test("OpenCode completion lifecycle reconciles status and the selected transcrip
   assert.doesNotMatch(lifecycle, /send|prompt|continueWorkThread/)
 })
 
+test("permission and question events refresh global attention without transcript polling", () => {
+  const refresh = readFileSync(new URL("./taskdesk-session-live-refresh.ts", import.meta.url), "utf8")
+  const attention = refresh.match(/if \(isAttentionEvent\(event\.type\)\) \{[\s\S]*?\n      \}/)?.[0] || ""
+
+  assert.match(attention, /throttle\("index", [^,]+, onIndex\)/, "every attention event must refresh the global index")
+  assert.match(attention, /selectedEvent[\s\S]*?throttle\("detail", [^,]+, onDetail\)/, "only the open Session needs its detail payload refreshed")
+  assert.doesNotMatch(attention, /onMessage|send|prompt|continueWorkThread/, "attention events must not trigger transcript reads or writes")
+})
+
 test("foregrounding the app immediately reconciles durable conversation state", () => {
   const refresh = readFileSync(new URL("./taskdesk-session-live-refresh.ts", import.meta.url), "utf8")
 
