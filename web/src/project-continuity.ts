@@ -3,7 +3,7 @@ import { desktopRequestResult, isDesktopPlatform } from "./desktopBridge"
 import { authHeader, hasCredentials, machineBaseUrl } from "./serverConfig"
 import type { ServerConfig } from "./types"
 
-const PROJECT_IDENTITY_TIMEOUT_MS = 12_000
+const PROJECT_IDENTITY_TIMEOUT_MS = 20_000
 
 export type GitProjectIdentity = {
   version: 1
