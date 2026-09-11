@@ -13,6 +13,13 @@ import {
 import { ChatIcon, LoadingIcon, RefreshIcon, ServerIcon, SettingsIcon } from "../Icons"
 import { createTranslator, languageOptions, type LanguageCode } from "../i18n"
 import {
+  availableMachineAgentCount,
+  checkingMachineHealth,
+  offlineMachineHealth,
+  onlineMachineHealth,
+  type MachineManagerHealth
+} from "../machine-manager-health"
+import {
   createBurstLimiter,
   isStreamReconnecting,
   machinePollIntervalMs,
@@ -49,6 +56,7 @@ import "../taskdesk-workthreads.css"
 import "../taskdesk-mobile-navigation.css"
 import "../taskdesk-focus-layout.css"
 import "../conversation-control-plane.css"
+import "../machine-manager-health.css"
 
 /** The 2.x shell persisted its sidebar width and this one did not, so a large monitor got the same
  *  rail as a laptop. Its own key: the two shells have different rails and different defaults. */
@@ -176,21 +184,48 @@ function MachineManager({ machines, onClose, onPersist }: { machines: WorkspaceM
   const t = useTranslator()
   const [editingID, setEditingID] = useState<string | null>(machines.length === 0 ? "new" : null)
   const [confirmRemoveID, setConfirmRemoveID] = useState<string | null>(null)
-  const [snapshots, setSnapshots] = useState<Record<string, MachineSnapshot | null | undefined>>({})
+  const [health, setHealth] = useState<Record<string, MachineManagerHealth<MachineSnapshot> | undefined>>({})
+  const probeRequestIDs = useRef<Record<string, number>>({})
   const dialogRef = useRef<HTMLElement>(null)
   const draft = useMemo(() => editingID === "new" ? createWorkspaceMachine() : machines.find((machine) => machine.id === editingID) || null, [editingID, machines])
 
+  const probeMachine = useCallback((machine: WorkspaceMachine) => {
+    const requestID = (probeRequestIDs.current[machine.id] || 0) + 1
+    probeRequestIDs.current[machine.id] = requestID
+    setHealth((current) => ({
+      ...current,
+      [machine.id]: checkingMachineHealth(current[machine.id])
+    }))
+    void discoverMachine(machine.config).then(
+      (snapshot) => {
+        if (probeRequestIDs.current[machine.id] !== requestID) return
+        setHealth((current) => ({
+          ...current,
+          [machine.id]: snapshot ? onlineMachineHealth(snapshot) : offlineMachineHealth()
+        }))
+      },
+      (reason: unknown) => {
+        if (probeRequestIDs.current[machine.id] !== requestID) return
+        setHealth((current) => ({
+          ...current,
+          [machine.id]: offlineMachineHealth(reason)
+        }))
+      }
+    )
+  }, [])
+
   useEffect(() => {
-    let cancelled = false
-    setSnapshots({})
-    void Promise.all(machines.map(async (machine) => {
-      try { return [machine.id, await discoverMachine(machine.config)] as const }
-      catch { return [machine.id, null] as const }
-    })).then((entries) => {
-      if (!cancelled) setSnapshots(Object.fromEntries(entries))
-    })
-    return () => { cancelled = true }
-  }, [machines])
+    const configured = new Set(machines.map((machine) => machine.id))
+    setHealth((current) => Object.fromEntries(
+      Object.entries(current).filter(([machineID]) => configured.has(machineID))
+    ))
+    for (const machine of machines) probeMachine(machine)
+    return () => {
+      for (const machine of machines) {
+        probeRequestIDs.current[machine.id] = (probeRequestIDs.current[machine.id] || 0) + 1
+      }
+    }
+  }, [machines, probeMachine])
 
   useDialogDismiss(dialogRef, onClose)
 
@@ -208,7 +243,7 @@ function MachineManager({ machines, onClose, onPersist }: { machines: WorkspaceM
     if (editingID === machine.id) setEditingID(null)
   }
 
-  const availableCount = Object.values(snapshots).reduce((count, snapshot) => count + (snapshot?.agents.filter((agent) => agent.state === "available").length || 0), 0)
+  const availableCount = availableMachineAgentCount(health)
 
   return (
     <div className="uw-manager-backdrop" role="presentation" onMouseDown={onClose}>
@@ -220,13 +255,28 @@ function MachineManager({ machines, onClose, onPersist }: { machines: WorkspaceM
         <div className="uw-machine-manager-body">
           {machines.length === 0 && editingID !== "new" ? <div className="uw-machine-manager-empty"><strong>{t("sf.noMachinesConfigured")}</strong><span>{t("sf.noMachinesBody")}</span></div> : null}
           {machines.map((machine) => {
-            const snapshot = snapshots[machine.id]
+            const check = health[machine.id]
+            const state = check?.state || "checking"
+            const snapshot = check?.snapshot
+            const error = check?.state === "offline" ? check.error : undefined
             return (
-              <div className="uw-machine-config-card" key={machine.id}>
+              <div className="uw-machine-config-card" data-machine-state={state} key={machine.id}>
                 <div className="uw-machine-config-main">
                   <strong>{snapshot?.machine.name || machine.name}</strong>
                   <span>{machine.config.host}:{machine.config.port}</span>
-                  <small>{snapshot === undefined ? t("sf.checkingAgents") : snapshot ? t("sf.agentsDetected", { count: snapshot.agents.length }) : t("sf.machineUnavailable")}</small>
+                  <small className={`uw-machine-connection-state ${state}`} aria-live="polite">
+                    <i aria-hidden="true" />
+                    {state === "checking"
+                      ? t("sf.checkingAgents")
+                      : state === "online"
+                        ? t("sf.agentsDetected", { count: snapshot?.agents.length || 0 })
+                        : t("sf.machineUnavailable")}
+                  </small>
+                  {state === "offline" ? (
+                    <small className="uw-machine-connection-error" role="status">
+                      {error || t("sf.notADaemon")}
+                    </small>
+                  ) : null}
                   {snapshot?.agents.length ? <div className="uw-machine-harness-list">{snapshot.agents.map((agent) => <span className="uw-machine-harness" key={agent.id}><i className={agent.state} aria-hidden="true" /><strong>{agent.label}</strong><small>{machineAgentStateLabel(agent.state)}{agent.processID ? ` · PID ${agent.processID}` : ""}</small></span>)}</div> : null}
                 </div>
                 <div className="uw-machine-config-actions">
@@ -238,6 +288,7 @@ function MachineManager({ machines, onClose, onPersist }: { machines: WorkspaceM
                     </>
                   ) : (
                     <>
+                      {state === "offline" ? <button type="button" className="uw-manager-button" data-machine-retry onClick={() => probeMachine(machine)}>{t("sf.retry")}</button> : null}
                       <button type="button" className="uw-manager-button" onClick={() => setEditingID(machine.id)}>{t("sf.edit")}</button>
                       <button type="button" className="uw-manager-button danger" onClick={() => setConfirmRemoveID(machine.id)}>{t("sf.remove")}</button>
                     </>
