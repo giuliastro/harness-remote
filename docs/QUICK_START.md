@@ -29,7 +29,8 @@ npx github:giuliastro/harness-remote \
 ```
 
 `--root` is the directory boundary used when choosing Projects. The launcher prints the machine
-address and credentials you will enter in the client.
+address and credentials you will enter in the client, the harnesses that will be available through
+that machine, and the next step to add it under **Machines → Add machine**.
 
 To use the web/PWA frontend from a checkout:
 
@@ -68,12 +69,13 @@ The launcher inspects `PATH` without executing discovered agent binaries and cho
 
 - with exactly one supported CLI, it preserves the existing single-backend startup path;
 - with multiple supported CLIs and at least one ACP-backed agent, it starts the machine daemon automatically;
-- the daemon selects one detected ACP backend as its primary host and includes managed OpenCode when OpenCode is installed;
+- the daemon exposes every detected ACP-backed agent through the same machine endpoint and selects one of them as the primary for legacy/unprefixed routing;
+- managed OpenCode is included when OpenCode is installed and starts lazily on first use;
 - `--backend <name>` selects the ACP primary on a multi-agent machine;
 - `--single --backend <name>` explicitly opts out of the daemon and forces the legacy single-backend path;
 - if managed OpenCode is included, the launcher chooses a free loopback port automatically instead of assuming 4096 is unused;
 - credentials are generated automatically and kept out of child-process argv;
-- the LAN address and credentials to enter in the client are printed before startup continues.
+- the LAN address, credentials, available harnesses and next client action are printed before startup continues.
 
 The supported CLI names are `omp`, `pi`, `claude`, `codex`, and `opencode`.
 
@@ -85,15 +87,16 @@ harness-remote
 
 starts one machine daemon instead of failing and asking you to choose a backend. The launcher reports the CLIs it detected, selects an ACP primary, finds a free loopback port for managed OpenCode, and exposes the machine through one authenticated daemon connection.
 
-The current automatic multi-host shape is deliberately precise:
+The current automatic multi-host shape is:
 
 ```text
 Harness daemon :4097
-  ├── one detected ACP primary (Codex / Claude / OMP / PI)
-  └── OpenCode, when installed, as a managed loopback HTTP host
+  ├── Codex / Claude / OMP / PI — every detected ACP harness
+  │   └── one selected as primary for legacy/unprefixed routing
+  └── OpenCode, when installed — managed loopback host, started on first use
 ```
 
-Other detected ACP CLIs are reported by discovery but are not all instantiated concurrently by this startup slice yet. The daemon API and client are already agent-scoped, so adding more ACP host instances does not require another client transport change.
+The daemon registers the detected ACP harnesses independently, so choosing one primary does not hide the others from agent-scoped machine APIs. Harness processes may still be started lazily by their adapters; “available” describes what the machine endpoint exposes, not a promise that every CLI process is already resident before first use.
 
 ## Choose the daemon primary or force one backend
 

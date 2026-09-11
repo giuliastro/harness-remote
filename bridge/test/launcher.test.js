@@ -1,7 +1,7 @@
 import assert from "node:assert/strict"
 import path from "node:path"
 import test from "node:test"
-import { bridgeEnvironment, buildBridgeArgs, buildDaemonArgs, canListenForBind, createManagedShutdown, detectBackends, lanAddresses, resolveBackend, resolveLaunchPlan, startManagedOpenCode } from "../src/launcher.js"
+import { bridgeEnvironment, buildBridgeArgs, buildDaemonArgs, canListenForBind, createManagedShutdown, detectBackends, formatStartupSummary, lanAddresses, resolveBackend, resolveLaunchPlan, startManagedOpenCode } from "../src/launcher.js"
 
 test("detects executable agent files on PATH without running them", () => {
   const pathValue = ["/bin", "/tools"].join(path.delimiter)
@@ -79,6 +79,34 @@ test("keeps the legacy resolver strict for callers that still require one backen
 
 test("requires an installed or explicit backend when discovery finds none", () => {
   assert.throws(() => resolveLaunchPlan([], []), /No supported agent CLI was found on PATH/)
+})
+
+test("describes every daemon harness as available instead of claiming secondary ACP hosts are not started", () => {
+  const summary = formatStartupSummary({
+    plan: { mode: "daemon", backend: "codex", detected: ["codex", "claude", "opencode"], openCode: true },
+    addresses: ["192.168.1.42"],
+    port: 4097,
+    username: "harness",
+    password: "secret"
+  })
+  assert.match(summary, /codex — primary/)
+  assert.match(summary, /claude — available/)
+  assert.match(summary, /opencode — managed, starts on first use/)
+  assert.doesNotMatch(summary, /not started/)
+  assert.match(summary, /Machines → Add machine/)
+})
+
+test("keeps the single-backend startup summary simple", () => {
+  const summary = formatStartupSummary({
+    plan: { mode: "single", backend: "pi", detected: ["pi"] },
+    addresses: [],
+    port: 4097,
+    username: "harness",
+    password: "secret"
+  })
+  assert.match(summary, /Harness: pi/)
+  assert.match(summary, /<this machine's LAN address>/)
+  assert.doesNotMatch(summary, /Harnesses available through this machine/)
 })
 
 test("injects quick-start defaults but never places credentials or launcher-only flags on child argv", () => {
