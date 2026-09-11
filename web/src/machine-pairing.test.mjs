@@ -8,14 +8,16 @@ import {
 } from "./machine-pairing.ts"
 
 const future = () => Date.now() + 60_000
-const pairingURL = (endpoint = "http://192.168.1.20:4097") =>
-  `harnessremote://pair?endpoint=${encodeURIComponent(endpoint)}&token=${"a".repeat(43)}&expires=${future()}`
+const pairingURL = (endpoint = "http://192.168.1.20:4097", expiresAt = future()) =>
+  `harnessremote://pair?endpoint=${encodeURIComponent(endpoint)}&token=${"a".repeat(43)}&expires=${expiresAt}`
 
 test("pairing activation accepts only the private explicit daemon endpoint shape", () => {
-  assert.deepEqual(parseMachinePairingActivation(pairingURL()), {
+  const expiresAt = future()
+  const url = pairingURL("http://192.168.1.20:4097", expiresAt)
+  assert.deepEqual(parseMachinePairingActivation(url), {
     endpoint: "http://192.168.1.20:4097",
     token: "a".repeat(43),
-    expiresAt: Number(new URL(pairingURL()).searchParams.get("expires"))
+    expiresAt
   })
   assert.equal(parseMachinePairingActivation("https://example.com"), null)
   assert.equal(parseMachinePairingActivation(pairingURL("http://user:secret@192.168.1.20:4097")), null)
