@@ -15,19 +15,19 @@ async function listen(server) {
   return server.address().port
 }
 
-test("machine Session-link endpoint mirrors and reads lineage", async () => {
-  const stateDirectory = await mkdtemp(path.join(tmpdir(), "harness-link-route-"))
-  const sessionLinkStore = new SessionLinkStore({ machineID: "machine-1", stateDirectory })
-  const server = createSessionClaimServer({
+function createLinkServer(machineID, stateDirectory) {
+  const sessionLinkStore = new SessionLinkStore({ machineID, stateDirectory })
+  return createSessionClaimServer({
     innerServer: new EventEmitter(),
     config: { username: "", password: "", corsOrigins: [] },
     sessionLinkStore
   })
-  await new Promise((resolve, reject) => {
-    server.once("error", reject)
-    server.listen(0, "127.0.0.1", resolve)
-  })
-  const port = server.address().port
+}
+
+test("machine Session-link endpoint mirrors and reads lineage", async () => {
+  const stateDirectory = await mkdtemp(path.join(tmpdir(), "harness-link-route-"))
+  const server = createLinkServer("machine-1", stateDirectory)
+  const port = await listen(server)
   const link = {
     type: "handoff",
     source: { machineID: "machine-1", agentID: "codex", sessionID: "source-1", directory: "/repo" },
@@ -58,5 +58,45 @@ test("machine Session-link endpoint mirrors and reads lineage", async () => {
   } finally {
     await new Promise((resolve) => server.close(resolve))
     await rm(stateDirectory, { recursive: true, force: true })
+  }
+})
+
+test("cross-machine Session-link endpoint accepts the same edge on both participating daemons", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "harness-link-route-cross-machine-"))
+  const sourceServer = createLinkServer("machine-1", path.join(root, "source"))
+  const targetServer = createLinkServer("machine-2", path.join(root, "target"))
+  const unrelatedServer = createLinkServer("machine-3", path.join(root, "unrelated"))
+  const sourcePort = await listen(sourceServer)
+  const targetPort = await listen(targetServer)
+  const unrelatedPort = await listen(unrelatedServer)
+  const link = {
+    type: "handoff",
+    source: { machineID: "machine-1", agentID: "codex", sessionID: "source-1", directory: "/repo-a" },
+    target: { machineID: "machine-2", agentID: "pi", sessionID: "target-2", directory: "/repo-b" },
+    createdAt: "2026-09-11T17:20:00.000Z"
+  }
+  const register = (port) => fetch(`http://127.0.0.1:${port}/v1/session-links`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ link })
+  })
+  try {
+    assert.equal((await register(sourcePort)).status, 200)
+    assert.equal((await register(targetPort)).status, 200)
+    assert.equal((await register(unrelatedPort)).status, 500)
+
+    const sourceQuery = new URLSearchParams(link.source)
+    const targetQuery = new URLSearchParams(link.target)
+    const sourceList = await fetch(`http://127.0.0.1:${sourcePort}/v1/session-links?${sourceQuery}`)
+    const targetList = await fetch(`http://127.0.0.1:${targetPort}/v1/session-links?${targetQuery}`)
+    assert.deepEqual((await sourceList.json()).links, [link])
+    assert.deepEqual((await targetList.json()).links, [link])
+  } finally {
+    await Promise.all([
+      new Promise((resolve) => sourceServer.close(resolve)),
+      new Promise((resolve) => targetServer.close(resolve)),
+      new Promise((resolve) => unrelatedServer.close(resolve))
+    ])
+    await rm(root, { recursive: true, force: true })
   }
 })
