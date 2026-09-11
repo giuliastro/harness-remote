@@ -7,12 +7,13 @@ import {
   type NativeSessionRecord,
   type NativeSessionSurfaceTarget
 } from "../native-session-discovery"
+import { matchesFederatedSessionQuery, projectFederatedSession } from "../native-session-federation"
 import type { MachineAgentHost, MachineSnapshot } from "../types"
 import { nativeSessionDisplayTitle } from "../native-session-title"
 import { useTranslator } from "../useTranslator"
 import type { Translator } from "../i18n"
 import type { WorkspaceMachine } from "../workspaceMachines"
-import { AgentIcon, ChatIcon, ChevronDownIcon, LoadingIcon, PlusIcon, SearchIcon, ServerIcon } from "../Icons"
+import { AgentIcon, ChatIcon, ChevronDownIcon, FolderIcon, LoadingIcon, PlusIcon, SearchIcon, ServerIcon } from "../Icons"
 import "../native-session-home.css"
 import "../native-session-home-ux.css"
 
@@ -369,6 +370,8 @@ export function NativeSessionHome({
   const [filter, setFilter] = useState<SessionFilter>("all")
   const [machineFilter, setMachineFilter] = useState("")
   const [agentFilter, setAgentFilter] = useState("")
+  const [projectFilter, setProjectFilter] = useState("")
+  const [modelFilter, setModelFilter] = useState("")
   const [activityAnchor, setActivityAnchor] = useState<ActivityAnchor | null>(null)
   const [recentlyCompletedKey, setRecentlyCompletedKey] = useState<string | null>(null)
   const selectedRowRef = useRef<HTMLButtonElement | null>(null)
@@ -561,6 +564,16 @@ export function NativeSessionHome({
     return sessionPresentation(item.record, t)
   }, [presentationOverrides, selectedKey, selectedState, t])
 
+  const projectionForItem = useCallback((item: RecordWithMachine) => projectFederatedSession({
+    machineID: item.machineID,
+    machineName: item.machine.name,
+    agentID: item.record.agentId,
+    agentLabel: item.record.agentLabel,
+    session: item.record.session,
+    projectName: item.project?.name,
+    projectPath: item.project?.path
+  }, presentationForItem(item).state), [presentationForItem])
+
   const selectedActivityAnchor = activityAnchor?.key === selectedKey ? activityAnchor : null
   const groups = useMemo(() => projectGroups(records, selectedActivityAnchor), [records, selectedActivityAnchor])
 
@@ -634,9 +647,62 @@ export function NativeSessionHome({
     if (agentFilter && !agentChoices.some((choice) => choice.id === agentFilter)) setAgentFilter("")
   }, [agentChoices, agentFilter])
 
-  const scopedRecords = useMemo(
+  const agentScopedRecords = useMemo(
     () => agentFilter ? machineScopedRecords.filter((item) => item.record.agentId === agentFilter) : machineScopedRecords,
     [agentFilter, machineScopedRecords]
+  )
+
+  const projectChoices = useMemo(() => {
+    const choices = new Map<string, { id: string; label: string; count: number }>()
+    for (const item of agentScopedRecords) {
+      const projection = projectionForItem(item)
+      const existing = choices.get(projection.projectKey)
+      if (existing) existing.count += 1
+      else choices.set(projection.projectKey, {
+        id: projection.projectKey,
+        label: sources.length > 1 ? `${projection.projectLabel} · ${item.machine.name}` : projection.projectLabel,
+        count: 1
+      })
+    }
+    return [...choices.values()].sort((left, right) => left.label.localeCompare(right.label))
+  }, [agentScopedRecords, projectionForItem, sources.length])
+
+  useEffect(() => {
+    if (projectFilter && !projectChoices.some((choice) => choice.id === projectFilter)) setProjectFilter("")
+  }, [projectChoices, projectFilter])
+
+  const projectScopedRecords = useMemo(
+    () => projectFilter
+      ? agentScopedRecords.filter((item) => projectionForItem(item).projectKey === projectFilter)
+      : agentScopedRecords,
+    [agentScopedRecords, projectFilter, projectionForItem]
+  )
+
+  const modelChoices = useMemo(() => {
+    const choices = new Map<string, { id: string; label: string; count: number }>()
+    for (const item of projectScopedRecords) {
+      const projection = projectionForItem(item)
+      if (!projection.modelKey) continue
+      const existing = choices.get(projection.modelKey)
+      if (existing) existing.count += 1
+      else choices.set(projection.modelKey, {
+        id: projection.modelKey,
+        label: projection.modelLabel,
+        count: 1
+      })
+    }
+    return [...choices.values()].sort((left, right) => left.label.localeCompare(right.label))
+  }, [projectScopedRecords, projectionForItem])
+
+  useEffect(() => {
+    if (modelFilter && !modelChoices.some((choice) => choice.id === modelFilter)) setModelFilter("")
+  }, [modelChoices, modelFilter])
+
+  const scopedRecords = useMemo(
+    () => modelFilter
+      ? projectScopedRecords.filter((item) => projectionForItem(item).modelKey === modelFilter)
+      : projectScopedRecords,
+    [modelFilter, projectScopedRecords, projectionForItem]
   )
 
   const activeCount = useMemo(
@@ -656,34 +722,26 @@ export function NativeSessionHome({
     onDiscoveredChange?.(loaded)
   }, [loaded, onDiscoveredChange])
 
-  const filteredGroups = useMemo(() => {
-    const normalizedQuery = query.trim().toLowerCase()
-    return groups.flatMap((group) => {
-      const sessions = group.sessions.filter((item) => {
-        const presentation = presentationForItem(item)
-        if (machineFilter && item.machine.id !== machineFilter) return false
-        if (agentFilter && item.record.agentId !== agentFilter) return false
-        if (filter === "working" && presentation.state !== "working") return false
-        if (filter === "attention" && presentation.state !== "attention") return false
-        if (!normalizedQuery) return true
-        const session = item.record.session
-        return [
-          session.title,
-          item.record.agentLabel,
-          group.name,
-          group.directory,
-          group.machine.name
-        ].some((value) => value?.toLowerCase().includes(normalizedQuery))
-      })
-      return sessions.length ? [{ ...group, sessions }] : []
+  const filteredGroups = useMemo(() => groups.flatMap((group) => {
+    const sessions = group.sessions.filter((item) => {
+      const presentation = presentationForItem(item)
+      const projection = projectionForItem(item)
+      if (machineFilter && item.machine.id !== machineFilter) return false
+      if (agentFilter && item.record.agentId !== agentFilter) return false
+      if (projectFilter && projection.projectKey !== projectFilter) return false
+      if (modelFilter && projection.modelKey !== modelFilter) return false
+      if (filter === "working" && presentation.state !== "working") return false
+      if (filter === "attention" && presentation.state !== "attention") return false
+      return matchesFederatedSessionQuery(projection, query)
     })
-  }, [agentFilter, filter, groups, machineFilter, presentationForItem, query])
+    return sessions.length ? [{ ...group, sessions }] : []
+  }), [agentFilter, filter, groups, machineFilter, modelFilter, presentationForItem, projectFilter, projectionForItem, query])
 
   const machineGroups = useMemo(() => sources
     .filter(({ machine }) => !machineFilter || machine.id === machineFilter)
     .flatMap(({ machine, snapshot, state, error }) => {
       const projects = filteredGroups.filter((group) => group.machine.id === machine.id)
-      const filtering = Boolean(query.trim() || agentFilter || filter !== "all")
+      const filtering = Boolean(query.trim() || agentFilter || projectFilter || modelFilter || filter !== "all")
       if (!projects.length && filtering) return []
       return [{
         machine,
@@ -699,7 +757,7 @@ export function NativeSessionHome({
         updatedAt: projects.reduce((latest, group) => Math.max(latest, group.updatedAt), 0)
       }]
     })
-    .sort((left, right) => right.updatedAt - left.updatedAt || left.label.localeCompare(right.label)), [agentFilter, filter, filteredGroups, machineFilter, presentationForItem, query, sources])
+    .sort((left, right) => right.updatedAt - left.updatedAt || left.label.localeCompare(right.label)), [agentFilter, filter, filteredGroups, machineFilter, modelFilter, presentationForItem, projectFilter, query, sources])
 
   const olderPageTargets = [...pageCache.current.entries()].filter(([, entry]) =>
     entry.nextCursor
@@ -948,6 +1006,30 @@ export function NativeSessionHome({
               <ChevronDownIcon size={12} />
             </label>
           </div>
+          {projectChoices.length > 1 || modelChoices.length > 1 || projectFilter || modelFilter ? (
+            <div className="hr-native-session-scopes">
+              {projectChoices.length > 1 || projectFilter ? (
+                <label className="hr-native-scope">
+                  <FolderIcon size={13} />
+                  <select value={projectFilter} onChange={(event) => setProjectFilter(event.target.value)} aria-label={t("sf.project")}>
+                    <option value="">{t("sf.filterAll")} · {t("sf.project")}</option>
+                    {projectChoices.map((choice) => <option value={choice.id} key={choice.id}>{choice.label} · {choice.count}</option>)}
+                  </select>
+                  <ChevronDownIcon size={12} />
+                </label>
+              ) : null}
+              {modelChoices.length > 1 || modelFilter ? (
+                <label className="hr-native-scope">
+                  <ChatIcon size={13} />
+                  <select value={modelFilter} onChange={(event) => setModelFilter(event.target.value)} aria-label={t("detail.modelTitle")}>
+                    <option value="">{t("sf.filterAll")} · {t("detail.modelTitle")}</option>
+                    {modelChoices.map((choice) => <option value={choice.id} key={choice.id}>{choice.label} · {choice.count}</option>)}
+                  </select>
+                  <ChevronDownIcon size={12} />
+                </label>
+              ) : null}
+            </div>
+          ) : null}
         </div>
       ) : null}
 
