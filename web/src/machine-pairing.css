@@ -1,3 +1,20 @@
+.hr-machine-pairing-editor-action {
+  display: none;
+}
+
+/* Android renders this action only while Add/Configure Machine is open. Keeping it declarative
+   avoids DOM repair/MutationObserver work in the Session-first shell while still putting QR pairing
+   directly on the machine configuration surface. */
+#root:has(.uw-machine-editor) > .hr-machine-pairing-editor-action {
+  position: fixed;
+  z-index: 1210;
+  right: max(20px, env(safe-area-inset-right));
+  bottom: max(112px, calc(env(safe-area-inset-bottom) + 104px));
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
 .hr-machine-pairing-notice {
   position: fixed;
   right: max(16px, env(safe-area-inset-right));
@@ -46,6 +63,13 @@
 }
 
 @media (max-width: 640px) {
+  #root:has(.uw-machine-editor) > .hr-machine-pairing-editor-action {
+    left: 20px;
+    right: 20px;
+    bottom: max(116px, calc(env(safe-area-inset-bottom) + 108px));
+    width: auto;
+  }
+
   .hr-machine-pairing-notice {
     left: 12px;
     right: 12px;

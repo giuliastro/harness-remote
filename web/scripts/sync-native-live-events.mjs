@@ -5,9 +5,10 @@ const root = resolve(import.meta.dirname, "..")
 const source = resolve(root, "native-android")
 const target = resolve(root, "android/app/src/main/java/ai/harness/remote")
 const manifest = resolve(root, "android/app/src/main/AndroidManifest.xml")
+const appGradle = resolve(root, "android/app/build.gradle")
 
 if (!existsSync(target)) throw new Error("Android project not found; run npx cap sync android first")
-for (const file of ["MainActivity.java", "LiveEventsPlugin.java"]) {
+for (const file of ["MainActivity.java", "LiveEventsPlugin.java", "PairingScannerPlugin.java"]) {
   cpSync(resolve(source, file), resolve(target, file))
 }
 
@@ -32,5 +33,29 @@ if (!manifestText.includes(pairingMarker)) {
   changed = true
 }
 
+// Google Code Scanner owns its camera UI inside Play services, so Harness Remote does not request
+// CAMERA permission. Pre-declaring barcode_ui lets Play installs fetch the scanner module early;
+// debug/sideloaded builds may download it on the first scan instead.
+const scannerMetadataMarker = 'android:name="com.google.mlkit.vision.DEPENDENCIES"'
+if (!manifestText.includes(scannerMetadataMarker)) {
+  const applicationPattern = /(<application\b[^>]*>)/
+  if (!applicationPattern.test(manifestText)) throw new Error("Android application element not found after Capacitor sync")
+  manifestText = manifestText.replace(
+    applicationPattern,
+    `$1\n        <meta-data android:name="com.google.mlkit.vision.DEPENDENCIES" android:value="barcode_ui" />`
+  )
+  changed = true
+}
+
 if (changed) writeFileSync(manifest, manifestText)
-console.log("Synced Harness Remote live-events plugin and machine-pairing deep link")
+
+if (!existsSync(appGradle)) throw new Error("Android app Gradle file not found after Capacitor sync")
+let gradleText = readFileSync(appGradle, "utf8")
+const scannerDependency = "implementation 'com.google.android.gms:play-services-code-scanner:16.1.0'"
+if (!gradleText.includes("com.google.android.gms:play-services-code-scanner")) {
+  if (!/dependencies\s*\{/.test(gradleText)) throw new Error("Android dependencies block not found after Capacitor sync")
+  gradleText = gradleText.replace(/dependencies\s*\{/, `dependencies {\n    ${scannerDependency}`)
+  writeFileSync(appGradle, gradleText)
+}
+
+console.log("Synced Harness Remote native live events and QR machine pairing")

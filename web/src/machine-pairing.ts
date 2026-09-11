@@ -1,5 +1,5 @@
 import { App } from "@capacitor/app"
-import { Capacitor, CapacitorHttp, type PluginListenerHandle } from "@capacitor/core"
+import { Capacitor, CapacitorHttp, registerPlugin, type PluginListenerHandle } from "@capacitor/core"
 import { machineBaseUrl, normalizeServerConfig } from "./serverConfig.ts"
 import type { WorkspaceMachine } from "./workspaceMachines.ts"
 
@@ -15,6 +15,16 @@ type PairingClaimResponse = {
   credentials: { username: string; password: string }
 }
 
+type PairingScannerResult = {
+  value?: string
+  cancelled?: boolean
+}
+
+type PairingScannerPlugin = {
+  scan(): Promise<PairingScannerResult>
+}
+
+const PairingScanner = registerPlugin<PairingScannerPlugin>("PairingScanner")
 const MAX_TOKEN_LENGTH = 256
 const TOKEN_PATTERN = /^[A-Za-z0-9_-]+$/
 
@@ -51,6 +61,25 @@ export function parseMachinePairingActivation(url: string): MachinePairingActiva
   if (!endpoint || !token || !TOKEN_PATTERN.test(token)) return null
   if (!Number.isFinite(expiresAt) || expiresAt <= 0) return null
   return { endpoint, token, expiresAt }
+}
+
+/** Open the native Android QR scanner and accept only an HR3 one-time pairing URI. The native
+ * scanner supplies the camera surface; the WebView receives only the resulting string. */
+export async function scanAndroidMachinePairing(
+  options: {
+    scan?: () => Promise<PairingScannerResult>
+    platform?: string
+  } = {}
+): Promise<MachinePairingActivation | null> {
+  const platform = options.platform ?? Capacitor.getPlatform()
+  if (platform !== "android") throw new Error("QR pairing scan is available on Android.")
+  const result = await (options.scan ?? (() => PairingScanner.scan()))()
+  if (result.cancelled) return null
+  const value = cleanText(result.value, 4_096)
+  if (!value) throw new Error("The QR scanner did not return a pairing code.")
+  const activation = parseMachinePairingActivation(value)
+  if (!activation) throw new Error("This QR code is not a valid Harness Remote machine pairing code.")
+  return activation
 }
 
 function bodyObject(value: unknown): Record<string, unknown> | null {

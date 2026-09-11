@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react"
 import { api } from "../api"
+import { discoverMachine, recordApprovalDecision, type ApprovalDecisionIdentity } from "../machineClient"
 import { classifyNativeSessionAttention } from "../native-session-attention"
 import type { PermissionRequest, QuestionRequest, ServerConfig } from "../types"
 
@@ -8,6 +9,7 @@ type Props = {
   directory: string
   questions: QuestionRequest[]
   permissions: PermissionRequest[]
+  approvalIdentity?: ApprovalDecisionIdentity
   onResolved: () => Promise<void> | void
 }
 
@@ -18,7 +20,15 @@ function answerKey(requestID: string, index: number): string {
   return `${requestID}:${index}`
 }
 
-export function WorkThreadAttention({ config, directory, questions, permissions, onResolved }: Props) {
+function permissionExplanation(request: PermissionRequest): string | undefined {
+  for (const key of ["reason", "description", "message"]) {
+    const value = request.metadata?.[key]
+    if (typeof value === "string" && value.trim()) return value.trim()
+  }
+  return undefined
+}
+
+export function WorkThreadAttention({ config, directory, questions, permissions, approvalIdentity, onResolved }: Props) {
   const [answers, setAnswers] = useState<AnswerMap>({})
   const [custom, setCustom] = useState<CustomMap>({})
   const [submitting, setSubmitting] = useState<string | null>(null)
@@ -34,11 +44,43 @@ export function WorkThreadAttention({ config, directory, questions, permissions,
 
   if (questions.length === 0 && permissions.length === 0) return null
 
+  async function persistSuccessfulPermissionDecision(request: PermissionRequest, reply: "once" | "always" | "reject") {
+    let identity = approvalIdentity
+    if (identity && request.sessionID !== identity.sessionID) return
+    if (!identity) {
+      // HR3 surfaces already discover this machine, so this is normally an in-memory cache hit. On a
+      // legacy bridge there is no machine identity (and no metadata endpoint), which correctly means
+      // "do not record" rather than manufacturing one from host:port.
+      const machine = await discoverMachine(config)
+      if (!machine) return
+      identity = {
+        machineID: machine.machine.id,
+        agentID: config.agentId || config.backend,
+        sessionID: request.sessionID,
+        directory
+      }
+    }
+    const explanation = permissionExplanation(request)
+    await recordApprovalDecision(config, {
+      ...identity,
+      requestID: request.id,
+      requestedAction: request.permission,
+      boundary: request.patterns,
+      decision: reply,
+      decidedAt: new Date().toISOString(),
+      ...(explanation ? { explanation } : {})
+    })
+  }
+
   async function respondPermission(request: PermissionRequest, reply: "once" | "always" | "reject") {
     setSubmitting(request.id)
     setError(null)
     try {
+      // The native harness is the authorization authority. Only after it confirms this reply do we
+      // emit observational control-plane metadata; metadata failure must never reverse a real allow
+      // or deny that already happened.
       await api.replyPermission(config, request.id, reply, directory)
+      void persistSuccessfulPermissionDecision(request, reply).catch(() => undefined)
       await onResolved()
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : String(reason))

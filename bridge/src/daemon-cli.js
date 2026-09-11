@@ -2,6 +2,8 @@
 import path from "node:path"
 import { AcpClient } from "./acp-client.js"
 import { AcpAgentModelCatalog, HttpAgentModelCatalog } from "./agent-model-catalog.js"
+import { ApprovalDecisionStore } from "./approval-decision-store.js"
+import { createApprovalDecisionServer } from "./approval-decision-server.js"
 import { parseConfig, usage as bridgeUsage } from "./config.js"
 import { acpHarnessCapabilityContract, openCodeCapabilityContract } from "./harness-capability-contract.js"
 import { harnessProfile, resolveAcpLaunch } from "./harness-profiles.js"
@@ -210,7 +212,7 @@ async function main() {
     })
   }
 
-  const server = createMachineDaemonServer({
+  const machineServer = createMachineDaemonServer({
     daemon,
     config,
     primaryAcp: acp,
@@ -224,6 +226,11 @@ async function main() {
       promptSettleMs: primaryProfile.promptSettleMs
     }
   })
+  // Authorization still belongs entirely to the underlying harness. This outer server adds only a
+  // durable, authenticated record of decisions that a client has already seen succeed. Every other
+  // request is delegated untouched to the existing machine stack.
+  const approvalDecisionStore = new ApprovalDecisionStore({ machineID: identity.id, stateDirectory: config.stateDirectory })
+  const server = createApprovalDecisionServer({ innerServer: machineServer, config, store: approvalDecisionStore })
 
   await new Promise((resolve, reject) => {
     const onError = (error) => reject(error)
