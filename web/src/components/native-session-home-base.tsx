@@ -7,10 +7,19 @@ import {
   type NativeSessionRecord,
   type NativeSessionSurfaceTarget
 } from "../native-session-discovery"
-import { matchesFederatedSessionQuery, projectFederatedSession } from "../native-session-federation"
+import {
+  matchesFederatedSessionQuery,
+  projectFederatedSession,
+  type FederatedSessionBucket
+} from "../native-session-federation"
+import {
+  federatedMoreStatesLabel,
+  federatedOperationalStateLabel,
+  type FederatedOperationalBucket
+} from "../native-session-federation-labels"
 import type { MachineAgentHost, MachineSnapshot } from "../types"
 import { nativeSessionDisplayTitle } from "../native-session-title"
-import { useTranslator } from "../useTranslator"
+import { useLanguage, useTranslator } from "../useTranslator"
 import type { Translator } from "../i18n"
 import type { WorkspaceMachine } from "../workspaceMachines"
 import { AgentIcon, ChatIcon, ChevronDownIcon, FolderIcon, LoadingIcon, PlusIcon, SearchIcon, ServerIcon } from "../Icons"
@@ -99,7 +108,7 @@ type Props = {
 
 const SESSION_HOME_REFRESH_MS = 30_000
 const COLLAPSED_PROJECT_SESSION_COUNT = 5
-type SessionFilter = "all" | "working" | "attention"
+type SessionFilter = "all" | FederatedSessionBucket
 
 const HARNESS_ICON_FILES: Record<string, string> = {
   codex: "codex.svg",
@@ -341,6 +350,7 @@ export function NativeSessionHome({
   onDeletionSettled
 }: Props) {
   const t = useTranslator()
+  const language = useLanguage()
   const [records, setRecords] = useState<RecordWithMachine[]>([])
   const [projectsByMachine, setProjectsByMachine] = useState<Record<string, MachineProject[]>>({})
   const [loading, setLoading] = useState(false)
@@ -555,14 +565,18 @@ export function NativeSessionHome({
     return () => window.clearInterval(timer)
   }, [loaded])
 
-  const presentationForItem = useCallback((item: RecordWithMachine) => {
+  const liveStateForItem = useCallback((item: RecordWithMachine): SessionPresentationState | undefined => {
     const targetKey = recordKey(item)
-    const bridgedState = targetKey === selectedKey && selectedState
+    return targetKey === selectedKey && selectedState
       ? selectedState
       : presentationOverrides[targetKey]
-    if (bridgedState) return { state: bridgedState, label: presentationLabel(bridgedState, t) }
+  }, [presentationOverrides, selectedKey, selectedState])
+
+  const presentationForItem = useCallback((item: RecordWithMachine) => {
+    const liveState = liveStateForItem(item)
+    if (liveState) return { state: liveState, label: presentationLabel(liveState, t) }
     return sessionPresentation(item.record, t)
-  }, [presentationOverrides, selectedKey, selectedState, t])
+  }, [liveStateForItem, t])
 
   const projectionForItem = useCallback((item: RecordWithMachine) => projectFederatedSession({
     machineID: item.machineID,
@@ -572,7 +586,7 @@ export function NativeSessionHome({
     session: item.record.session,
     projectName: item.project?.name,
     projectPath: item.project?.path
-  }, presentationForItem(item).state), [presentationForItem])
+  }, liveStateForItem(item)), [liveStateForItem])
 
   const selectedActivityAnchor = activityAnchor?.key === selectedKey ? activityAnchor : null
   const groups = useMemo(() => projectGroups(records, selectedActivityAnchor), [records, selectedActivityAnchor])
@@ -705,14 +719,22 @@ export function NativeSessionHome({
     [modelFilter, projectScopedRecords, projectionForItem]
   )
 
-  const activeCount = useMemo(
-    () => scopedRecords.filter((item) => presentationForItem(item).state === "working").length,
-    [presentationForItem, scopedRecords]
-  )
-  const attentionCount = useMemo(
-    () => scopedRecords.filter((item) => presentationForItem(item).state === "attention").length,
-    [presentationForItem, scopedRecords]
-  )
+  const bucketCounts = useMemo(() => {
+    const counts: Record<FederatedSessionBucket, number> = {
+      active: 0,
+      attention: 0,
+      failed: 0,
+      completed: 0,
+      recent: 0
+    }
+    for (const item of scopedRecords) counts[projectionForItem(item).bucket] += 1
+    return counts
+  }, [projectionForItem, scopedRecords])
+  const activeCount = bucketCounts.active
+  const attentionCount = bucketCounts.attention
+  const operationalFilter: FederatedOperationalBucket | "" =
+    filter === "failed" || filter === "completed" || filter === "recent" ? filter : ""
+  const showOperationalFilter = bucketCounts.failed + bucketCounts.completed + bucketCounts.recent > 0 || Boolean(operationalFilter)
 
   useEffect(() => {
     onAttentionCountChange?.(attentionCount)
@@ -724,18 +746,16 @@ export function NativeSessionHome({
 
   const filteredGroups = useMemo(() => groups.flatMap((group) => {
     const sessions = group.sessions.filter((item) => {
-      const presentation = presentationForItem(item)
       const projection = projectionForItem(item)
       if (machineFilter && item.machine.id !== machineFilter) return false
       if (agentFilter && item.record.agentId !== agentFilter) return false
       if (projectFilter && projection.projectKey !== projectFilter) return false
       if (modelFilter && projection.modelKey !== modelFilter) return false
-      if (filter === "working" && presentation.state !== "working") return false
-      if (filter === "attention" && presentation.state !== "attention") return false
+      if (filter !== "all" && projection.bucket !== filter) return false
       return matchesFederatedSessionQuery(projection, query)
     })
     return sessions.length ? [{ ...group, sessions }] : []
-  }), [agentFilter, filter, groups, machineFilter, modelFilter, presentationForItem, projectFilter, projectionForItem, query])
+  }), [agentFilter, filter, groups, machineFilter, modelFilter, projectFilter, projectionForItem, query])
 
   const machineGroups = useMemo(() => sources
     .filter(({ machine }) => !machineFilter || machine.id === machineFilter)
@@ -751,13 +771,13 @@ export function NativeSessionHome({
         projects,
         sessionCount: projects.reduce((count, group) => count + group.sessions.length, 0),
         workingCount: projects.reduce((count, group) =>
-          count + group.sessions.filter((item) => presentationForItem(item).state === "working").length, 0),
+          count + group.sessions.filter((item) => projectionForItem(item).bucket === "active").length, 0),
         attentionCount: projects.reduce((count, group) =>
-          count + group.sessions.filter((item) => presentationForItem(item).state === "attention").length, 0),
+          count + group.sessions.filter((item) => projectionForItem(item).bucket === "attention").length, 0),
         updatedAt: projects.reduce((latest, group) => Math.max(latest, group.updatedAt), 0)
       }]
     })
-    .sort((left, right) => right.updatedAt - left.updatedAt || left.label.localeCompare(right.label)), [agentFilter, filter, filteredGroups, machineFilter, modelFilter, presentationForItem, projectFilter, query, sources])
+    .sort((left, right) => right.updatedAt - left.updatedAt || left.label.localeCompare(right.label)), [agentFilter, filter, filteredGroups, machineFilter, modelFilter, projectFilter, projectionForItem, query, sources])
 
   const olderPageTargets = [...pageCache.current.entries()].filter(([, entry]) =>
     entry.nextCursor
@@ -979,7 +999,7 @@ export function NativeSessionHome({
             <button type="button" className={filter === "all" ? "active" : ""} onClick={() => setFilter("all")} aria-pressed={filter === "all"}>
               <span>{t("sf.filterAll")}</span> <b>{scopedRecords.length}</b>
             </button>
-            <button type="button" className={filter === "working" ? "active" : ""} onClick={() => setFilter("working")} aria-pressed={filter === "working"}>
+            <button type="button" className={filter === "active" ? "active" : ""} onClick={() => setFilter("active")} aria-pressed={filter === "active"}>
               <span>{t("sf.filterLive")}</span> <b>{activeCount}</b>
             </button>
             <button type="button" className={filter === "attention" ? "active" : ""} onClick={() => setFilter("attention")} aria-pressed={filter === "attention"}>
@@ -1006,7 +1026,7 @@ export function NativeSessionHome({
               <ChevronDownIcon size={12} />
             </label>
           </div>
-          {projectChoices.length > 1 || modelChoices.length > 1 || projectFilter || modelFilter ? (
+          {projectChoices.length > 1 || modelChoices.length > 1 || projectFilter || modelFilter || showOperationalFilter ? (
             <div className="hr-native-session-scopes">
               {projectChoices.length > 1 || projectFilter ? (
                 <label className="hr-native-scope">
@@ -1024,6 +1044,22 @@ export function NativeSessionHome({
                   <select value={modelFilter} onChange={(event) => setModelFilter(event.target.value)} aria-label={t("detail.modelTitle")}>
                     <option value="">{t("sf.filterAll")} · {t("detail.modelTitle")}</option>
                     {modelChoices.map((choice) => <option value={choice.id} key={choice.id}>{choice.label} · {choice.count}</option>)}
+                  </select>
+                  <ChevronDownIcon size={12} />
+                </label>
+              ) : null}
+              {showOperationalFilter ? (
+                <label className="hr-native-scope">
+                  <ChatIcon size={13} />
+                  <select
+                    value={operationalFilter}
+                    onChange={(event) => setFilter(event.target.value as FederatedOperationalBucket)}
+                    aria-label={federatedMoreStatesLabel(language)}
+                  >
+                    <option value="" disabled>{federatedMoreStatesLabel(language)}</option>
+                    <option value="failed">{federatedOperationalStateLabel("failed", language)} · {bucketCounts.failed}</option>
+                    <option value="completed">{federatedOperationalStateLabel("completed", language)} · {bucketCounts.completed}</option>
+                    <option value="recent">{federatedOperationalStateLabel("recent", language)} · {bucketCounts.recent}</option>
                   </select>
                   <ChevronDownIcon size={12} />
                 </label>
@@ -1160,6 +1196,10 @@ export function NativeSessionHome({
                             <div className="hr-native-home-list">
                               {visibleRows.map(({ item, depth }) => {
                                 const status = presentationForItem(item)
+                                const projection = projectionForItem(item)
+                                const operationalLabel = projection.bucket === "failed" || projection.bucket === "completed"
+                                  ? federatedOperationalStateLabel(projection.bucket, language)
+                                  : status.label
                                 const title = nativeSessionDisplayTitle(
                                   item.record.session.title,
                                   t("sf.untitledSession", { agent: item.record.agentLabel })
@@ -1191,7 +1231,7 @@ export function NativeSessionHome({
                                     aria-label={t("sf.openSessionAria", {
                                       title: accessibleTitle,
                                       agent: `${item.record.agentLabel}${nativeAgent ? ` · ${nativeAgent}` : ""}${restrictionCount ? ` · ${t("sf.restrictionsLabel", { count: restrictionCount })}` : ""}${depth ? ` · ${t("sf.childSession")}` : ""}`,
-                                      status: deleting ? t("sf.deleting") : status.label,
+                                      status: deleting ? t("sf.deleting") : operationalLabel,
                                       project: group.name,
                                       machine: group.machine.name
                                     })}
@@ -1218,7 +1258,7 @@ export function NativeSessionHome({
                                     </span>
                                     <span className="hr-native-session-meta">
                                       <span className="hr-native-session-status" data-state={deleting ? "deleting" : status.state} aria-live={selected || deleting ? "polite" : undefined}>
-                                        {deleting ? <><LoadingIcon size={12} /> {t("sf.deleting")}</> : <>{recentlyCompleted ? "✓ " : ""}{status.label}</>}
+                                        {deleting ? <><LoadingIcon size={12} /> {t("sf.deleting")}</> : <>{recentlyCompleted ? "✓ " : ""}{operationalLabel}</>}
                                       </span>
                                       {deleting ? null : (
                                         <time dateTime={timestamp ? new Date(timestamp).toISOString() : undefined} title={timestamp ? new Date(timestamp).toLocaleString() : undefined}>
