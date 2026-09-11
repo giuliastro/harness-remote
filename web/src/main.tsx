@@ -6,7 +6,13 @@ import { installCompletionAudioGuard } from "./completion-audio"
 import { StandaloneUniversalWorkspace } from "./components/standalone-universal-workspace"
 import { syncDesktopProfiles, isDesktopPlatform } from "./desktopBridge"
 import { ErrorBoundary } from "./ErrorBoundary"
-import { claimMachinePairing, subscribeAndroidMachinePairing, upsertPairedMachine } from "./machine-pairing"
+import {
+  claimMachinePairing,
+  scanAndroidMachinePairing,
+  subscribeAndroidMachinePairing,
+  upsertPairedMachine,
+  type MachinePairingActivation
+} from "./machine-pairing"
 import { SERVER_STORAGE_KEYS } from "./storageKeys"
 import {
   loadWorkspaceMachines,
@@ -52,6 +58,7 @@ function HarnessRemoteBoundary() {
   const [desktopReady, setDesktopReady] = useState(() => !isDesktopPlatform())
   const [desktopSyncError, setDesktopSyncError] = useState<Error | null>(null)
   const [pairingNotice, setPairingNotice] = useState<PairingNotice | null>(null)
+  const [pairingScanBusy, setPairingScanBusy] = useState(false)
 
   // The Session-first workspace talks to the daemon immediately on mount. Electron must therefore
   // acknowledge the stable WorkspaceMachine allowlist before the workspace is allowed to discover
@@ -82,31 +89,49 @@ function HarnessRemoteBoundary() {
     )
   }
 
-  useEffect(() => subscribeAndroidMachinePairing((activation) => {
+  async function claimPairingActivation(activation: MachinePairingActivation): Promise<void> {
     const grantKey = `${activation.endpoint}\u0000${activation.token}`
     if (pairedGrantRef.current.has(grantKey) || pairingInFlightRef.current.has(grantKey)) return
     pairingInFlightRef.current.add(grantKey)
     setPairingNotice({ kind: "working", text: "Connecting to this machine…" })
-    void claimMachinePairing(activation).then(
-      (paired) => {
-        pairingInFlightRef.current.delete(grantKey)
-        pairedGrantRef.current.add(grantKey)
-        const nextMachines = upsertPairedMachine(machinesRef.current, paired)
-        machinesRef.current = nextMachines
-        persistMachines(nextMachines)
-        setPairingNotice({ kind: "success", text: `${paired.name} is connected.` })
-      },
-      (error: unknown) => {
-        // A transport failure does not imply the daemon consumed the grant. A re-scan therefore gets
-        // another chance until the server itself reports used/expired.
-        pairingInFlightRef.current.delete(grantKey)
-        setPairingNotice({
-          kind: "error",
-          text: error instanceof Error ? error.message : "Machine pairing failed."
-        })
-      }
-    )
+    try {
+      const paired = await claimMachinePairing(activation)
+      pairedGrantRef.current.add(grantKey)
+      const nextMachines = upsertPairedMachine(machinesRef.current, paired)
+      machinesRef.current = nextMachines
+      persistMachines(nextMachines)
+      setPairingNotice({ kind: "success", text: `${paired.name} is connected.` })
+    } catch (error) {
+      // A transport failure does not imply the daemon consumed the grant. A re-scan therefore gets
+      // another chance until the server itself reports used/expired.
+      setPairingNotice({
+        kind: "error",
+        text: error instanceof Error ? error.message : "Machine pairing failed."
+      })
+    } finally {
+      pairingInFlightRef.current.delete(grantKey)
+    }
+  }
+
+  useEffect(() => subscribeAndroidMachinePairing((activation) => {
+    void claimPairingActivation(activation)
   }), [])
+
+  async function scanPairingQR(): Promise<void> {
+    if (pairingScanBusy) return
+    setPairingScanBusy(true)
+    try {
+      const activation = await scanAndroidMachinePairing()
+      if (activation) await claimPairingActivation(activation)
+    } catch (error) {
+      setPairingNotice({
+        kind: "error",
+        text: error instanceof Error ? error.message : "QR pairing failed."
+      })
+    } finally {
+      setPairingScanBusy(false)
+    }
+  }
 
   if (desktopSyncError) throw desktopSyncError
   if (!desktopReady) {
@@ -119,12 +144,25 @@ function HarnessRemoteBoundary() {
     )
   }
 
+  const showFirstRunScanner = machines.length === 0 && Capacitor.getPlatform() === "android"
+
   return (
     <>
       <StandaloneUniversalWorkspace
         machines={machines}
         onPersistMachines={persistMachines}
       />
+      {showFirstRunScanner ? (
+        <section className="hr-machine-pairing-first-run" aria-label="Quick machine pairing">
+          <span>
+            <strong>Quick setup</strong>
+            Scan the QR code shown by the Harness Remote daemon on your computer, or enter the connection details manually.
+          </span>
+          <button type="button" className="tdw-button primary" disabled={pairingScanBusy} onClick={() => void scanPairingQR()}>
+            {pairingScanBusy ? "Opening scanner…" : "Scan QR code"}
+          </button>
+        </section>
+      ) : null}
       {pairingNotice ? (
         <div
           className={`hr-machine-pairing-notice ${pairingNotice.kind}`}
