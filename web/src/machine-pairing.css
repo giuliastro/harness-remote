@@ -1,3 +1,37 @@
+.hr-machine-pairing-first-run {
+  position: fixed;
+  z-index: 310;
+  left: 50%;
+  bottom: max(84px, calc(env(safe-area-inset-bottom) + 76px));
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  width: min(680px, calc(100vw - 32px));
+  padding: 14px;
+  border: 1px solid var(--tdw-border, rgba(127, 127, 127, .28));
+  border-radius: 14px;
+  background: var(--tdw-surface, Canvas);
+  box-shadow: 0 14px 40px rgba(0, 0, 0, .24);
+}
+
+.hr-machine-pairing-first-run > span {
+  display: grid;
+  gap: 3px;
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.hr-machine-pairing-first-run > span strong {
+  font-size: 14px;
+}
+
+.hr-machine-pairing-first-run > button {
+  flex: 0 0 auto;
+}
+
 .hr-machine-pairing-notice {
   position: fixed;
   right: max(16px, env(safe-area-inset-right));
@@ -46,6 +80,20 @@
 }
 
 @media (max-width: 640px) {
+  .hr-machine-pairing-first-run {
+    left: 12px;
+    right: 12px;
+    bottom: max(74px, calc(env(safe-area-inset-bottom) + 66px));
+    transform: none;
+    width: auto;
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .hr-machine-pairing-first-run > button {
+    width: 100%;
+  }
+
   .hr-machine-pairing-notice {
     left: 12px;
     right: 12px;
