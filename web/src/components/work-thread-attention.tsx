@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react"
 import { api } from "../api"
-import { recordApprovalDecision, type ApprovalDecisionIdentity } from "../machineClient"
+import { discoverMachine, recordApprovalDecision, type ApprovalDecisionIdentity } from "../machineClient"
 import { classifyNativeSessionAttention } from "../native-session-attention"
 import type { PermissionRequest, QuestionRequest, ServerConfig } from "../types"
 
@@ -44,6 +44,34 @@ export function WorkThreadAttention({ config, directory, questions, permissions,
 
   if (questions.length === 0 && permissions.length === 0) return null
 
+  async function persistSuccessfulPermissionDecision(request: PermissionRequest, reply: "once" | "always" | "reject") {
+    let identity = approvalIdentity
+    if (identity && request.sessionID !== identity.sessionID) return
+    if (!identity) {
+      // HR3 surfaces already discover this machine, so this is normally an in-memory cache hit. On a
+      // legacy bridge there is no machine identity (and no metadata endpoint), which correctly means
+      // "do not record" rather than manufacturing one from host:port.
+      const machine = await discoverMachine(config)
+      if (!machine) return
+      identity = {
+        machineID: machine.machine.id,
+        agentID: config.agentId || config.backend,
+        sessionID: request.sessionID,
+        directory
+      }
+    }
+    const explanation = permissionExplanation(request)
+    await recordApprovalDecision(config, {
+      ...identity,
+      requestID: request.id,
+      requestedAction: request.permission,
+      boundary: request.patterns,
+      decision: reply,
+      decidedAt: new Date().toISOString(),
+      ...(explanation ? { explanation } : {})
+    })
+  }
+
   async function respondPermission(request: PermissionRequest, reply: "once" | "always" | "reject") {
     setSubmitting(request.id)
     setError(null)
@@ -52,17 +80,7 @@ export function WorkThreadAttention({ config, directory, questions, permissions,
       // emit observational control-plane metadata; metadata failure must never reverse a real allow
       // or deny that already happened.
       await api.replyPermission(config, request.id, reply, directory)
-      if (approvalIdentity && request.sessionID === approvalIdentity.sessionID) {
-        void recordApprovalDecision(config, {
-          ...approvalIdentity,
-          requestID: request.id,
-          requestedAction: request.permission,
-          boundary: request.patterns,
-          decision: reply,
-          decidedAt: new Date().toISOString(),
-          ...(permissionExplanation(request) ? { explanation: permissionExplanation(request) } : {})
-        }).catch(() => undefined)
-      }
+      void persistSuccessfulPermissionDecision(request, reply).catch(() => undefined)
       await onResolved()
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : String(reason))
