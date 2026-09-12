@@ -103,7 +103,15 @@ export function NativeSessionOutcomePanel({
   }, [target.key])
 
   useEffect(() => {
-    if (!interactionEnabled || working) return
+    if (!interactionEnabled) return
+    if (working) {
+      // The previous idle snapshot cannot certify the next turn. Invalidate attention immediately so
+      // an idle edge cannot flash "Completed" before fresh target-side permission/question reads land.
+      setView((current) => current && current.attention.complete
+        ? { ...current, attention: UNKNOWN_ATTENTION }
+        : current)
+      return
+    }
     const generation = ++generationRef.current
     let disposed = false
 
