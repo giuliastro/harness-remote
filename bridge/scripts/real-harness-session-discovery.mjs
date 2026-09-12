@@ -135,6 +135,7 @@ export async function verifyRealHarnessSessionDiscovery({
     )
     const healthStatus = health.response?.status ?? 0
     const version = harnessVersion(health.data?.version)
+    const versionKnown = Boolean(version && version.toLowerCase() !== "unknown")
     const healthy = Boolean(health.response?.ok && health.data?.healthy === true)
     if (!healthy) {
       results.push({
@@ -143,7 +144,7 @@ export async function verifyRealHarnessSessionDiscovery({
         healthy: false,
         healthStatus,
         version,
-        versionKnown: Boolean(version && version.toLowerCase() !== "unknown"),
+        versionKnown,
         created: false,
         createStatus: 0,
         discovered: false,
@@ -156,8 +157,24 @@ export async function verifyRealHarnessSessionDiscovery({
       })
       continue
     }
+    if (!versionKnown) {
+      results.push({
+        agentID,
+        passed: false,
+        healthy: true,
+        healthStatus,
+        version,
+        versionKnown: false,
+        created: false,
+        createStatus: 0,
+        discovered: false,
+        listStatus: 0,
+        pages: 0,
+        error: "Harness health check did not report a concrete version."
+      })
+      continue
+    }
 
-    const versionKnown = Boolean(version && version.toLowerCase() !== "unknown")
     const created = await requestJSON(
       `${root}/v1/agents/${encodeURIComponent(agentID)}/session?directory=${encodeURIComponent(directory)}`,
       {
