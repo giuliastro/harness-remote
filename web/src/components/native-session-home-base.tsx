@@ -92,6 +92,10 @@ type Props = {
   refreshToken?: number
   /** The rail already counts Sessions needing input; the mobile nav needs that count outside it. */
   onAttentionCountChange?: (count: number) => void
+  /** Structured pending permission/question identities from the global attention index. */
+  attentionSessionKeys?: ReadonlySet<string>
+  /** Exposes the currently scoped attention identities so the Inbox wrapper can union counts. */
+  onAttentionKeysChange?: (keys: ReadonlySet<string>) => void
   selectedKey?: string
   selectedState?: SessionPresentationState
   /** Fires when native Session discovery has settled at least once for the current machines. */
@@ -341,6 +345,8 @@ export function NativeSessionHome({
   onOpen,
   refreshToken = 0,
   onAttentionCountChange,
+  attentionSessionKeys,
+  onAttentionKeysChange,
   onDiscoveredChange,
   onRefreshComplete,
   selectedKey,
@@ -567,10 +573,13 @@ export function NativeSessionHome({
 
   const liveStateForItem = useCallback((item: RecordWithMachine): SessionPresentationState | undefined => {
     const targetKey = recordKey(item)
+    // A pending native permission/question is stronger evidence than a stale discovery/live state.
+    // This is presentation-only: no authority, writer ownership or harness state is changed here.
+    if (attentionSessionKeys?.has(targetKey)) return "attention"
     return targetKey === selectedKey && selectedState
       ? selectedState
       : presentationOverrides[targetKey]
-  }, [presentationOverrides, selectedKey, selectedState])
+  }, [attentionSessionKeys, presentationOverrides, selectedKey, selectedState])
 
   const presentationForItem = useCallback((item: RecordWithMachine) => {
     const liveState = liveStateForItem(item)
@@ -731,14 +740,20 @@ export function NativeSessionHome({
     return counts
   }, [projectionForItem, scopedRecords])
   const activeCount = bucketCounts.active
-  const attentionCount = bucketCounts.attention
+  const attentionKeys = useMemo<ReadonlySet<string>>(() => new Set(
+    scopedRecords
+      .filter((item) => projectionForItem(item).bucket === "attention")
+      .map(recordKey)
+  ), [projectionForItem, scopedRecords])
+  const attentionCount = attentionKeys.size
   const operationalFilter: FederatedOperationalBucket | "" =
     filter === "failed" || filter === "completed" || filter === "recent" ? filter : ""
   const showOperationalFilter = bucketCounts.failed + bucketCounts.completed + bucketCounts.recent > 0 || Boolean(operationalFilter)
 
   useEffect(() => {
     onAttentionCountChange?.(attentionCount)
-  }, [attentionCount, onAttentionCountChange])
+    onAttentionKeysChange?.(attentionKeys)
+  }, [attentionCount, attentionKeys, onAttentionCountChange, onAttentionKeysChange])
 
   useEffect(() => {
     onDiscoveredChange?.(loaded)
