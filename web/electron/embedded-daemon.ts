@@ -22,6 +22,11 @@ export type EmbeddedDaemonReady = {
   pid: number | null
 }
 
+export type EmbeddedDaemonExit = {
+  code: number | null
+  signal: NodeJS.Signals | null
+}
+
 export type EmbeddedDaemonPathOptions = {
   isPackaged: boolean
   appPath: string
@@ -34,12 +39,13 @@ export function embeddedDaemonEntry({ isPackaged, appPath, resourcesPath }: Embe
     : join(appPath, "..", "bridge", "src", "daemon-cli.js")
 }
 
-export function embeddedDaemonArgs(port: number, openCodePort: number): string[] {
+export function embeddedDaemonArgs(port: number, openCodePort: number, stateDirectory?: string): string[] {
   return [
     "--host", EMBEDDED_DAEMON_HOST,
     "--port", String(port),
     "--opencode-host", EMBEDDED_DAEMON_HOST,
-    "--opencode-port", String(openCodePort)
+    "--opencode-port", String(openCodePort),
+    ...(stateDirectory ? ["--state-dir", stateDirectory] : [])
   ]
 }
 
@@ -104,8 +110,10 @@ export class EmbeddedDaemonRuntime {
     entryPath: string
     executable?: string
     environment?: NodeJS.ProcessEnv
+    stateDirectory?: string
     startupTimeoutMs?: number
     shutdownTimeoutMs?: number
+    onExit?: (details: EmbeddedDaemonExit) => void
   }) {}
 
   get isRunning(): boolean {
@@ -125,7 +133,7 @@ export class EmbeddedDaemonRuntime {
     const port = await findLoopbackPort(4097)
     const openCodePort = await findLoopbackPort(4096, [port])
     const auth = credentials()
-    const args = embeddedDaemonArgs(port, openCodePort)
+    const args = embeddedDaemonArgs(port, openCodePort, this.options.stateDirectory)
     const child = spawn(this.options.executable ?? process.execPath, [this.options.entryPath, ...args], {
       env: embeddedDaemonEnvironment(this.options.environment, auth),
       stdio: ["ignore", "pipe", "pipe"],
@@ -187,9 +195,11 @@ export class EmbeddedDaemonRuntime {
       pid: child.pid ?? null
     }
     this.ready = result
-    child.once("exit", () => {
+    child.once("exit", (code, signal) => {
+      const wasReady = this.ready === result
       if (this.child === child) this.child = undefined
       if (this.ready === result) this.ready = undefined
+      if (wasReady) this.options.onExit?.({ code, signal })
     })
     return result
   }
