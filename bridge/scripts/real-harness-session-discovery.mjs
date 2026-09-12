@@ -12,6 +12,12 @@ function sessionList(value) {
   return []
 }
 
+function harnessVersion(value) {
+  if (typeof value !== "string") return null
+  const normalized = value.trim()
+  return normalized || null
+}
+
 async function requestJSON(url, {
   method = "GET",
   body,
@@ -120,6 +126,55 @@ export async function verifyRealHarnessSessionDiscovery({
   const results = []
 
   for (const agentID of harnesses) {
+    // A configured registry entry is not release evidence that the installed harness can actually
+    // start. Probe the same agent-scoped health route the product uses first, and retain the harness
+    // version it reports so the resulting evidence identifies which installed build was exercised.
+    const health = await requestJSON(
+      `${root}/v1/agents/${encodeURIComponent(agentID)}/global/health`,
+      { authorizationHeader, fetchImpl, timeoutMs }
+    )
+    const healthStatus = health.response?.status ?? 0
+    const version = harnessVersion(health.data?.version)
+    const versionKnown = Boolean(version && version.toLowerCase() !== "unknown")
+    const healthy = Boolean(health.response?.ok && health.data?.healthy === true)
+    if (!healthy) {
+      results.push({
+        agentID,
+        passed: false,
+        healthy: false,
+        healthStatus,
+        version,
+        versionKnown,
+        created: false,
+        createStatus: 0,
+        discovered: false,
+        listStatus: 0,
+        pages: 0,
+        error: health.transportError
+          ?? (health.response?.ok
+            ? "Harness health check did not report healthy=true."
+            : `Harness health check returned HTTP ${healthStatus}.`)
+      })
+      continue
+    }
+    if (!versionKnown) {
+      results.push({
+        agentID,
+        passed: false,
+        healthy: true,
+        healthStatus,
+        version,
+        versionKnown: false,
+        created: false,
+        createStatus: 0,
+        discovered: false,
+        listStatus: 0,
+        pages: 0,
+        error: "Harness health check did not report a concrete version."
+      })
+      continue
+    }
+
     const created = await requestJSON(
       `${root}/v1/agents/${encodeURIComponent(agentID)}/session?directory=${encodeURIComponent(directory)}`,
       {
@@ -136,6 +191,10 @@ export async function verifyRealHarnessSessionDiscovery({
       results.push({
         agentID,
         passed: false,
+        healthy: true,
+        healthStatus,
+        version,
+        versionKnown,
         created: false,
         createStatus,
         discovered: false,
@@ -162,6 +221,10 @@ export async function verifyRealHarnessSessionDiscovery({
     results.push({
       agentID,
       passed: discovered,
+      healthy: true,
+      healthStatus,
+      version,
+      versionKnown,
       created: true,
       createStatus: created.response.status,
       createdSessionID: String(createdID),
@@ -173,7 +236,7 @@ export async function verifyRealHarnessSessionDiscovery({
   }
 
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     passed: results.length === harnesses.length && results.every((result) => result.passed),
     results
   }
