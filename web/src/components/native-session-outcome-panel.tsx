@@ -5,6 +5,10 @@ import { listMachineProjects } from "../machineClient"
 import { resolveSourceSessionProject } from "../cross-machine-route-projects"
 import type { NativeSessionSurfaceTarget } from "../native-session-discovery"
 import {
+  nativeSessionGateEvidence,
+  type NativeSessionGateEvidence
+} from "../native-session-gate-evidence"
+import {
   nativeSessionReviewEvidence,
   type NativeSessionReviewAttention
 } from "../native-session-review-evidence"
@@ -13,6 +17,7 @@ import {
   type MachineProjectOutcome,
   type MachineProjectOutcomeFile
 } from "../project-outcome-client"
+import type { PermissionRequest, QuestionRequest } from "../types"
 import "../native-session-outcome.css"
 
 const MAX_VISIBLE_FILES = 12
@@ -34,11 +39,12 @@ type ProjectOutcomeView = {
 type OutcomeView = {
   project?: ProjectOutcomeView
   attention: NativeSessionReviewAttention
+  gate?: NativeSessionGateEvidence
 }
 
 type AttentionLoad = {
-  questions?: number
-  permissions?: number
+  questions?: QuestionRequest[]
+  permissions?: PermissionRequest[]
   connectionIssue: boolean
 }
 
@@ -83,15 +89,32 @@ async function loadAttentionEvidence(target: NativeSessionSurfaceTarget): Promis
   ])
   return {
     ...(questionResult.status === "fulfilled" ? {
-      questions: questionResult.value.filter((request) => request.sessionID === target.sessionID).length
+      questions: questionResult.value.filter((request) => request.sessionID === target.sessionID)
     } : {}),
     ...(permissionResult.status === "fulfilled" ? {
-      permissions: permissionResult.value.filter((request) => request.sessionID === target.sessionID).length
+      permissions: permissionResult.value.filter((request) => request.sessionID === target.sessionID)
     } : {}),
     connectionIssue:
       (questionResult.status === "rejected" && connectionFailure(questionResult.reason))
       || (permissionResult.status === "rejected" && connectionFailure(permissionResult.reason))
   }
+}
+
+function gateFromAttentionLoad(
+  load: AttentionLoad,
+  previous?: NativeSessionGateEvidence
+): NativeSessionGateEvidence | undefined {
+  // A failed permission read cannot prove that an already-known authorization gate disappeared.
+  // Preserve that fail-closed evidence until the permission endpoint returns a complete replacement.
+  if (load.permissions === undefined && previous?.kind === "authorization") return previous
+
+  const permissionGate = nativeSessionGateEvidence(load.permissions ?? [], [])
+  if (permissionGate) return permissionGate
+
+  // Once permissions are known empty, questions may become the highest-priority gate. If that
+  // endpoint is the one that failed, retain only a previously known question instead of inventing one.
+  if (load.questions === undefined && previous?.kind === "question") return previous
+  return nativeSessionGateEvidence([], load.questions ?? []) ?? undefined
 }
 
 export function NativeSessionOutcomePanel({
@@ -142,11 +165,18 @@ export function NativeSessionOutcomePanel({
         const attention = attentionResult.status === "fulfilled"
           ? {
               complete: attentionResult.value.questions !== undefined && attentionResult.value.permissions !== undefined,
-              questions: attentionResult.value.questions ?? previousAttention.questions,
-              permissions: attentionResult.value.permissions ?? previousAttention.permissions
+              questions: attentionResult.value.questions?.length ?? previousAttention.questions,
+              permissions: attentionResult.value.permissions?.length ?? previousAttention.permissions
             }
           : { ...previousAttention, complete: false }
-        return { ...(project ? { project } : {}), attention }
+        const gate = attentionResult.status === "fulfilled"
+          ? gateFromAttentionLoad(attentionResult.value, current?.gate)
+          : current?.gate
+        return {
+          ...(project ? { project } : {}),
+          attention,
+          ...(gate ? { gate } : {})
+        }
       })
     })()
 
@@ -166,6 +196,7 @@ export function NativeSessionOutcomePanel({
   const hiddenCount = total === undefined ? 0 : Math.max(0, total - visibleFiles.length)
   const branchOrHead = outcome?.branch || (outcome?.head ? outcome.head.slice(0, 8) : undefined)
   const state = outcome ? outcomeState(outcome) : undefined
+  const gate = view?.gate
   const summary = [
     review?.label,
     branchOrHead,
@@ -198,10 +229,29 @@ export function NativeSessionOutcomePanel({
                 <span>Session <strong>{review.label}</strong></span>
                 {view?.attention.permissions ? <span>Authorization <strong>{view.attention.permissions} pending</strong></span> : null}
                 {view?.attention.questions ? <span>Questions <strong>{view.attention.questions} pending</strong></span> : null}
+                {gate ? (
+                  <span>{gate.kind === "authorization" ? "Requested action" : "Waiting for"} <strong>{gate.label}</strong></span>
+                ) : null}
               </div>
               <p className="hr-native-outcome-note">
                 {review.summary}{review.detail ? ` ${review.detail}` : ""} {review.nextAction}
               </p>
+              {gate?.detail ? <p className="hr-native-outcome-note">{gate.detail}</p> : null}
+              {gate?.kind === "authorization" && gate.boundaries.length ? (
+                <div className="hr-native-outcome-files" aria-label="Authorization boundaries">
+                  {gate.boundaries.map((boundary, index) => (
+                    <div className="hr-native-outcome-file" key={`${boundary}:${index}`}>
+                      <span>Gated scope</span>
+                      <code title={boundary}>{boundary}</code>
+                    </div>
+                  ))}
+                </div>
+              ) : null}
+              {gate?.omittedBoundaries ? (
+                <p className="hr-native-outcome-note">
+                  {gate.omittedBoundaries} additional gated {gate.omittedBoundaries === 1 ? "scope is" : "scopes are"} omitted by display bounds.
+                </p>
+              ) : null}
             </>
           ) : null}
 
