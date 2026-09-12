@@ -34,7 +34,7 @@ test("OpenCode Deny sends the exact native reject payload", async () => {
   assert.equal(calls.length, 1)
   const call = calls[0]
   const target = new URL(call.url)
-  assert.equal(target.pathname, "/permission/per_fail_closed/reply")
+  assert.equal(target.pathname, "/v1/agents/opencode/permission/per_fail_closed/reply")
   assert.equal(target.searchParams.get("directory"), "/repo")
   assert.equal(call.options?.method, "POST")
   assert.deepEqual(JSON.parse(call.options?.body || "{}"), { reply: "reject" })
