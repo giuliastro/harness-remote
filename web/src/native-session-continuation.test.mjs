@@ -5,6 +5,7 @@ import './cross-machine-route-projects.test.mjs'
 import './cross-machine-route-plan.test.mjs'
 import './handoff-authority-boundary.test.mjs'
 import './native-session-lineage.test.mjs'
+import './native-session-outcome.test.mjs'
 import './portable-handoff-state.test.mjs'
 
 function target(overrides = {}) {
