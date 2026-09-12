@@ -210,7 +210,11 @@ export function NativeSessionHome(props: Props) {
 
   const rememberAndOpen = useCallback((target: NativeSessionSurfaceTarget) => {
     setKnownTargets((current) => ({ ...current, [target.key]: target }))
-    notificationContextRef.current.set(target.key, { sessionTitle: target.title })
+    const existingContext = notificationContextRef.current.get(target.key)
+    notificationContextRef.current.set(target.key, {
+      ...existingContext,
+      sessionTitle: target.title
+    })
     props.onOpen(target)
   }, [props.onOpen])
 
