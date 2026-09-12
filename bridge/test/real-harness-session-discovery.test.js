@@ -87,3 +87,21 @@ test("bounds pagination instead of scanning an unbounded native Session index", 
   assert.equal(result.results[0].pages, 2)
   assert.match(result.results[0].error, /bounded 2-page scan/i)
 })
+
+test("sanitizes transport failures before they enter release evidence", async () => {
+  const result = await verifyRealHarnessSessionDiscovery({
+    harnesses: ["opencode"],
+    urlRoot: "http://private-user:private-pass@127.0.0.1:4097",
+    directory: "/work/private-project",
+    fetchImpl: async (url) => {
+      throw new Error(`could not fetch ${url}`)
+    }
+  })
+
+  const evidence = JSON.stringify(result)
+  assert.equal(result.passed, false)
+  assert.match(result.results[0].error, /failed before receiving an HTTP response/i)
+  assert.equal(evidence.includes("private-user"), false)
+  assert.equal(evidence.includes("private-pass"), false)
+  assert.equal(evidence.includes("private-project"), false)
+})
