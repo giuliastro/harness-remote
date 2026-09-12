@@ -38,6 +38,28 @@ function normalizedEvidence(value) {
   }
 }
 
+function validateDecisionEvidence(decision, reason, evidence) {
+  if (evidence.project === "different" || evidence.repository === "different" || evidence.history === "different") {
+    throw invalidState("Portable handoff state cannot represent a blocked Project mismatch")
+  }
+  if (decision === "automatic") {
+    if (reason !== "exact_workspace"
+        || evidence.project !== "match"
+        || evidence.repository !== "match"
+        || evidence.branch !== "match"
+        || evidence.head !== "match"
+        || evidence.sourceDirty !== false
+        || evidence.targetDirty !== false
+        || evidence.exactWorkspace !== true) {
+      throw invalidState("Automatic portable handoff state requires internally consistent exact workspace evidence")
+    }
+    return
+  }
+  if (reason === "exact_workspace" || evidence.exactWorkspace !== false) {
+    throw invalidState("Reviewed portable handoff state must represent a non-exact workspace")
+  }
+}
+
 /**
  * Validate and canonicalize the only structured metadata allowed to cross a machine handoff.
  * Unknown fields are discarded, so permission/approval/tool/path material cannot become durable
@@ -60,22 +82,8 @@ export function normalizePortableHandoffState(value) {
   if (!DECISIONS.has(project.decision) || !REASONS.has(project.reason)) {
     throw invalidState("Portable handoff Project decision is invalid")
   }
-  if (project.decision === "automatic" && project.reason !== "exact_workspace") {
-    throw invalidState("Automatic portable handoff state requires exact workspace evidence")
-  }
-  if (project.decision === "review" && project.reason === "exact_workspace") {
-    throw invalidState("Reviewed portable handoff state cannot claim exact workspace continuity")
-  }
   const evidence = normalizedEvidence(project.evidence)
-  if (evidence.project === "different" || evidence.repository === "different" || evidence.history === "different") {
-    throw invalidState("Portable handoff state cannot represent a blocked Project mismatch")
-  }
-  if (project.decision === "automatic" && !evidence.exactWorkspace) {
-    throw invalidState("Automatic portable handoff state requires exactWorkspace=true")
-  }
-  if (project.decision === "review" && evidence.exactWorkspace) {
-    throw invalidState("Reviewed portable handoff state requires exactWorkspace=false")
-  }
+  validateDecisionEvidence(project.decision, project.reason, evidence)
   if (!controls || typeof controls !== "object" || Array.isArray(controls)
       || controls.sourceAuthority !== "invalidated"
       || controls.targetAuthorization !== "re_evaluate"
