@@ -13,6 +13,8 @@ test("extracts only the delimited exported PATH from noisy shell startup output"
     "welcome from shell startup",
     "__HARNESS_REMOTE_PATH_START__",
     "PATH=/opt/homebrew/bin:/Users/me/.local/bin:/usr/bin",
+    "HOME=/shell/home/that/must/not/be/imported",
+    "SECRET_FROM_SHELL=must-not-leak",
     "__HARNESS_REMOTE_PATH_END__",
     "trailing shell output"
   ].join("\n")
