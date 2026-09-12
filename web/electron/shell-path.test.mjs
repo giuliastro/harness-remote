@@ -4,6 +4,7 @@ import test from "node:test"
 const {
   mergeExecutablePath,
   parseLoginShellPathOutput,
+  readLoginShellPath,
   resolveDesktopRuntimeEnvironment
 } = await import("../dist-electron/electron/shell-path.js")
 
@@ -84,4 +85,15 @@ test("Windows keeps its native process environment and never starts shell discov
   })
   assert.equal(called, false)
   assert.deepEqual(resolved, inherited)
+})
+
+test("a real POSIX login shell emits a usable exported PATH", { skip: process.platform === "win32" }, async () => {
+  const discovered = await readLoginShellPath(process.env, {
+    platform: process.platform,
+    shell: "/bin/sh",
+    timeoutMs: 2_000
+  })
+  assert.equal(typeof discovered, "string")
+  assert.ok(discovered.length > 0)
+  assert.equal(discovered.includes("\n"), false)
 })
