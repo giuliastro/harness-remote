@@ -46,7 +46,7 @@
     "test:ci:baseline": "npm run test:i18n && npm run test:config && npm run test:ui && npm run test:settings && npm run test:model && npm run test:events && npm run test:profiles",
     "test:ci:pages": "npm run test:ci:baseline && npm run test:attachments",
     "test:ci:desktop": "npm run test:i18n && npm run test:config && npm run test:ui && npm run test:settings && npm run test:platform && npm run test:model && npm run test:events && npm run test:profiles && npm run test:desktop",
-    "test:ci:full": "npm run test:i18n && npm run test:config && npm run test:ui && npm run test:settings && npm run test:v3-product-ui && npm run test:model && npm run test:events && npm run test:profiles && npm run test:attachments && npm run test:machine-payload && npm run test:platform && npm run test:completion-audio && npm run test:completion-timing && npm run test:native-response && node src/v3-mobile-regression-fixes.test.mjs && node src/session-first-regression.test.mjs && node scripts/run-vite-test.mjs src/native-session-discovery.test.mjs src/native-session-continuation.test.mjs src/native-session-machine-id-migration.test.mjs src/native-session-handoff-recovery.test.mjs && node scripts/run-vite-test.mjs src/omp-session-multi-turn.test.mjs src/omp-session-model-projection.test.mjs && node src/native-session-observer.test.mjs && npm run test:native-session-model-lifecycle"
+    "test:ci:full": "npm run test:i18n && npm run test:config && npm run test:ui && npm run test:settings && npm run test:v3-product-ui && npm run test:model && npm run test:events && npm run test:profiles && npm run test:attachments && npm run test:machine-payload && npm run test:platform && npm run test:completion-audio && npm run test:completion-timing && npm run test:native-response && node src/v3-mobile-regression-fixes.test.mjs && node src/session-first-regression.test.mjs && node scripts/run-vite-test.mjs src/native-session-discovery.test.mjs src/native-session-continuation.test.mjs src/native-session-machine-id-migration.test.mjs src/native-session-handoff-recovery.test.mjs && node scripts/run-vite-test.mjs src/omp-session-multi-turn.test.mjs src/omp-session-model-projection.test.mjs && node src/native-session-observer.test.mjs && npm run test:native-session-model-lifecycle && npm run test:desktop"
   },
   "build": {
     "appId": "com.harnessremote.desktop",
@@ -63,6 +63,17 @@
       "!node_modules/**/*",
       "!**/*.map",
       "!**/*.test.*"
+    ],
+    "extraResources": [
+      {
+        "from": "../bridge/src",
+        "to": "bridge-runtime/src",
+        "filter": ["**/*"]
+      },
+      {
+        "from": "../bridge/package.json",
+        "to": "bridge-runtime/package.json"
+      }
     ],
     "win": {
       "target": [
