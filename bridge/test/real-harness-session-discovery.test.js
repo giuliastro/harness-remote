@@ -79,13 +79,11 @@ test("fails before Session creation when an installed harness cannot pass its he
   assert.match(result.results[0].error, /health check returned HTTP 503/i)
 })
 
-test("records an unknown harness version explicitly without inventing one", async () => {
+test("fails traceability before Session creation when the harness version is unknown", async () => {
+  const calls = []
   const fetchImpl = async (url, options = {}) => {
-    const parsed = new URL(url)
-    const rest = parsed.pathname.split("/").slice(4).join("/")
-    if (rest === "global/health") return jsonResponse({ healthy: true, version: "unknown" })
-    if (options.method === "POST") return jsonResponse({ id: "native-1" })
-    return jsonResponse([{ id: "native-1" }])
+    calls.push({ url: String(url), method: options.method ?? "GET" })
+    return jsonResponse({ healthy: true, version: "unknown" })
   }
 
   const result = await verifyRealHarnessSessionDiscovery({
@@ -94,9 +92,13 @@ test("records an unknown harness version explicitly without inventing one", asyn
     fetchImpl
   })
 
-  assert.equal(result.passed, true)
+  assert.equal(result.passed, false)
+  assert.equal(result.results[0].healthy, true)
   assert.equal(result.results[0].version, "unknown")
   assert.equal(result.results[0].versionKnown, false)
+  assert.equal(result.results[0].created, false)
+  assert.equal(calls.some((call) => call.method === "POST"), false)
+  assert.match(result.results[0].error, /concrete version/i)
 })
 
 test("fails closed when creation succeeds but the native index cannot rediscover that id", async () => {
