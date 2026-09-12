@@ -1,6 +1,7 @@
 import assert from "node:assert/strict"
 import { readFileSync } from "node:fs"
 import test from "node:test"
+import { nativeSessionGateEvidence } from "./native-session-gate-evidence.ts"
 import { desktopAttentionNotification } from "./native-session-attention-notification-presentation.ts"
 
 function event(overrides = {}) {
@@ -81,6 +82,46 @@ test("rejected and question attention keep distinct notification semantics", () 
   assert.match(question.body, /remains blocked until you answer/)
 })
 
+test("structured gate evidence prioritizes authorization and bounds displayed scopes", () => {
+  const evidence = nativeSessionGateEvidence([
+    {
+      id: "perm-1",
+      sessionID: "session-123",
+      permission: "write_file",
+      patterns: ["src/**", "src/**", "tests/**", "x".repeat(220), "docs/**"],
+      metadata: { reason: "Apply the requested source changes" },
+      always: []
+    }
+  ], [
+    {
+      id: "question-1",
+      sessionID: "session-123",
+      questions: [{ header: "Deploy", question: "Which target?", options: [] }]
+    }
+  ])
+
+  assert.equal(evidence?.kind, "authorization")
+  assert.equal(evidence?.label, "write_file")
+  assert.equal(evidence?.detail, "Apply the requested source changes")
+  assert.equal(evidence?.boundaries.length, 3)
+  assert.deepEqual(evidence?.boundaries.slice(0, 2), ["src/**", "tests/**"])
+  assert.match(evidence?.boundaries[2] || "", /…$/)
+  assert.equal(evidence?.omittedBoundaries, 1)
+})
+
+test("structured gate evidence falls back to a bounded question and never invents a gate", () => {
+  const question = nativeSessionGateEvidence([], [{
+    id: "question-1",
+    sessionID: "session-123",
+    questions: [{ header: "Deploy", question: `Choose ${"target ".repeat(60)}`, options: [] }]
+  }])
+  assert.equal(question?.kind, "question")
+  assert.ok((question?.label.length || 0) <= 240)
+  assert.match(question?.label || "", /…$/)
+  assert.deepEqual(question?.boundaries, [])
+  assert.equal(nativeSessionGateEvidence([], []), null)
+})
+
 test("Attention Inbox enriches only emitted notifications with bounded native metadata and deep-links by identity", () => {
   const source = readFileSync(new URL("./components/native-session-home-attention.tsx", import.meta.url), "utf8")
   assert.match(source, /reconcileNativeSessionAttentionNotifications\(notificationStateRef\.current, \[\{/)
@@ -96,4 +137,16 @@ test("Attention Inbox enriches only emitted notifications with bounded native me
   assert.match(source, /candidate\.machineID === activation\.machineID && candidate\.agent\.id === activation\.agentID/)
   assert.match(source, /openAttentionSession\(target, activation\.sessionID\)/)
   assert.doesNotMatch(source, /loadMessagePage|loadMessages|loadTranscript/)
+})
+
+test("Session outcome renders bounded structured gate detail without transcript inference", () => {
+  const source = readFileSync(new URL("./components/native-session-outcome-panel.tsx", import.meta.url), "utf8")
+  assert.match(source, /nativeSessionGateEvidence/)
+  assert.match(source, /gateFromAttentionLoad/)
+  assert.match(source, /Requested action/)
+  assert.match(source, /Gated scope/)
+  assert.match(source, /Authorization boundaries/)
+  assert.match(source, /loadPermissions\(target\.config, target\.directory\)/)
+  assert.match(source, /loadQuestions\(target\.config, target\.directory\)/)
+  assert.doesNotMatch(source, /loadMessagePage|loadMessages|loadTranscript|loadDiff/)
 })
