@@ -66,17 +66,22 @@ test("snapshot returns only metadata and repository-relative paths", async () =>
   assert.equal(wire.includes("diff"), false)
 })
 
-test("escaping, absolute and oversized paths are never exposed", () => {
+test("escaping, absolute and oversized paths are never exposed but still keep the worktree dirty", async () => {
   const huge = "x".repeat(1100)
-  const parsed = parseGitPorcelainV1Z(
-    ` M ../outside.js\0 M /etc/passwd\0 M C:\\secret.txt\0 M ${huge}\0 M safe/file.js\0`
-  )
+  const status = ` M ../outside.js\0 M /etc/passwd\0 M C:\\secret.txt\0 M ${huge}\0 M safe/file.js\0`
+  const parsed = parseGitPorcelainV1Z(status)
 
   assert.deepEqual(parsed, {
     files: [{ path: "safe/file.js", indexStatus: " ", worktreeStatus: "M" }],
-    totalFiles: 1,
-    truncated: false
+    totalFiles: 5,
+    truncated: true
   })
+
+  const hiddenOnly = await inspectGitProjectOutcome("/repo", { runGit: gitFixture(" M ../outside.js\0") })
+  assert.equal(hiddenOnly.dirty, true, "a hidden changed path must never make a dirty worktree look clean")
+  assert.equal(hiddenOnly.totalChangedFiles, 1)
+  assert.deepEqual(hiddenOnly.files, [])
+  assert.equal(hiddenOnly.filesTruncated, true)
 })
 
 test("missing status evidence stays unverified instead of inventing a clean worktree", async () => {
