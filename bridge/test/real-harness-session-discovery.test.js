@@ -9,7 +9,7 @@ function jsonResponse(value, status = 200, headers = {}) {
   })
 }
 
-test("creates and rediscovers the exact native Session for every requested harness", async () => {
+test("health-checks, versions, creates and rediscovers the exact native Session for every requested harness", async () => {
   const calls = []
   const created = new Map([
     ["codex", "codex-created"],
@@ -21,6 +21,9 @@ test("creates and rediscovers the exact native Session for every requested harne
     const match = /^\/v1\/agents\/([^/]+)\/(.*)$/.exec(parsed.pathname)
     const agentID = decodeURIComponent(match?.[1] ?? "")
     const rest = match?.[2] ?? ""
+    if (rest === "global/health") {
+      return jsonResponse({ healthy: true, version: `${agentID}-1.2.3` })
+    }
     if (options.method === "POST" && rest === "session") {
       return jsonResponse({ id: created.get(agentID) })
     }
@@ -42,18 +45,63 @@ test("creates and rediscovers the exact native Session for every requested harne
     fetchImpl
   })
 
+  assert.equal(result.schemaVersion, 2)
   assert.equal(result.passed, true)
-  assert.deepEqual(result.results.map(({ agentID, discovered, pages }) => ({ agentID, discovered, pages })), [
-    { agentID: "codex", discovered: true, pages: 2 },
-    { agentID: "omp", discovered: true, pages: 1 }
+  assert.deepEqual(result.results.map(({ agentID, healthy, version, versionKnown, discovered, pages }) => ({ agentID, healthy, version, versionKnown, discovered, pages })), [
+    { agentID: "codex", healthy: true, version: "codex-1.2.3", versionKnown: true, discovered: true, pages: 2 },
+    { agentID: "omp", healthy: true, version: "omp-1.2.3", versionKnown: true, discovered: true, pages: 1 }
   ])
   assert.ok(calls.every((call) => call.authorization?.startsWith("Basic ")))
+  assert.equal(calls.filter((call) => call.url.endsWith("/global/health")).length, 2)
   assert.equal(JSON.stringify(result).includes("secret"), false)
   assert.equal(JSON.stringify(result).includes("private-project"), false)
 })
 
+test("fails before Session creation when an installed harness cannot pass its health boundary", async () => {
+  const calls = []
+  const fetchImpl = async (url, options = {}) => {
+    calls.push({ url: String(url), method: options.method ?? "GET" })
+    return jsonResponse({ healthy: false, version: "9.9.9" }, 503)
+  }
+
+  const result = await verifyRealHarnessSessionDiscovery({
+    harnesses: ["claude"],
+    directory: "/work/project",
+    fetchImpl
+  })
+
+  assert.equal(result.passed, false)
+  assert.equal(result.results[0].healthy, false)
+  assert.equal(result.results[0].healthStatus, 503)
+  assert.equal(result.results[0].version, "9.9.9")
+  assert.equal(result.results[0].created, false)
+  assert.equal(calls.some((call) => call.method === "POST"), false)
+  assert.match(result.results[0].error, /health check returned HTTP 503/i)
+})
+
+test("records an unknown harness version explicitly without inventing one", async () => {
+  const fetchImpl = async (url, options = {}) => {
+    const parsed = new URL(url)
+    const rest = parsed.pathname.split("/").slice(4).join("/")
+    if (rest === "global/health") return jsonResponse({ healthy: true, version: "unknown" })
+    if (options.method === "POST") return jsonResponse({ id: "native-1" })
+    return jsonResponse([{ id: "native-1" }])
+  }
+
+  const result = await verifyRealHarnessSessionDiscovery({
+    harnesses: ["codex"],
+    directory: "/work/project",
+    fetchImpl
+  })
+
+  assert.equal(result.passed, true)
+  assert.equal(result.results[0].version, "unknown")
+  assert.equal(result.results[0].versionKnown, false)
+})
+
 test("fails closed when creation succeeds but the native index cannot rediscover that id", async () => {
-  const fetchImpl = async (_url, options = {}) => {
+  const fetchImpl = async (url, options = {}) => {
+    if (String(url).endsWith("/global/health")) return jsonResponse({ healthy: true, version: "1.0.0" })
     if (options.method === "POST") return jsonResponse({ id: "created-but-hidden" })
     return jsonResponse([{ id: "some-other-session" }])
   }
@@ -65,13 +113,15 @@ test("fails closed when creation succeeds but the native index cannot rediscover
   })
 
   assert.equal(result.passed, false)
+  assert.equal(result.results[0].healthy, true)
   assert.equal(result.results[0].created, true)
   assert.equal(result.results[0].discovered, false)
   assert.match(result.results[0].error, /absent from discovery/i)
 })
 
 test("bounds pagination instead of scanning an unbounded native Session index", async () => {
-  const fetchImpl = async (_url, options = {}) => {
+  const fetchImpl = async (url, options = {}) => {
+    if (String(url).endsWith("/global/health")) return jsonResponse({ healthy: true, version: "1.0.0" })
     if (options.method === "POST") return jsonResponse({ id: "target" })
     return jsonResponse([{ id: "older" }], 200, { "X-Next-Cursor": "again" })
   }
