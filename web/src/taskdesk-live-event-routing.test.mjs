@@ -47,6 +47,22 @@ test("OpenCode completion lifecycle reconciles status and the selected transcrip
   assert.doesNotMatch(lifecycle, /send|prompt|continueWorkThread/)
 })
 
+test("permission and question lifecycle keeps the mounted Session live", () => {
+  const refresh = readFileSync(new URL("./taskdesk-session-live-refresh.ts", import.meta.url), "utf8")
+  const attentionLifecycle = refresh.match(/if \(isAttentionEvent\(event\.type\)\) \{[\s\S]*?\n      \}/)?.[0] || ""
+
+  // Resolving a permission can end or resume a native turn without a trailing message event.
+  // The selected Session therefore needs the permission card, transcript and Conversation state
+  // reconciled from their existing authoritative reads, plus the same bounded durability settle
+  // used by ordinary lifecycle edges. Navigation/remount must never be the recovery mechanism.
+  assert.match(attentionLifecycle, /selectedEvent/)
+  assert.match(attentionLifecycle, /throttle\("detail", [^,]+, onDetail\)/)
+  assert.match(attentionLifecycle, /throttle\("message", [^,]+, onMessage\)/)
+  assert.match(attentionLifecycle, /throttle\("index", [^,]+, onIndex\)/)
+  assert.match(attentionLifecycle, /settleAfterLifecycle\(\)/)
+  assert.doesNotMatch(attentionLifecycle, /send|prompt|continueWorkThread/)
+})
+
 test("foregrounding the app immediately reconciles durable conversation state", () => {
   const refresh = readFileSync(new URL("./taskdesk-session-live-refresh.ts", import.meta.url), "utf8")
 
