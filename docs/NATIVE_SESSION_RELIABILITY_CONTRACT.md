@@ -58,7 +58,7 @@ Creating a Session and sending its first prompt must not lose, duplicate or reor
 
 ### 9. Foreground/reconnect revalidates state
 
-A client that reconnects or returns to the foreground must revalidate mounted/native state and converge without requiring the user to navigate away and back.
+A client that reconnects or returns to the foreground must revalidate mounted/native state and converge without requiring the user to navigate away and back. While the owning machine is unavailable, mutations must remain disabled; recovery of the same machine/native Session identity must restore interaction without replacing or duplicating the mounted transcript.
 
 ### 10. Resource growth is bounded
 
@@ -86,7 +86,9 @@ No single test layer is sufficient. The release-safety contract is intentionally
 
 ### Production-browser smoke
 
-The blocking Chromium job builds the production web app and drives realistic fake daemons. It protects mounted-session behavior that source assertions cannot prove, including Codex navigation/history isolation, Claude mounted completion/error/recovery without a final SSE event, PI lifecycle/recovery paths, OpenCode event/retry/permission paths, PI/OMP model switching and Session outcome behavior.
+The blocking Chromium job builds the production web app and drives realistic fake daemons. It protects mounted-session behavior that source assertions cannot prove, including Codex navigation/history isolation, Claude mounted completion/error/recovery without a final SSE event, a complete daemon disappearance/restart while the same Native Session remains mounted, PI lifecycle/recovery paths, OpenCode event/retry/permission paths, PI/OMP model switching and Session outcome behavior.
+
+The daemon-reconnect browser smoke proves the client-side boundary with a restarted fake daemon: mutations are disabled while the daemon is absent, the same mounted transcript survives, the live stream reconnects, and the first post-restart prompt is dispatched exactly once. It does **not** prove that every installed harness survives a real daemon/adapter process restart; that remains real-harness release evidence.
 
 ### Bridge/provider behavior
 
