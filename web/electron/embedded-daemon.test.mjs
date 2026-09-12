@@ -1,5 +1,5 @@
 import assert from "node:assert/strict"
-import { mkdtemp, rm, writeFile } from "node:fs/promises"
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
 import { createServer } from "node:net"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
@@ -26,6 +26,13 @@ test("resolves the daemon entry inside source checkout and packaged resources", 
   )
 })
 
+test("desktop packaging carries the bridge runtime outside the app asar", async () => {
+  const packageJson = JSON.parse(await readFile(new URL("../package.json", import.meta.url), "utf8"))
+  const resources = packageJson.build?.extraResources ?? []
+  assert.ok(resources.some((entry) => entry.from === "../bridge/src" && entry.to === "bridge-runtime/src"))
+  assert.ok(resources.some((entry) => entry.from === "../bridge/package.json" && entry.to === "bridge-runtime/package.json"))
+})
+
 test("builds a loopback-only authenticated daemon launch contract", () => {
   assert.deepEqual(embeddedDaemonArgs(4100, 4101, "desktop-user", "desktop-pass"), [
     "--host", "127.0.0.1",
@@ -41,16 +48,16 @@ test("builds a loopback-only authenticated daemon launch contract", () => {
 })
 
 test("skips a loopback port that is already occupied", async () => {
+  const base = await findLoopbackPort(55_000, [], 1_000)
   const occupied = createServer()
   await new Promise((resolve, reject) => {
     occupied.once("error", reject)
-    occupied.listen(0, EMBEDDED_DAEMON_HOST, resolve)
+    occupied.listen(base, EMBEDDED_DAEMON_HOST, resolve)
   })
-  const address = occupied.address()
-  assert.ok(address && typeof address === "object")
   try {
-    const selected = await findLoopbackPort(address.port, [], 2)
-    assert.equal(selected, address.port + 1)
+    const selected = await findLoopbackPort(base, [], 16)
+    assert.notEqual(selected, base)
+    assert.ok(selected > base)
   } finally {
     await new Promise((resolve) => occupied.close(resolve))
   }
