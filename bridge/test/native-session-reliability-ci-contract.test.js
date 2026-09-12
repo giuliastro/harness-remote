@@ -22,6 +22,7 @@ const bridgePackage = JSON.parse(read("bridge/package.json"))
 const REQUIRED_BROWSER_SMOKES = [
   "scripts/native-session-navigation-smoke.mjs",
   "scripts/native-claude-browser-smoke.mjs",
+  "scripts/native-session-reconnect-smoke.mjs",
   "scripts/native-session-browser-smoke.mjs",
   "scripts/native-opencode-browser-smoke.mjs",
   "scripts/native-opencode-real-regression-smoke.mjs",
