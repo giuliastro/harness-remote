@@ -405,6 +405,15 @@ async function assertAttentionSurvivesOpen(page) {
   assert.equal(await row.count(), 1, "unresolved Session disappeared from Attention after being opened")
 }
 
+async function waitForMountedTurnToStop(page, label) {
+  const deadline = Date.now() + 4_000
+  while (Date.now() < deadline) {
+    if (await page.locator(".tdw-conversation-state.working").count() === 0) return
+    await page.waitForTimeout(50)
+  }
+  assert.equal(await page.locator(".tdw-conversation-state.working").count(), 0, `${label}: permission resolution left mounted Activity running`)
+}
+
 async function runScenario(browser, viewport, label) {
   resetState()
   const context = await browser.newContext({ viewport, hasTouch: viewport.width < 600, locale: "en-US" })
@@ -423,8 +432,12 @@ async function runScenario(browser, viewport, label) {
   while (Date.now() < denyDeadline && permissionReplies.length < 1) await new Promise((resolve) => setTimeout(resolve, 20))
   assert.deepEqual(permissionReplies[0], { id: PERMISSION_ID, body: { reply: "reject" } }, `${label}: Deny must send the exact native reject reply`)
   await page.getByRole("button", { name: "Deny" }).waitFor({ state: "detached", timeout: 3_000 })
-  await page.getByText("Response interrupted", { exact: true }).waitFor({ state: "visible", timeout: 4_000 })
-  assert.equal(await page.locator(".tdw-conversation-state.working").count(), 0, `${label}: denied permission must not leave mounted Activity running`)
+  await waitForMountedTurnToStop(page, `${label} deny`)
+
+  // A reject may be presented as a terminal interruption or as a completed tool error depending on
+  // the OpenCode version. Reliability is the invariant: it must settle in this mounted Session and
+  // must not require navigation away/back. Do not lock the UI to one provider-version presentation.
+  assert.equal(await page.getByRole("button", { name: "Deny" }).count(), 0, `${label}: resolved permission card remained visible`)
 
   // Return to All before the next Send; the important point is that the same Session stayed mounted
   // through the first resolution. No reload or navigation-away recovery has occurred.
