@@ -33,18 +33,25 @@ test("desktop packaging carries the bridge runtime outside the app asar", async 
   assert.ok(resources.some((entry) => entry.from === "../bridge/package.json" && entry.to === "bridge-runtime/package.json"))
 })
 
-test("builds a loopback-only authenticated daemon launch contract", () => {
-  assert.deepEqual(embeddedDaemonArgs(4100, 4101, "desktop-user", "desktop-pass"), [
+test("keeps the embedded daemon loopback-only and credentials out of process arguments", () => {
+  const args = embeddedDaemonArgs(4100, 4101)
+  assert.deepEqual(args, [
     "--host", "127.0.0.1",
     "--port", "4100",
     "--opencode-host", "127.0.0.1",
-    "--opencode-port", "4101",
-    "--username", "desktop-user",
-    "--password", "desktop-pass"
+    "--opencode-port", "4101"
   ])
-  const env = embeddedDaemonEnvironment({ PATH: "/bin" })
+  assert.equal(args.includes("desktop-user"), false)
+  assert.equal(args.includes("desktop-pass"), false)
+
+  const env = embeddedDaemonEnvironment(
+    { PATH: "/bin" },
+    { username: "desktop-user", password: "desktop-pass" }
+  )
   assert.equal(env.ELECTRON_RUN_AS_NODE, "1")
   assert.equal(env.PATH, "/bin")
+  assert.equal(env.HARNESS_REMOTE_USERNAME, "desktop-user")
+  assert.equal(env.HARNESS_REMOTE_PASSWORD, "desktop-pass")
 })
 
 test("skips a loopback port that is already occupied", async () => {
@@ -69,6 +76,7 @@ test("owns one embedded daemon process from readiness through clean shutdown", a
   await writeFile(script, `
 const portIndex = process.argv.indexOf("--port")
 const port = process.argv[portIndex + 1]
+if (!process.env.HARNESS_REMOTE_USERNAME || !process.env.HARNESS_REMOTE_PASSWORD) process.exit(9)
 process.stdout.write("Harness daemon ready at http://127.0.0.1:" + port + "\\n")
 const timer = setInterval(() => {}, 1000)
 process.on("SIGTERM", () => { clearInterval(timer); process.exit(0) })
