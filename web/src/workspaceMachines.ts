@@ -2,6 +2,7 @@ import { normalizeServerConfig } from "./serverConfig"
 import type { ServerConfig } from "./types"
 
 export const WORKSPACE_MACHINES_STORAGE_KEY = "harness-remote.workspace.machines.v1"
+export const DESKTOP_LOCAL_MACHINE_ID = "desktop-local-runtime"
 
 export type WorkspaceMachine = {
   id: string
@@ -11,6 +12,10 @@ export type WorkspaceMachine = {
 
 function machineID(): string {
   return globalThis.crypto?.randomUUID?.() ?? `machine-${Date.now()}-${Math.random().toString(36).slice(2)}`
+}
+
+export function isDesktopLocalMachine(machine: Pick<WorkspaceMachine, "id">): boolean {
+  return machine.id === DESKTOP_LOCAL_MACHINE_ID
 }
 
 function normalizeMachine(value: unknown): WorkspaceMachine | null {
@@ -32,8 +37,10 @@ function normalizeMachine(value: unknown): WorkspaceMachine | null {
   })
   if (!normalized) return null
 
+  const id = typeof candidate.id === "string" && candidate.id.trim() ? candidate.id.trim() : machineID()
+  if (id === DESKTOP_LOCAL_MACHINE_ID) return null
   return {
-    id: typeof candidate.id === "string" && candidate.id.trim() ? candidate.id.trim() : machineID(),
+    id,
     name: typeof candidate.name === "string" && candidate.name.trim()
       ? candidate.name.trim()
       : normalized.host,
@@ -62,6 +69,7 @@ export function loadWorkspaceMachines(): WorkspaceMachine[] {
 
 export function persistWorkspaceMachines(machines: WorkspaceMachine[]): void {
   const normalized = machines.flatMap((machine) => {
+    if (isDesktopLocalMachine(machine)) return []
     const next = normalizeMachine(machine)
     return next ? [next] : []
   })
