@@ -176,6 +176,35 @@ test("lost first-prompt response retries the same target and prompt request id",
   assert.deepEqual(calls.links.map((entry) => entry.host), ["source.local", "target.local", "source.local", "target.local"])
   assert.match(calls.links[0].link.transferredContext, /remaining failure/)
   assert.doesNotMatch(calls.links[0].link.transferredContext, /deploy production/, "source authorization must not leak into portable context")
+  assert.deepEqual(calls.links[0].link.portableState, {
+    version: 1,
+    task: { title: "Source session", state: "continuing" },
+    project: {
+      sourceProjectId: "source-project",
+      targetProjectId: "target-project",
+      decision: "automatic",
+      reason: "exact_workspace",
+      evidence: {
+        project: "match",
+        repository: "match",
+        history: "match",
+        branch: "match",
+        head: "match",
+        sourceDirty: false,
+        targetDirty: false,
+        exactWorkspace: true
+      }
+    },
+    controls: {
+      sourceAuthority: "invalidated",
+      targetAuthorization: "re_evaluate",
+      attachments: "not_transferred"
+    }
+  })
+  const portableSerialized = JSON.stringify(calls.links[0].link.portableState)
+  assert.equal(portableSerialized.includes("/repo"), false, "portable state must not cross filesystem paths")
+  assert.equal(portableSerialized.includes("deploy production"), false, "portable state must not inherit source authorization")
+  assert.equal(portableSerialized.includes("Continue with the bridge fix"), false, "portable state must not duplicate the prompt")
   assert.equal(calls.promptInputs[0].target.permission, undefined, "first-prompt target must not inherit source authority")
   assert.equal(calls.marked, 1)
   assert.equal(result.target.machineID, "machine-b")
@@ -203,6 +232,10 @@ test("review Project evidence blocks mutation until explicitly confirmed", async
   const result = await continueNativeSessionAcrossMachine(continuationInput(services, { confirmedProjectContinuity: true }))
   assert.equal(calls.create, 1)
   assert.equal(result.preflight.decision, "review")
+  assert.equal(calls.links[0].link.portableState.project.decision, "review")
+  assert.equal(calls.links[0].link.portableState.project.reason, "workspace_diverged")
+  assert.equal(calls.links[0].link.portableState.project.evidence.head, "different")
+  assert.equal(calls.links[0].link.portableState.controls.targetAuthorization, "re_evaluate")
 })
 
 test("a conflicting retry cannot redirect an unresolved continuation", async () => {

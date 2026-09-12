@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto"
 import http from "node:http"
 import { authenticateDaemonRequest, writeJSON } from "./http-policy.js"
+import { normalizePortableHandoffState } from "./portable-handoff-state.js"
 
 const SESSION_OPERATION_ROUTE = /^\/v1\/agents\/([^/]+)\/session\/([^/]+)\/(claim|prompt|command|stop|handoff)$/
 const SESSION_LINK_ROUTE = "/v1/session-links"
@@ -159,11 +160,13 @@ function sessionLinkInput(body) {
   if (typeof transferredContext === "string" && transferredContext.length > 12_000) {
     throw requestError("Transferred Session context is too large")
   }
+  const portableState = normalizePortableHandoffState(candidate.portableState)
   return {
     source: nativeSessionIdentityInput(candidate.source, "Source Session"),
     target: nativeSessionIdentityInput(candidate.target, "Target Session"),
     createdAt: typeof candidate.createdAt === "string" && candidate.createdAt ? candidate.createdAt : new Date().toISOString(),
-    ...(typeof transferredContext === "string" && transferredContext ? { transferredContext } : {})
+    ...(typeof transferredContext === "string" && transferredContext ? { transferredContext } : {}),
+    ...(portableState ? { portableState } : {})
   }
 }
 

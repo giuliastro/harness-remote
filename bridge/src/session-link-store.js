@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto"
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises"
 import path from "node:path"
+import { normalizePortableHandoffState } from "./portable-handoff-state.js"
 
 const VERSION = 1
 
@@ -36,7 +37,8 @@ function normalizedTransferredContext(value) {
  *
  * A link does not own either Session or create a second conversation identity. It records that
  * Harness Remote deliberately handed work from one native Session to another and may retain the
- * exact bounded context string used for that handoff so the UI can explain it after reopening.
+ * exact bounded context string and runtime-neutral task/evidence/control state used for that handoff
+ * so the UI can explain the boundary after reopening.
  *
  * Cross-machine links are replicated metadata, not shared authority: a daemon stores an edge only
  * when at least one endpoint belongs to that daemon. The same A -> B edge may therefore be present
@@ -70,7 +72,17 @@ export class SessionLinkStore {
         if (!link || typeof link !== "object" || link.type !== "handoff") continue
         if (!validIdentity(link.source) || !validIdentity(link.target)) continue
         if (!this.#isLocalLink(link.source, link.target)) continue
-        this.#links.set(linkKey(link.source, link.target), link)
+        let portableState
+        try { portableState = normalizePortableHandoffState(link.portableState) } catch { portableState = undefined }
+        const normalized = {
+          type: "handoff",
+          source: link.source,
+          target: link.target,
+          createdAt: link.createdAt,
+          ...(typeof link.transferredContext === "string" && link.transferredContext ? { transferredContext: link.transferredContext } : {}),
+          ...(portableState ? { portableState } : {})
+        }
+        this.#links.set(linkKey(link.source, link.target), normalized)
       }
     } catch (error) {
       if (error?.code === "ENOENT") return
@@ -100,19 +112,26 @@ export class SessionLinkStore {
     return next
   }
 
-  async addHandoff({ source, target, createdAt = new Date().toISOString(), transferredContext }) {
+  async addHandoff({ source, target, createdAt = new Date().toISOString(), transferredContext, portableState }) {
     if (!validIdentity(source) || !validIdentity(target)) throw new Error("Native Session link requires complete source and target identities")
     if (!this.#isLocalLink(source, target)) {
       throw invalidLink("Native Session link must include a Session owned by this machine")
     }
     const context = normalizedTransferredContext(transferredContext)
+    const state = normalizePortableHandoffState(portableState)
     return this.#serial(async () => {
       await this.#load()
       const key = linkKey(source, target)
       const existing = this.#links.get(key)
       if (existing) {
-        if (!context || existing.transferredContext === context) return structuredClone(existing)
-        const updated = { ...existing, transferredContext: context }
+        const sameContext = !context || existing.transferredContext === context
+        const sameState = !state || JSON.stringify(existing.portableState) === JSON.stringify(state)
+        if (sameContext && sameState) return structuredClone(existing)
+        const updated = {
+          ...existing,
+          ...(context ? { transferredContext: context } : {}),
+          ...(state ? { portableState: state } : {})
+        }
         this.#links.set(key, updated)
         await this.#persist()
         return structuredClone(updated)
@@ -122,7 +141,8 @@ export class SessionLinkStore {
         source: structuredClone(source),
         target: structuredClone(target),
         createdAt,
-        ...(context ? { transferredContext: context } : {})
+        ...(context ? { transferredContext: context } : {}),
+        ...(state ? { portableState: state } : {})
       }
       this.#links.set(key, link)
       await this.#persist()
