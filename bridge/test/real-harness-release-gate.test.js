@@ -8,11 +8,26 @@ import {
   buildHarnessPlan,
   defaultReportPath,
   parseHarnessList,
+  parseSoakEvidence,
   preflightDaemon,
   releaseEligibility,
   resolveGateMode,
   runGate
 } from "../scripts/real-harness-release-gate.mjs"
+
+const COMPLETE_SOAK_OUTPUT = [
+  "  ok   two native Sessions created on codex",
+  "  ok   A turn 1 accepted with model model-a",
+  "  ok   A turn 1 completed in 12ms",
+  "  ok   cycle 1: claude catalog unchanged while switching away and back",
+  "  ok   cycle 1: codex prompt accepted after harness switch and model change",
+  "  ok   A: one user turn per accepted prompt, no duplicates (1/1)",
+  "  ok   Stop accepted for codex (200)",
+  "  ok   Session accepts a new prompt with a new model after Stop",
+  "  ok   the interrupted turn stays visible in the transcript",
+  "  ok   codex: adapter listeners did not grow unboundedly (4 -> 4)",
+  "  ok   no unresolved native Session mutation left (0)"
+].join("\n")
 
 test("defaults the release gate to every supported harness", () => {
   assert.deepEqual(parseHarnessList(), SUPPORTED_HARNESSES)
@@ -58,6 +73,33 @@ test("only accepts the two explicit gate modes", () => {
 test("default report path stays outside source files and carries a timestamp", () => {
   const report = defaultReportPath("/work", new Date("2026-09-11T03:45:12.345Z"))
   assert.equal(report, path.join("/work", "artifacts", "real-harness-gate-2026-09-11T03-45-12-345Z.json"))
+})
+
+test("parses scenario-level soak evidence and exposes known real-boundary gaps", () => {
+  const evidence = parseSoakEvidence(COMPLETE_SOAK_OUTPUT)
+  assert.equal(evidence.complete, true)
+  assert.equal(evidence.summary.failed, 0)
+  assert.equal(evidence.coverage.sessionCreation, true)
+  assert.equal(evidence.coverage.multiTurnStreaming, true)
+  assert.equal(evidence.coverage.modelSelection, true)
+  assert.equal(evidence.coverage.crossHarnessIsolation, true)
+  assert.equal(evidence.coverage.transcriptFidelity, true)
+  assert.equal(evidence.coverage.stopAndResume, true)
+  assert.equal(evidence.coverage.resourceBounds, true)
+  assert.deepEqual(evidence.missingCoverage, [])
+  assert.ok(evidence.notExercised.includes("daemon restart/reconnect"))
+  assert.ok(evidence.notExercised.includes("physical mobile background/foreground"))
+})
+
+test("soak evidence fails closed on failed checks or silently missing scenarios", () => {
+  const failed = parseSoakEvidence(`${COMPLETE_SOAK_OUTPUT}\n  FAIL no unresolved native Session mutation left (2)`)
+  assert.equal(failed.complete, false)
+  assert.equal(failed.summary.failed, 1)
+
+  const incomplete = parseSoakEvidence("  ok   two native Sessions created on codex\n")
+  assert.equal(incomplete.complete, false)
+  assert.ok(incomplete.missingCoverage.includes("stopAndResume"))
+  assert.ok(incomplete.missingCoverage.includes("resourceBounds"))
 })
 
 test("preflight accepts registered harnesses even when their model inventories may be identical", async () => {
@@ -114,11 +156,11 @@ test("preflight turns authentication failures into a concise gate failure", asyn
   assert.match(result.error, /rejected.*credentials/i)
 })
 
-test("orchestrates every primary and persists credential-free release evidence", async () => {
+test("orchestrates every primary and persists credential-free scenario evidence", async () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "hr-real-gate-"))
   const soakPath = path.join(root, "fake-soak.mjs")
   const reportPath = path.join(root, "report.json")
-  fs.writeFileSync(soakPath, "process.exit(0)\n", "utf8")
+  fs.writeFileSync(soakPath, `console.log(${JSON.stringify(COMPLETE_SOAK_OUTPUT)})\n`, "utf8")
   const previousURL = process.env.HR_URL
   process.env.HR_URL = "http://user:secret@127.0.0.1:4097"
 
@@ -140,20 +182,57 @@ test("orchestrates every primary and persists credential-free release evidence",
     })
     assert.equal(report.verdict, "verified")
     assert.equal(report.releaseEligible, true)
-    assert.equal(report.schemaVersion, 2)
+    assert.equal(report.schemaVersion, 3)
     assert.equal(report.preflight.passed, true)
     assert.deepEqual(report.runs.map(({ primary, secondary, passed }) => ({ primary, secondary, passed })), [
       { primary: "codex", secondary: "claude", passed: true },
       { primary: "claude", secondary: "codex", passed: true }
     ])
+    assert.equal(report.runs[0].evidence.complete, true)
+    assert.equal(report.runs[0].evidence.coverage.stopAndResume, true)
+    assert.equal(report.coverageMatrix.codex.resourceBounds, true)
+    assert.equal(report.coverageMatrix.claude.crossHarnessIsolation, true)
 
     const persisted = JSON.parse(fs.readFileSync(reportPath, "utf8"))
     assert.equal(persisted.endpoint, "http://127.0.0.1:4097")
+    assert.equal(persisted.coverageMatrix.codex.complete, true)
     assert.equal(JSON.stringify(persisted).includes("secret"), false)
     assert.equal(JSON.stringify(persisted).includes("user:"), false)
   } finally {
     if (previousURL === undefined) delete process.env.HR_URL
     else process.env.HR_URL = previousURL
+    fs.rmSync(root, { recursive: true, force: true })
+  }
+})
+
+test("a zero-exit soak without required scenario evidence fails the release gate", async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "hr-real-gate-evidence-"))
+  const soakPath = path.join(root, "fake-empty-soak.mjs")
+  const reportPath = path.join(root, "report.json")
+  fs.writeFileSync(soakPath, "console.log('ALL CHECKS PASSED')\n", "utf8")
+
+  try {
+    const report = await runGate({
+      harnesses: ["codex", "claude"],
+      mode: "release",
+      reportPath,
+      soakPath,
+      preflight: async ({ harnesses }) => ({
+        passed: true,
+        status: 200,
+        error: null,
+        machineID: "machine-1",
+        agents: harnesses.map((id) => ({ id, registered: true, modelCatalog: { configured: true, source: "test", cachedModels: 2, phase: "ready" } })),
+        missingHarnesses: [],
+        missingModelCatalogs: []
+      })
+    })
+    assert.equal(report.verdict, "failed")
+    assert.equal(report.runs[0].exitCode, 0)
+    assert.equal(report.runs[0].passed, false)
+    assert.equal(report.runs[0].evidence.complete, false)
+    assert.match(report.runs[0].evidenceError, /without machine-readable check evidence/i)
+  } finally {
     fs.rmSync(root, { recursive: true, force: true })
   }
 })
