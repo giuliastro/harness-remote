@@ -31,7 +31,7 @@ export function parseLoginShellPathOutput(output: string): string | undefined {
 export function mergeExecutablePath(
   shellPath: string | undefined,
   processPath: string | undefined,
-  delimiter = platformPathDelimiter
+  delimiter: string = platformPathDelimiter
 ): string | undefined {
   const values: string[] = []
   const seen = new Set<string>()
