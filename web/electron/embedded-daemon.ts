@@ -33,6 +33,8 @@ export type EmbeddedDaemonPathOptions = {
   resourcesPath: string
 }
 
+type EmbeddedDaemonEnvironment = NodeJS.ProcessEnv | (() => Promise<NodeJS.ProcessEnv>)
+
 export function embeddedDaemonEntry({ isPackaged, appPath, resourcesPath }: EmbeddedDaemonPathOptions): string {
   return isPackaged
     ? join(resourcesPath, "bridge-runtime", "src", "daemon-cli.js")
@@ -63,6 +65,13 @@ export function embeddedDaemonEnvironment(
         }
       : {})
   }
+}
+
+export async function resolveEmbeddedDaemonEnvironment(
+  environment: EmbeddedDaemonEnvironment | undefined
+): Promise<NodeJS.ProcessEnv> {
+  if (typeof environment === "function") return await environment()
+  return environment ?? process.env
 }
 
 export async function findLoopbackPort(startPort: number, excluded: readonly number[] = [], attempts = 64): Promise<number> {
@@ -109,7 +118,7 @@ export class EmbeddedDaemonRuntime {
   constructor(private readonly options: {
     entryPath: string
     executable?: string
-    environment?: NodeJS.ProcessEnv
+    environment?: EmbeddedDaemonEnvironment
     stateDirectory?: string
     startupTimeoutMs?: number
     shutdownTimeoutMs?: number
@@ -130,12 +139,13 @@ export class EmbeddedDaemonRuntime {
   }
 
   private async launch(): Promise<EmbeddedDaemonReady> {
+    const environment = await resolveEmbeddedDaemonEnvironment(this.options.environment)
     const port = await findLoopbackPort(4097)
     const openCodePort = await findLoopbackPort(4096, [port])
     const auth = credentials()
     const args = embeddedDaemonArgs(port, openCodePort, this.options.stateDirectory)
     const child = spawn(this.options.executable ?? process.execPath, [this.options.entryPath, ...args], {
-      env: embeddedDaemonEnvironment(this.options.environment, auth),
+      env: embeddedDaemonEnvironment(environment, auth),
       stdio: ["ignore", "pipe", "pipe"],
       windowsHide: true
     })
