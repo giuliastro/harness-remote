@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs'
 
 const observer = readFileSync(new URL('./components/native-session-observer.tsx', import.meta.url), 'utf8')
 const crossMachinePanel = readFileSync(new URL('./components/cross-machine-continue-panel.tsx', import.meta.url), 'utf8')
+const lineagePanel = readFileSync(new URL('./components/native-session-lineage-panel.tsx', import.meta.url), 'utf8')
 const adapter = readFileSync(new URL('./native-session-v3-adapter.ts', import.meta.url), 'utf8')
 const workThread = readFileSync(new URL('./components/work-thread-conversation.tsx', import.meta.url), 'utf8')
 const nativeModel = readFileSync(new URL('./native-session-model.ts', import.meta.url), 'utf8')
@@ -42,6 +43,16 @@ assert.ok(crossMachinePanel.includes('attachments: []'), 'the first cross-machin
 assert.ok(crossMachinePanel.includes('Attachments and source permissions are not transferred.'), 'the authority and attachment boundary must be visible in the UI')
 assert.ok(crossMachinePanel.includes('&& planReady'), 'the mutation button must remain gated on a completed safe plan or explicit review confirmation')
 assert.ok(crossMachinePanel.includes('if (!canSend || !machine || !agent || !projectRoute || !targetProject || !plan) return'), 'the submit path must enforce the same plan gate instead of trusting disabled-button presentation')
+
+// Handoff lineage is read-only enrichment. It must survive restart through the machine-level link
+// store while keeping remote paths and source authority out of the presentation contract.
+assert.ok(observer.includes('<NativeSessionLineagePanel'), 'open linked Sessions must surface durable handoff lineage')
+assert.ok(lineagePanel.includes('api.listNativeSessionLinks(machineConfig(target.config), target.ref)'), 'lineage must come from the durable machine-level link store')
+assert.ok(lineagePanel.includes('agentId: undefined'), 'lineage lookup must use the machine-level endpoint rather than an agent-scoped path')
+assert.ok(lineagePanel.includes('Source authority invalidated'), 'the handoff boundary must visibly invalidate source authority')
+assert.ok(lineagePanel.includes('Target authorization is evaluated independently'), 'the target must visibly require independent authorization semantics')
+assert.ok(lineagePanel.includes('Attachments not transferred'), 'attachment non-transfer must remain visible after the handoff')
+assert.equal(lineagePanel.includes('entry.other.directory'), false, 'the lineage surface must never display another machine filesystem path')
 
 assert.ok(adapter.includes('async loadMessagePage(config, sessionID, directory, before, limit, refreshHistory)'), 'adapter must observe the pages requested by the v3 controller through its scoped boundary')
 assert.equal(adapter.includes('api.loadMessagePage ='), false, 'native Session mounting must not mutate the shared API client')
