@@ -5,6 +5,7 @@ import type {
   DesktopEvent,
   DesktopEventStatus,
   DesktopEventSubscriptionOptions,
+  DesktopLocalRuntimeState,
   DesktopMenuCommand,
   DesktopMenuTemplate,
   DesktopProfile,
@@ -21,6 +22,8 @@ export type DesktopBridgeAPI = {
   readonly platform: Readonly<{ readonly isDesktop: true; readonly os: string; readonly usesNativeMenu?: boolean }>
   replaceProfiles(profiles: DesktopProfile[], revision: number): Promise<DesktopProfileSyncResult>
   request(profileId: string, request: DesktopRequest): Promise<DesktopRequestResult>
+  getLocalRuntimeState(): Promise<DesktopLocalRuntimeState>
+  retryLocalRuntime(): Promise<DesktopLocalRuntimeState>
   subscribeEvents(
     profileId: string,
     options: DesktopEventSubscriptionOptions,
@@ -47,6 +50,7 @@ let synchronization: Promise<DesktopProfileSyncResult> | undefined
 let synchronizationError: Error | undefined
 let nextRevision = 0
 let hasSynchronized = false
+let localRuntime: DesktopLocalRuntimeState | null = null
 
 export type DesktopSubscription = { close(): void }
 
@@ -85,10 +89,12 @@ export type DesktopProfileSource = {
 
 /**
  * Electron authorizes machine endpoints, not individual harness routes. Keep one stable registry
- * entry per WorkspaceMachine and pass backend/agentId separately with each request/subscription.
+ * entry per persistent WorkspaceMachine and pass backend/agentId separately with each request.
+ * The desktop-owned local runtime never enters this payload: main owns that volatile profile.
  */
 export function toDesktopProfiles(profiles: readonly DesktopProfileSource[]): DesktopProfile[] {
   return profiles.flatMap((profile) => {
+    if (localRuntime?.status === "ready" && profile.id === localRuntime.machine.profileId) return []
     const normalized = normalizeServerConfig({ ...profile.config, backend: "opencode", agentId: undefined })
     if (!normalized) return []
     return [{
@@ -166,6 +172,20 @@ export function isAndroidPlatform(platform: string): boolean {
   return platform === "android"
 }
 
+export async function desktopLocalRuntimeState(): Promise<DesktopLocalRuntimeState | null> {
+  const api = bridge()
+  if (!api) return null
+  localRuntime = await api.getLocalRuntimeState()
+  return localRuntime
+}
+
+export async function retryDesktopLocalRuntime(): Promise<DesktopLocalRuntimeState | null> {
+  const api = bridge()
+  if (!api) return null
+  localRuntime = await api.retryLocalRuntime()
+  return localRuntime
+}
+
 function desktopMachineIdentity(config: ServerConfig): string | null {
   const normalized = normalizeServerConfig({ ...config, backend: "opencode", agentId: undefined })
   if (!normalized) return null
@@ -177,7 +197,17 @@ function desktopMachineIdentity(config: ServerConfig): string | null {
   ])
 }
 
+function localRuntimeProfileID(config: ServerConfig): string | null {
+  if (localRuntime?.status !== "ready") return null
+  const normalized = normalizeServerConfig({ ...config, backend: "opencode", agentId: undefined })
+  if (!normalized) return null
+  const machine = localRuntime.machine
+  return normalized.host === machine.host && normalized.port === machine.port ? machine.profileId : null
+}
+
 export function desktopProfileID(config: ServerConfig): string | null {
+  const runtimeID = localRuntimeProfileID(config)
+  if (runtimeID) return runtimeID
   const identity = desktopMachineIdentity(config)
   if (!identity) return null
   return acknowledgedProfiles.find((candidate) => desktopMachineIdentity(candidate) === identity)?.id ?? null
