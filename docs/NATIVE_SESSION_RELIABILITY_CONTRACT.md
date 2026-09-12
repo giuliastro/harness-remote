@@ -72,7 +72,7 @@ The shared contract defines outcomes, not one universal provider algorithm.
 - **OMP** keeps native active-branch authority and its journal/live reconciliation rules. It must not infer an abandoned sibling when authoritative branch state is required.
 - **PI** keeps live-to-journal identity stabilization so persisted history replaces, rather than duplicates, the transient ACP representation.
 - **Codex** keeps its own native transcript/model/session-history semantics and delayed persistence handling.
-- **Claude Code** keeps its stream/session semantics and provider-specific bridge tests.
+- **Claude Code** keeps its stream/session semantics, provider-specific bridge tests and mounted-browser convergence coverage for completion, terminal provider failure and recovery without a final SSE event.
 
 Do not move these differences into generic UI conditionals simply to make implementations look uniform. Share only invariants that are genuinely common.
 
@@ -86,7 +86,7 @@ No single test layer is sufficient. The release-safety contract is intentionally
 
 ### Production-browser smoke
 
-The blocking Chromium job builds the production web app and drives realistic fake daemons. It protects mounted-session behavior that source assertions cannot prove, including transcript/composer convergence, PI lifecycle/recovery paths, OpenCode event/retry/permission paths, model switching and Session outcome behavior.
+The blocking Chromium job builds the production web app and drives realistic fake daemons. It protects mounted-session behavior that source assertions cannot prove, including Codex navigation/history isolation, Claude mounted completion/error/recovery without a final SSE event, PI lifecycle/recovery paths, OpenCode event/retry/permission paths, PI/OMP model switching and Session outcome behavior.
 
 ### Bridge/provider behavior
 
