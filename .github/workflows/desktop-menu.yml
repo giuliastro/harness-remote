@@ -49,18 +49,29 @@ jobs:
         run: npm run test:desktop
         working-directory: web
 
-      # The self-contained desktop claim depends on electron-builder actually copying the daemon
-      # beside the ASAR. Config-level assertions alone cannot catch a bad relative source path.
-      - name: Verify embedded daemon is present in packaged Windows app
+      # The self-contained desktop claim depends on electron-builder actually copying a runnable
+      # daemon beside the ASAR. Presence checks catch bad relative paths; executing --help through
+      # the packaged Electron binary in Node mode also proves the copied module graph resolves.
+      - name: Verify embedded daemon runs from packaged Windows app
         if: runner.os == 'Windows'
         shell: pwsh
         working-directory: web
         run: |
           npm run package:win:dir
-          $daemon = Join-Path $PWD 'release/win-unpacked/resources/bridge-runtime/src/daemon-cli.js'
-          $package = Join-Path $PWD 'release/win-unpacked/resources/bridge-runtime/package.json'
+          $resources = Join-Path $PWD 'release/win-unpacked/resources'
+          $daemon = Join-Path $resources 'bridge-runtime/src/daemon-cli.js'
+          $package = Join-Path $resources 'bridge-runtime/package.json'
+          $electron = Join-Path $PWD 'release/win-unpacked/Harness Remote.exe'
           if (-not (Test-Path $daemon)) { throw "Packaged desktop is missing embedded daemon: $daemon" }
           if (-not (Test-Path $package)) { throw "Packaged desktop is missing bridge package metadata: $package" }
+          if (-not (Test-Path $electron)) { throw "Packaged desktop executable is missing: $electron" }
+          $env:ELECTRON_RUN_AS_NODE = '1'
+          try {
+            & $electron $daemon --backend omp --help
+            if ($LASTEXITCODE -ne 0) { throw "Packaged embedded daemon failed module/bootstrap smoke with exit code $LASTEXITCODE" }
+          } finally {
+            Remove-Item Env:ELECTRON_RUN_AS_NODE -ErrorAction SilentlyContinue
+          }
 
       # Boots Electron, installs the real menu and reads it back — the part the unit tests cannot
       # reach, on the platform that actually shows it.
