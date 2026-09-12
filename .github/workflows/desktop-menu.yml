@@ -1,9 +1,8 @@
-name: Verify desktop application menu
+name: Verify desktop runtime and application menu
 
-# The packaging workflow only runs on main and on tags, so a change to the menu would not be
-# exercised on macOS until after it was merged. macOS is the one platform that installs a native
-# menu, and it is the one platform most contributors cannot test on — so this runs there, on the
-# pull request, and does nothing else.
+# Desktop runtime behavior is platform-sensitive: process lifecycle and paths differ on Windows,
+# while macOS is the platform that installs a native application menu. Keep this path-scoped signal
+# in addition to the universal PR gate so Electron changes get real desktop coverage before merge.
 
 "on":
   workflow_dispatch: {}
@@ -20,13 +19,17 @@ permissions:
   contents: read
 
 concurrency:
-  group: desktop-menu-${{ github.ref }}
+  group: desktop-runtime-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  menu:
-    name: Application menu on macOS
-    runs-on: macos-latest
+  desktop:
+    name: Desktop tests (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest]
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -49,5 +52,6 @@ jobs:
       # Boots Electron, installs the real menu and reads it back — the part the unit tests cannot
       # reach, on the platform that actually shows it.
       - name: Verify the application menu installs
+        if: runner.os == 'macOS'
         run: npm run test:desktop:menu
         working-directory: web
