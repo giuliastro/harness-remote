@@ -40,8 +40,10 @@ function safeRelativeGitPath(value) {
 /**
  * Parse `git status --porcelain=v1 -z` without shell quoting or locale-dependent arrows.
  *
- * With `-z`, rename/copy entries are emitted as `XY new-path\0old-path\0`. Only repository-relative
- * paths are returned; malformed or escaping paths are ignored rather than exposed to the client.
+ * With `-z`, rename/copy entries are emitted as `XY new-path\0old-path\0`. The changed-entry count
+ * includes every syntactically valid porcelain record even when its path is unsafe to expose. This
+ * keeps dirty state conservative: hiding an absolute/escaping/oversized name must never turn a dirty
+ * worktree into an apparently clean one. The returned file list contains only safe repo-relative paths.
  */
 export function parseGitPorcelainV1Z(value, { maxFiles = MAX_PROJECT_OUTCOME_FILES } = {}) {
   const fields = String(value ?? "").split("\0")
@@ -62,9 +64,8 @@ export function parseGitPorcelainV1Z(value, { maxFiles = MAX_PROJECT_OUTCOME_FIL
       index += 1
     }
 
-    if (!candidatePath) continue
     totalFiles += 1
-    if (files.length >= maxFiles) continue
+    if (!candidatePath || files.length >= maxFiles) continue
 
     files.push({
       path: candidatePath,
