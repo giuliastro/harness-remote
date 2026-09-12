@@ -24,6 +24,11 @@ import {
 import { normalizeModel, sameModel } from "./native-session-model"
 import { nativeSessionTransferredContext } from "./native-session-prompt"
 import type { NativeSessionRouteMachine } from "./native-session-routing"
+import {
+  buildPortableHandoffState,
+  parsePortableHandoffState,
+  type NativeSessionPortableHandoffState
+} from "./portable-handoff-state"
 import type { BackendKind, MachineAgentHost, MessageEnvelope, ModelSelection, ServerConfig } from "./types"
 
 export type CrossMachineContinuationResult = {
@@ -43,6 +48,7 @@ type PendingCrossMachineContinuation = {
   promptRequestId: string
   createdAt: number
   transferredContext?: string
+  portableState?: NativeSessionPortableHandoffState
 }
 
 export type CrossMachineContinuationServices = {
@@ -102,6 +108,7 @@ function loadPending(source: NativeSessionSurfaceTarget): PendingCrossMachineCon
     if (typeof parsed.title !== "string") return null
     if (typeof parsed.prompt !== "string" || !parsed.prompt.trim()) return null
     if (typeof parsed.promptRequestId !== "string" || !parsed.promptRequestId) return null
+    const portableState = parsePortableHandoffState(parsed.portableState)
     return {
       targetMachineID: parsed.targetMachineID,
       sourceProjectId: parsed.sourceProjectId,
@@ -113,7 +120,8 @@ function loadPending(source: NativeSessionSurfaceTarget): PendingCrossMachineCon
       model: normalizeModel(parsed.model),
       promptRequestId: parsed.promptRequestId,
       createdAt: typeof parsed.createdAt === "number" ? parsed.createdAt : Date.now(),
-      ...(typeof parsed.transferredContext === "string" ? { transferredContext: parsed.transferredContext } : {})
+      ...(typeof parsed.transferredContext === "string" ? { transferredContext: parsed.transferredContext } : {}),
+      ...(portableState ? { portableState } : {})
     }
   } catch {
     return null
@@ -248,7 +256,8 @@ function assertSamePendingRoute(
  * 1. Project continuity is checked before every mutation/recovery attempt.
  * 2. Target creation remains exactly-once through cross-machine-target-client.
  * 3. The exact target + first-prompt request id are persisted before creation is acknowledged.
- * 4. A bounded context snapshot is persisted before lineage or prompt delivery.
+ * 4. A bounded context snapshot and runtime-neutral task/evidence/control state are persisted before
+ *    lineage or prompt delivery.
  * 5. The same lineage edge is durably stored on both source and target daemons before the prompt.
  * 6. The first prompt uses its own durable id with no client TTL, so a lost accepted response cannot
  *    become a duplicate turn on retry.
@@ -302,6 +311,7 @@ export async function continueNativeSessionAcrossMachine({
     targetProjectId: targetProject
   })
   services.requireProjectApproval(preflight, { confirmed: confirmedProjectContinuity })
+  const portableState = buildPortableHandoffState(source, preflight)
 
   let pending = loadPending(source)
   if (pending) {
@@ -336,7 +346,8 @@ export async function continueNativeSessionAcrossMachine({
       prompt: normalizedPrompt,
       model: normalizedModel,
       promptRequestId: requestID(),
-      createdAt: Date.now()
+      createdAt: Date.now(),
+      portableState
     }
     if (!persistPending(source, pending)) {
       throw new Error("The target Session exists, but cross-machine recovery state could not be persisted. Retry the same destination to recover that exact Session.")
@@ -347,6 +358,16 @@ export async function continueNativeSessionAcrossMachine({
   // longer the only recovery handle. A crash before this acknowledgement is harmless: retrying the
   // route calls the same acknowledgement again.
   services.acknowledgeTargetSession(source)
+
+  // Older recovery records may predate the structured portable-state contract. Rebuild only from
+  // the current safe preflight; malformed localStorage content is never forwarded to either daemon.
+  if (!pending.portableState) {
+    const enriched = { ...pending, portableState }
+    if (!persistPending(source, enriched)) {
+      throw new Error("The target Session exists, but its portable handoff state could not be persisted. Retry the same destination before sending the first prompt.")
+    }
+    pending = enriched
+  }
 
   let sourceMessages: MessageEnvelope[] | undefined
   if (pending.transferredContext === undefined) {
@@ -365,17 +386,18 @@ export async function continueNativeSessionAcrossMachine({
   }
 
   const routedTarget = targetSurface(source, pending, targetMachine, targetAgent, sourceMessages)
-  const link: NativeSessionLinkRecord = {
+  const link: NativeSessionLinkRecord & { portableState: NativeSessionPortableHandoffState } = {
     type: "handoff",
     source: source.ref,
     target: pending.target,
     createdAt: new Date(pending.createdAt).toISOString(),
-    ...(pending.transferredContext ? { transferredContext: pending.transferredContext } : {})
+    ...(pending.transferredContext ? { transferredContext: pending.transferredContext } : {}),
+    portableState: pending.portableState
   }
 
   // Replicate the same metadata edge to both machine-local stores. addHandoff is idempotent, so a
   // crash after either write simply retries the identical edge. Prompt delivery never starts until
-  // both sides can explain the lineage after restart.
+  // both sides can explain the lineage and portable boundary state after restart.
   await services.registerSessionLink(machineConfig(source.config), link)
   await services.registerSessionLink(machineConfig(targetMachine.config), link)
 
