@@ -35,14 +35,14 @@ async function requestJSON(url, {
     const text = await response.text()
     let data
     try { data = text ? JSON.parse(text) : null } catch { data = null }
-    return { response, data, error: null }
+    return { response, data, transportError: null }
   } catch (error) {
     return {
       response: null,
       data: null,
-      error: error?.name === "AbortError"
-        ? `request timed out after ${timeoutMs}ms`
-        : (error instanceof Error ? error.message : String(error))
+      transportError: error?.name === "AbortError"
+        ? `Request timed out after ${timeoutMs}ms.`
+        : "Request failed before receiving an HTTP response."
     }
   } finally {
     clearTimeout(timer)
@@ -79,7 +79,7 @@ async function listNativeSessions({
         status: lastStatus,
         pages,
         ids: [...ids],
-        error: result.error ?? result.data?.error ?? `Session discovery returned HTTP ${lastStatus}.`
+        error: result.transportError ?? `Session discovery returned HTTP ${lastStatus}.`
       }
     }
 
@@ -132,15 +132,19 @@ export async function verifyRealHarnessSessionDiscovery({
     )
     const createdID = sessionID(created.data)
     if (!created.response?.ok || !createdID) {
+      const createStatus = created.response?.status ?? 0
       results.push({
         agentID,
         passed: false,
         created: false,
-        createStatus: created.response?.status ?? 0,
+        createStatus,
         discovered: false,
         listStatus: 0,
         pages: 0,
-        error: created.error ?? created.data?.error ?? "Native Session creation did not return an id."
+        error: created.transportError
+          ?? (created.response?.ok
+            ? "Native Session creation did not return an id."
+            : `Native Session creation returned HTTP ${createStatus}.`)
       })
       continue
     }
