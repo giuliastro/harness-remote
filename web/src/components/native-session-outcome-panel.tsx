@@ -103,10 +103,10 @@ export function NativeSessionOutcomePanel({
   }, [target.key])
 
   useEffect(() => {
-    if (!interactionEnabled) return
-    if (working) {
-      // The previous idle snapshot cannot certify the next turn. Invalidate attention immediately so
-      // an idle edge cannot flash "Completed" before fresh target-side permission/question reads land.
+    if (!interactionEnabled || working) {
+      // The previous idle snapshot cannot certify the next turn or a disconnected target. Keep the
+      // Project snapshot visible, but invalidate attention immediately so stale absence of a gate can
+      // never flash/retain "Completed" before fresh permission/question reads are possible.
       setView((current) => current && current.attention.complete
         ? { ...current, attention: UNKNOWN_ATTENTION }
         : current)
