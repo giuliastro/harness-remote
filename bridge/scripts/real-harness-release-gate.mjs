@@ -3,6 +3,7 @@ import { execFileSync, spawn } from "node:child_process"
 import fs from "node:fs"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
+import { verifyRealHarnessSessionDiscovery } from "./real-harness-session-discovery.mjs"
 
 export const SUPPORTED_HARNESSES = ["opencode", "codex", "claude", "omp", "pi"]
 
@@ -205,7 +206,6 @@ export function parseSoakEvidence(output = "") {
     missingCoverage,
     complete: checks.length > 0 && failedChecks.length === 0 && missingCoverage.length === 0,
     notExercised: [
-      "pre-existing native Session discovery",
       "daemon restart/reconnect",
       "physical mobile background/foreground"
     ]
@@ -213,7 +213,7 @@ export function parseSoakEvidence(output = "") {
 }
 
 export function gateUsage() {
-  return `Usage: npm run gate:real-harness -- [options]\n\nOptions:\n  --harnesses <list>  Comma-separated harnesses to verify (default: ${SUPPORTED_HARNESSES.join(",")})\n  --mode <mode>       release (default) or control-plane\n  --report <path>     JSON evidence report path (default: artifacts/real-harness-gate-<timestamp>.json)\n  --help              Show this help\n\nThe gate first checks /v1/diagnostics and stops early if the daemon is unreachable, credentials are rejected, a requested harness is not registered, or model discovery is not configured. Each real-harness leg must also emit the complete scenario evidence contract (Session creation, multi-turn streaming, model selection, cross-harness isolation, transcript fidelity, Stop/recovery and bounded resources); a zero exit code without that evidence fails closed. Shared soak settings use HR_URL, HR_USER, HR_PASS, HR_DIR_A, HR_DIR_B, HR_CYCLES, HR_TURN_BUDGET_MS and HR_ECHO_MARKERS. Release mode always disables HR_ALLOW_TURN_ERRORS. Use --mode control-plane when inference is unavailable; that mode is recorded as not release-eligible.`
+  return `Usage: npm run gate:real-harness -- [options]\n\nOptions:\n  --harnesses <list>  Comma-separated harnesses to verify (default: ${SUPPORTED_HARNESSES.join(",")})\n  --mode <mode>       release (default) or control-plane\n  --report <path>     JSON evidence report path (default: artifacts/real-harness-gate-<timestamp>.json)\n  --help              Show this help\n\nThe gate first checks /v1/diagnostics and stops early if the daemon is unreachable, credentials are rejected, a requested harness is not registered, or model discovery is not configured. It then creates one harmless probe Session per requested harness and requires that exact native id to be rediscovered through the Session index before inference-heavy soak legs begin. Each real-harness leg must also emit the complete scenario evidence contract (Session creation, multi-turn streaming, model selection, cross-harness isolation, transcript fidelity, Stop/recovery and bounded resources); a zero exit code without that evidence fails closed. Shared soak settings use HR_URL, HR_USER, HR_PASS, HR_DIR_A, HR_DIR_B, HR_CYCLES, HR_TURN_BUDGET_MS and HR_ECHO_MARKERS. Release mode always disables HR_ALLOW_TURN_ERRORS. Use --mode control-plane when inference is unavailable; that mode is recorded as not release-eligible.`
 }
 
 async function runSoak({ primary, secondary, mode, soakPath }) {
@@ -277,7 +277,8 @@ export async function runGate({
   mode,
   reportPath,
   soakPath = fileURLToPath(new URL("./session-first-soak.mjs", import.meta.url)),
-  preflight = preflightDaemon
+  preflight = preflightDaemon,
+  sessionDiscovery = verifyRealHarnessSessionDiscovery
 }) {
   const echoMarkers = process.env.HR_ECHO_MARKERS !== "0"
   const eligibility = releaseEligibility({ mode, echoMarkers })
@@ -301,7 +302,25 @@ export async function runGate({
     if (preflightResult.missingModelCatalogs?.length) console.error(`       model discovery unavailable: ${preflightResult.missingModelCatalogs.join(", ")}`)
   }
 
+  let discoveryResult = {
+    schemaVersion: 1,
+    passed: false,
+    skipped: true,
+    results: []
+  }
   if (preflightResult.passed) {
+    console.log("\n== native Session create + rediscovery ==")
+    discoveryResult = await sessionDiscovery({ harnesses })
+    for (const result of discoveryResult.results ?? []) {
+      if (result.passed) {
+        console.log(`  ok   ${result.agentID}: created Session rediscovered in ${result.pages} page(s)`)
+      } else {
+        console.error(`  FAIL ${result.agentID}: ${result.error ?? "native Session rediscovery failed"}`)
+      }
+    }
+  }
+
+  if (preflightResult.passed && discoveryResult.passed) {
     for (const pair of plan) {
       console.log(`\n========================================`)
       console.log(`Primary ${pair.primary} / secondary ${pair.secondary}`)
@@ -315,17 +334,38 @@ export async function runGate({
     }
   }
 
-  const allPassed = preflightResult.passed && runs.length === plan.length && runs.every((run) => run.passed)
+  const allPassed = preflightResult.passed
+    && discoveryResult.passed
+    && runs.length === plan.length
+    && runs.every((run) => run.passed)
   const verdict = !allPassed ? "failed" : eligibility.releaseEligible ? "verified" : "control-plane-only"
-  const coverageMatrix = Object.fromEntries(runs.map((run) => [run.primary, {
-    secondary: run.secondary,
-    complete: run.evidence?.complete ?? false,
-    coverage: run.evidence?.coverage ?? {},
-    missingCoverage: run.evidence?.missingCoverage ?? [],
-    notExercised: run.evidence?.notExercised ?? []
-  }]))
+  const runByPrimary = new Map(runs.map((run) => [run.primary, run]))
+  const discoveryByHarness = new Map((discoveryResult.results ?? []).map((result) => [result.agentID, result]))
+  const coverageMatrix = Object.fromEntries(plan.map(({ primary, secondary }) => {
+    const run = runByPrimary.get(primary)
+    const discovery = discoveryByHarness.get(primary)
+    const sessionDiscovery = discovery?.passed ?? false
+    const coverage = {
+      sessionDiscovery,
+      ...(run?.evidence?.coverage ?? {})
+    }
+    const missingCoverage = [
+      ...(sessionDiscovery ? [] : ["sessionDiscovery"]),
+      ...(run?.evidence?.missingCoverage ?? (run ? [] : REQUIRED_SOAK_COVERAGE))
+    ]
+    return [primary, {
+      secondary,
+      complete: sessionDiscovery && (run?.evidence?.complete ?? false),
+      coverage,
+      missingCoverage,
+      notExercised: run?.evidence?.notExercised ?? [
+        "daemon restart/reconnect",
+        "physical mobile background/foreground"
+      ]
+    }]
+  }))
   const report = {
-    schemaVersion: 3,
+    schemaVersion: 4,
     kind: "harness-remote-real-harness-gate",
     generatedAt: new Date().toISOString(),
     source: { commit: gitCommit() },
@@ -342,6 +382,7 @@ export async function runGate({
       allowTurnErrors: mode === "control-plane"
     },
     preflight: preflightResult,
+    sessionDiscovery: discoveryResult,
     coverageMatrix,
     runs,
     verdict
