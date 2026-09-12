@@ -3,10 +3,11 @@ import { notifyDesktopAttention, subscribeDesktopAttentionActivation } from "../
 import { discoverAgentNativeSessionPage, nativeSessionSurfaceTarget, type NativeSessionSurfaceTarget } from "../native-session-discovery"
 import { loadNativeSessionAttentionIndex, type NativeSessionAttentionIndex, type NativeSessionAttentionIndexItem } from "../native-session-attention-index"
 import { startNativeSessionAttentionLiveRefresh, type NativeSessionAttentionLiveTarget } from "../native-session-attention-live"
-import { desktopAttentionNotification } from "../native-session-attention-notification-presentation"
+import { desktopAttentionNotification, type NativeSessionAttentionNotificationContext } from "../native-session-attention-notification-presentation"
 import {
   EMPTY_NATIVE_SESSION_ATTENTION_NOTIFICATION_STATE,
   reconcileNativeSessionAttentionNotifications,
+  type NativeSessionAttentionNotificationEvent,
   type NativeSessionAttentionNotificationState
 } from "../native-session-attention-notifications"
 import type { MachineAgentHost, ServerConfig } from "../types"
@@ -43,6 +44,7 @@ export type AttentionInboxCounts = {
 }
 
 const ATTENTION_FALLBACK_MS = 30_000
+const NOTIFICATION_CONTEXT_MAX_PAGES = 4
 
 function supportsAttention(agent: MachineAgentHost): boolean {
   return agent.state === "available"
@@ -132,10 +134,38 @@ export function mergedAttentionSessionCount(...groups: ReadonlySet<string>[]): n
   return keys.size
 }
 
+/** Resolve only small, presentation-safe metadata and only when a new desktop notification is
+ * actually emitted. The 30s attention poll remains questions/permissions-only; transcript data is
+ * never touched and native history traversal is deliberately bounded. */
+async function loadAttentionNotificationContext(
+  target: AttentionTarget,
+  sessionID: string
+): Promise<NativeSessionAttentionNotificationContext | undefined> {
+  let cursor: string | undefined
+  const seen = new Set<string>()
+  for (let pageNumber = 0; pageNumber < NOTIFICATION_CONTEXT_MAX_PAGES; pageNumber += 1) {
+    const page = await discoverAgentNativeSessionPage(target.baseConfig, target.agent, cursor)
+    const record = page.records.find((candidate) => candidate.session.id === sessionID)
+    if (record) {
+      const surface = nativeSessionSurfaceTarget(target.machineID, target.baseConfig, record)
+      const projectLabel = record.session.project?.name?.trim()
+      return {
+        sessionTitle: surface.title,
+        ...(projectLabel ? { projectLabel } : {})
+      }
+    }
+    if (!page.nextCursor || seen.has(page.nextCursor)) break
+    seen.add(page.nextCursor)
+    cursor = page.nextCursor
+  }
+  return undefined
+}
+
 /**
  * Compose the mature Session browser with the global attention read model without changing its
  * pagination, ordering or writer semantics. Attention has its own tiny refresh loop and event path;
- * native Session history is touched only when the user explicitly asks to open an Inbox item.
+ * native Session history is touched only when the user explicitly opens an Inbox item or when a new
+ * desktop notification performs one bounded metadata lookup for task identity.
  */
 export function NativeSessionHome(props: Props) {
   const [scopes, setScopes] = useState<Record<string, AttentionScope>>({})
@@ -147,6 +177,7 @@ export function NativeSessionHome(props: Props) {
   const notificationStateRef = useRef<NativeSessionAttentionNotificationState>({
     scopes: { ...EMPTY_NATIVE_SESSION_ATTENTION_NOTIFICATION_STATE.scopes }
   })
+  const notificationContextRef = useRef<Map<string, NativeSessionAttentionNotificationContext>>(new Map())
 
   const attentionTargets = useMemo<AttentionTarget[]>(() => props.sources.flatMap(({ machine, snapshot, state }) => {
     if (!snapshot || state !== "online") return []
@@ -179,6 +210,7 @@ export function NativeSessionHome(props: Props) {
 
   const rememberAndOpen = useCallback((target: NativeSessionSurfaceTarget) => {
     setKnownTargets((current) => ({ ...current, [target.key]: target }))
+    notificationContextRef.current.set(target.key, { sessionTitle: target.title })
     props.onOpen(target)
   }, [props.onOpen])
 
@@ -194,7 +226,13 @@ export function NativeSessionHome(props: Props) {
         const page = await discoverAgentNativeSessionPage(target.baseConfig, target.agent, cursor)
         const record = page.records.find((candidate) => candidate.session.id === sessionID)
         if (record) {
-          rememberAndOpen(nativeSessionSurfaceTarget(target.machineID, target.baseConfig, record))
+          const surface = nativeSessionSurfaceTarget(target.machineID, target.baseConfig, record)
+          const projectLabel = record.session.project?.name?.trim()
+          notificationContextRef.current.set(key, {
+            sessionTitle: surface.title,
+            ...(projectLabel ? { projectLabel } : {})
+          })
+          rememberAndOpen(surface)
           return
         }
         if (!page.nextCursor || seen.has(page.nextCursor)) break
@@ -208,6 +246,23 @@ export function NativeSessionHome(props: Props) {
       setOpeningKey(null)
     }
   }, [openingKey, props.selectedKey, rememberAndOpen])
+
+  const notifyAttention = useCallback(async (
+    notification: NativeSessionAttentionNotificationEvent,
+    target: AttentionTarget
+  ) => {
+    const key = sessionKey(target, notification.sessionID)
+    let context = notificationContextRef.current.get(key)
+    if (!context) {
+      try {
+        context = await loadAttentionNotificationContext(target, notification.sessionID)
+        if (context) notificationContextRef.current.set(key, context)
+      } catch {
+        // Notification safety is more important than metadata enrichment. Keep the proven fallback.
+      }
+    }
+    notifyDesktopAttention(desktopAttentionNotification(notification, context))
+  }, [])
 
   const refreshAttentionTarget = useCallback(async (candidate: NativeSessionAttentionLiveTarget, generation: number) => {
     const target = targetsRef.current.get(candidate.key)
@@ -226,7 +281,7 @@ export function NativeSessionHome(props: Props) {
     }])
     notificationStateRef.current = notificationResult.state
     for (const notification of notificationResult.notifications) {
-      notifyDesktopAttention(desktopAttentionNotification(notification))
+      void notifyAttention(notification, latest)
     }
 
     setScopes((current) => {
@@ -236,7 +291,7 @@ export function NativeSessionHome(props: Props) {
         : result
       return { ...current, [candidate.key]: { target: latest, index } }
     })
-  }, [])
+  }, [notifyAttention])
 
   useEffect(() => subscribeDesktopAttentionActivation((activation) => {
     const target = [...targetsRef.current.values()].find((candidate) =>
