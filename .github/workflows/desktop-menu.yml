@@ -49,6 +49,19 @@ jobs:
         run: npm run test:desktop
         working-directory: web
 
+      # The self-contained desktop claim depends on electron-builder actually copying the daemon
+      # beside the ASAR. Config-level assertions alone cannot catch a bad relative source path.
+      - name: Verify embedded daemon is present in packaged Windows app
+        if: runner.os == 'Windows'
+        shell: pwsh
+        working-directory: web
+        run: |
+          npm run package:win:dir
+          $daemon = Join-Path $PWD 'release/win-unpacked/resources/bridge-runtime/src/daemon-cli.js'
+          $package = Join-Path $PWD 'release/win-unpacked/resources/bridge-runtime/package.json'
+          if (-not (Test-Path $daemon)) { throw "Packaged desktop is missing embedded daemon: $daemon" }
+          if (-not (Test-Path $package)) { throw "Packaged desktop is missing bridge package metadata: $package" }
+
       # Boots Electron, installs the real menu and reads it back — the part the unit tests cannot
       # reach, on the platform that actually shows it.
       - name: Verify the application menu installs
