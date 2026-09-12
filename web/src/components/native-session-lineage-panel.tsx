@@ -81,7 +81,7 @@ export function NativeSessionLineagePanel({ target, routes, interactionEnabled, 
             className={`hr-native-lineage-entry ${entry.direction}`}
           >
             <div className="hr-native-lineage-identity">
-              <span>{entry.direction === "incoming" ? "Continued from" : "Continues on"}</span>
+              <span>{entry.direction === "incoming" ? "Handoff source" : "Handoff target"}</span>
               <strong>{identityLabel(entry)}</strong>
               <small>Session {entry.other.sessionID} · {formatTime(entry.createdAt)}</small>
             </div>
