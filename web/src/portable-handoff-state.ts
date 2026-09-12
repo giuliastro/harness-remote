@@ -51,6 +51,25 @@ function portableEvidence(assessment: ProjectContinuityAssessment): NativeSessio
   }
 }
 
+function consistentPortableProject(
+  decision: NativeSessionPortableHandoffState["project"]["decision"],
+  reason: NativeSessionPortableHandoffState["project"]["reason"],
+  evidence: NativeSessionPortableHandoffState["project"]["evidence"]
+): boolean {
+  if (evidence.project === "different" || evidence.repository === "different" || evidence.history === "different") return false
+  if (decision === "automatic") {
+    return reason === "exact_workspace"
+      && evidence.project === "match"
+      && evidence.repository === "match"
+      && evidence.branch === "match"
+      && evidence.head === "match"
+      && evidence.sourceDirty === false
+      && evidence.targetDirty === false
+      && evidence.exactWorkspace === true
+  }
+  return reason !== "exact_workspace" && evidence.exactWorkspace === false
+}
+
 export function parsePortableHandoffState(value: unknown): NativeSessionPortableHandoffState | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null
   const candidate = value as Partial<NativeSessionPortableHandoffState>
@@ -68,6 +87,19 @@ export function parsePortableHandoffState(value: unknown): NativeSessionPortable
   if (evidence.sourceDirty !== undefined && typeof evidence.sourceDirty !== "boolean") return null
   if (evidence.targetDirty !== undefined && typeof evidence.targetDirty !== "boolean") return null
   if (!controls || controls.sourceAuthority !== "invalidated" || controls.targetAuthorization !== "re_evaluate" || controls.attachments !== "not_transferred") return null
+
+  const normalizedEvidence: NativeSessionPortableHandoffState["project"]["evidence"] = {
+    project: evidence.project as ProjectContinuityEvidence,
+    repository: evidence.repository as ProjectContinuityEvidence,
+    history: evidence.history as ProjectContinuityEvidence,
+    branch: evidence.branch as ProjectContinuityEvidence,
+    head: evidence.head as ProjectContinuityEvidence,
+    ...(typeof evidence.sourceDirty === "boolean" ? { sourceDirty: evidence.sourceDirty } : {}),
+    ...(typeof evidence.targetDirty === "boolean" ? { targetDirty: evidence.targetDirty } : {}),
+    exactWorkspace: evidence.exactWorkspace
+  }
+  if (!consistentPortableProject(project.decision, project.reason, normalizedEvidence)) return null
+
   return {
     version: 1,
     task: { title: task.title.trim(), state: "continuing" },
@@ -76,16 +108,7 @@ export function parsePortableHandoffState(value: unknown): NativeSessionPortable
       targetProjectId: project.targetProjectId.trim(),
       decision: project.decision,
       reason: project.reason,
-      evidence: {
-        project: evidence.project as ProjectContinuityEvidence,
-        repository: evidence.repository as ProjectContinuityEvidence,
-        history: evidence.history as ProjectContinuityEvidence,
-        branch: evidence.branch as ProjectContinuityEvidence,
-        head: evidence.head as ProjectContinuityEvidence,
-        ...(typeof evidence.sourceDirty === "boolean" ? { sourceDirty: evidence.sourceDirty } : {}),
-        ...(typeof evidence.targetDirty === "boolean" ? { targetDirty: evidence.targetDirty } : {}),
-        exactWorkspace: evidence.exactWorkspace
-      }
+      evidence: normalizedEvidence
     },
     controls: {
       sourceAuthority: "invalidated",
