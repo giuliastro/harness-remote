@@ -193,8 +193,9 @@ async function main() {
       label: "OpenCode",
       backend: "opencode",
       // These are native OpenCode HTTP primitives, not Session-first inventions. Advertising the
-      // complete mutation subset lets the UI expose the same rename/delete/stop/model controls as
-      // the direct OpenCode surface instead of treating a managed host as read-only.
+      // complete native subset is also what lets the global Attention index stay authoritative:
+      // if permission/question support is omitted here, selecting an OpenCode Session can replace
+      // its blocked list status with the detail runtime state and make an unresolved request vanish.
       capabilities: {
         sessions: true,
         prompt: true,
@@ -202,6 +203,8 @@ async function main() {
         streaming: true,
         models: true,
         commands: true,
+        questions: true,
+        permissions: true,
         sessionRename: true,
         sessionDelete: true
       },
