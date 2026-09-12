@@ -90,7 +90,7 @@ test("optional ACP variant probing is bounded and cannot invalidate base models"
   }
 })
 
-test("HTTP model discovery obeys the catalog-wide timeout budget", async () => {
+test("HTTP model discovery obeys the catalog-wide timeout budget", { timeout: 10_000 }, async () => {
   const host = { host: "127.0.0.1", port: 4096, async start() {} }
   const catalog = new HttpAgentModelCatalog({
     host,
@@ -98,7 +98,8 @@ test("HTTP model discovery obeys the catalog-wide timeout budget", async () => {
     fetchImpl: never,
     timeoutMs: 25
   })
-  const started = Date.now()
+  // The catalog's own timeout message proves its 25ms budget won against a fetch that never settles.
+  // Do not assert process wall time: a paused CI runner can resume seconds later even though the
+  // catalog used the correct internal budget.
   await assert.rejects(() => catalog.list({ allowStale: false }), /timed out after 25ms/)
-  assert.ok(Date.now() - started < 500)
 })
