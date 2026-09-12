@@ -1,5 +1,3 @@
-import path from "node:path"
-
 function authorization(user = process.env.HR_USER ?? "", pass = process.env.HR_PASS ?? "") {
   return `Basic ${Buffer.from(`${user}:${pass}`, "utf8").toString("base64")}`
 }
@@ -98,7 +96,7 @@ async function listNativeSessions({
   }
 
   return {
-    passed: true,
+    passed: !cursor,
     status: lastStatus,
     pages,
     ids: [...ids],
@@ -173,7 +171,6 @@ export async function verifyRealHarnessSessionDiscovery({
   return {
     schemaVersion: 1,
     passed: results.length === harnesses.length && results.every((result) => result.passed),
-    probeDirectoryName: path.basename(directory),
     results
   }
 }
