@@ -6,6 +6,16 @@ import { fileURLToPath } from "node:url"
 
 export const SUPPORTED_HARNESSES = ["opencode", "codex", "claude", "omp", "pi"]
 
+const REQUIRED_SOAK_COVERAGE = [
+  "sessionCreation",
+  "multiTurnStreaming",
+  "modelSelection",
+  "crossHarnessIsolation",
+  "transcriptFidelity",
+  "stopAndResume",
+  "resourceBounds"
+]
+
 function optionValue(args, name) {
   const index = args.indexOf(name)
   return index >= 0 ? args[index + 1] : undefined
@@ -152,8 +162,58 @@ export function defaultReportPath(cwd = process.cwd(), date = new Date()) {
   return path.join(cwd, "artifacts", `real-harness-gate-${stamp(date)}.json`)
 }
 
+function hasPassed(checks, pattern) {
+  return checks.some((check) => check.passed && pattern.test(check.message))
+}
+
+export function parseSoakEvidence(output = "") {
+  const checks = []
+  for (const line of String(output).split(/\r?\n/)) {
+    const match = /^\s*(ok|FAIL)\s+(.+?)\s*$/.exec(line)
+    if (!match) continue
+    checks.push({ passed: match[1] === "ok", message: match[2] })
+  }
+
+  const coverage = {
+    sessionCreation: hasPassed(checks, /two native Sessions created on/i),
+    multiTurnStreaming: hasPassed(checks, /turn \d+ completed in \d+ms/i),
+    modelSelection: hasPassed(checks, /turn \d+ accepted with model /i),
+    crossHarnessIsolation:
+      hasPassed(checks, /catalog unchanged (?:while switching away and back|after visiting)/i)
+      && hasPassed(checks, /prompt accepted after harness switch and model change/i),
+    transcriptFidelity: hasPassed(checks, /one user turn per accepted prompt, no duplicates/i),
+    stopAndResume:
+      hasPassed(checks, /Stop accepted for /i)
+      && hasPassed(checks, /Session accepts a new prompt with a new model after Stop/i)
+      && hasPassed(checks, /interrupted turn stays visible in the transcript/i),
+    resourceBounds:
+      hasPassed(checks, /adapter listeners did not grow unboundedly/i)
+      && hasPassed(checks, /no unresolved native Session mutation left/i)
+  }
+  const missingCoverage = REQUIRED_SOAK_COVERAGE.filter((name) => !coverage[name])
+  const failedChecks = checks.filter((check) => !check.passed)
+
+  return {
+    schemaVersion: 1,
+    checks,
+    summary: {
+      total: checks.length,
+      passed: checks.length - failedChecks.length,
+      failed: failedChecks.length
+    },
+    coverage,
+    missingCoverage,
+    complete: checks.length > 0 && failedChecks.length === 0 && missingCoverage.length === 0,
+    notExercised: [
+      "pre-existing native Session discovery",
+      "daemon restart/reconnect",
+      "physical mobile background/foreground"
+    ]
+  }
+}
+
 export function gateUsage() {
-  return `Usage: npm run gate:real-harness -- [options]\n\nOptions:\n  --harnesses <list>  Comma-separated harnesses to verify (default: ${SUPPORTED_HARNESSES.join(",")})\n  --mode <mode>       release (default) or control-plane\n  --report <path>     JSON evidence report path (default: artifacts/real-harness-gate-<timestamp>.json)\n  --help              Show this help\n\nThe gate first checks /v1/diagnostics and stops early if the daemon is unreachable, credentials are rejected, a requested harness is not registered, or model discovery is not configured. Shared soak settings use HR_URL, HR_USER, HR_PASS, HR_DIR_A, HR_DIR_B, HR_CYCLES, HR_TURN_BUDGET_MS and HR_ECHO_MARKERS. Release mode always disables HR_ALLOW_TURN_ERRORS. Use --mode control-plane when inference is unavailable; that mode is recorded as not release-eligible.`
+  return `Usage: npm run gate:real-harness -- [options]\n\nOptions:\n  --harnesses <list>  Comma-separated harnesses to verify (default: ${SUPPORTED_HARNESSES.join(",")})\n  --mode <mode>       release (default) or control-plane\n  --report <path>     JSON evidence report path (default: artifacts/real-harness-gate-<timestamp>.json)\n  --help              Show this help\n\nThe gate first checks /v1/diagnostics and stops early if the daemon is unreachable, credentials are rejected, a requested harness is not registered, or model discovery is not configured. Each real-harness leg must also emit the complete scenario evidence contract (Session creation, multi-turn streaming, model selection, cross-harness isolation, transcript fidelity, Stop/recovery and bounded resources); a zero exit code without that evidence fails closed. Shared soak settings use HR_URL, HR_USER, HR_PASS, HR_DIR_A, HR_DIR_B, HR_CYCLES, HR_TURN_BUDGET_MS and HR_ECHO_MARKERS. Release mode always disables HR_ALLOW_TURN_ERRORS. Use --mode control-plane when inference is unavailable; that mode is recorded as not release-eligible.`
 }
 
 async function runSoak({ primary, secondary, mode, soakPath }) {
@@ -166,11 +226,32 @@ async function runSoak({ primary, secondary, mode, soakPath }) {
     HR_ALLOW_TURN_ERRORS: mode === "control-plane" ? "1" : "0"
   }
 
+  let stdout = ""
+  let stderr = ""
   const result = await new Promise((resolve) => {
-    const child = spawn(process.execPath, [soakPath], { env, stdio: "inherit" })
+    const child = spawn(process.execPath, [soakPath], { env, stdio: ["inherit", "pipe", "pipe"] })
+    child.stdout?.on("data", (chunk) => {
+      const text = chunk.toString("utf8")
+      stdout += text
+      process.stdout.write(text)
+    })
+    child.stderr?.on("data", (chunk) => {
+      const text = chunk.toString("utf8")
+      stderr += text
+      process.stderr.write(text)
+    })
     child.once("error", (error) => resolve({ exitCode: 1, signal: null, error: error.message }))
     child.once("exit", (code, signal) => resolve({ exitCode: code ?? (signal ? 1 : 0), signal: signal ?? null, error: null }))
   })
+
+  const evidence = parseSoakEvidence(`${stdout}\n${stderr}`)
+  const evidenceError = evidence.complete
+    ? null
+    : evidence.summary.total === 0
+      ? "Soak exited without machine-readable check evidence."
+      : evidence.missingCoverage.length
+        ? `Soak evidence is missing required coverage: ${evidence.missingCoverage.join(", ")}.`
+        : `Soak evidence contains ${evidence.summary.failed} failed check(s).`
 
   return {
     primary,
@@ -178,7 +259,9 @@ async function runSoak({ primary, secondary, mode, soakPath }) {
     startedAt: startedAt.toISOString(),
     durationMs: Date.now() - started,
     ...result,
-    passed: result.exitCode === 0
+    evidence,
+    evidenceError,
+    passed: result.exitCode === 0 && evidence.complete
   }
 }
 
@@ -227,14 +310,22 @@ export async function runGate({
       runs.push(result)
       if (!result.passed) {
         console.error(`Gate leg failed for ${pair.primary} (exit ${result.exitCode}${result.signal ? `, signal ${result.signal}` : ""}).`)
+        if (result.evidenceError) console.error(`Evidence failure: ${result.evidenceError}`)
       }
     }
   }
 
   const allPassed = preflightResult.passed && runs.length === plan.length && runs.every((run) => run.passed)
   const verdict = !allPassed ? "failed" : eligibility.releaseEligible ? "verified" : "control-plane-only"
+  const coverageMatrix = Object.fromEntries(runs.map((run) => [run.primary, {
+    secondary: run.secondary,
+    complete: run.evidence?.complete ?? false,
+    coverage: run.evidence?.coverage ?? {},
+    missingCoverage: run.evidence?.missingCoverage ?? [],
+    notExercised: run.evidence?.notExercised ?? []
+  }]))
   const report = {
-    schemaVersion: 2,
+    schemaVersion: 3,
     kind: "harness-remote-real-harness-gate",
     generatedAt: new Date().toISOString(),
     source: { commit: gitCommit() },
@@ -251,6 +342,7 @@ export async function runGate({
       allowTurnErrors: mode === "control-plane"
     },
     preflight: preflightResult,
+    coverageMatrix,
     runs,
     verdict
   }
