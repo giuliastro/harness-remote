@@ -44,15 +44,15 @@ function hasRealTurn(conversation: ConversationRuntime): boolean {
  * Project structured Session/runtime state into a compact review summary.
  *
  * This deliberately does not read transcript text, reasoning, tool prose or assistant claims. Pending
- * permission/question requests and native runtime lifecycle fields are the only authority here. A
- * successful/completed label is withheld until the attention read has completed, so an unavailable
- * permission endpoint cannot be mistaken for proof that no user gate exists.
+ * permission/question requests and native runtime lifecycle fields are the only authority here. Known
+ * pending gates stay visible even if the sibling endpoint is unavailable, while a successful/completed
+ * label is withheld until both attention reads have completed.
  */
 export function nativeSessionReviewEvidence(
   conversation: ConversationRuntime,
   attention: NativeSessionReviewAttention
 ): NativeSessionReviewEvidence | null {
-  if (attention.complete && attention.permissions > 0) {
+  if (attention.permissions > 0) {
     const count = attention.permissions
     return {
       state: "authorization",
@@ -62,7 +62,7 @@ export function nativeSessionReviewEvidence(
     }
   }
 
-  if (attention.complete && attention.questions > 0) {
+  if (attention.questions > 0) {
     const count = attention.questions
     return {
       state: "input",
