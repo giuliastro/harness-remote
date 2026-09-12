@@ -6,6 +6,32 @@ const current = { machineID: "machine-b", agentID: "claude", sessionID: "target-
 const source = { machineID: "machine-a", agentID: "codex", sessionID: "source-1", directory: "/repo" }
 const next = { machineID: "machine-c", agentID: "pi", sessionID: "next-1", directory: "/work/repo" }
 
+const portableState = {
+  version: 1,
+  task: { title: "Finish cross-machine recovery", state: "continuing" },
+  project: {
+    sourceProjectId: "project-source",
+    targetProjectId: "project-target",
+    decision: "automatic",
+    reason: "exact_workspace",
+    evidence: {
+      project: "match",
+      repository: "match",
+      history: "match",
+      branch: "match",
+      head: "match",
+      sourceDirty: false,
+      targetDirty: false,
+      exactWorkspace: true
+    }
+  },
+  controls: {
+    sourceAuthority: "invalidated",
+    targetAuthorization: "re_evaluate",
+    attachments: "not_transferred"
+  }
+}
+
 function link(overrides = {}) {
   return {
     type: "handoff",
@@ -26,6 +52,29 @@ test("incoming lineage exposes portable context but invalidates source authority
   assert.equal(entries[0].authority, "invalidated")
   assert.equal(entries[0].targetAuthorization, "re_evaluate")
   assert.equal(entries[0].attachments, "not_transferred")
+})
+
+test("validated portable state is recovered from the durable link after restart", () => {
+  const entries = nativeSessionLineage(current, [link({ transferredContext: undefined, portableState })])
+  assert.equal(entries.length, 1)
+  assert.equal(entries[0].contextCarried, true)
+  assert.deepEqual(entries[0].portableState, portableState)
+  assert.equal(entries[0].portableState.task.title, "Finish cross-machine recovery")
+  assert.equal(entries[0].portableState.project.evidence.repository, "match")
+})
+
+test("malformed or authority-bearing portable state is ignored instead of reaching the UI", () => {
+  const poisoned = {
+    ...portableState,
+    controls: { ...portableState.controls, sourceAuthority: "preserved" },
+    permission: "allow-all",
+    path: "/remote/secret",
+    toolState: { shell: "trusted" }
+  }
+  const entries = nativeSessionLineage(current, [link({ transferredContext: undefined, portableState: poisoned })])
+  assert.equal(entries.length, 1)
+  assert.equal(entries[0].contextCarried, false)
+  assert.equal(entries[0].portableState, undefined)
 })
 
 test("outgoing lineage points at the exact target without comparing machine-local paths", () => {

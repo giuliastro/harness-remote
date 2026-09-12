@@ -1,4 +1,8 @@
 import type { NativeSessionIdentityPayload, NativeSessionLinkRecord } from "./api"
+import {
+  parsePortableHandoffState,
+  type NativeSessionPortableHandoffState
+} from "./portable-handoff-state"
 
 export type NativeSessionLineageDirection = "incoming" | "outgoing"
 
@@ -7,6 +11,7 @@ export type NativeSessionLineageEntry = {
   other: NativeSessionIdentityPayload
   createdAt: string
   contextCarried: boolean
+  portableState?: NativeSessionPortableHandoffState
   authority: "invalidated"
   targetAuthorization: "re_evaluate"
   attachments: "not_transferred"
@@ -33,9 +38,9 @@ function lineageKey(link: NativeSessionLinkRecord): string {
 /**
  * Project a daemon-owned handoff edge into a UI-safe lineage record.
  *
- * Paths stay machine-local and are deliberately not part of the displayed identity. The boundary
- * state is derived from the cross-machine contract rather than source Session metadata: portable
- * task context may be carried, while permissions and attachments are never inherited.
+ * Paths stay machine-local and are deliberately not part of the displayed identity. Any structured
+ * portable state is treated as untrusted daemon input and must pass the same v1 parser used during
+ * handoff recovery before it can reach the UI. Permissions and attachments are never inherited.
  */
 export function nativeSessionLineage(
   identity: NativeSessionIdentityPayload,
@@ -54,11 +59,16 @@ export function nativeSessionLineage(
     if (seen.has(key)) continue
     seen.add(key)
 
+    const portableState = parsePortableHandoffState(
+      (link as NativeSessionLinkRecord & { portableState?: unknown }).portableState
+    )
+
     entries.push({
       direction: targetMatch ? "incoming" : "outgoing",
       other: targetMatch ? link.source : link.target,
       createdAt: link.createdAt,
-      contextCarried: Boolean(link.transferredContext?.trim()),
+      contextCarried: Boolean(link.transferredContext?.trim() || portableState),
+      ...(portableState ? { portableState } : {}),
       authority: "invalidated",
       targetAuthorization: "re_evaluate",
       attachments: "not_transferred"

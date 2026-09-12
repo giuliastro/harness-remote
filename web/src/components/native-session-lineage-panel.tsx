@@ -27,12 +27,40 @@ function formatTime(value: string): string {
     : value
 }
 
+function projectStateLabel(entry: NativeSessionLineageEntry): string | null {
+  const state = entry.portableState
+  if (!state) return null
+  if (state.project.decision === "automatic") return "Project: exact workspace"
+  if (state.project.reason === "workspace_diverged") return "Project: workspace differs — review accepted"
+  return "Project: continuity unverified — review accepted"
+}
+
+function worktreeLabel(value: boolean | undefined): string {
+  if (value === true) return "dirty"
+  if (value === false) return "clean"
+  return "unverified"
+}
+
+function evidenceLabel(entry: NativeSessionLineageEntry): string | null {
+  const evidence = entry.portableState?.project.evidence
+  if (!evidence) return null
+  return [
+    `repo ${evidence.repository}`,
+    `history ${evidence.history}`,
+    `branch ${evidence.branch}`,
+    `HEAD ${evidence.head}`,
+    `source worktree ${worktreeLabel(evidence.sourceDirty)}`,
+    `target worktree ${worktreeLabel(evidence.targetDirty)}`
+  ].join(", ")
+}
+
 /**
  * Durable, read-only handoff lineage for one real native Session.
  *
  * The daemon stores the edge on both machines, so this survives navigation/restart without importing
  * either provider transcript. The surface intentionally never displays the other machine's path and
- * never treats source permission metadata as target authority.
+ * never treats source permission metadata as target authority. Structured portable state is displayed
+ * only after the lineage projector validates the daemon payload against the v1 portable-state contract.
  */
 export function NativeSessionLineagePanel({ target, routes, interactionEnabled, onConnectionIssue }: Props) {
   const [entries, setEntries] = useState<NativeSessionLineageEntry[]>([])
@@ -72,29 +100,41 @@ export function NativeSessionLineagePanel({ target, routes, interactionEnabled, 
     <section className="hr-native-lineage" aria-label="Session handoff lineage">
       <header>
         <strong>Handoff lineage</strong>
-        <span>Native Sessions stay separate; only the explicit handoff edge and bounded control context are shared.</span>
+        <span>Durable task and Project evidence can be recovered here; native transcripts and authority stay separate.</span>
       </header>
       <div className="hr-native-lineage-list">
-        {entries.map((entry) => (
-          <article
-            key={`${entry.direction}:${entry.other.machineID}:${entry.other.agentID}:${entry.other.sessionID}:${entry.createdAt}`}
-            className={`hr-native-lineage-entry ${entry.direction}`}
-          >
-            <div className="hr-native-lineage-identity">
-              <span>{entry.direction === "incoming" ? "Handoff source" : "Handoff target"}</span>
-              <strong>{identityLabel(entry)}</strong>
-              <small>Session {entry.other.sessionID} · {formatTime(entry.createdAt)}</small>
-            </div>
-            <div className="hr-native-lineage-boundary" aria-label="Handoff boundary state">
-              <span className={entry.contextCarried ? "carried" : "neutral"}>
-                {entry.contextCarried ? "Task context carried" : "No portable task context recorded"}
-              </span>
-              <span className="invalidated">Source authority invalidated</span>
-              <span className="fresh">Target authorization is evaluated independently</span>
-              <span className="neutral">Attachments not transferred</span>
-            </div>
-          </article>
-        ))}
+        {entries.map((entry) => {
+          const projectLabel = projectStateLabel(entry)
+          const evidence = evidenceLabel(entry)
+          return (
+            <article
+              key={`${entry.direction}:${entry.other.machineID}:${entry.other.agentID}:${entry.other.sessionID}:${entry.createdAt}`}
+              className={`hr-native-lineage-entry ${entry.direction}`}
+            >
+              <div className="hr-native-lineage-identity">
+                <span>{entry.direction === "incoming" ? "Handoff source" : "Handoff target"}</span>
+                <strong>{identityLabel(entry)}</strong>
+                <small>Session {entry.other.sessionID} · {formatTime(entry.createdAt)}</small>
+              </div>
+              <div className="hr-native-lineage-boundary" aria-label="Handoff boundary state">
+                {entry.portableState ? (
+                  <>
+                    <span className="carried">Task: {entry.portableState.task.title}</span>
+                    {projectLabel ? <span className={entry.portableState.project.decision === "automatic" ? "fresh" : "invalidated"}>{projectLabel}</span> : null}
+                    {evidence ? <span className="neutral">Evidence: {evidence}</span> : null}
+                  </>
+                ) : (
+                  <span className={entry.contextCarried ? "carried" : "neutral"}>
+                    {entry.contextCarried ? "Bounded task context carried" : "No portable task context recorded"}
+                  </span>
+                )}
+                <span className="invalidated">Source authority invalidated</span>
+                <span className="fresh">Target authorization is evaluated independently</span>
+                <span className="neutral">Attachments not transferred</span>
+              </div>
+            </article>
+          )
+        })}
       </div>
     </section>
   )
