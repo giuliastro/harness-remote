@@ -40,6 +40,26 @@ function portable(overrides = {}) {
   }
 }
 
+function exactPortable() {
+  return portable({
+    project: {
+      ...portable().project,
+      decision: "automatic",
+      reason: "exact_workspace",
+      evidence: {
+        project: "match",
+        repository: "match",
+        history: "match",
+        branch: "match",
+        head: "match",
+        sourceDirty: false,
+        targetDirty: false,
+        exactWorkspace: true
+      }
+    }
+  })
+}
+
 async function listen(server) {
   await new Promise((resolve, reject) => {
     server.once("error", reject)
@@ -66,7 +86,7 @@ test("portable handoff state is canonical and strips unknown authority/path/tool
   assert.equal(serialized.includes("toolState"), false)
 })
 
-test("blocked Project evidence cannot be persisted as portable handoff state", () => {
+test("blocked or contradictory Project evidence cannot be persisted as portable handoff state", () => {
   assert.throws(
     () => normalizePortableHandoffState(portable({
       project: {
@@ -77,6 +97,16 @@ test("blocked Project evidence cannot be persisted as portable handoff state", (
       }
     })),
     /blocked Project mismatch/
+  )
+  assert.throws(
+    () => normalizePortableHandoffState({
+      ...exactPortable(),
+      project: {
+        ...exactPortable().project,
+        evidence: { ...exactPortable().project.evidence, targetDirty: true }
+      }
+    }),
+    /internally consistent exact workspace evidence/
   )
 })
 
