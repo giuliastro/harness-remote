@@ -118,7 +118,7 @@ function beginPermissionTurn(body) {
     if (!activePrompt || activePrompt.assistantID !== assistantID) return
     // Reproduce the dangerous edge: an approval request is visible while lifecycle enrichment is
     // terminal-looking. The request itself is authoritative evidence that the turn is waiting for
-    // the user and must never manufacture a red terminal interruption before a decision exists.
+    // the user and must never manufacture a red "Response interrupted" before a decision exists.
     status = { type: "idle" }
     pendingPermission = {
       id: PERMISSION_ID,
@@ -377,14 +377,15 @@ async function waitForPermission(page) {
   await page.getByText("external_directory", { exact: true }).waitFor({ state: "visible", timeout: 4_000 })
 }
 
-async function assertPendingNeverTerminalizes(page, label) {
-  // Wait beyond OpenCode's 750 ms terminal-looking debounce and the 900 ms lifecycle settle window.
-  // A pending native permission is a waiting state, not a completed/interrupted turn.
-  await page.waitForTimeout(1_300)
+async function assertPendingNeverTerminalizes(page, label, duration = 1_300) {
+  // One scenario intentionally waits through two normal 5s reconcile ticks. This makes the test an
+  // invariant rather than an event-edge test: an unresolved native permission must remain waiting
+  // even if /session/status looks idle for long enough to pass OpenCode's terminal debounce twice.
+  await page.waitForTimeout(duration)
   assert.equal(
     await page.getByText("Response interrupted", { exact: true }).count(),
     0,
-    `${label}: permission.asked must never manufacture a terminal interruption before a decision`
+    `${label}: unresolved authorization must never become a terminal interruption`
   )
   assert.equal(
     await page.getByText("The coding agent stopped before producing a final answer.", { exact: true }).count(),
@@ -394,6 +395,11 @@ async function assertPendingNeverTerminalizes(page, label) {
 }
 
 async function assertAttentionSurvivesOpen(page) {
+  // On mobile the Session detail intentionally covers the list. Use the product's real Back control
+  // instead of force-clicking through the overlay; desktop keeps both panes visible and skips this.
+  const back = page.getByRole("button", { name: "Back to Sessions" })
+  if (await back.isVisible().catch(() => false)) await back.click()
+
   const attentionTab = page.getByRole("button", { name: /Attention\s+1/ }).first()
   await attentionTab.waitFor({ state: "visible", timeout: 3_000 })
   await attentionTab.click()
@@ -424,7 +430,7 @@ async function runScenario(browser, viewport, label) {
 
   await send(page, DENY_PROMPT)
   await waitForPermission(page)
-  await assertPendingNeverTerminalizes(page, `${label} deny`)
+  await assertPendingNeverTerminalizes(page, `${label} deny`, 11_500)
   await assertAttentionSurvivesOpen(page)
 
   await page.getByRole("button", { name: "Deny" }).click()
@@ -441,8 +447,12 @@ async function runScenario(browser, viewport, label) {
 
   // Return to All before the next Send; the important point is that the same Session stayed mounted
   // through the first resolution. No reload or navigation-away recovery has occurred.
+  const back = page.getByRole("button", { name: "Back to Sessions" })
+  if (await back.isVisible().catch(() => false)) await back.click()
   const allTab = page.getByRole("button", { name: /All\s+\d+/ }).first()
   if (await allTab.count()) await allTab.click()
+  const row = page.getByRole("button", { name: new RegExp(`Open ${SESSION_TITLE}`) })
+  if (await row.isVisible().catch(() => false)) await row.click()
 
   await send(page, ALLOW_PROMPT)
   await waitForPermission(page)
@@ -487,7 +497,7 @@ try {
   browser = await chromium.launch({ headless: true })
   await runScenario(browser, { width: 1366, height: 768 }, "desktop")
   await runScenario(browser, { width: 412, height: 915 }, "mobile")
-  console.log("native OpenCode permission regression smoke: pending, Attention persistence, deny, allow and mounted convergence passed")
+  console.log("native OpenCode permission regression smoke: long pending, Attention persistence, deny, allow and mounted convergence passed")
 } finally {
   if (browser) await browser.close().catch(() => {})
   for (const response of sseResponses || []) {
