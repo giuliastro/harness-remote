@@ -73,13 +73,13 @@ export function NativeSessionOutcomePanel({
       try {
         const projects = await listMachineProjects(target.config)
         const projectRoute = resolveSourceSessionProject(target, projects)
-        if (!projectRoute || projectRoute.project.kind !== "git") {
+        if (!projectRoute || projectRoute.kind !== "git") {
           if (!disposed && generation === generationRef.current) setView(null)
           return
         }
-        const outcome = await loadMachineProjectOutcome(target.config, projectRoute.project.id)
+        const outcome = await loadMachineProjectOutcome(target.config, projectRoute.id)
         if (!disposed && generation === generationRef.current) {
-          setView(outcome ? { projectName: projectRoute.project.name, outcome } : null)
+          setView(outcome ? { projectName: projectRoute.name, outcome } : null)
         }
       } catch (reason) {
         if (!disposed && generation === generationRef.current) {
