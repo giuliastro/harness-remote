@@ -29,7 +29,8 @@ assert.match(source, /Needs input/, "question-driven recoverable attention must 
 assert.match(source, /Request rejected/, "rejected\/fail-closed attention must not look retryable")
 assert.match(source, /This request was rejected and will not proceed automatically/, "rejected attention must explain that it will not resume by itself")
 assert.match(source, /counts\.authorization[\s\S]*counts\.recoverable[\s\S]*counts\.rejected/, "the heading must expose severity-specific counts")
-assert.match(source, /baseAttentionCount \+ counts\.total/, "the mobile badge must continue to include all explicit Inbox entries")
+assert.match(source, /inbox\.map\(\(entry\) => sessionKey\(entry\.target, entry\.item\.sessionID\)\)/, "every explicit Inbox entry must contribute its canonical Session identity to the mobile badge")
+assert.match(source, /mergedAttentionSessionCount\(baseAttentionKeys, inboxSessionKeys\)/, "the mobile badge must include Inbox attention without double-counting Sessions already marked by the rail")
 assert.doesNotMatch(source, /loadMessagePage|continueConversation|stopConversation|startTaskDeskSessionLiveRefresh/, "severity presentation must stay outside transcript and writer paths")
 
 const css = readFileSync(new URL("./native-session-attention-inbox.css", import.meta.url), "utf8")

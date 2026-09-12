@@ -1,6 +1,7 @@
 import assert from "node:assert/strict"
 import { readFileSync } from "node:fs"
 import { appendCursorPage, refreshCursorPage, sessionTreeRows } from "./components/native-session-home.tsx"
+import { mergedAttentionSessionCount } from "./components/native-session-home-attention.tsx"
 import { canCreateNativeSession } from "./native-session-create.ts"
 import { classifyNativeSessionAttention, sessionNeedsAttention } from "./native-session-attention.ts"
 
@@ -159,11 +160,18 @@ for (const type of ["working", "waiting", "retry", "busy", "running", "in_progre
   assert.equal(classifyNativeSessionAttention({ status: { type } }).kind, "none", `${type} must not be promoted into attention without evidence`)
 }
 
+assert.equal(mergedAttentionSessionCount(
+  new Set(["machine:agent:one", "machine:agent:two"]),
+  new Set(["machine:agent:two", "machine:agent:three"])
+), 3, "the nav attention count must be a Session-identity union rather than double-counting Inbox overlap")
+
 const source = readFileSync(new URL("./components/native-session-home-base.tsx", import.meta.url), "utf8")
 assert.match(source, /presentationOverrides/, "live detail status must survive selecting another Session")
 assert.match(source, /\{ \.\.\.current, \[selectedKey\]: selectedState \}/, "the status bridge must be keyed by native Session identity")
 assert.match(source, /setPresentationOverrides\(\{\}\)[\s\S]*setRecords\(uniqueSessionRecords/, "a successful native discovery must retire temporary presentation overrides")
 assert.match(source, /presentationOverrides\[targetKey\]/, "non-selected rows must retain their last observed live state until discovery reconciles them")
+assert.match(source, /attentionSessionKeys\?\.has\(targetKey\)[\s\S]*return "attention"/, "structured pending requests must override stale discovery state in the federated rail")
+assert.match(source, /onAttentionKeysChange\?\.\(attentionKeys\)/, "the rail must expose attention identities so global counts can be deduplicated")
 assert.match(source, /createMachineID/, "native Session creation must have an explicit machine selection independent of the list filter")
 assert.match(source, /createMachines\.map/, "the create panel must render the available machine choices")
 assert.match(source, /selectedActivityAnchor/, "the currently open Session must keep a stable activity ordering anchor")
@@ -193,6 +201,8 @@ assert.match(inboxSource, /loadNativeSessionAttentionIndex/, "the global Inbox m
 assert.match(inboxSource, /startNativeSessionAttentionLiveRefresh/, "the global Inbox must use its dedicated attention event path")
 assert.match(inboxSource, /!result\.complete && previous[\s\S]*items: previous\.index\.items/, "a partial refresh must fail closed and preserve known pending attention")
 assert.match(inboxSource, /openAttentionSession[\s\S]*discoverAgentNativeSessionPage/, "native history lookup must happen only when a user opens an Inbox item or notification")
+assert.match(inboxSource, /attentionSessionKeys=\{inboxSessionKeys\}/, "the Inbox must feed pending Session identities into the existing federated filter instead of starting a second discovery path")
+assert.match(inboxSource, /mergedAttentionSessionCount\(baseAttentionKeys, inboxSessionKeys\)/, "mobile nav attention must union native and Inbox identities")
 assert.match(inboxSource, /Authorization required/, "global permissions must remain visibly distinct from generic attention")
 assert.doesNotMatch(inboxSource, /startTaskDeskSessionLiveRefresh|loadMessagePage|continueConversation|stopConversation/, "global attention must stay outside transcript and Session writer paths")
 

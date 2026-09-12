@@ -16,7 +16,8 @@ import "../native-session-attention-inbox.css"
 export { appendCursorPage, refreshCursorPage, sessionTreeRows } from "./native-session-home-base"
 export type { CursorPageState } from "./native-session-home-base"
 
-type Props = ComponentProps<typeof NativeSessionHomeBase>
+type BaseProps = ComponentProps<typeof NativeSessionHomeBase>
+type Props = Omit<BaseProps, "attentionSessionKeys" | "onAttentionKeysChange">
 
 type AttentionTarget = NativeSessionAttentionLiveTarget & {
   machineID: string
@@ -125,6 +126,12 @@ export function attentionInboxCounts(items: NativeSessionAttentionIndexItem[]): 
   }, { authorization: 0, recoverable: 0, rejected: 0, total: 0 })
 }
 
+export function mergedAttentionSessionCount(...groups: ReadonlySet<string>[]): number {
+  const keys = new Set<string>()
+  for (const group of groups) for (const key of group) keys.add(key)
+  return keys.size
+}
+
 /**
  * Compose the mature Session browser with the global attention read model without changing its
  * pagination, ordering or writer semantics. Attention has its own tiny refresh loop and event path;
@@ -135,7 +142,7 @@ export function NativeSessionHome(props: Props) {
   const [knownTargets, setKnownTargets] = useState<Record<string, NativeSessionSurfaceTarget>>({})
   const [openingKey, setOpeningKey] = useState<string | null>(null)
   const [openError, setOpenError] = useState<string | null>(null)
-  const [baseAttentionCount, setBaseAttentionCount] = useState(0)
+  const [baseAttentionKeys, setBaseAttentionKeys] = useState<ReadonlySet<string>>(() => new Set())
   const generationRef = useRef(0)
   const notificationStateRef = useRef<NativeSessionAttentionNotificationState>({
     scopes: { ...EMPTY_NATIVE_SESSION_ATTENTION_NOTIFICATION_STATE.scopes }
@@ -290,11 +297,18 @@ export function NativeSessionHome(props: Props) {
     ), [scopes])
 
   const counts = useMemo(() => attentionInboxCounts(inbox.map((entry) => entry.item)), [inbox])
+  const inboxSessionKeys = useMemo<ReadonlySet<string>>(() => new Set(
+    inbox.map((entry) => sessionKey(entry.target, entry.item.sessionID))
+  ), [inbox])
+  const totalAttentionCount = useMemo(
+    () => mergedAttentionSessionCount(baseAttentionKeys, inboxSessionKeys),
+    [baseAttentionKeys, inboxSessionKeys]
+  )
   const incomplete = Object.values(scopes).some((scope) => !scope.index.complete)
 
   useEffect(() => {
-    props.onAttentionCountChange?.(baseAttentionCount + counts.total)
-  }, [baseAttentionCount, counts.total, props.onAttentionCountChange])
+    props.onAttentionCountChange?.(totalAttentionCount)
+  }, [props.onAttentionCountChange, totalAttentionCount])
 
   return (
     <>
@@ -345,7 +359,13 @@ export function NativeSessionHome(props: Props) {
           {openError ? <div className="hr-native-attention-error" role="alert">{openError}</div> : null}
         </section>
       ) : null}
-      <NativeSessionHomeBase {...props} onAttentionCountChange={setBaseAttentionCount} onOpen={rememberAndOpen} />
+      <NativeSessionHomeBase
+        {...props}
+        attentionSessionKeys={inboxSessionKeys}
+        onAttentionCountChange={() => {}}
+        onAttentionKeysChange={setBaseAttentionKeys}
+        onOpen={rememberAndOpen}
+      />
     </>
   )
 }

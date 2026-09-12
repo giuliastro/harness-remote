@@ -26,8 +26,9 @@ assert.match(homeBase, /hr-native-project-group/, 'Session navigation must prese
 assert.match(homeBase, /hr-native-session-row/, 'Session navigation must render native Session rows')
 assert.match(attentionInbox, /loadNativeSessionAttentionIndex/, 'the Inbox must use the capability-driven attention read model')
 assert.match(attentionInbox, /startNativeSessionAttentionLiveRefresh/, 'the Inbox must use its dedicated capability-scoped live refresh')
-assert.match(attentionInbox, /baseAttentionCount \+ counts\.total/, 'mobile navigation must carry explicit global attention as well as legacy rail attention')
-assert.match(attentionInbox, /onAttentionCountChange=\{setBaseAttentionCount\}/, 'the wrapper must intercept the base count before forwarding the combined badge count')
+assert.match(attentionInbox, /mergedAttentionSessionCount\(baseAttentionKeys, inboxSessionKeys\)/, 'mobile navigation must union explicit global and rail attention without double-counting a Session')
+assert.match(attentionInbox, /onAttentionKeysChange=\{setBaseAttentionKeys\}/, 'the wrapper must receive base attention identities before forwarding the deduplicated badge count')
+assert.match(attentionInbox, /attentionSessionKeys=\{inboxSessionKeys\}/, 'pending structured attention must feed the existing federated Session rail')
 assert.doesNotMatch(attentionInbox, /startTaskDeskSessionLiveRefresh|loadMessagePage|continueConversation|stopConversation/, 'global attention must not reuse transcript or Session writer paths')
 
 assert.match(observer, /<WorkThreadConversation/, 'native Session detail must reuse the mature v3 controller')
