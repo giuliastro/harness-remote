@@ -60,8 +60,6 @@ test("pending permission/question never masquerades as terminal lifecycle", () =
   assert.match(attentionLifecycle, /throttle\("index", [^,]+, onIndex\)/)
   assert.match(attentionLifecycle, /settleAfterLifecycle\(\)/)
 
-  // The index/terminal reconciliation is nested under the resolution guard. An asked event can
-  // refresh the visible request and transcript, but it cannot by itself complete the Conversation.
   const resolutionGuard = attentionLifecycle.indexOf("if (isAttentionResolutionEvent(event.type))")
   assert.ok(resolutionGuard >= 0)
   assert.ok(attentionLifecycle.indexOf('throttle("index"', resolutionGuard) > resolutionGuard)
@@ -76,7 +74,6 @@ test("OpenCode reliability regressions stay in the required browser gate", () =>
   const realSmoke = readFileSync(new URL("../scripts/native-opencode-real-regression-smoke.mjs", import.meta.url), "utf8")
   const permissionSmoke = readFileSync(new URL("../scripts/native-opencode-permission-regression-smoke.mjs", import.meta.url), "utf8")
 
-  // Historical regressions remain executable rather than being replaced by the newest scenario.
   for (const marker of [
     "OPENCODE-TRANSIENT-INTERRUPTION-PROMPT",
     "OPENCODE-LATE-RECOVERY-PROMPT",
@@ -87,16 +84,13 @@ test("OpenCode reliability regressions stay in the required browser gate", () =>
   assert.match(realSmoke, /mounted completion lag/)
   assert.match(realSmoke, /without navigation/)
 
-  // Permission regression reproduces a terminal-looking status while permission is pending, checks
-  // Attention persistence, verifies the exact native reject/once replies and proves both deny and
-  // allow converge while the same Session remains mounted.
   assert.match(permissionSmoke, /permission\.asked/)
   assert.match(permissionSmoke, /permission\.replied/)
   assert.match(permissionSmoke, /Response interrupted/)
   assert.match(permissionSmoke, /reply: "reject"/)
   assert.match(permissionSmoke, /reply: "once"/)
   assert.match(permissionSmoke, /opening an unresolved Session must not consume Attention/)
-  assert.match(permissionSmoke, /denied permission must not leave mounted Activity running/)
+  assert.match(permissionSmoke, /permission resolution left mounted Activity running/)
   assert.doesNotMatch(permissionSmoke, /page\.reload\(/)
 
   for (const script of [
@@ -109,22 +103,17 @@ test("OpenCode reliability regressions stay in the required browser gate", () =>
 test("foregrounding the app immediately reconciles durable conversation state", () => {
   const refresh = readFileSync(new URL("./taskdesk-session-live-refresh.ts", import.meta.url), "utf8")
 
-  // Android may keep the native SSE reader alive while WebView JavaScript is suspended, so events
-  // produced in the background cannot be the only way the renderer catches up on resume.
   assert.match(refresh, /CapacitorApp\.addListener\("appStateChange"/)
   assert.match(refresh, /if \(isActive\) reconcileAfterForeground\(\)/)
   assert.match(refresh, /document\.addEventListener\("visibilitychange", onVisibilityChange\)/)
   assert.match(refresh, /window\.addEventListener\("pageshow", onPageShow\)/)
 
-  // Resume must re-read both authoritative Conversation state and the selected transcript/attention
-  // surfaces. It must not resend a prompt or depend on a new live event arriving.
   const foreground = refresh.match(/const reconcileAfterForeground = \(\) => \{[\s\S]*?\n  \}/)?.[0] || ""
   assert.match(foreground, /onIndex\(\)/)
   assert.match(foreground, /onMessage\(\)/)
   assert.match(foreground, /onDetail\(\)/)
   assert.doesNotMatch(foreground, /send|prompt|continueWorkThread/)
 
-  // Lifecycle listeners cannot accumulate as Conversations are opened and closed.
   assert.match(refresh, /document\.removeEventListener\("visibilitychange", onVisibilityChange\)/)
   assert.match(refresh, /window\.removeEventListener\("pageshow", onPageShow\)/)
   assert.match(refresh, /appStateHandle.*remove\(\)/)
