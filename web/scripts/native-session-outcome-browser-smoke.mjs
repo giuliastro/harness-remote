@@ -17,6 +17,7 @@ const REPLY = "OUTCOME-REFRESH-REPLY"
 let status = { type: "idle" }
 let outcomeVersion = 1
 let outcomeReads = 0
+let permissions = []
 const sseResponses = new Set()
 const messages = [
   {
@@ -24,7 +25,7 @@ const messages = [
     parts: [{ id: "history-user-text", type: "text", text: "OUTCOME-HISTORY-USER" }]
   },
   {
-    info: { id: "history-assistant", role: "assistant", sessionID: SESSION_ID, time: { created: 1_001 } },
+    info: { id: "history-assistant", role: "assistant", sessionID: SESSION_ID, time: { created: 1_001, completed: 1_001 } },
     parts: [{ id: "history-assistant-text", type: "text", text: "OUTCOME-HISTORY-REPLY" }]
   }
 ]
@@ -98,7 +99,7 @@ function startFakeDaemon() {
           transport: "acp",
           managed: true,
           state: "available",
-          capabilities: { sessions: true, prompt: true, abort: true, streaming: true, models: true },
+          capabilities: { sessions: true, prompt: true, abort: true, streaming: true, models: true, permissions: true, questions: true },
           contract: { sessions: { stop: "owned-session-native-cancel" } }
         }]
       })
@@ -155,7 +156,7 @@ function startFakeDaemon() {
     }
 
     if (request.method === "GET" && url.pathname === "/v1/agents/pi/v1/capabilities") {
-      json(response, 200, { sessions: true, prompt: true, abort: true, streaming: true, models: true, attachments: false, commands: false })
+      json(response, 200, { sessions: true, prompt: true, abort: true, streaming: true, models: true, attachments: false, commands: false, permissions: true, questions: true })
       return
     }
 
@@ -196,10 +197,18 @@ function startFakeDaemon() {
       emit("session.updated")
       setTimeout(() => {
         messages.push({
-          info: { id: `assistant-${requestId}`, role: "assistant", sessionID: SESSION_ID, time: { created: 2_001 } },
+          info: { id: `assistant-${requestId}`, role: "assistant", sessionID: SESSION_ID, time: { created: 2_001, completed: 2_001 } },
           parts: [{ id: `assistant-text-${requestId}`, type: "text", text: REPLY }]
         })
         outcomeVersion = 2
+        permissions = [{
+          id: "target-authorization-1",
+          sessionID: SESSION_ID,
+          permission: "bash",
+          patterns: ["deploy staging"],
+          metadata: { scope: "target-machine" },
+          always: []
+        }]
         status = { type: "idle" }
         emit("message.updated")
         emit("session.updated")
@@ -207,8 +216,13 @@ function startFakeDaemon() {
       return
     }
 
-    if (request.method === "GET" && (url.pathname.includes("/question") || url.pathname.includes("/permission"))) {
+    if (request.method === "GET" && url.pathname.includes("/question")) {
       json(response, 200, [])
+      return
+    }
+
+    if (request.method === "GET" && url.pathname.includes("/permission")) {
+      json(response, 200, permissions)
       return
     }
 
@@ -275,27 +289,29 @@ try {
   await page.getByRole("button", { name: /Outcome refresh Session/ }).click()
   await page.locator(".hr-native-session-observer").waitFor({ state: "visible", timeout: 12_000 })
 
-  const outcomePanel = page.getByRole("region", { name: "Project outcome" })
+  const outcomePanel = page.getByRole("region", { name: "Session outcome" })
   await outcomePanel.waitFor({ state: "visible", timeout: 12_000 })
-  await outcomePanel.getByText(/feature\/outcome-review · Dirty · 1 changed file/).waitFor({ state: "visible" })
+  await outcomePanel.getByText(/Completed · feature\/outcome-review · Dirty · 1 changed file/).waitFor({ state: "visible", timeout: 12_000 })
   assert.equal(outcomeReads, 1, "Session open should perform one Project outcome read")
 
   await outcomePanel.getByRole("button").click()
   await outcomePanel.getByText("src/before.ts", { exact: true }).waitFor({ state: "visible" })
+  await outcomePanel.getByText(/no pending authorization or question/i).waitFor({ state: "visible" })
 
   const composer = page.getByRole("textbox", { name: "Message PI" })
   await composer.fill(PROMPT)
   const send = page.getByRole("button", { name: "Send" })
   await send.click()
   await page.getByText(REPLY, { exact: true }).waitFor({ state: "visible", timeout: 12_000 })
-  await outcomePanel.getByText(/2 changed files/).waitFor({ state: "visible", timeout: 12_000 })
+  await outcomePanel.getByText(/Needs authorization · feature\/outcome-review · Dirty · 2 changed files/).waitFor({ state: "visible", timeout: 12_000 })
   await outcomePanel.getByText("src/after.ts", { exact: true }).waitFor({ state: "visible" })
+  await outcomePanel.getByText(/1 target-side authorization request is pending/i).waitFor({ state: "visible" })
 
   assert.ok(outcomeReads >= 2, "Project outcome must refresh after a completed native turn")
   assert.ok(outcomeReads <= 3, `Project outcome must not poll per token/event; reads=${outcomeReads}`)
   assert.deepEqual(pageErrors, [], `browser errors: ${pageErrors.map(String).join(" | ")}`)
   await context.close()
-  console.log("native Session Project outcome browser smoke passed")
+  console.log("native Session structured outcome browser smoke passed")
 } finally {
   await browser?.close().catch(() => undefined)
   stopPreview(preview)

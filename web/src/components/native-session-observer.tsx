@@ -246,6 +246,7 @@ export function NativeSessionObserver({
 
       <NativeSessionOutcomePanel
         target={target}
+        conversation={conversation}
         working={nativeSessionIsWorking(conversation.status)}
         interactionEnabled={interactionEnabled}
         onConnectionIssue={onConnectionIssue}

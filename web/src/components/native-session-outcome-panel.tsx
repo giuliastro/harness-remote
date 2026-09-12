@@ -1,7 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from "react"
+import { api } from "../api"
+import type { ConversationRuntime } from "../conversation-runtime"
 import { listMachineProjects } from "../machineClient"
 import { resolveSourceSessionProject } from "../cross-machine-route-projects"
 import type { NativeSessionSurfaceTarget } from "../native-session-discovery"
+import {
+  nativeSessionReviewEvidence,
+  type NativeSessionReviewAttention
+} from "../native-session-review-evidence"
 import {
   loadMachineProjectOutcome,
   type MachineProjectOutcome,
@@ -10,21 +16,34 @@ import {
 import "../native-session-outcome.css"
 
 const MAX_VISIBLE_FILES = 12
+const UNKNOWN_ATTENTION: NativeSessionReviewAttention = { complete: false, questions: 0, permissions: 0 }
 
 type Props = {
   target: NativeSessionSurfaceTarget
+  conversation: ConversationRuntime
   working: boolean
   interactionEnabled?: boolean
   onConnectionIssue?: () => void
 }
 
-type OutcomeView = {
+type ProjectOutcomeView = {
   projectName: string
   outcome: MachineProjectOutcome
 }
 
+type OutcomeView = {
+  project?: ProjectOutcomeView
+  attention: NativeSessionReviewAttention
+}
+
+type AttentionLoad = {
+  questions?: number
+  permissions?: number
+  connectionIssue: boolean
+}
+
 function connectionFailure(reason: unknown): boolean {
-  return /cannot reach|timed out|network|connection/i.test(reason instanceof Error ? reason.message : String(reason))
+  return /cannot reach|timed out|network|connection|failed to fetch/i.test(reason instanceof Error ? reason.message : String(reason))
 }
 
 function fileStatus(file: MachineProjectOutcomeFile): string {
@@ -49,8 +68,35 @@ function outcomeState(outcome: MachineProjectOutcome): string {
   return "Worktree unverified"
 }
 
+async function loadProjectOutcome(target: NativeSessionSurfaceTarget): Promise<ProjectOutcomeView | null> {
+  const projects = await listMachineProjects(target.config)
+  const projectRoute = resolveSourceSessionProject(target, projects)
+  if (!projectRoute || projectRoute.kind !== "git") return null
+  const outcome = await loadMachineProjectOutcome(target.config, projectRoute.id)
+  return outcome ? { projectName: projectRoute.name, outcome } : null
+}
+
+async function loadAttentionEvidence(target: NativeSessionSurfaceTarget): Promise<AttentionLoad> {
+  const [questionResult, permissionResult] = await Promise.allSettled([
+    api.loadQuestions(target.config, target.directory),
+    api.loadPermissions(target.config, target.directory)
+  ])
+  return {
+    ...(questionResult.status === "fulfilled" ? {
+      questions: questionResult.value.filter((request) => request.sessionID === target.sessionID).length
+    } : {}),
+    ...(permissionResult.status === "fulfilled" ? {
+      permissions: permissionResult.value.filter((request) => request.sessionID === target.sessionID).length
+    } : {}),
+    connectionIssue:
+      (questionResult.status === "rejected" && connectionFailure(questionResult.reason))
+      || (permissionResult.status === "rejected" && connectionFailure(permissionResult.reason))
+  }
+}
+
 export function NativeSessionOutcomePanel({
   target,
+  conversation,
   working,
   interactionEnabled = true,
   onConnectionIssue
@@ -65,45 +111,70 @@ export function NativeSessionOutcomePanel({
   }, [target.key])
 
   useEffect(() => {
-    if (!interactionEnabled || working) return
+    if (!interactionEnabled || working) {
+      // The previous idle snapshot cannot certify the next turn or a disconnected target. Keep the
+      // Project snapshot visible, but invalidate attention immediately so stale absence of a gate can
+      // never flash/retain "Completed" before fresh permission/question reads are possible.
+      setView((current) => current && current.attention.complete
+        ? { ...current, attention: { ...current.attention, complete: false } }
+        : current)
+      return
+    }
     const generation = ++generationRef.current
     let disposed = false
 
     void (async () => {
-      try {
-        const projects = await listMachineProjects(target.config)
-        const projectRoute = resolveSourceSessionProject(target, projects)
-        if (!projectRoute || projectRoute.kind !== "git") {
-          if (!disposed && generation === generationRef.current) setView(null)
-          return
-        }
-        const outcome = await loadMachineProjectOutcome(target.config, projectRoute.id)
-        if (!disposed && generation === generationRef.current) {
-          setView(outcome ? { projectName: projectRoute.name, outcome } : null)
-        }
-      } catch (reason) {
-        if (!disposed && generation === generationRef.current) {
-          if (connectionFailure(reason)) onConnectionIssue?.()
-          // Outcome is optional enrichment. A failed read must never replace a previously useful
-          // snapshot with invented clean/empty state or make the native Session unusable.
-        }
-      }
+      const [projectResult, attentionResult] = await Promise.allSettled([
+        loadProjectOutcome(target),
+        loadAttentionEvidence(target)
+      ])
+      if (disposed || generation !== generationRef.current) return
+
+      if (projectResult.status === "rejected" && connectionFailure(projectResult.reason)) onConnectionIssue?.()
+      if (attentionResult.status === "rejected" && connectionFailure(attentionResult.reason)) onConnectionIssue?.()
+      if (attentionResult.status === "fulfilled" && attentionResult.value.connectionIssue) onConnectionIssue?.()
+
+      setView((current) => {
+        const project = projectResult.status === "fulfilled"
+          ? projectResult.value ?? undefined
+          : current?.project
+        const previousAttention = current?.attention ?? UNKNOWN_ATTENTION
+        const attention = attentionResult.status === "fulfilled"
+          ? {
+              complete: attentionResult.value.questions !== undefined && attentionResult.value.permissions !== undefined,
+              questions: attentionResult.value.questions ?? previousAttention.questions,
+              permissions: attentionResult.value.permissions ?? previousAttention.permissions
+            }
+          : { ...previousAttention, complete: false }
+        return { ...(project ? { project } : {}), attention }
+      })
     })()
 
     return () => { disposed = true }
-  }, [target.key, target.config, working, interactionEnabled, onConnectionIssue])
+  }, [target.key, target.config, target.directory, target.sessionID, working, interactionEnabled, onConnectionIssue])
 
-  const visibleFiles = useMemo(() => view?.outcome.files?.slice(0, MAX_VISIBLE_FILES) ?? [], [view])
-  if (!view) return null
+  const review = useMemo(
+    () => nativeSessionReviewEvidence(conversation, view?.attention ?? UNKNOWN_ATTENTION),
+    [conversation, view?.attention]
+  )
+  const outcome = view?.project?.outcome
+  const visibleFiles = useMemo(() => outcome?.files?.slice(0, MAX_VISIBLE_FILES) ?? [], [outcome])
+  if (!outcome && !review) return null
 
-  const { outcome, projectName } = view
-  const total = outcome.totalChangedFiles
+  const projectName = view?.project?.projectName
+  const total = outcome?.totalChangedFiles
   const hiddenCount = total === undefined ? 0 : Math.max(0, total - visibleFiles.length)
-  const branchOrHead = outcome.branch || (outcome.head ? outcome.head.slice(0, 8) : "Git Project")
-  const state = outcomeState(outcome)
+  const branchOrHead = outcome?.branch || (outcome?.head ? outcome.head.slice(0, 8) : undefined)
+  const state = outcome ? outcomeState(outcome) : undefined
+  const summary = [
+    review?.label,
+    branchOrHead,
+    state,
+    total !== undefined ? `${total} changed ${total === 1 ? "file" : "files"}` : undefined
+  ].filter(Boolean).join(" · ")
 
   return (
-    <section className="hr-native-outcome" aria-label="Project outcome">
+    <section className="hr-native-outcome" aria-label="Session outcome">
       <button
         type="button"
         className="hr-native-outcome-toggle"
@@ -111,42 +182,59 @@ export function NativeSessionOutcomePanel({
         onClick={() => setExpanded((current) => !current)}
       >
         <span className="hr-native-outcome-title">
-          <strong>Project outcome</strong>
-          <small>{projectName}</small>
+          <strong>{outcome ? "Project outcome" : "Session outcome"}</strong>
+          {projectName ? <small>{projectName}</small> : null}
         </span>
-        <span className={`hr-native-outcome-summary ${outcome.dirty === true ? "dirty" : outcome.dirty === false ? "clean" : "unverified"}`}>
-          {branchOrHead} · {state}{total !== undefined ? ` · ${total} changed ${total === 1 ? "file" : "files"}` : ""}
+        <span className={`hr-native-outcome-summary ${outcome?.dirty === true ? "dirty" : outcome?.dirty === false ? "clean" : "unverified"}`}>
+          {summary}
         </span>
       </button>
 
       {expanded ? (
         <div className="hr-native-outcome-body">
-          <div className="hr-native-outcome-facts">
-            {outcome.branch ? <span>Branch <strong>{outcome.branch}</strong></span> : null}
-            {outcome.head ? <span>HEAD <strong>{outcome.head.slice(0, 8)}</strong></span> : null}
-            <span>Worktree <strong>{state}</strong></span>
-          </div>
-
-          {outcome.dirty === true && visibleFiles.length ? (
-            <div className="hr-native-outcome-files" aria-label="Changed files">
-              {visibleFiles.map((file, index) => (
-                <div className="hr-native-outcome-file" key={`${file.path}:${file.originalPath ?? ""}:${index}`}>
-                  <span>{fileStatus(file)}</span>
-                  <code title={fileLabel(file)}>{fileLabel(file)}</code>
-                </div>
-              ))}
-            </div>
+          {review ? (
+            <>
+              <div className="hr-native-outcome-facts" aria-label="Session review evidence">
+                <span>Session <strong>{review.label}</strong></span>
+                {view?.attention.permissions ? <span>Authorization <strong>{view.attention.permissions} pending</strong></span> : null}
+                {view?.attention.questions ? <span>Questions <strong>{view.attention.questions} pending</strong></span> : null}
+              </div>
+              <p className="hr-native-outcome-note">
+                {review.summary}{review.detail ? ` ${review.detail}` : ""} {review.nextAction}
+              </p>
+            </>
           ) : null}
 
-          {outcome.dirty === false ? (
-            <p className="hr-native-outcome-note">No local worktree changes are currently reported by Git.</p>
-          ) : outcome.dirty === undefined ? (
-            <p className="hr-native-outcome-note">Git branch or HEAD is known, but worktree status could not be verified.</p>
-          ) : hiddenCount > 0 || outcome.filesTruncated ? (
-            <p className="hr-native-outcome-note">
-              {visibleFiles.length ? `${visibleFiles.length} file names shown. ` : ""}
-              {hiddenCount > 0 ? `${hiddenCount} additional changed ${hiddenCount === 1 ? "file is" : "files are"} omitted by safety or display bounds.` : "Additional file names are omitted by safety or display bounds."}
-            </p>
+          {outcome ? (
+            <>
+              <div className="hr-native-outcome-facts">
+                {outcome.branch ? <span>Branch <strong>{outcome.branch}</strong></span> : null}
+                {outcome.head ? <span>HEAD <strong>{outcome.head.slice(0, 8)}</strong></span> : null}
+                <span>Worktree <strong>{state}</strong></span>
+              </div>
+
+              {outcome.dirty === true && visibleFiles.length ? (
+                <div className="hr-native-outcome-files" aria-label="Changed files">
+                  {visibleFiles.map((file, index) => (
+                    <div className="hr-native-outcome-file" key={`${file.path}:${file.originalPath ?? ""}:${index}`}>
+                      <span>{fileStatus(file)}</span>
+                      <code title={fileLabel(file)}>{fileLabel(file)}</code>
+                    </div>
+                  ))}
+                </div>
+              ) : null}
+
+              {outcome.dirty === false ? (
+                <p className="hr-native-outcome-note">No local worktree changes are currently reported by Git.</p>
+              ) : outcome.dirty === undefined ? (
+                <p className="hr-native-outcome-note">Git branch or HEAD is known, but worktree status could not be verified.</p>
+              ) : hiddenCount > 0 || outcome.filesTruncated ? (
+                <p className="hr-native-outcome-note">
+                  {visibleFiles.length ? `${visibleFiles.length} file names shown. ` : ""}
+                  {hiddenCount > 0 ? `${hiddenCount} additional changed ${hiddenCount === 1 ? "file is" : "files are"} omitted by safety or display bounds.` : "Additional file names are omitted by safety or display bounds."}
+                </p>
+              ) : null}
+            </>
           ) : null}
         </div>
       ) : null}
