@@ -1,6 +1,6 @@
 import assert from "node:assert/strict"
 import test from "node:test"
-import { buildPortableHandoffState } from "./portable-handoff-state.ts"
+import { buildPortableHandoffState, parsePortableHandoffState } from "./portable-handoff-state.ts"
 
 function source(overrides = {}) {
   return {
@@ -29,6 +29,23 @@ function preflight(overrides = {}) {
     },
     ...overrides
   }
+}
+
+function exactState() {
+  return buildPortableHandoffState(source(), preflight({
+    decision: "automatic",
+    reason: "exact_workspace",
+    assessment: {
+      project: "match",
+      repository: "match",
+      history: "match",
+      branch: "match",
+      head: "match",
+      sourceDirty: false,
+      targetDirty: false,
+      exactWorkspace: true
+    }
+  }))
 }
 
 test("portable handoff state carries task identity and Project evidence without authority or paths", () => {
@@ -66,20 +83,7 @@ test("portable handoff state carries task identity and Project evidence without 
 })
 
 test("portable evidence records classification, never raw branch or HEAD values", () => {
-  const state = buildPortableHandoffState(source(), preflight({
-    decision: "automatic",
-    reason: "exact_workspace",
-    assessment: {
-      project: "match",
-      repository: "match",
-      history: "match",
-      branch: "match",
-      head: "match",
-      sourceDirty: false,
-      targetDirty: false,
-      exactWorkspace: true
-    }
-  }))
+  const state = exactState()
   assert.equal(state.project.decision, "automatic")
   assert.equal(state.project.evidence.branch, "match")
   assert.equal(state.project.evidence.head, "match")
@@ -93,4 +97,35 @@ test("blocked Project continuity can never be serialized for a handoff", () => {
     () => buildPortableHandoffState(source(), preflight({ decision: "blocked", reason: "project_mismatch" })),
     /cannot produce portable handoff state/
   )
+})
+
+test("recovered automatic state must be internally consistent with exact workspace evidence", () => {
+  const exact = exactState()
+  assert.deepEqual(parsePortableHandoffState(exact), exact)
+  assert.equal(parsePortableHandoffState({
+    ...exact,
+    project: {
+      ...exact.project,
+      evidence: { ...exact.project.evidence, targetDirty: true }
+    }
+  }), null)
+  assert.equal(parsePortableHandoffState({
+    ...exact,
+    project: {
+      ...exact.project,
+      evidence: { ...exact.project.evidence, repository: "unverified" }
+    }
+  }), null)
+})
+
+test("recovered review state cannot claim exact workspace continuity", () => {
+  const review = buildPortableHandoffState(source(), preflight())
+  assert.deepEqual(parsePortableHandoffState(review), review)
+  assert.equal(parsePortableHandoffState({
+    ...review,
+    project: {
+      ...review.project,
+      evidence: { ...review.project.evidence, exactWorkspace: true }
+    }
+  }), null)
 })
