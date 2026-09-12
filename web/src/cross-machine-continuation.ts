@@ -386,13 +386,17 @@ export async function continueNativeSessionAcrossMachine({
   }
 
   const routedTarget = targetSurface(source, pending, targetMachine, targetAgent, sourceMessages)
+  const durablePortableState = pending.portableState
+  if (!durablePortableState) {
+    throw new Error("The target Session exists, but its portable handoff state is unavailable. Retry the same destination before sending the first prompt.")
+  }
   const link: NativeSessionLinkRecord & { portableState: NativeSessionPortableHandoffState } = {
     type: "handoff",
     source: source.ref,
     target: pending.target,
     createdAt: new Date(pending.createdAt).toISOString(),
     ...(pending.transferredContext ? { transferredContext: pending.transferredContext } : {}),
-    portableState: pending.portableState
+    portableState: durablePortableState
   }
 
   // Replicate the same metadata edge to both machine-local stores. addHandoff is idempotent, so a
