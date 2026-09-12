@@ -39,10 +39,21 @@ test("target authorization outranks an otherwise completed turn", () => {
   assert.match(evidence.summary, /2 target-side authorization requests/)
 })
 
+test("known target authorization remains visible when the sibling attention read is unavailable", () => {
+  const evidence = nativeSessionReviewEvidence(conversation(), { complete: false, questions: 0, permissions: 1 })
+  assert.equal(evidence.state, "authorization")
+  assert.equal(evidence.label, "Needs authorization")
+})
+
 test("structured questions surface as required input", () => {
   const evidence = nativeSessionReviewEvidence(conversation(), { complete: true, questions: 1, permissions: 0 })
   assert.equal(evidence.state, "input")
   assert.match(evidence.nextAction, /Answer the pending question/)
+})
+
+test("known structured question remains visible when the sibling attention read is unavailable", () => {
+  const evidence = nativeSessionReviewEvidence(conversation(), { complete: false, questions: 1, permissions: 0 })
+  assert.equal(evidence.state, "input")
 })
 
 test("runtime failure uses structured error metadata and never transcript prose", () => {
