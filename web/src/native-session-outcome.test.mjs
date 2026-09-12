@@ -13,7 +13,7 @@ assert.equal(panel.includes("WorkThreadConversation"), false, "Project outcome m
 assert.ok(panel.includes("if (!interactionEnabled || working) return"), "Project outcome must pause while a turn is working or the machine is reconnecting")
 assert.ok(panel.includes("listMachineProjects(target.config)"), "outcome must resolve through the daemon canonical Project catalog")
 assert.ok(panel.includes("resolveSourceSessionProject(target, projects)"), "outcome must derive the local Project from the current Session only")
-assert.ok(panel.includes("loadMachineProjectOutcome(target.config, projectRoute.project.id)"), "outcome reads must use the catalog Project id, never a caller path")
+assert.ok(panel.includes("loadMachineProjectOutcome(target.config, projectRoute.id)"), "outcome reads must use the sanitized catalog Project id, never a caller path")
 assert.equal(panel.includes("loadDiff"), false, "generic outcome review must not depend on a harness-specific diff endpoint")
 assert.equal(panel.toLowerCase().includes("test passed"), false, "checks must not be inferred from transcript/UI prose")
 assert.ok(panel.includes("MAX_VISIBLE_FILES = 12"), "outcome UI must stay bounded even when the daemon returns a larger safe snapshot")
