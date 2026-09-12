@@ -8,6 +8,7 @@ import { DesktopEventTransport } from "./event-transport.js"
 import { IPC_CHANNELS, parseDesktopAttentionNotification, parseDesktopMenuTemplate } from "./ipc-contract.js"
 import { DesktopProfileError, ProfileRegistry } from "./profile-registry.js"
 import { executeDesktopRequest } from "./request-transport.js"
+import { resolveDesktopRuntimeEnvironment } from "./shell-path.js"
 import type { DesktopAttentionNotification, DesktopCompletionNotification, DesktopEventSubscriptionOptions, DesktopLocalRuntimeState, DesktopMenuCommand, DesktopRequest } from "./ipc-contract.js"
 import { MIN_WINDOW_HEIGHT, MIN_WINDOW_WIDTH, restoredBounds as calculateRestoredBounds } from "./window-state.js"
 const __dirname = dirname(fileURLToPath(import.meta.url))
@@ -358,6 +359,10 @@ async function start(): Promise<void> {
       appPath: app.getAppPath(),
       resourcesPath: process.resourcesPath
     }),
+    // Resolve PATH lazily on every start/retry. GUI-launched macOS/Linux apps frequently do not
+    // inherit the user's shell PATH, which is where Codex/Claude/OpenCode/OMP/PI are commonly
+    // installed. The resolver imports PATH only and falls back to process.env on any shell failure.
+    environment: () => resolveDesktopRuntimeEnvironment(),
     stateDirectory: join(app.getPath("userData"), "embedded-daemon"),
     onExit: embeddedDaemonExited
   })
