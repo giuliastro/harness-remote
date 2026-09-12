@@ -51,10 +51,11 @@ export function nativeSessionGateEvidence(
   const permission = permissions[0]
   if (permission) {
     const boundary = boundedBoundaries(permission.patterns || [])
+    const detail = permissionDetail(permission.metadata || {})
     return {
       kind: "authorization",
       label: compact(permission.permission, MAX_LABEL_LENGTH) || "Permission requested",
-      ...(permissionDetail(permission.metadata || {}) ? { detail: permissionDetail(permission.metadata || {}) } : {}),
+      ...(detail ? { detail } : {}),
       ...boundary
     }
   }
