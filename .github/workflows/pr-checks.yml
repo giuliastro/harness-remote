@@ -116,6 +116,7 @@ jobs:
           node scripts/native-opencode-browser-smoke.mjs
           node scripts/native-opencode-real-regression-smoke.mjs
           node scripts/native-session-model-switch-smoke.mjs
+          node scripts/native-session-outcome-browser-smoke.mjs
         working-directory: web
 
       - name: Run complete controls and screenshot smoke
