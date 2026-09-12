@@ -137,6 +137,9 @@ function sameProfile(left: DesktopProfile, right: DesktopProfile): boolean {
 /** Main-owned allowlist. Renderer profile mutation represents user-approved Settings state. */
 export class ProfileRegistry {
   private profiles = new Map<string, DesktopProfile>()
+  // Runtime profiles are deliberately process-local. In particular, the desktop-owned daemon uses
+  // ephemeral credentials that must never be serialized into desktop-profiles.json.
+  private runtimeProfiles = new Map<string, DesktopProfile>()
   private nextRevision = 0
   private writeQueue: Promise<void> = Promise.resolve()
 
@@ -157,6 +160,9 @@ export class ProfileRegistry {
     const profiles = validateDesktopProfiles(value)
     if (requestedRevision !== undefined && (!Number.isSafeInteger(requestedRevision) || requestedRevision < 1)) {
       throw new DesktopProfileError("Profile revision is invalid")
+    }
+    for (const profile of profiles) {
+      if (this.runtimeProfiles.has(profile.id)) throw new DesktopProfileError("Profile ID is owned by the desktop runtime")
     }
     // Renderer revisions are session-local and restart after a renderer reload. The queue defines
     // update order; main assigns the durable revision so a reloaded renderer cannot be mistaken for
@@ -192,6 +198,35 @@ export class ProfileRegistry {
     return operation
   }
 
+  /** Install or rotate a main-process-owned profile without ever touching persistent storage. */
+  setRuntimeProfile(value: unknown): ProfileRegistryChange {
+    const profile = validateDesktopProfile(value)
+    if (this.profiles.has(profile.id)) throw new DesktopProfileError("Runtime profile ID collides with a saved profile")
+    const previous = this.runtimeProfiles.get(profile.id)
+    this.runtimeProfiles.set(profile.id, profile)
+    const revision = ++this.nextRevision
+    return {
+      revision,
+      acceptedProfileIDs: this.ids(),
+      changedProfileIDs: previous && sameProfile(previous, profile) ? [] : [profile.id],
+      removedProfileIDs: [],
+      unchangedProfileIDs: previous && sameProfile(previous, profile) ? [profile.id] : []
+    }
+  }
+
+  /** Remove a volatile profile and tell live transports to close subscriptions that used it. */
+  clearRuntimeProfile(id: string): ProfileRegistryChange {
+    const removed = this.runtimeProfiles.delete(id)
+    const revision = ++this.nextRevision
+    return {
+      revision,
+      acceptedProfileIDs: this.ids(),
+      changedProfileIDs: [],
+      removedProfileIDs: removed ? [id] : [],
+      unchangedProfileIDs: []
+    }
+  }
+
   private changeFor(next: Map<string, DesktopProfile>, revision: number, previous = this.profiles): ProfileRegistryChange {
     const changedProfileIDs: string[] = []
     const removedProfileIDs: string[] = []
@@ -214,16 +249,16 @@ export class ProfileRegistry {
   }
 
   get(id: string): DesktopProfile {
-    const profile = this.profiles.get(id)
+    const profile = this.runtimeProfiles.get(id) ?? this.profiles.get(id)
     if (!profile) throw new DesktopProfileError("Unknown server profile")
     return profile
   }
 
   has(id: string): boolean {
-    return this.profiles.has(id)
+    return this.runtimeProfiles.has(id) || this.profiles.has(id)
   }
 
   ids(): string[] {
-    return [...this.profiles.keys()]
+    return [...this.runtimeProfiles.keys(), ...this.profiles.keys()]
   }
 }

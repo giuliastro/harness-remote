@@ -5,6 +5,8 @@ export const IPC_CHANNELS = Object.freeze({
   request: "desktop:request",
   subscribeEvents: "desktop:events:subscribe",
   unsubscribeEvents: "desktop:events:unsubscribe",
+  getLocalRuntime: "desktop:runtime:local:get",
+  retryLocalRuntime: "desktop:runtime:local:retry",
   notifyCompletion: "desktop:completion:notify",
   notifyAttention: "desktop:attention:notify",
   attentionActivated: "desktop:attention:activated",
@@ -20,6 +22,18 @@ export type DesktopProfileSyncResult = {
   removedProfileIDs: string[]
   unchangedProfileIDs: string[]
 }
+
+export type DesktopLocalRuntimeMachine = {
+  profileId: string
+  host: string
+  port: number
+  pid: number | null
+}
+
+export type DesktopLocalRuntimeState =
+  | { status: "starting" }
+  | { status: "ready"; machine: DesktopLocalRuntimeMachine }
+  | { status: "unavailable"; error: string }
 
 export type DesktopCompletionNotification = {
   title: string

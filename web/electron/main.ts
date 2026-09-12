@@ -3,11 +3,12 @@ import { readFileSync, writeFileSync } from "node:fs"
 import { dirname, join } from "node:path"
 import { fileURLToPath, pathToFileURL } from "node:url"
 import { buildApplicationMenu } from "./app-menu.js"
+import { EmbeddedDaemonRuntime, EMBEDDED_DAEMON_PROFILE_ID, embeddedDaemonEntry, type EmbeddedDaemonExit } from "./embedded-daemon.js"
 import { DesktopEventTransport } from "./event-transport.js"
 import { IPC_CHANNELS, parseDesktopAttentionNotification, parseDesktopMenuTemplate } from "./ipc-contract.js"
 import { DesktopProfileError, ProfileRegistry } from "./profile-registry.js"
 import { executeDesktopRequest } from "./request-transport.js"
-import type { DesktopAttentionNotification, DesktopCompletionNotification, DesktopEventSubscriptionOptions, DesktopMenuCommand, DesktopRequest } from "./ipc-contract.js"
+import type { DesktopAttentionNotification, DesktopCompletionNotification, DesktopEventSubscriptionOptions, DesktopLocalRuntimeState, DesktopMenuCommand, DesktopRequest } from "./ipc-contract.js"
 import { MIN_WINDOW_HEIGHT, MIN_WINDOW_WIDTH, restoredBounds as calculateRestoredBounds } from "./window-state.js"
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const isDevelopment = !app.isPackaged
@@ -41,10 +42,13 @@ function restoredBounds(state: SavedWindowState) {
   return calculateRestoredBounds(state, screen.getAllDisplays())
 }
 
-
 let mainWindow: BrowserWindow | undefined
 let registry: ProfileRegistry
 let eventTransport: DesktopEventTransport
+let embeddedDaemon: EmbeddedDaemonRuntime | undefined
+let localRuntimeState: DesktopLocalRuntimeState = { status: "starting" }
+let localRuntimeStart: Promise<DesktopLocalRuntimeState> | undefined
+let quitting = false
 
 function log(message: string): void {
   console.error(`[electron] ${message}`)
@@ -69,6 +73,65 @@ function ensureTrustedSender(event: IpcMainInvokeEvent): void {
 
 function notificationText(value: unknown, maxLength: number): value is string {
   return typeof value === "string" && value.length > 0 && value.length <= maxLength && !/[\u0000-\u001f\u007f]/.test(value)
+}
+
+function localRuntimeError(error: unknown): string {
+  const message = error instanceof Error ? error.message : "Local desktop runtime failed"
+  return message.replace(/[\u0000-\u001f\u007f]/g, " ").trim().slice(0, 1_000) || "Local desktop runtime failed"
+}
+
+function clearLocalRuntimeProfile(): void {
+  if (!registry) return
+  const change = registry.clearRuntimeProfile(EMBEDDED_DAEMON_PROFILE_ID)
+  eventTransport?.applyRegistryChange(change)
+}
+
+function embeddedDaemonExited(details: EmbeddedDaemonExit): void {
+  clearLocalRuntimeProfile()
+  const suffix = details.signal ? ` (${details.signal})` : details.code === null ? "" : ` (exit ${details.code})`
+  localRuntimeState = { status: "unavailable", error: `Local desktop runtime stopped unexpectedly${suffix}.` }
+  log(localRuntimeState.error)
+}
+
+function ensureLocalRuntime(): Promise<DesktopLocalRuntimeState> {
+  if (localRuntimeState.status === "ready" && embeddedDaemon?.isRunning) return Promise.resolve(localRuntimeState)
+  if (localRuntimeStart) return localRuntimeStart
+  if (!embeddedDaemon) {
+    localRuntimeState = { status: "unavailable", error: "Local desktop runtime is not initialized." }
+    return Promise.resolve(localRuntimeState)
+  }
+  clearLocalRuntimeProfile()
+  localRuntimeState = { status: "starting" }
+  localRuntimeStart = embeddedDaemon.start().then((ready) => {
+    const endpoint = ready.endpoint
+    const change = registry.setRuntimeProfile({
+      id: endpoint.id,
+      backend: "opencode",
+      host: endpoint.host,
+      port: endpoint.port,
+      username: endpoint.username,
+      password: endpoint.password
+    })
+    eventTransport.applyRegistryChange(change)
+    localRuntimeState = {
+      status: "ready",
+      machine: {
+        profileId: endpoint.id,
+        host: endpoint.host,
+        port: endpoint.port,
+        pid: ready.pid
+      }
+    }
+    return localRuntimeState
+  }).catch((error: unknown) => {
+    clearLocalRuntimeProfile()
+    localRuntimeState = { status: "unavailable", error: localRuntimeError(error) }
+    log(`local runtime unavailable: ${localRuntimeState.error}`)
+    return localRuntimeState
+  }).finally(() => {
+    localRuntimeStart = undefined
+  })
+  return localRuntimeStart
 }
 
 /**
@@ -243,6 +306,15 @@ function installIPC(): void {
       return { ok: false, error: { code: "internal", message: "Desktop request failed" } }
     }
   })
+  ipcMain.handle(IPC_CHANNELS.getLocalRuntime, async (event) => {
+    ensureTrustedSender(event)
+    if (localRuntimeState.status === "ready" && !embeddedDaemon?.isRunning) embeddedDaemonExited({ code: null, signal: null })
+    return localRuntimeState
+  })
+  ipcMain.handle(IPC_CHANNELS.retryLocalRuntime, async (event) => {
+    ensureTrustedSender(event)
+    return ensureLocalRuntime()
+  })
   ipcMain.handle(IPC_CHANNELS.subscribeEvents, async (event, profileId: unknown, options: unknown) => {
     ensureTrustedSender(event)
     if (typeof profileId !== "string" || !options || typeof options !== "object") throw new Error("Event payload is invalid")
@@ -280,7 +352,20 @@ async function start(): Promise<void> {
   registry = new ProfileRegistry(profileFile())
   await registry.load()
   eventTransport = new DesktopEventTransport(registry, IPC_CHANNELS)
+  embeddedDaemon = new EmbeddedDaemonRuntime({
+    entryPath: embeddedDaemonEntry({
+      isPackaged: app.isPackaged,
+      appPath: app.getAppPath(),
+      resourcesPath: process.resourcesPath
+    }),
+    stateDirectory: join(app.getPath("userData"), "embedded-daemon"),
+    onExit: embeddedDaemonExited
+  })
   installIPC()
+  // Starting the local runtime is intentionally non-fatal. A machine may have no supported harness
+  // installed yet; the desktop app must still open so remote machines remain usable and the local
+  // runtime can be retried later without an application restart.
+  void ensureLocalRuntime()
   // macOS keeps its menu: the app menu is where Cmd+Q lives and the Edit menu is what binds
   // Cmd+C/V/X, so stripping it there costs the user the shortcuts they expect rather than just
   // hiding chrome. The renderer replaces Electron's untranslated default with the real one as soon
@@ -296,7 +381,13 @@ app.whenReady().then(() => start()).catch((error: unknown) => {
   app.quit()
 })
 
-app.on("before-quit", () => eventTransport?.closeAll())
+app.on("before-quit", (event) => {
+  eventTransport?.closeAll()
+  if (quitting) return
+  event.preventDefault()
+  quitting = true
+  void (embeddedDaemon?.stop() ?? Promise.resolve()).finally(() => app.quit())
+})
 // Closing the last window ends the app everywhere except macOS, where an app with no windows is
 // still running and is expected to reopen one from the dock — which is what "activate" below does.
 app.on("window-all-closed", () => {

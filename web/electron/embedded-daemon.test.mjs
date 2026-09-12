@@ -33,13 +33,14 @@ test("desktop packaging carries the bridge runtime outside the app asar", async 
   assert.ok(resources.some((entry) => entry.from === "../bridge/package.json" && entry.to === "bridge-runtime/package.json"))
 })
 
-test("keeps the embedded daemon loopback-only and credentials out of process arguments", () => {
-  const args = embeddedDaemonArgs(4100, 4101)
+test("keeps the embedded daemon loopback-only, isolates state, and keeps credentials out of process arguments", () => {
+  const args = embeddedDaemonArgs(4100, 4101, "/private/desktop-state")
   assert.deepEqual(args, [
     "--host", "127.0.0.1",
     "--port", "4100",
     "--opencode-host", "127.0.0.1",
-    "--opencode-port", "4101"
+    "--opencode-port", "4101",
+    "--state-dir", "/private/desktop-state"
   ])
   assert.equal(args.includes("desktop-user"), false)
   assert.equal(args.includes("desktop-pass"), false)
@@ -76,16 +77,21 @@ test("owns one embedded daemon process from readiness through clean shutdown", a
   await writeFile(script, `
 const portIndex = process.argv.indexOf("--port")
 const port = process.argv[portIndex + 1]
+const stateIndex = process.argv.indexOf("--state-dir")
+if (stateIndex < 0 || !process.argv[stateIndex + 1]) process.exit(8)
 if (!process.env.HARNESS_REMOTE_USERNAME || !process.env.HARNESS_REMOTE_PASSWORD) process.exit(9)
 process.stdout.write("Harness daemon ready at http://127.0.0.1:" + port + "\\n")
 const timer = setInterval(() => {}, 1000)
 process.on("SIGTERM", () => { clearInterval(timer); process.exit(0) })
 `, "utf8")
 
+  const exits = []
   const runtime = new EmbeddedDaemonRuntime({
     entryPath: script,
+    stateDirectory: join(root, "state"),
     startupTimeoutMs: 2_000,
-    shutdownTimeoutMs: 2_000
+    shutdownTimeoutMs: 2_000,
+    onExit: (details) => exits.push(details)
   })
   try {
     const first = await runtime.start()
@@ -98,6 +104,32 @@ process.on("SIGTERM", () => { clearInterval(timer); process.exit(0) })
     assert.equal(first.endpoint.username, "harness-desktop")
     assert.ok(first.endpoint.password.length >= 24)
     await runtime.stop()
+    assert.equal(runtime.isRunning, false)
+    assert.deepEqual(exits, [], "intentional shutdown must not be reported as an unexpected runtime exit")
+  } finally {
+    await runtime.stop()
+    await rm(root, { recursive: true, force: true })
+  }
+})
+
+test("reports an unexpected post-readiness daemon exit", async () => {
+  const root = await mkdtemp(join(tmpdir(), "hr-embedded-daemon-exit-"))
+  const script = join(root, "exiting-daemon.mjs")
+  await writeFile(script, `
+const port = process.argv[process.argv.indexOf("--port") + 1]
+process.stdout.write("Harness daemon ready at http://127.0.0.1:" + port + "\\n")
+setTimeout(() => process.exit(7), 50)
+`, "utf8")
+  let exit
+  const runtime = new EmbeddedDaemonRuntime({
+    entryPath: script,
+    startupTimeoutMs: 2_000,
+    onExit: (details) => { exit = details }
+  })
+  try {
+    await runtime.start()
+    for (let index = 0; index < 100 && !exit; index += 1) await new Promise((resolve) => setTimeout(resolve, 10))
+    assert.deepEqual(exit, { code: 7, signal: null })
     assert.equal(runtime.isRunning, false)
   } finally {
     await runtime.stop()
