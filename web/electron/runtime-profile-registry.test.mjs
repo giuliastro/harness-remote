@@ -54,11 +54,18 @@ test("renderer replacement cannot overwrite or remove a runtime-owned profile", 
     assert.equal(registry.get("runtime-local").password, "runtime-secret")
     assert.equal(registry.get("saved").host, "machine.local")
 
-    await assert.rejects(
-      registry.replace([profile("runtime-local", { password: "renderer-secret" })], 2),
+    // Runtime-owned ids are rejected before any persistent write is queued, so this is deliberately
+    // a synchronous boundary rather than a promise rejection.
+    assert.throws(
+      () => registry.replace([profile("runtime-local", { password: "renderer-secret" })], 2),
       DesktopProfileError
     )
     assert.equal(registry.get("runtime-local").password, "runtime-secret")
+
+    // Omitting a runtime-owned profile from a canonical renderer snapshot cannot remove it either.
+    await registry.replace([], 3)
+    assert.equal(registry.get("runtime-local").password, "runtime-secret")
+    assert.equal(registry.has("saved"), false)
   } finally {
     await rm(root, { recursive: true, force: true })
   }
