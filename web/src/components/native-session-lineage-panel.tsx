@@ -35,10 +35,23 @@ function projectStateLabel(entry: NativeSessionLineageEntry): string | null {
   return "Project: continuity unverified — review accepted"
 }
 
+function worktreeLabel(value: boolean | undefined): string {
+  if (value === true) return "dirty"
+  if (value === false) return "clean"
+  return "unverified"
+}
+
 function evidenceLabel(entry: NativeSessionLineageEntry): string | null {
   const evidence = entry.portableState?.project.evidence
   if (!evidence) return null
-  return `Evidence: repo ${evidence.repository}, history ${evidence.history}, branch ${evidence.branch}, HEAD ${evidence.head}`
+  return [
+    `repo ${evidence.repository}`,
+    `history ${evidence.history}`,
+    `branch ${evidence.branch}`,
+    `HEAD ${evidence.head}`,
+    `source worktree ${worktreeLabel(evidence.sourceDirty)}`,
+    `target worktree ${worktreeLabel(evidence.targetDirty)}`
+  ].join(", ")
 }
 
 /**
@@ -108,7 +121,7 @@ export function NativeSessionLineagePanel({ target, routes, interactionEnabled, 
                   <>
                     <span className="carried">Task: {entry.portableState.task.title}</span>
                     {projectLabel ? <span className={entry.portableState.project.decision === "automatic" ? "fresh" : "invalidated"}>{projectLabel}</span> : null}
-                    {evidence ? <span className="neutral">{evidence}</span> : null}
+                    {evidence ? <span className="neutral">Evidence: {evidence}</span> : null}
                   </>
                 ) : (
                   <span className={entry.contextCarried ? "carried" : "neutral"}>
