@@ -96,6 +96,7 @@ test("OpenCode reliability regressions stay in the required browser gate", () =>
   const browserSmoke = readFileSync(new URL("../scripts/native-opencode-browser-smoke.mjs", import.meta.url), "utf8")
   const realSmoke = readFileSync(new URL("../scripts/native-opencode-real-regression-smoke.mjs", import.meta.url), "utf8")
   const permissionSmoke = readFileSync(new URL("../scripts/native-opencode-permission-regression-smoke.mjs", import.meta.url), "utf8")
+  const permissionApi = readFileSync(new URL("./opencode-permission-api.test.mjs", import.meta.url), "utf8")
 
   for (const marker of [
     "OPENCODE-TRANSIENT-INTERRUPTION-PROMPT",
@@ -115,6 +116,13 @@ test("OpenCode reliability regressions stay in the required browser gate", () =>
   assert.match(permissionSmoke, /opening an unresolved Session must not consume Attention/)
   assert.match(permissionSmoke, /permission resolution left mounted Activity running/)
   assert.doesNotMatch(permissionSmoke, /page\.reload\(/)
+
+  assert.match(permissionApi, /failed OpenCode permission reply rejects and remains retryable/)
+  assert.match(permissionApi, /native permission reply failed/)
+  assert.ok(
+    workflow.includes("node scripts/run-vite-test.mjs src/opencode-permission-api.test.mjs"),
+    "OpenCode permission transport failure regression is not a required PR gate"
+  )
 
   for (const script of [
     "native-opencode-browser-smoke.mjs",
