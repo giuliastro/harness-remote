@@ -36,6 +36,12 @@ type OutcomeView = {
   attention: NativeSessionReviewAttention
 }
 
+type AttentionLoad = {
+  questions?: number
+  permissions?: number
+  connectionIssue: boolean
+}
+
 function connectionFailure(reason: unknown): boolean {
   return /cannot reach|timed out|network|connection|failed to fetch/i.test(reason instanceof Error ? reason.message : String(reason))
 }
@@ -70,19 +76,21 @@ async function loadProjectOutcome(target: NativeSessionSurfaceTarget): Promise<P
   return outcome ? { projectName: projectRoute.name, outcome } : null
 }
 
-async function loadAttentionEvidence(target: NativeSessionSurfaceTarget): Promise<NativeSessionReviewAttention> {
-  const [questionResult, permissionResult] = await Promise.all([
-    api.loadQuestions(target.config, target.directory)
-      .then((value) => ({ ok: true as const, value }), (reason) => ({ ok: false as const, reason })),
+async function loadAttentionEvidence(target: NativeSessionSurfaceTarget): Promise<AttentionLoad> {
+  const [questionResult, permissionResult] = await Promise.allSettled([
+    api.loadQuestions(target.config, target.directory),
     api.loadPermissions(target.config, target.directory)
-      .then((value) => ({ ok: true as const, value }), (reason) => ({ ok: false as const, reason }))
   ])
-  if (!questionResult.ok) throw questionResult.reason
-  if (!permissionResult.ok) throw permissionResult.reason
   return {
-    complete: true,
-    questions: questionResult.value.filter((request) => request.sessionID === target.sessionID).length,
-    permissions: permissionResult.value.filter((request) => request.sessionID === target.sessionID).length
+    ...(questionResult.status === "fulfilled" ? {
+      questions: questionResult.value.filter((request) => request.sessionID === target.sessionID).length
+    } : {}),
+    ...(permissionResult.status === "fulfilled" ? {
+      permissions: permissionResult.value.filter((request) => request.sessionID === target.sessionID).length
+    } : {}),
+    connectionIssue:
+      (questionResult.status === "rejected" && connectionFailure(questionResult.reason))
+      || (permissionResult.status === "rejected" && connectionFailure(permissionResult.reason))
   }
 }
 
@@ -108,7 +116,7 @@ export function NativeSessionOutcomePanel({
       // Project snapshot visible, but invalidate attention immediately so stale absence of a gate can
       // never flash/retain "Completed" before fresh permission/question reads are possible.
       setView((current) => current && current.attention.complete
-        ? { ...current, attention: UNKNOWN_ATTENTION }
+        ? { ...current, attention: { ...current.attention, complete: false } }
         : current)
       return
     }
@@ -124,14 +132,20 @@ export function NativeSessionOutcomePanel({
 
       if (projectResult.status === "rejected" && connectionFailure(projectResult.reason)) onConnectionIssue?.()
       if (attentionResult.status === "rejected" && connectionFailure(attentionResult.reason)) onConnectionIssue?.()
+      if (attentionResult.status === "fulfilled" && attentionResult.value.connectionIssue) onConnectionIssue?.()
 
       setView((current) => {
         const project = projectResult.status === "fulfilled"
           ? projectResult.value ?? undefined
           : current?.project
+        const previousAttention = current?.attention ?? UNKNOWN_ATTENTION
         const attention = attentionResult.status === "fulfilled"
-          ? attentionResult.value
-          : current?.attention ?? UNKNOWN_ATTENTION
+          ? {
+              complete: attentionResult.value.questions !== undefined && attentionResult.value.permissions !== undefined,
+              questions: attentionResult.value.questions ?? previousAttention.questions,
+              permissions: attentionResult.value.permissions ?? previousAttention.permissions
+            }
+          : { ...previousAttention, complete: false }
         return { ...(project ? { project } : {}), attention }
       })
     })()
