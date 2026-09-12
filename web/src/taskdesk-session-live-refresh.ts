@@ -156,10 +156,18 @@ export function startTaskDeskSessionLiveRefresh({
         return
       }
 
-      // OpenCode and ACP adapters can expose permission/question lifecycle events with different
-      // suffixes. They all mean the selected conversation detail must be re-read immediately.
+      // Permission/question resolution can itself end or resume a turn. OpenCode does not guarantee
+      // a trailing message.updated after a rejected tool call, so refreshing only the permission card
+      // can leave the mounted Session painted as Activity until it is reopened. Reconcile all three
+      // authoritative surfaces on this low-frequency lifecycle edge, with one bounded settle read for
+      // transcript persistence that lands just after the permission event.
       if (isAttentionEvent(event.type)) {
-        if (selectedEvent) throttle("detail", 80, onDetail)
+        if (selectedEvent) {
+          throttle("detail", 80, onDetail)
+          throttle("message", 100, onMessage)
+          throttle("index", 120, onIndex)
+          settleAfterLifecycle()
+        }
         return
       }
 
