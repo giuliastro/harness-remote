@@ -27,6 +27,10 @@ export type NativeSessionRouteContinueInput = {
   prompt: string
   attachments: AttachmentPart[]
   model: ModelSelection | null
+  /** Required only when the destination is another machine. Same-machine routing ignores it. */
+  projectID?: string
+  /** Explicit acknowledgement of a reviewed-but-not-identical cross-machine workspace. */
+  confirmedProjectContinuity?: boolean
 }
 
 type PendingRouteContinue = {

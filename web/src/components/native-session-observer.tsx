@@ -18,6 +18,7 @@ import type { ConversationRuntime } from "../conversation-runtime"
 import type { AgentModelScope } from "../taskClient"
 import type { CommandInfo, MachineAgentHost } from "../types"
 import { LoadingIcon } from "../Icons"
+import { CrossMachineContinuePanel } from "./cross-machine-continue-panel"
 import { WorkThreadConversation } from "./work-thread-conversation"
 import "../native-session-observer.css"
 
@@ -40,7 +41,6 @@ function visualState(conversation: ConversationRuntime, attention = false): Nati
   if (nativeSessionIsWorking(conversation.status)) return "working"
   return "ready"
 }
-
 
 export { nativeSessionIsWorking }
 
@@ -149,17 +149,31 @@ export function NativeSessionObserver({
   }), [target.agentID, target.agentLabel, target.backend, target.transport, target.canStop, target.modelsSupported, attachmentsSupported, commands.length])
 
   const routableRoutes = useMemo<NativeSessionRouteMachine[]>(() => routes.flatMap((machine) => {
-    if (machine.machineID !== target.machineID) return []
     const available = machine.agents.filter((candidate) => canCreateNativeSession(candidate))
+    if (machine.machineID !== target.machineID) {
+      return available.length ? [{ ...machine, agents: available }] : []
+    }
     const current = available.some((candidate) => candidate.id === target.agentID)
       ? available
       : [agent, ...available.filter((candidate) => candidate.id !== target.agentID)]
     return [{ ...machine, agents: current }]
   }), [routes, target.machineID, target.agentID, agent])
 
+  // Keep the mature composer scoped to same-machine harness switching. Cross-machine continuation
+  // has a separate explicit panel until that newer state machine has enough product-smoke coverage
+  // to be safely folded into the composer without destabilizing ordinary Session sends.
+  const sameMachineRoutes = useMemo(
+    () => routableRoutes.filter((machine) => machine.machineID === target.machineID),
+    [routableRoutes, target.machineID]
+  )
+  const crossMachineRoutes = useMemo(
+    () => routableRoutes.filter((machine) => machine.machineID !== target.machineID),
+    [routableRoutes, target.machineID]
+  )
+
   const handleRoutedContinue = useCallback(async (input: NativeSessionRouteContinueInput) => {
     if (!interactionEnabled) throw new Error("The machine is reconnecting. Continue will be available when the connection is healthy again.")
-    const machine = routableRoutes.find((candidate) => candidate.machineID === input.machineID)
+    const machine = sameMachineRoutes.find((candidate) => candidate.machineID === input.machineID)
     const targetAgent = machine?.agents.find((candidate) => candidate.id === input.agentID)
     if (!machine || !targetAgent) throw new Error("That harness is no longer available on this machine.")
     const next = await continueNativeSessionOnRoute({
@@ -172,7 +186,7 @@ export function NativeSessionObserver({
     })
     onSessionRefresh?.()
     onOpenSession?.(next)
-  }, [routableRoutes, target, onSessionRefresh, onOpenSession, interactionEnabled])
+  }, [sameMachineRoutes, target, onSessionRefresh, onOpenSession, interactionEnabled])
 
   useEffect(() => {
     let registration: ReturnType<typeof registerNativeSessionV3Adapter> | undefined
@@ -221,6 +235,17 @@ export function NativeSessionObserver({
 
   return (
     <div className="hr-native-session-observer writable">
+      {onOpenSession && crossMachineRoutes.length ? (
+        <CrossMachineContinuePanel
+          source={target}
+          routes={crossMachineRoutes}
+          interactionEnabled={interactionEnabled}
+          onOpenSession={onOpenSession}
+          onSessionRefresh={onSessionRefresh}
+          onConnectionIssue={onConnectionIssue}
+        />
+      ) : null}
+
       <WorkThreadConversation
         key={target.key}
         conversation={conversation}
@@ -235,9 +260,9 @@ export function NativeSessionObserver({
         commands={commands}
         interactionEnabled={interactionEnabled}
         onConnectionIssue={onConnectionIssue}
-        routing={onOpenSession && routableRoutes.length ? {
+        routing={onOpenSession && sameMachineRoutes.length ? {
           currentMachineID: target.machineID,
-          machines: routableRoutes,
+          machines: sameMachineRoutes,
           onContinue: handleRoutedContinue
         } : undefined}
       />
