@@ -190,8 +190,8 @@ test("orchestrates every primary and persists credential-free scenario evidence"
     ])
     assert.equal(report.runs[0].evidence.complete, true)
     assert.equal(report.runs[0].evidence.coverage.stopAndResume, true)
-    assert.equal(report.coverageMatrix.codex.resourceBounds, true)
-    assert.equal(report.coverageMatrix.claude.crossHarnessIsolation, true)
+    assert.equal(report.coverageMatrix.codex.coverage.resourceBounds, true)
+    assert.equal(report.coverageMatrix.claude.coverage.crossHarnessIsolation, true)
 
     const persisted = JSON.parse(fs.readFileSync(reportPath, "utf8"))
     assert.equal(persisted.endpoint, "http://127.0.0.1:4097")
