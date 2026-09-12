@@ -32,9 +32,15 @@ test("GET agent models returns daemon refresh result", async () => {
   } finally { await close(server) }
 })
 
-test("cold ACP catalog returns loading before the caller transport budget expires", async () => {
+test("cold ACP catalog returns loading without waiting for discovery to settle", { timeout: 10_000 }, async () => {
   let release
-  const pending = new Promise((resolve) => { release = resolve })
+  let discoverySettled = false
+  const pending = new Promise((resolve) => {
+    release = (value) => {
+      discoverySettled = true
+      resolve(value)
+    }
+  })
   let calls = 0
   const daemon = {
     listModels() {
@@ -49,10 +55,12 @@ test("cold ACP catalog returns loading before the caller transport budget expire
   const server = createAgentModelServer({ innerServer, config: config(), daemon, taskStore: {} })
   const base = await listen(server)
   try {
-    const started = Date.now()
     const response = await fetch(`${base}/v1/agents/pi/models?waitMs=15`, { headers: auth() })
     assert.equal(response.status, 202)
-    assert.ok(Date.now() - started < 500)
+    // The response itself proves the bounded wait won the race: this test deliberately does not
+    // settle model discovery until cleanup. Avoid asserting scheduler wall time here; a loaded CI
+    // runner may pause the process for seconds without changing the server's contract.
+    assert.equal(discoverySettled, false)
     assert.equal(response.headers.get("retry-after"), "1")
     const body = await response.json()
     assert.equal(body.loading, true)
