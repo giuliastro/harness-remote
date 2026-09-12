@@ -2,11 +2,12 @@ import http from "node:http"
 import { allowedOrigin, applyCorsHeaders, matchesCredentials, writeJSON } from "./http-policy.js"
 import { ManagedEventFanout } from "./managed-event-fanout.js"
 import { inspectGitProjectIdentity } from "./project-identity.js"
+import { inspectGitProjectOutcome } from "./project-outcome.js"
 import { normalizeTaskModel } from "./task-model.js"
 
 const AGENT_ROUTE = /^\/v1\/agents\/([^/]+)(\/.*)?$/
 const TASK_WORKTREE_ROUTE = /^\/v1\/tasks\/([^/]+)\/worktree$/
-const MACHINE_ROUTES = new Set(["/v1/machine", "/global/machine", "/v1/projects", "/v1/project-identity", "/v1/tasks", "/v1/diagnostics"])
+const MACHINE_ROUTES = new Set(["/v1/machine", "/global/machine", "/v1/projects", "/v1/project-identity", "/v1/project-outcome", "/v1/tasks", "/v1/diagnostics"])
 const HOP_BY_HOP = new Set([
   "connection",
   "keep-alive",
@@ -203,6 +204,7 @@ export function createAgentRoutingServer({
   taskStore,
   projectCatalog,
   projectIdentity = inspectGitProjectIdentity,
+  projectOutcome = inspectGitProjectOutcome,
   worktreeManager,
   diagnostics,
   createServer = http.createServer,
@@ -280,6 +282,24 @@ export function createAgentRoutingServer({
           // the daemon itself already admitted into the canonical Project catalog.
           const identity = project.kind === "git" ? await projectIdentity(project.path) : null
           writeJSON(response, 200, { projectId: project.id, identity })
+          return
+        }
+        if (request.method === "GET" && requestURL.pathname === "/v1/project-outcome") {
+          const projectId = requestURL.searchParams.get("projectId")?.trim() || ""
+          if (!projectId) {
+            writeJSON(response, 400, { error: "A projectId is required" })
+            return
+          }
+          const projects = await projectCatalog()
+          const project = projects.find((candidate) => candidate.id === projectId)
+          if (!project) {
+            writeJSON(response, 404, { error: `Unknown project: ${projectId}` })
+            return
+          }
+          // Outcome inspection has the same Project-scoped boundary as identity inspection: a caller
+          // chooses only a catalog id, never a filesystem path. Returned file names stay repo-relative.
+          const outcome = project.kind === "git" ? await projectOutcome(project.path) : null
+          writeJSON(response, 200, { projectId: project.id, outcome })
           return
         }
         if (request.method === "GET" && requestURL.pathname === "/v1/tasks") {
