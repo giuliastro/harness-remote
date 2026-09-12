@@ -20,6 +20,7 @@ import type { CommandInfo, MachineAgentHost } from "../types"
 import { LoadingIcon } from "../Icons"
 import { CrossMachineContinuePanel } from "./cross-machine-continue-panel"
 import { NativeSessionLineagePanel } from "./native-session-lineage-panel"
+import { NativeSessionOutcomePanel } from "./native-session-outcome-panel"
 import { WorkThreadConversation } from "./work-thread-conversation"
 import "../native-session-observer.css"
 
@@ -239,6 +240,13 @@ export function NativeSessionObserver({
       <NativeSessionLineagePanel
         target={target}
         routes={routableRoutes}
+        interactionEnabled={interactionEnabled}
+        onConnectionIssue={onConnectionIssue}
+      />
+
+      <NativeSessionOutcomePanel
+        target={target}
+        working={nativeSessionIsWorking(conversation.status)}
         interactionEnabled={interactionEnabled}
         onConnectionIssue={onConnectionIssue}
       />

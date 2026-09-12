@@ -65,11 +65,12 @@ async function readBoundedBody(response: Response, onReader?: (reader: ReadableS
 
 /**
  * What the machine daemon answers itself rather than handing to one agent's bridge: the machine
- * descriptor, the project and task surface behind TaskDesk, and any path the caller already scoped
- * to an agent of its own choosing. Prefixing these with the profile's agent aims them at a bridge
- * where they do not exist, so the profile's scope applies to everything except these.
+ * descriptor, Project identity/outcome/catalog and task surface behind TaskDesk, and any path the
+ * caller already scoped to an agent of its own choosing. Prefixing these with the profile's agent
+ * aims them at a bridge where they do not exist, so the profile's scope applies to everything except
+ * these machine-owned routes.
  */
-const MACHINE_SCOPED_PATH = /^\/(?:v1\/machine|global\/machine|v1\/projects|v1\/tasks(?:\/|$)|v1\/agents\/)/
+const MACHINE_SCOPED_PATH = /^\/(?:v1\/machine|global\/machine|v1\/projects|v1\/project-(?:identity|outcome)|v1\/tasks(?:\/|$)|v1\/agents\/)/
 
 function validPath(path: unknown): path is string {
   return typeof path === "string"
