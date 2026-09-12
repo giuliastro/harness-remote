@@ -59,7 +59,7 @@ export function desktopAttentionNotification(
   return {
     title: title(event),
     body,
-    overlayDescription: compact([title(event), ...identity]).replaceAll("\n", " · ").slice(0, 240),
+    overlayDescription: compact([title(event), ...identity]).split("\n").join(" · ").slice(0, 240),
     target: {
       machineID: event.machineID,
       agentID: event.agentID,
