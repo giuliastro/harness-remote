@@ -7,10 +7,12 @@ const {
   resolveDesktopRuntimeEnvironment
 } = await import("../dist-electron/electron/shell-path.js")
 
-test("extracts only the delimited PATH from noisy shell startup output", () => {
+test("extracts only the delimited exported PATH from noisy shell startup output", () => {
   const output = [
     "welcome from shell startup",
-    "__HARNESS_REMOTE_PATH_START__/opt/homebrew/bin:/Users/me/.local/bin:/usr/bin__HARNESS_REMOTE_PATH_END__",
+    "__HARNESS_REMOTE_PATH_START__",
+    "PATH=/opt/homebrew/bin:/Users/me/.local/bin:/usr/bin",
+    "__HARNESS_REMOTE_PATH_END__",
     "trailing shell output"
   ].join("\n")
   assert.equal(
@@ -18,7 +20,11 @@ test("extracts only the delimited PATH from noisy shell startup output", () => {
     "/opt/homebrew/bin:/Users/me/.local/bin:/usr/bin"
   )
   assert.equal(parseLoginShellPathOutput("PATH=/untrusted/no-marker"), undefined)
-  assert.equal(parseLoginShellPathOutput("__HARNESS_REMOTE_PATH_START__/bin\n/evil__HARNESS_REMOTE_PATH_END__"), undefined)
+  assert.equal(parseLoginShellPathOutput([
+    "__HARNESS_REMOTE_PATH_START__",
+    "HOME=/do/not/import",
+    "__HARNESS_REMOTE_PATH_END__"
+  ].join("\n")), undefined)
 })
 
 test("merges shell PATH first without losing inherited executable directories", () => {
