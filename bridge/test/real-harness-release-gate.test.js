@@ -29,6 +29,24 @@ const COMPLETE_SOAK_OUTPUT = [
   "  ok   no unresolved native Session mutation left (0)"
 ].join("\n")
 
+function passingSessionDiscovery(harnesses) {
+  return {
+    schemaVersion: 1,
+    passed: true,
+    results: harnesses.map((agentID) => ({
+      agentID,
+      passed: true,
+      created: true,
+      createStatus: 200,
+      createdSessionID: `${agentID}-discovery-session`,
+      discovered: true,
+      listStatus: 200,
+      pages: 1,
+      error: null
+    }))
+  }
+}
+
 test("defaults the release gate to every supported harness", () => {
   assert.deepEqual(parseHarnessList(), SUPPORTED_HARNESSES)
 })
@@ -75,7 +93,7 @@ test("default report path stays outside source files and carries a timestamp", (
   assert.equal(report, path.join("/work", "artifacts", "real-harness-gate-2026-09-11T03-45-12-345Z.json"))
 })
 
-test("parses scenario-level soak evidence and exposes known real-boundary gaps", () => {
+test("parses scenario-level soak evidence and exposes only the remaining real-boundary gaps", () => {
   const evidence = parseSoakEvidence(COMPLETE_SOAK_OUTPUT)
   assert.equal(evidence.complete, true)
   assert.equal(evidence.summary.failed, 0)
@@ -87,6 +105,7 @@ test("parses scenario-level soak evidence and exposes known real-boundary gaps",
   assert.equal(evidence.coverage.stopAndResume, true)
   assert.equal(evidence.coverage.resourceBounds, true)
   assert.deepEqual(evidence.missingCoverage, [])
+  assert.equal(evidence.notExercised.includes("pre-existing native Session discovery"), false)
   assert.ok(evidence.notExercised.includes("daemon restart/reconnect"))
   assert.ok(evidence.notExercised.includes("physical mobile background/foreground"))
 })
@@ -178,18 +197,21 @@ test("orchestrates every primary and persists credential-free scenario evidence"
         agents: harnesses.map((id) => ({ id, registered: true, modelCatalog: { configured: true, source: "test", cachedModels: 2, phase: "ready" } })),
         missingHarnesses: [],
         missingModelCatalogs: []
-      })
+      }),
+      sessionDiscovery: async ({ harnesses }) => passingSessionDiscovery(harnesses)
     })
     assert.equal(report.verdict, "verified")
     assert.equal(report.releaseEligible, true)
-    assert.equal(report.schemaVersion, 3)
+    assert.equal(report.schemaVersion, 4)
     assert.equal(report.preflight.passed, true)
+    assert.equal(report.sessionDiscovery.passed, true)
     assert.deepEqual(report.runs.map(({ primary, secondary, passed }) => ({ primary, secondary, passed })), [
       { primary: "codex", secondary: "claude", passed: true },
       { primary: "claude", secondary: "codex", passed: true }
     ])
     assert.equal(report.runs[0].evidence.complete, true)
     assert.equal(report.runs[0].evidence.coverage.stopAndResume, true)
+    assert.equal(report.coverageMatrix.codex.coverage.sessionDiscovery, true)
     assert.equal(report.coverageMatrix.codex.coverage.resourceBounds, true)
     assert.equal(report.coverageMatrix.claude.coverage.crossHarnessIsolation, true)
 
@@ -225,7 +247,8 @@ test("a zero-exit soak without required scenario evidence fails the release gate
         agents: harnesses.map((id) => ({ id, registered: true, modelCatalog: { configured: true, source: "test", cachedModels: 2, phase: "ready" } })),
         missingHarnesses: [],
         missingModelCatalogs: []
-      })
+      }),
+      sessionDiscovery: async ({ harnesses }) => passingSessionDiscovery(harnesses)
     })
     assert.equal(report.verdict, "failed")
     assert.equal(report.runs[0].exitCode, 0)
@@ -237,12 +260,54 @@ test("a zero-exit soak without required scenario evidence fails the release gate
   }
 })
 
-test("does not launch any soak leg when daemon preflight fails", async () => {
+test("does not launch soak legs when native Session rediscovery fails", async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "hr-real-gate-discovery-"))
+  const soakPath = path.join(root, "must-not-run.mjs")
+  const markerPath = path.join(root, "ran")
+  const reportPath = path.join(root, "report.json")
+  fs.writeFileSync(soakPath, `require('node:fs').writeFileSync(${JSON.stringify(markerPath)}, 'ran')\n`, "utf8")
+
+  try {
+    const report = await runGate({
+      harnesses: ["codex", "claude"],
+      mode: "release",
+      reportPath,
+      soakPath,
+      preflight: async ({ harnesses }) => ({
+        passed: true,
+        status: 200,
+        error: null,
+        machineID: "machine-1",
+        agents: harnesses.map((id) => ({ id, registered: true, modelCatalog: { configured: true, source: "test", cachedModels: 2, phase: "ready" } })),
+        missingHarnesses: [],
+        missingModelCatalogs: []
+      }),
+      sessionDiscovery: async () => ({
+        schemaVersion: 1,
+        passed: false,
+        results: [
+          { agentID: "codex", passed: false, error: "Session missing from index", pages: 1 },
+          { agentID: "claude", passed: true, pages: 1 }
+        ]
+      })
+    })
+    assert.equal(report.verdict, "failed")
+    assert.equal(report.runs.length, 0)
+    assert.equal(report.coverageMatrix.codex.coverage.sessionDiscovery, false)
+    assert.ok(report.coverageMatrix.codex.missingCoverage.includes("sessionDiscovery"))
+    assert.equal(fs.existsSync(markerPath), false)
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true })
+  }
+})
+
+test("does not launch any discovery or soak leg when daemon preflight fails", async () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "hr-real-gate-preflight-"))
   const soakPath = path.join(root, "must-not-run.mjs")
   const markerPath = path.join(root, "ran")
   const reportPath = path.join(root, "report.json")
   fs.writeFileSync(soakPath, `require('node:fs').writeFileSync(${JSON.stringify(markerPath)}, 'ran')\n`, "utf8")
+  let discoveryCalls = 0
 
   try {
     const report = await runGate({
@@ -258,10 +323,16 @@ test("does not launch any soak leg when daemon preflight fails", async () => {
         agents: [],
         missingHarnesses: ["claude"],
         missingModelCatalogs: []
-      })
+      }),
+      sessionDiscovery: async () => {
+        discoveryCalls += 1
+        return passingSessionDiscovery(["codex", "claude"])
+      }
     })
     assert.equal(report.verdict, "failed")
     assert.deepEqual(report.runs, [])
+    assert.equal(report.sessionDiscovery.skipped, true)
+    assert.equal(discoveryCalls, 0)
     assert.equal(fs.existsSync(markerPath), false)
     assert.equal(JSON.parse(fs.readFileSync(reportPath, "utf8")).preflight.missingHarnesses[0], "claude")
   } finally {
