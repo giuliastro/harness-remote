@@ -46,6 +46,10 @@ jobs:
         run: npm run test:ci:full
         working-directory: web
 
+      - name: Run OpenCode permission transport regression
+        run: node scripts/run-vite-test.mjs src/opencode-permission-api.test.mjs
+        working-directory: web
+
       - name: Run bridge tests
         run: npm test
         working-directory: bridge

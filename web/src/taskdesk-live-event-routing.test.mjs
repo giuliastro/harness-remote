@@ -68,11 +68,35 @@ test("pending permission/question never masquerades as terminal lifecycle", () =
   assert.doesNotMatch(attentionLifecycle, /send|prompt|continueWorkThread/)
 })
 
+test("OpenCode permission replies stay fail-closed at the UI boundary", () => {
+  const attention = readFileSync(new URL("./components/work-thread-attention.tsx", import.meta.url), "utf8")
+  const api = readFileSync(new URL("./api.ts", import.meta.url), "utf8")
+  const responder = attention.match(/async function respondPermission\([\s\S]*?\n  \}/)?.[0] || ""
+
+  assert.match(api, /replyPermission\(config: ServerConfig, requestID: string, reply: "once" \| "always" \| "reject"/)
+  assert.match(api, /body: \{ reply \}/)
+  assert.match(responder, /await api\.replyPermission\(config, request\.id, reply, directory\)/)
+  assert.match(responder, /void persistSuccessfulPermissionDecision\(request, reply\)\.catch/)
+  assert.match(responder, /await onResolved\(\)/)
+  assert.match(responder, /catch \(reason\)[\s\S]*?setError\(/)
+
+  const nativeReply = responder.indexOf("await api.replyPermission")
+  const metadata = responder.indexOf("persistSuccessfulPermissionDecision")
+  const refresh = responder.indexOf("await onResolved()")
+  assert.ok(nativeReply >= 0 && metadata > nativeReply && refresh > nativeReply, "native OpenCode reply must succeed before local metadata or resolution refresh")
+
+  // A failed POST must leave the authoritative request in props. Never optimistically remove it,
+  // clear Attention, or record an allow/deny before the native harness acknowledges the decision.
+  assert.doesNotMatch(responder.slice(0, nativeReply), /persistSuccessfulPermissionDecision|onResolved|setPermissions|filter\(/)
+  assert.doesNotMatch(responder, /setPermissions|permissions\.filter/)
+})
+
 test("OpenCode reliability regressions stay in the required browser gate", () => {
   const workflow = readFileSync(new URL("../../.github/workflows/pr-checks.yml", import.meta.url), "utf8")
   const browserSmoke = readFileSync(new URL("../scripts/native-opencode-browser-smoke.mjs", import.meta.url), "utf8")
   const realSmoke = readFileSync(new URL("../scripts/native-opencode-real-regression-smoke.mjs", import.meta.url), "utf8")
   const permissionSmoke = readFileSync(new URL("../scripts/native-opencode-permission-regression-smoke.mjs", import.meta.url), "utf8")
+  const permissionApi = readFileSync(new URL("./opencode-permission-api.test.mjs", import.meta.url), "utf8")
 
   for (const marker of [
     "OPENCODE-TRANSIENT-INTERRUPTION-PROMPT",
@@ -92,6 +116,13 @@ test("OpenCode reliability regressions stay in the required browser gate", () =>
   assert.match(permissionSmoke, /opening an unresolved Session must not consume Attention/)
   assert.match(permissionSmoke, /permission resolution left mounted Activity running/)
   assert.doesNotMatch(permissionSmoke, /page\.reload\(/)
+
+  assert.match(permissionApi, /failed OpenCode permission reply rejects and remains retryable/)
+  assert.match(permissionApi, /native permission reply failed/)
+  assert.ok(
+    workflow.includes("node scripts/run-vite-test.mjs src/opencode-permission-api.test.mjs"),
+    "OpenCode permission transport failure regression is not a required PR gate"
+  )
 
   for (const script of [
     "native-opencode-browser-smoke.mjs",
