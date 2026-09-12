@@ -213,7 +213,7 @@ export function parseSoakEvidence(output = "") {
 }
 
 export function gateUsage() {
-  return `Usage: npm run gate:real-harness -- [options]\n\nOptions:\n  --harnesses <list>  Comma-separated harnesses to verify (default: ${SUPPORTED_HARNESSES.join(",")})\n  --mode <mode>       release (default) or control-plane\n  --report <path>     JSON evidence report path (default: artifacts/real-harness-gate-<timestamp>.json)\n  --help              Show this help\n\nThe gate first checks /v1/diagnostics and stops early if the daemon is unreachable, credentials are rejected, a requested harness is not registered, or model discovery is not configured. It then creates one harmless probe Session per requested harness and requires that exact native id to be rediscovered through the Session index before inference-heavy soak legs begin. Each real-harness leg must also emit the complete scenario evidence contract (Session creation, multi-turn streaming, model selection, cross-harness isolation, transcript fidelity, Stop/recovery and bounded resources); a zero exit code without that evidence fails closed. Shared soak settings use HR_URL, HR_USER, HR_PASS, HR_DIR_A, HR_DIR_B, HR_CYCLES, HR_TURN_BUDGET_MS and HR_ECHO_MARKERS. Release mode always disables HR_ALLOW_TURN_ERRORS. Use --mode control-plane when inference is unavailable; that mode is recorded as not release-eligible.`
+  return `Usage: npm run gate:real-harness -- [options]\n\nOptions:\n  --harnesses <list>  Comma-separated harnesses to verify (default: ${SUPPORTED_HARNESSES.join(",")})\n  --mode <mode>       release (default) or control-plane\n  --report <path>     JSON evidence report path (default: artifacts/real-harness-gate-<timestamp>.json)\n  --help              Show this help\n\nThe gate first checks /v1/diagnostics and stops early if the daemon is unreachable, credentials are rejected, a requested harness is not registered, or model discovery is not configured. It then health-checks every requested installed harness through its agent-scoped /global/health route and requires a concrete reported version so the release evidence identifies the actual harness build under test. Only then does it create one harmless probe Session per harness and require that exact native id to be rediscovered through the bounded Session index before inference-heavy soak legs begin. Each real-harness leg must also emit the complete scenario evidence contract (Session creation, multi-turn streaming, model selection, cross-harness isolation, transcript fidelity, Stop/recovery and bounded resources); a zero exit code without that evidence fails closed. Shared soak settings use HR_URL, HR_USER, HR_PASS, HR_DIR_A, HR_DIR_B, HR_CYCLES, HR_TURN_BUDGET_MS and HR_ECHO_MARKERS. Release mode always disables HR_ALLOW_TURN_ERRORS. Use --mode control-plane when inference is unavailable; that mode is recorded as not release-eligible.`
 }
 
 async function runSoak({ primary, secondary, mode, soakPath }) {
@@ -303,19 +303,19 @@ export async function runGate({
   }
 
   let discoveryResult = {
-    schemaVersion: 1,
+    schemaVersion: 2,
     passed: false,
     skipped: true,
     results: []
   }
   if (preflightResult.passed) {
-    console.log("\n== native Session create + rediscovery ==")
+    console.log("\n== installed harness health + build identity + native Session rediscovery ==")
     discoveryResult = await sessionDiscovery({ harnesses })
     for (const result of discoveryResult.results ?? []) {
       if (result.passed) {
-        console.log(`  ok   ${result.agentID}: created Session rediscovered in ${result.pages} page(s)`)
+        console.log(`  ok   ${result.agentID} ${result.version}: created Session rediscovered in ${result.pages} page(s)`)
       } else {
-        console.error(`  FAIL ${result.agentID}: ${result.error ?? "native Session rediscovery failed"}`)
+        console.error(`  FAIL ${result.agentID}${result.version ? ` ${result.version}` : ""}: ${result.error ?? "native Session rediscovery failed"}`)
       }
     }
   }
