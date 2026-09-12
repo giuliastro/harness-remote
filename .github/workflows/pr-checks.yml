@@ -116,6 +116,7 @@ jobs:
       - name: Run native Session transcript and composer smoke
         run: |
           node scripts/native-session-navigation-smoke.mjs
+          node scripts/native-claude-browser-smoke.mjs
           node scripts/native-session-browser-smoke.mjs
           node scripts/native-opencode-browser-smoke.mjs
           node scripts/native-opencode-real-regression-smoke.mjs
