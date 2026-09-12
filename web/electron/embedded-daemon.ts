@@ -201,7 +201,7 @@ export class EmbeddedDaemonRuntime {
         resolve()
       }
       const timer = setTimeout(() => {
-        if (child.exitCode === null && !child.killed) child.kill("SIGKILL")
+        if (child.exitCode === null) child.kill("SIGKILL")
         finish()
       }, shutdownTimeoutMs)
       timer.unref?.()
