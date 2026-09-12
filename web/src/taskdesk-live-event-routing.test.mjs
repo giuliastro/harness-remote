@@ -47,20 +47,63 @@ test("OpenCode completion lifecycle reconciles status and the selected transcrip
   assert.doesNotMatch(lifecycle, /send|prompt|continueWorkThread/)
 })
 
-test("permission and question lifecycle keeps the mounted Session live", () => {
+test("pending permission/question never masquerades as terminal lifecycle", () => {
   const refresh = readFileSync(new URL("./taskdesk-session-live-refresh.ts", import.meta.url), "utf8")
   const attentionLifecycle = refresh.match(/if \(isAttentionEvent\(event\.type\)\) \{[\s\S]*?\n      \}/)?.[0] || ""
 
-  // Resolving a permission can end or resume a native turn without a trailing message event.
-  // The selected Session therefore needs the permission card, transcript and Conversation state
-  // reconciled from their existing authoritative reads, plus the same bounded durability settle
-  // used by ordinary lifecycle edges. Navigation/remount must never be the recovery mechanism.
-  assert.match(attentionLifecycle, /selectedEvent/)
+  assert.match(refresh, /type === "permission\.replied"/)
+  assert.match(refresh, /type === "question\.replied"/)
+  assert.match(refresh, /type === "question\.rejected"/)
   assert.match(attentionLifecycle, /throttle\("detail", [^,]+, onDetail\)/)
   assert.match(attentionLifecycle, /throttle\("message", [^,]+, onMessage\)/)
+  assert.match(attentionLifecycle, /if \(isAttentionResolutionEvent\(event\.type\)\)/)
   assert.match(attentionLifecycle, /throttle\("index", [^,]+, onIndex\)/)
   assert.match(attentionLifecycle, /settleAfterLifecycle\(\)/)
+
+  // The index/terminal reconciliation is nested under the resolution guard. An asked event can
+  // refresh the visible request and transcript, but it cannot by itself complete the Conversation.
+  const resolutionGuard = attentionLifecycle.indexOf("if (isAttentionResolutionEvent(event.type))")
+  assert.ok(resolutionGuard >= 0)
+  assert.ok(attentionLifecycle.indexOf('throttle("index"', resolutionGuard) > resolutionGuard)
+  assert.ok(attentionLifecycle.indexOf("settleAfterLifecycle()", resolutionGuard) > resolutionGuard)
+  assert.doesNotMatch(attentionLifecycle.slice(0, resolutionGuard), /throttle\("index"|settleAfterLifecycle\(\)/)
   assert.doesNotMatch(attentionLifecycle, /send|prompt|continueWorkThread/)
+})
+
+test("OpenCode reliability regressions stay in the required browser gate", () => {
+  const workflow = readFileSync(new URL("../../.github/workflows/pr-checks.yml", import.meta.url), "utf8")
+  const browserSmoke = readFileSync(new URL("../scripts/native-opencode-browser-smoke.mjs", import.meta.url), "utf8")
+  const realSmoke = readFileSync(new URL("../scripts/native-opencode-real-regression-smoke.mjs", import.meta.url), "utf8")
+  const permissionSmoke = readFileSync(new URL("../scripts/native-opencode-permission-regression-smoke.mjs", import.meta.url), "utf8")
+
+  // Historical regressions remain executable rather than being replaced by the newest scenario.
+  for (const marker of [
+    "OPENCODE-TRANSIENT-INTERRUPTION-PROMPT",
+    "OPENCODE-LATE-RECOVERY-PROMPT",
+    "OPENCODE-TERMINAL-INTERRUPTION-PROMPT",
+    "OPENCODE-TERMINAL-PROVIDER-ERROR-PROMPT",
+    "OPENCODE-PERSISTED-WITHOUT-FINAL-EVENT-PROMPT"
+  ]) assert.ok(browserSmoke.includes(marker), `missing historical OpenCode browser regression: ${marker}`)
+  assert.match(realSmoke, /mounted completion lag/)
+  assert.match(realSmoke, /without navigation/)
+
+  // Permission regression reproduces a terminal-looking status while permission is pending, checks
+  // Attention persistence, verifies the exact native reject/once replies and proves both deny and
+  // allow converge while the same Session remains mounted.
+  assert.match(permissionSmoke, /permission\.asked/)
+  assert.match(permissionSmoke, /permission\.replied/)
+  assert.match(permissionSmoke, /Response interrupted/)
+  assert.match(permissionSmoke, /reply: "reject"/)
+  assert.match(permissionSmoke, /reply: "once"/)
+  assert.match(permissionSmoke, /opening an unresolved Session must not consume Attention/)
+  assert.match(permissionSmoke, /denied permission must not leave mounted Activity running/)
+  assert.doesNotMatch(permissionSmoke, /page\.reload\(/)
+
+  for (const script of [
+    "native-opencode-browser-smoke.mjs",
+    "native-opencode-real-regression-smoke.mjs",
+    "native-opencode-permission-regression-smoke.mjs"
+  ]) assert.ok(workflow.includes(`node scripts/${script}`), `${script} is not a required Chromium PR gate`)
 })
 
 test("foregrounding the app immediately reconciles durable conversation state", () => {
