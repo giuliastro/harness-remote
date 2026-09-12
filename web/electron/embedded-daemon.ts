@@ -34,19 +34,29 @@ export function embeddedDaemonEntry({ isPackaged, appPath, resourcesPath }: Embe
     : join(appPath, "..", "bridge", "src", "daemon-cli.js")
 }
 
-export function embeddedDaemonArgs(port: number, openCodePort: number, username: string, password: string): string[] {
+export function embeddedDaemonArgs(port: number, openCodePort: number): string[] {
   return [
     "--host", EMBEDDED_DAEMON_HOST,
     "--port", String(port),
     "--opencode-host", EMBEDDED_DAEMON_HOST,
-    "--opencode-port", String(openCodePort),
-    "--username", username,
-    "--password", password
+    "--opencode-port", String(openCodePort)
   ]
 }
 
-export function embeddedDaemonEnvironment(environment: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
-  return { ...environment, ELECTRON_RUN_AS_NODE: "1" }
+export function embeddedDaemonEnvironment(
+  environment: NodeJS.ProcessEnv = process.env,
+  auth?: { username: string; password: string }
+): NodeJS.ProcessEnv {
+  return {
+    ...environment,
+    ELECTRON_RUN_AS_NODE: "1",
+    ...(auth
+      ? {
+          HARNESS_REMOTE_USERNAME: auth.username,
+          HARNESS_REMOTE_PASSWORD: auth.password
+        }
+      : {})
+  }
 }
 
 export async function findLoopbackPort(startPort: number, excluded: readonly number[] = [], attempts = 64): Promise<number> {
@@ -115,9 +125,9 @@ export class EmbeddedDaemonRuntime {
     const port = await findLoopbackPort(4097)
     const openCodePort = await findLoopbackPort(4096, [port])
     const auth = credentials()
-    const args = embeddedDaemonArgs(port, openCodePort, auth.username, auth.password)
+    const args = embeddedDaemonArgs(port, openCodePort)
     const child = spawn(this.options.executable ?? process.execPath, [this.options.entryPath, ...args], {
-      env: embeddedDaemonEnvironment(this.options.environment),
+      env: embeddedDaemonEnvironment(this.options.environment, auth),
       stdio: ["ignore", "pipe", "pipe"],
       windowsHide: true
     })
