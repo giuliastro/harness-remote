@@ -1,6 +1,11 @@
 import type { DesktopAttentionNotification } from "../electron/ipc-contract"
 import type { NativeSessionAttentionNotificationEvent } from "./native-session-attention-notifications"
 
+export type NativeSessionAttentionNotificationContext = {
+  sessionTitle?: string
+  projectLabel?: string
+}
+
 function title(event: NativeSessionAttentionNotificationEvent): string {
   if (event.kind === "authorization") return "Authorization required"
   if (event.kind === "rejected") return "Request rejected"
@@ -15,31 +20,46 @@ function compact(parts: Array<string | undefined>): string {
     .slice(0, 1000)
 }
 
+function taskIdentity(
+  event: NativeSessionAttentionNotificationEvent,
+  context?: NativeSessionAttentionNotificationContext
+): string[] {
+  const sessionTitle = context?.sessionTitle?.trim()
+  const projectLabel = context?.projectLabel?.trim()
+  return [
+    sessionTitle ? `Session: ${sessionTitle}` : undefined,
+    projectLabel ? `Project: ${projectLabel}` : undefined,
+    `${event.machineName} · ${event.agentLabel}`
+  ].filter((part): part is string => Boolean(part))
+}
+
 /** Keep the notification useful without requiring the full transcript. Authorization messages include
  * the requested action, harness-provided explanation/boundary when available, and the fail-closed
- * consequence required by the product contract. */
+ * consequence required by the product contract. Optional task context comes only from bounded native
+ * Session metadata; raw working-directory paths are never added to the notification. */
 export function desktopAttentionNotification(
-  event: NativeSessionAttentionNotificationEvent
+  event: NativeSessionAttentionNotificationEvent,
+  context?: NativeSessionAttentionNotificationContext
 ): DesktopAttentionNotification {
-  const identity = `${event.machineName} · ${event.agentLabel}`
+  const identity = taskIdentity(event, context)
   const body = event.kind === "authorization"
     ? compact([
         event.requestedAction,
         event.explanation,
         event.boundary ? `Boundary: ${event.boundary}` : undefined,
         event.consequence,
-        identity
+        ...identity
       ])
     : compact([
         event.requestedAction,
         event.consequence,
-        identity
+        ...identity
       ])
 
   return {
     title: title(event),
     body,
-    overlayDescription: `${title(event)} · ${identity}`.slice(0, 240),
+    overlayDescription: compact([title(event), ...identity]).split("\n").join(" · ").slice(0, 240),
     target: {
       machineID: event.machineID,
       agentID: event.agentID,
