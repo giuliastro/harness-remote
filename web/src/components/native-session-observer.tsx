@@ -19,6 +19,7 @@ import type { AgentModelScope } from "../taskClient"
 import type { CommandInfo, MachineAgentHost } from "../types"
 import { LoadingIcon } from "../Icons"
 import { CrossMachineContinuePanel } from "./cross-machine-continue-panel"
+import { NativeSessionLineagePanel } from "./native-session-lineage-panel"
 import { WorkThreadConversation } from "./work-thread-conversation"
 import "../native-session-observer.css"
 
@@ -235,6 +236,13 @@ export function NativeSessionObserver({
 
   return (
     <div className="hr-native-session-observer writable">
+      <NativeSessionLineagePanel
+        target={target}
+        routes={routableRoutes}
+        interactionEnabled={interactionEnabled}
+        onConnectionIssue={onConnectionIssue}
+      />
+
       {onOpenSession && crossMachineRoutes.length ? (
         <CrossMachineContinuePanel
           source={target}
