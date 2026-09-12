@@ -68,6 +68,29 @@ test("pending permission/question never masquerades as terminal lifecycle", () =
   assert.doesNotMatch(attentionLifecycle, /send|prompt|continueWorkThread/)
 })
 
+test("OpenCode permission replies stay fail-closed at the UI boundary", () => {
+  const attention = readFileSync(new URL("./components/work-thread-attention.tsx", import.meta.url), "utf8")
+  const api = readFileSync(new URL("./api.ts", import.meta.url), "utf8")
+  const responder = attention.match(/async function respondPermission\([\s\S]*?\n  \}/)?.[0] || ""
+
+  assert.match(api, /replyPermission\(config: ServerConfig, requestID: string, reply: "once" \| "always" \| "reject"/)
+  assert.match(api, /body: \{ reply \}/)
+  assert.match(responder, /await api\.replyPermission\(config, request\.id, reply, directory\)/)
+  assert.match(responder, /void persistSuccessfulPermissionDecision\(request, reply\)\.catch/)
+  assert.match(responder, /await onResolved\(\)/)
+  assert.match(responder, /catch \(reason\)[\s\S]*?setError\(/)
+
+  const nativeReply = responder.indexOf("await api.replyPermission")
+  const metadata = responder.indexOf("persistSuccessfulPermissionDecision")
+  const refresh = responder.indexOf("await onResolved()")
+  assert.ok(nativeReply >= 0 && metadata > nativeReply && refresh > nativeReply, "native OpenCode reply must succeed before local metadata or resolution refresh")
+
+  // A failed POST must leave the authoritative request in props. Never optimistically remove it,
+  // clear Attention, or record an allow/deny before the native harness acknowledges the decision.
+  assert.doesNotMatch(responder.slice(0, nativeReply), /persistSuccessfulPermissionDecision|onResolved|setPermissions|filter\(/)
+  assert.doesNotMatch(responder, /setPermissions|permissions\.filter/)
+})
+
 test("OpenCode reliability regressions stay in the required browser gate", () => {
   const workflow = readFileSync(new URL("../../.github/workflows/pr-checks.yml", import.meta.url), "utf8")
   const browserSmoke = readFileSync(new URL("../scripts/native-opencode-browser-smoke.mjs", import.meta.url), "utf8")
