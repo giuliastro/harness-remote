@@ -98,7 +98,9 @@ The daemon-reconnect browser smoke proves the client-side boundary with a restar
 
 Automated fixtures cannot prove compatibility with the installed versions of every harness. Before a release is called fully verified, run the traceable real-harness gate for OpenCode, Codex, Claude Code, OMP and PI. A control-plane-only pass is not equivalent to real inference evidence.
 
-The gate first creates one harmless Native Session for every requested installed harness and requires that exact native Session id to be rediscovered through that harness's bounded Session index. A successful create response alone is not discovery evidence, and a missing id fails the gate before inference-heavy soak legs begin. The evidence report records this per harness together with multi-turn streaming, model selection, cross-harness isolation, transcript fidelity, Stop/recovery and resource bounds.
+The gate first health-checks every requested installed harness through its agent-scoped health route. A harness that is configured but cannot actually start fails before Session creation or inference-heavy soak work. The evidence records the version reported by each running harness; if a harness reports no concrete version, that absence remains explicit as `versionKnown: false` rather than being replaced with an invented build identity.
+
+After the health boundary, the gate creates one harmless Native Session for every requested installed harness and requires that exact native Session id to be rediscovered through that harness's bounded Session index. A successful create response alone is not discovery evidence, and a missing id fails the gate before inference-heavy soak legs begin. The evidence report records this per harness together with multi-turn streaming, model selection, cross-harness isolation, transcript fidelity, Stop/recovery and resource bounds.
 
 Create-and-rediscover evidence does **not** substitute for a real daemon/adapter process restart. Installed-harness restart/reconnect and physical Android background/foreground or network-interruption behavior remain separate release evidence where a real process/device boundary is required.
 
