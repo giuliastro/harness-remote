@@ -5,12 +5,18 @@ const calls = {
   request: [],
   subscribe: [],
   unsubscribe: [],
-  attention: []
+  attention: [],
+  runtimeGet: 0,
+  runtimeRetry: 0
 }
 
 let attentionActivation
 let releaseFirstSync
 const firstSyncGate = new Promise((resolve) => { releaseFirstSync = resolve })
+let runtimeState = {
+  status: "ready",
+  machine: { profileId: "desktop-local-runtime", host: "127.0.0.1", port: 4111, pid: 1234 }
+}
 
 globalThis.window = {
   harnessDesktop: {
@@ -36,6 +42,14 @@ globalThis.window = {
           }
         : { ok: true }
       return Promise.resolve({ ok: true, response: { status: 200, data, headers: {} } })
+    },
+    getLocalRuntimeState() {
+      calls.runtimeGet += 1
+      return Promise.resolve(runtimeState)
+    },
+    retryLocalRuntime() {
+      calls.runtimeRetry += 1
+      return Promise.resolve(runtimeState)
     },
     subscribeEvents(profileId, options) {
       calls.subscribe.push({ profileId, options })
@@ -182,5 +196,39 @@ const lan = {
 }
 await bridge.syncDesktopProfiles([lan])
 assert.equal(bridge.desktopProfileID({ ...lan.config, backend: "omp", agentId: "omp" }), "machine-lan")
+
+// The embedded runtime endpoint is public to the renderer, but its credentials are not. Once the
+// state has been read, host+port map to the volatile main-process profile and requests route there.
+const ready = await bridge.desktopLocalRuntimeState()
+assert.equal(calls.runtimeGet, 1)
+assert.deepEqual(ready, runtimeState)
+const localConfig = {
+  backend: "codex",
+  agentId: "codex",
+  host: runtimeState.machine.host,
+  port: runtimeState.machine.port,
+  username: "",
+  password: ""
+}
+assert.equal(bridge.desktopProfileID(localConfig), "desktop-local-runtime")
+const localResult = await bridge.desktopRequestResult(localConfig, { path: "/session/local" })
+assert.equal(localResult.ok, true)
+assert.equal(calls.request.at(-1).profileId, "desktop-local-runtime")
+assert.deepEqual(calls.request.at(-1).request.route, { backend: "codex", agentId: "codex" })
+
+// Even if a composed workspace snapshot contains the local projection, renderer synchronization
+// must never attempt to persist/replace the volatile main-process profile.
+await bridge.syncDesktopProfiles([
+  lan,
+  {
+    id: "desktop-local-runtime",
+    config: { ...localConfig, backend: "opencode", agentId: undefined }
+  }
+])
+assert.deepEqual(calls.replace.at(-1).profiles.map((profile) => profile.id), ["machine-lan"])
+
+runtimeState = { status: "unavailable", error: "not installed" }
+assert.deepEqual(await bridge.retryDesktopLocalRuntime(), runtimeState)
+assert.equal(calls.runtimeRetry, 1)
 
 console.log("desktop workspace bridge regression tests passed")
