@@ -79,6 +79,18 @@ test("Session-first workspace keeps machines projects harness filters models and
   assert.match(picker, /Search model, provider, variant/)
 })
 
+test("desktop-owned local machine stays visible but cannot be edited or removed", () => {
+  const standalone = read("./components/standalone-universal-workspace.tsx")
+
+  assert.match(standalone, /isDesktopLocalMachine/)
+  assert.match(standalone, /const runtimeOwned = isDesktopLocalMachine\(machine\)/)
+  assert.match(standalone, /data-runtime-owned=\{runtimeOwned \|\| undefined\}/)
+  assert.match(standalone, /Managed by Harness Remote/)
+  assert.match(standalone, /if \(isDesktopLocalMachine\(machine\)\) return[\s\S]*const remove = \(machine: WorkspaceMachine\) => \{[\s\S]*if \(isDesktopLocalMachine\(machine\)\) return/)
+  assert.match(standalone, /\{!runtimeOwned \? \([\s\S]*setEditingID\(machine\.id\)[\s\S]*setConfirmRemoveID\(machine\.id\)[\s\S]*\) : null\}/)
+  assert.match(standalone, /state === "offline" \? <button[^>]*data-machine-retry/, 'runtime-owned machines must keep the normal health retry action')
+})
+
 test("native Session metadata actions belong to the open Session, not the navigation rail", () => {
   const standalone = read("./components/standalone-universal-workspace.tsx")
   const home = read("./components/native-session-home-base.tsx")

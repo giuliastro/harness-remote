@@ -41,6 +41,7 @@ import type { MachineSnapshot, Session } from "../types"
 import { subscribeTaskDeskLiveEvents } from "../taskdesk-live-events"
 import {
   createWorkspaceMachine,
+  isDesktopLocalMachine,
   type WorkspaceMachine
 } from "../workspaceMachines"
 import { sameMachineConnection } from "../machineConnection"
@@ -187,7 +188,11 @@ function MachineManager({ machines, onClose, onPersist }: { machines: WorkspaceM
   const [health, setHealth] = useState<Record<string, MachineManagerHealth<MachineSnapshot> | undefined>>({})
   const probeRequestIDs = useRef<Record<string, number>>({})
   const dialogRef = useRef<HTMLElement>(null)
-  const draft = useMemo(() => editingID === "new" ? createWorkspaceMachine() : machines.find((machine) => machine.id === editingID) || null, [editingID, machines])
+  const draft = useMemo(() => {
+    if (editingID === "new") return createWorkspaceMachine()
+    const machine = machines.find((candidate) => candidate.id === editingID)
+    return machine && !isDesktopLocalMachine(machine) ? machine : null
+  }, [editingID, machines])
 
   const probeMachine = useCallback((machine: WorkspaceMachine) => {
     const requestID = (probeRequestIDs.current[machine.id] || 0) + 1
@@ -230,6 +235,7 @@ function MachineManager({ machines, onClose, onPersist }: { machines: WorkspaceM
   useDialogDismiss(dialogRef, onClose)
 
   const save = (machine: WorkspaceMachine) => {
+    if (isDesktopLocalMachine(machine)) return
     if (editingID === "new") onPersist([...machines, machine])
     else onPersist(machines.map((candidate) => candidate.id === machine.id ? machine : candidate))
     setEditingID(null)
@@ -238,6 +244,7 @@ function MachineManager({ machines, onClose, onPersist }: { machines: WorkspaceM
   // window.confirm is a blocking native dialog that the Android WebView renders as a bare,
   // unstyled system alert on top of the app. An inline confirmation stays inside the product.
   const remove = (machine: WorkspaceMachine) => {
+    if (isDesktopLocalMachine(machine)) return
     onPersist(machines.filter((candidate) => candidate.id !== machine.id))
     setConfirmRemoveID(null)
     if (editingID === machine.id) setEditingID(null)
@@ -259,10 +266,12 @@ function MachineManager({ machines, onClose, onPersist }: { machines: WorkspaceM
             const state = check?.state || "checking"
             const snapshot = check?.snapshot
             const error = check?.state === "offline" ? check.error : undefined
+            const runtimeOwned = isDesktopLocalMachine(machine)
             return (
-              <div className="uw-machine-config-card" data-machine-state={state} key={machine.id}>
+              <div className="uw-machine-config-card" data-machine-state={state} data-runtime-owned={runtimeOwned || undefined} key={machine.id}>
                 <div className="uw-machine-config-main">
                   <strong>{snapshot?.machine.name || machine.name}</strong>
+                  {runtimeOwned ? <small className="uw-machine-runtime-owned">Managed by Harness Remote</small> : null}
                   <span>{machine.config.host}:{machine.config.port}</span>
                   <small className={`uw-machine-connection-state ${state}`} aria-live="polite">
                     <i aria-hidden="true" />
@@ -280,7 +289,7 @@ function MachineManager({ machines, onClose, onPersist }: { machines: WorkspaceM
                   {snapshot?.agents.length ? <div className="uw-machine-harness-list">{snapshot.agents.map((agent) => <span className="uw-machine-harness" key={agent.id}><i className={agent.state} aria-hidden="true" /><strong>{agent.label}</strong><small>{machineAgentStateLabel(agent.state)}{agent.processID ? ` · PID ${agent.processID}` : ""}</small></span>)}</div> : null}
                 </div>
                 <div className="uw-machine-config-actions">
-                  {confirmRemoveID === machine.id ? (
+                  {confirmRemoveID === machine.id && !runtimeOwned ? (
                     <>
                       <span className="uw-machine-confirm" role="alert">{t("sf.removeQuestion", { name: machine.name })}</span>
                       <button type="button" className="uw-manager-button" onClick={() => setConfirmRemoveID(null)}>{t("sf.keep")}</button>
@@ -289,8 +298,12 @@ function MachineManager({ machines, onClose, onPersist }: { machines: WorkspaceM
                   ) : (
                     <>
                       {state === "offline" ? <button type="button" className="uw-manager-button" data-machine-retry onClick={() => probeMachine(machine)}>{t("sf.retry")}</button> : null}
-                      <button type="button" className="uw-manager-button" onClick={() => setEditingID(machine.id)}>{t("sf.edit")}</button>
-                      <button type="button" className="uw-manager-button danger" onClick={() => setConfirmRemoveID(machine.id)}>{t("sf.remove")}</button>
+                      {!runtimeOwned ? (
+                        <>
+                          <button type="button" className="uw-manager-button" onClick={() => setEditingID(machine.id)}>{t("sf.edit")}</button>
+                          <button type="button" className="uw-manager-button danger" onClick={() => setConfirmRemoveID(machine.id)}>{t("sf.remove")}</button>
+                        </>
+                      ) : null}
                     </>
                   )}
                 </div>
