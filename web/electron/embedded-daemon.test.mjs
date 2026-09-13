@@ -112,6 +112,79 @@ process.on("SIGTERM", () => { clearInterval(timer); process.exit(0) })
   }
 })
 
+test("restarts a live embedded daemon after repeated authenticated HTTP health failures", async () => {
+  const root = await mkdtemp(join(tmpdir(), "hr-embedded-daemon-health-"))
+  const script = join(root, "wedging-daemon.mjs")
+  const stateDirectory = join(root, "state")
+  const generationFile = join(stateDirectory, "health-generation")
+  await writeFile(script, `
+import http from "node:http"
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs"
+import { join } from "node:path"
+
+const port = Number(process.argv[process.argv.indexOf("--port") + 1])
+const stateDirectory = process.argv[process.argv.indexOf("--state-dir") + 1]
+mkdirSync(stateDirectory, { recursive: true })
+const generationFile = join(stateDirectory, "health-generation")
+let generation = 0
+try { generation = Number(readFileSync(generationFile, "utf8")) || 0 } catch {}
+generation += 1
+writeFileSync(generationFile, String(generation))
+const expectedAuthorization = "Basic " + Buffer.from(process.env.HARNESS_REMOTE_USERNAME + ":" + process.env.HARNESS_REMOTE_PASSWORD).toString("base64")
+let machineRequests = 0
+const server = http.createServer((request, response) => {
+  if (request.url !== "/v1/machine") { response.writeHead(404); response.end(); return }
+  if (request.headers.authorization !== expectedAuthorization) { response.writeHead(401); response.end(); return }
+  machineRequests += 1
+  if (generation === 1 && machineRequests > 1) return
+  response.writeHead(200, { "Content-Type": "application/json" })
+  response.end(JSON.stringify({ machine: { id: "fake" }, agents: [] }))
+})
+server.listen(port, "127.0.0.1", () => {
+  process.stdout.write("Harness daemon ready at http://127.0.0.1:" + port + "\\n")
+})
+process.on("SIGTERM", () => {
+  server.closeAllConnections?.()
+  server.close()
+  process.exit(0)
+})
+`, "utf8")
+
+  const exits = []
+  const runtime = new EmbeddedDaemonRuntime({
+    entryPath: script,
+    stateDirectory,
+    startupTimeoutMs: 2_000,
+    shutdownTimeoutMs: 1_000,
+    healthCheckIntervalMs: 20,
+    healthCheckTimeoutMs: 30,
+    healthFailureThreshold: 2,
+    onExit: (details) => exits.push(details)
+  })
+  try {
+    const first = await runtime.start()
+
+    let generation = 0
+    for (let index = 0; index < 200 && generation < 2; index += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 10))
+      try { generation = Number(await readFile(generationFile, "utf8")) || 0 } catch {}
+    }
+    assert.equal(generation, 2, "health supervision should replace the wedged process")
+
+    const second = await runtime.start()
+    assert.equal(runtime.isRunning, true)
+    assert.notEqual(second.pid, first.pid)
+    assert.equal(second.endpoint.port, first.endpoint.port, "recovery must preserve the registered loopback endpoint")
+    assert.equal(second.endpoint.username, first.endpoint.username)
+    assert.equal(second.endpoint.password, first.endpoint.password, "recovery must preserve volatile credentials")
+    assert.equal(await runtime.healthCheck(), true)
+    assert.deepEqual(exits, [], "successful health recovery must not be reported as an unexpected exit")
+  } finally {
+    await runtime.stop()
+    await rm(root, { recursive: true, force: true })
+  }
+})
+
 test("reports an unexpected post-readiness daemon exit", async () => {
   const root = await mkdtemp(join(tmpdir(), "hr-embedded-daemon-exit-"))
   const script = join(root, "exiting-daemon.mjs")
