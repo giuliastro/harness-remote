@@ -36,10 +36,11 @@ Implemented on the branch:
 - the first prompt must be delivered exactly once with its own durable request id and the bounded transferred Task Context;
 - the target Session must open writable in the production UI after the handoff;
 - a source-only permission sentinel is asserted absent from target creation, portable lineage and the target prompt;
-- portable controls must explicitly record source authority invalidation, target authorization re-evaluation and no attachment transfer;
-- no ACP adapter, Native Session writer semantics or harness runtime implementation is changed by this slice.
+- portable controls must explicitly record source authority invalidation, target authorization re-evaluation and no attachment transfer.
 
-Next gate: review the branch diff, then run full PR CI and merge to `codex/development-2026-09-11` only if every gate, including Debug APK, is green.
+The first full CI run exposed a real panel-state race before any mutation: a refreshed snapshot of the same target machine reloaded the Project catalog and cleared an explicit Project choice when more than one Project existed. The branch now preserves a still-valid Project selection across same-machine catalog refreshes, never carries a machine-local Project id to a different machine, and keeps the existing single-Project auto-selection behavior. A focused unit regression protects that selection rule. This UI-state fix does not change ACP adapters, Native Session writer semantics or handoff mutation ordering.
+
+Next gate: rerun the complete PR CI and merge to `codex/development-2026-09-11` only if every gate, including the end-to-end Chromium smoke and Debug APK, is green.
 
 ## P2 roadmap position
 

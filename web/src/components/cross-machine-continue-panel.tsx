@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react"
 import { continueNativeSessionAcrossMachine } from "../cross-machine-continuation"
+import { reconcileCrossMachineProjectSelection } from "../cross-machine-project-selection"
 import {
   loadCrossMachineProjectRoute,
   requireTargetRouteProject,
@@ -99,6 +100,7 @@ export function CrossMachineContinuePanel({
   const [error, setError] = useState<string | null>(null)
   const [sending, setSending] = useState(false)
   const projectGeneration = useRef(0)
+  const projectMachineID = useRef("")
   const modelGeneration = useRef(0)
   const planGeneration = useRef(0)
 
@@ -130,8 +132,10 @@ export function CrossMachineContinuePanel({
 
   useEffect(() => {
     const generation = ++projectGeneration.current
+    const preserveProjectSelection = Boolean(open && machine && machineID && projectMachineID.current === machineID)
+    projectMachineID.current = open && machine ? machineID : ""
     setProjectRoute(null)
-    setProjectID("")
+    setProjectID((current) => preserveProjectSelection ? current : "")
     setPlan(null)
     setConfirmed(false)
     setError(null)
@@ -144,7 +148,11 @@ export function CrossMachineContinuePanel({
       .then((route) => {
         if (projectGeneration.current !== generation) return
         setProjectRoute(route)
-        if (route.targetProjects.length === 1) setProjectID(route.targetProjects[0].id)
+        setProjectID((current) => reconcileCrossMachineProjectSelection(
+          current,
+          route.targetProjects,
+          preserveProjectSelection
+        ))
       })
       .catch((reason) => {
         if (projectGeneration.current !== generation) return
