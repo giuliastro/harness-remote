@@ -1020,7 +1020,7 @@ function NativeSessionsWorkspace({
                halves are done. It used to end as soon as the machines answered, so the pane invited
                the user to open a Session while the rail beside it was still empty and, for a moment,
                still showing the machine that had failed - which reads as a failed startup rather
-               than one in progress. */}
+               than one in progress. */
             <div className="hr-native-workspace-empty hr-native-startup connecting" role="status" aria-live="polite">
               <LoadingIcon size={28} />
               <span>{t("sf.preparing")}</span>
