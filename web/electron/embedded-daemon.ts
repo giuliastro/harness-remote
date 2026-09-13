@@ -7,6 +7,7 @@ export const EMBEDDED_DAEMON_HOST = "127.0.0.1"
 export const EMBEDDED_DAEMON_PROFILE_ID = "desktop-local-runtime"
 const DEFAULT_STARTUP_TIMEOUT_MS = 30_000
 const DEFAULT_SHUTDOWN_TIMEOUT_MS = 5_000
+const DEFAULT_FORCE_KILL_EXIT_TIMEOUT_MS = 1_000
 const DEFAULT_HEALTH_CHECK_INTERVAL_MS = 10_000
 const DEFAULT_HEALTH_CHECK_TIMEOUT_MS = 2_000
 const DEFAULT_HEALTH_FAILURE_THRESHOLD = 3
@@ -142,6 +143,10 @@ export class EmbeddedDaemonRuntime {
   }) {}
 
   get isRunning(): boolean {
+    // A supervised recovery deliberately keeps the same endpoint and credentials. Treat that short
+    // replacement window as logical runtime liveness so Electron does not discard the still-valid
+    // volatile profile while the child process is being replaced.
+    if (this.recovering) return true
     return Boolean(this.child && this.child.exitCode === null && !this.child.killed && this.ready)
   }
 
@@ -335,21 +340,31 @@ export class EmbeddedDaemonRuntime {
 
   private async terminateChild(child: ChildProcess): Promise<void> {
     if (child.exitCode !== null) return
-    const shutdownTimeoutMs = this.options.shutdownTimeoutMs ?? DEFAULT_SHUTDOWN_TIMEOUT_MS
+    const shutdownTimeoutMs = Math.max(0, this.options.shutdownTimeoutMs ?? DEFAULT_SHUTDOWN_TIMEOUT_MS)
     await new Promise<void>((resolve) => {
       let settled = false
+      let forceExitTimer: NodeJS.Timeout | undefined
       const finish = () => {
         if (settled) return
         settled = true
-        clearTimeout(timer)
+        clearTimeout(termTimer)
+        if (forceExitTimer) clearTimeout(forceExitTimer)
         child.off("exit", finish)
         resolve()
       }
-      const timer = setTimeout(() => {
-        if (child.exitCode === null) child.kill("SIGKILL")
-        finish()
-      }, shutdownTimeoutMs)
-      timer.unref?.()
+      const forceKill = () => {
+        if (child.exitCode !== null) {
+          finish()
+          return
+        }
+        child.kill("SIGKILL")
+        // SIGKILL is asynchronous from Node's point of view. Do not immediately relaunch on the
+        // same port: wait for the child exit event so the OS has actually released its listener.
+        forceExitTimer = setTimeout(finish, DEFAULT_FORCE_KILL_EXIT_TIMEOUT_MS)
+        forceExitTimer.unref?.()
+      }
+      const termTimer = setTimeout(forceKill, shutdownTimeoutMs)
+      termTimer.unref?.()
       child.once("exit", finish)
       if (child.exitCode !== null) {
         finish()
