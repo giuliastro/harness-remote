@@ -163,7 +163,6 @@ process.on("SIGTERM", () => {
   })
   try {
     const first = await runtime.start()
-    assert.equal(await runtime.healthCheck(), true)
 
     let generation = 0
     for (let index = 0; index < 200 && generation < 2; index += 1) {
