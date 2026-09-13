@@ -14,6 +14,13 @@ export type MachineProjectOutcomeFile = {
   worktreeStatus: string
 }
 
+export type MachineProjectOutcomeDiffSummary = {
+  trackedFiles: number
+  insertions: number
+  deletions: number
+  binaryFiles: number
+}
+
 export type MachineProjectOutcome = {
   version: 1
   vcs: "git"
@@ -23,6 +30,7 @@ export type MachineProjectOutcome = {
   files?: MachineProjectOutcomeFile[]
   totalChangedFiles?: number
   filesTruncated?: boolean
+  diffSummary?: MachineProjectOutcomeDiffSummary
 }
 
 function headers(config: ServerConfig): Record<string, string> {
@@ -51,7 +59,18 @@ function statusChar(value: unknown): string | undefined {
 }
 
 function nonNegativeInteger(value: unknown): number | undefined {
-  return typeof value === "number" && Number.isInteger(value) && value >= 0 ? value : undefined
+  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0 ? value : undefined
+}
+
+function safeDiffSummary(value: unknown): MachineProjectOutcomeDiffSummary | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined
+  const source = value as Record<string, unknown>
+  const trackedFiles = nonNegativeInteger(source.trackedFiles)
+  const insertions = nonNegativeInteger(source.insertions)
+  const deletions = nonNegativeInteger(source.deletions)
+  const binaryFiles = nonNegativeInteger(source.binaryFiles)
+  if (trackedFiles === undefined || insertions === undefined || deletions === undefined || binaryFiles === undefined) return undefined
+  return { trackedFiles, insertions, deletions, binaryFiles }
 }
 
 function parseOutcomePayload(value: unknown, projectId: string): MachineProjectOutcome | null {
@@ -90,6 +109,7 @@ function parseOutcomePayload(value: unknown, projectId: string): MachineProjectO
   const dirty = typeof source.dirty === "boolean" ? source.dirty : undefined
   const totalChangedFiles = nonNegativeInteger(source.totalChangedFiles)
   const filesTruncated = typeof source.filesTruncated === "boolean" ? source.filesTruncated : undefined
+  const diffSummary = safeDiffSummary(source.diffSummary)
 
   return {
     version: 1,
@@ -99,7 +119,8 @@ function parseOutcomePayload(value: unknown, projectId: string): MachineProjectO
     ...(dirty !== undefined ? { dirty } : {}),
     ...(source.files !== undefined ? { files } : {}),
     ...(totalChangedFiles !== undefined ? { totalChangedFiles } : {}),
-    ...(filesTruncated !== undefined ? { filesTruncated } : {})
+    ...(filesTruncated !== undefined ? { filesTruncated } : {}),
+    ...(diffSummary ? { diffSummary } : {})
   }
 }
 
