@@ -7,6 +7,9 @@ export const EMBEDDED_DAEMON_HOST = "127.0.0.1"
 export const EMBEDDED_DAEMON_PROFILE_ID = "desktop-local-runtime"
 const DEFAULT_STARTUP_TIMEOUT_MS = 30_000
 const DEFAULT_SHUTDOWN_TIMEOUT_MS = 5_000
+const DEFAULT_HEALTH_CHECK_INTERVAL_MS = 10_000
+const DEFAULT_HEALTH_CHECK_TIMEOUT_MS = 2_000
+const DEFAULT_HEALTH_FAILURE_THRESHOLD = 3
 const MAX_CAPTURED_STDERR = 4_096
 
 export type EmbeddedDaemonEndpoint = {
@@ -34,6 +37,11 @@ export type EmbeddedDaemonPathOptions = {
 }
 
 type EmbeddedDaemonEnvironment = NodeJS.ProcessEnv | (() => Promise<NodeJS.ProcessEnv>)
+type EmbeddedDaemonLaunchConfig = {
+  port: number
+  openCodePort: number
+  auth: { username: string; password: string }
+}
 
 export function embeddedDaemonEntry({ isPackaged, appPath, resourcesPath }: EmbeddedDaemonPathOptions): string {
   return isPackaged
@@ -114,6 +122,11 @@ export class EmbeddedDaemonRuntime {
   private child: ChildProcess | undefined
   private ready: EmbeddedDaemonReady | undefined
   private starting: Promise<EmbeddedDaemonReady> | undefined
+  private launchConfig: EmbeddedDaemonLaunchConfig | undefined
+  private healthTimer: NodeJS.Timeout | undefined
+  private healthFailures = 0
+  private recovering: Promise<void> | undefined
+  private stopRequested = false
 
   constructor(private readonly options: {
     entryPath: string
@@ -122,6 +135,9 @@ export class EmbeddedDaemonRuntime {
     stateDirectory?: string
     startupTimeoutMs?: number
     shutdownTimeoutMs?: number
+    healthCheckIntervalMs?: number
+    healthCheckTimeoutMs?: number
+    healthFailureThreshold?: number
     onExit?: (details: EmbeddedDaemonExit) => void
   }) {}
 
@@ -130,7 +146,14 @@ export class EmbeddedDaemonRuntime {
   }
 
   start(): Promise<EmbeddedDaemonReady> {
+    this.stopRequested = false
     if (this.ready && this.isRunning) return Promise.resolve(this.ready)
+    if (this.recovering) {
+      return this.recovering.then(() => {
+        if (this.ready && this.isRunning) return this.ready
+        return this.start()
+      })
+    }
     if (this.starting) return this.starting
     this.starting = this.launch().finally(() => {
       this.starting = undefined
@@ -138,11 +161,38 @@ export class EmbeddedDaemonRuntime {
     return this.starting
   }
 
-  private async launch(): Promise<EmbeddedDaemonReady> {
+  async healthCheck(): Promise<boolean> {
+    const ready = this.ready
+    const child = this.child
+    if (!ready || !child || child.exitCode !== null || child.killed) return false
+
+    const controller = new AbortController()
+    const timeoutMs = this.options.healthCheckTimeoutMs ?? DEFAULT_HEALTH_CHECK_TIMEOUT_MS
+    const timer = setTimeout(() => controller.abort(), timeoutMs)
+    timer.unref?.()
+    const authorization = `Basic ${Buffer.from(`${ready.endpoint.username}:${ready.endpoint.password}`, "utf8").toString("base64")}`
+    try {
+      const response = await fetch(`http://${ready.endpoint.host}:${ready.endpoint.port}/v1/machine`, {
+        method: "GET",
+        headers: { Accept: "application/json", Authorization: authorization },
+        redirect: "manual",
+        signal: controller.signal
+      })
+      void response.body?.cancel().catch(() => undefined)
+      return response.ok
+    } catch {
+      return false
+    } finally {
+      clearTimeout(timer)
+    }
+  }
+
+  private async launch(reuse?: EmbeddedDaemonLaunchConfig): Promise<EmbeddedDaemonReady> {
     const environment = await resolveEmbeddedDaemonEnvironment(this.options.environment)
-    const port = await findLoopbackPort(4097)
-    const openCodePort = await findLoopbackPort(4096, [port])
-    const auth = credentials()
+    const port = reuse?.port ?? await findLoopbackPort(4097)
+    const openCodePort = reuse?.openCodePort ?? await findLoopbackPort(4096, [port])
+    const auth = reuse?.auth ?? credentials()
+    const launchConfig = { port, openCodePort, auth }
     const args = embeddedDaemonArgs(port, openCodePort, this.options.stateDirectory)
     const child = spawn(this.options.executable ?? process.execPath, [this.options.entryPath, ...args], {
       env: embeddedDaemonEnvironment(environment, auth),
@@ -204,22 +254,87 @@ export class EmbeddedDaemonRuntime {
       },
       pid: child.pid ?? null
     }
+    this.launchConfig = launchConfig
     this.ready = result
+    this.healthFailures = 0
     child.once("exit", (code, signal) => {
       const wasReady = this.ready === result
       if (this.child === child) this.child = undefined
       if (this.ready === result) this.ready = undefined
-      if (wasReady) this.options.onExit?.({ code, signal })
+      if (wasReady) {
+        this.cancelHealthCheck()
+        this.launchConfig = undefined
+        this.options.onExit?.({ code, signal })
+      }
     })
+    this.scheduleHealthCheck()
     return result
   }
 
-  async stop(): Promise<void> {
-    const child = this.child
-    this.child = undefined
-    this.ready = undefined
-    if (!child || child.exitCode !== null) return
+  private scheduleHealthCheck(): void {
+    this.cancelHealthCheck()
+    const intervalMs = this.options.healthCheckIntervalMs ?? DEFAULT_HEALTH_CHECK_INTERVAL_MS
+    if (intervalMs <= 0 || this.stopRequested || !this.ready || !this.isRunning) return
+    const expectedReady = this.ready
+    this.healthTimer = setTimeout(() => {
+      this.healthTimer = undefined
+      void this.runHealthCheck(expectedReady)
+    }, intervalMs)
+    this.healthTimer.unref?.()
+  }
 
+  private cancelHealthCheck(): void {
+    clearTimeout(this.healthTimer)
+    this.healthTimer = undefined
+  }
+
+  private async runHealthCheck(expectedReady: EmbeddedDaemonReady): Promise<void> {
+    if (this.stopRequested || this.recovering || this.ready !== expectedReady || !this.isRunning) return
+    const healthy = await this.healthCheck()
+    if (this.stopRequested || this.ready !== expectedReady) return
+    if (healthy) {
+      this.healthFailures = 0
+    } else {
+      this.healthFailures += 1
+      const threshold = Math.max(1, Math.floor(this.options.healthFailureThreshold ?? DEFAULT_HEALTH_FAILURE_THRESHOLD))
+      if (this.healthFailures >= threshold) {
+        await this.recover(expectedReady)
+        return
+      }
+    }
+    this.scheduleHealthCheck()
+  }
+
+  private async recover(expectedReady: EmbeddedDaemonReady): Promise<void> {
+    if (this.recovering) return this.recovering
+    const child = this.child
+    const launchConfig = this.launchConfig
+    if (!child || !launchConfig || this.ready !== expectedReady) return
+
+    this.recovering = (async () => {
+      this.cancelHealthCheck()
+      this.healthFailures = 0
+      // Keep the exact loopback endpoint and volatile credentials stable across recovery. The
+      // renderer/profile registry can therefore ride through a daemon restart without learning new
+      // secrets or creating a desktop-only reconnection protocol.
+      if (this.child === child) this.child = undefined
+      if (this.ready === expectedReady) this.ready = undefined
+      await this.terminateChild(child)
+      if (this.stopRequested) return
+      try {
+        await this.launch(launchConfig)
+      } catch {
+        this.launchConfig = undefined
+        this.options.onExit?.({ code: null, signal: null })
+      }
+    })().finally(() => {
+      this.recovering = undefined
+    })
+    return this.recovering
+  }
+
+  private async terminateChild(child: ChildProcess): Promise<void> {
+    if (child.exitCode !== null) return
     const shutdownTimeoutMs = this.options.shutdownTimeoutMs ?? DEFAULT_SHUTDOWN_TIMEOUT_MS
     await new Promise<void>((resolve) => {
       let settled = false
@@ -242,5 +357,18 @@ export class EmbeddedDaemonRuntime {
       }
       child.kill("SIGTERM")
     })
+  }
+
+  async stop(): Promise<void> {
+    this.stopRequested = true
+    this.cancelHealthCheck()
+    if (this.recovering) await this.recovering.catch(() => undefined)
+    const child = this.child
+    this.child = undefined
+    this.ready = undefined
+    this.launchConfig = undefined
+    this.healthFailures = 0
+    if (!child || child.exitCode !== null) return
+    await this.terminateChild(child)
   }
 }
