@@ -1,4 +1,4 @@
-import { spawn, type ChildProcess } from "node:child_process"
+import { spawn, spawnSync, type ChildProcess } from "node:child_process"
 import { randomBytes } from "node:crypto"
 import { createServer } from "node:net"
 import { join } from "node:path"
@@ -11,6 +11,8 @@ const DEFAULT_FORCE_KILL_EXIT_TIMEOUT_MS = 1_000
 const DEFAULT_HEALTH_CHECK_INTERVAL_MS = 10_000
 const DEFAULT_HEALTH_CHECK_TIMEOUT_MS = 2_000
 const DEFAULT_HEALTH_FAILURE_THRESHOLD = 3
+const DEFAULT_RECOVERY_ATTEMPTS = 3
+const DEFAULT_RECOVERY_RETRY_DELAY_MS = 250
 const MAX_CAPTURED_STDERR = 4_096
 
 export type EmbeddedDaemonEndpoint = {
@@ -119,6 +121,10 @@ function cleanErrorDetail(value: string): string {
   return lines.slice(-3).join(" | ").slice(0, 1_000)
 }
 
+function errorMessage(error: unknown): string {
+  return cleanErrorDetail(error instanceof Error ? error.message : String(error)) || "unknown recovery error"
+}
+
 export class EmbeddedDaemonRuntime {
   private child: ChildProcess | undefined
   private ready: EmbeddedDaemonReady | undefined
@@ -139,14 +145,16 @@ export class EmbeddedDaemonRuntime {
     healthCheckIntervalMs?: number
     healthCheckTimeoutMs?: number
     healthFailureThreshold?: number
+    recoveryAttempts?: number
+    recoveryRetryDelayMs?: number
     onExit?: (details: EmbeddedDaemonExit) => void
   }) {}
 
   get isRunning(): boolean {
-    // A supervised recovery deliberately keeps the same endpoint and credentials. Treat that short
-    // replacement window as logical runtime liveness so Electron does not discard the still-valid
-    // volatile profile while the child process is being replaced.
-    if (this.recovering) return true
+    // A supervised recovery deliberately keeps the same externally registered endpoint and
+    // credentials. Treat that short replacement window as logical runtime liveness so Electron does
+    // not discard the still-valid volatile profile while the child process tree is being replaced.
+    if (this.recovering && !this.stopRequested) return true
     return Boolean(this.child && this.child.exitCode === null && !this.child.killed && this.ready)
   }
 
@@ -202,7 +210,10 @@ export class EmbeddedDaemonRuntime {
     const child = spawn(this.options.executable ?? process.execPath, [this.options.entryPath, ...args], {
       env: embeddedDaemonEnvironment(environment, auth),
       stdio: ["ignore", "pipe", "pipe"],
-      windowsHide: true
+      windowsHide: true,
+      // On POSIX the embedded daemon owns harness subprocesses. Give that tree its own process group
+      // so a hard recovery can terminate the whole abandoned tree rather than only the daemon parent.
+      detached: process.platform !== "win32"
     })
     this.child = child
     let stderr = ""
@@ -245,7 +256,7 @@ export class EmbeddedDaemonRuntime {
       })
     } catch (error) {
       if (this.child === child) this.child = undefined
-      if (!child.killed && child.exitCode === null) child.kill("SIGTERM")
+      await this.terminateChild(child)
       throw error
     }
 
@@ -319,23 +330,58 @@ export class EmbeddedDaemonRuntime {
     this.recovering = (async () => {
       this.cancelHealthCheck()
       this.healthFailures = 0
-      // Keep the exact loopback endpoint and volatile credentials stable across recovery. The
-      // renderer/profile registry can therefore ride through a daemon restart without learning new
-      // secrets or creating a desktop-only reconnection protocol.
+      // Keep only the externally registered loopback endpoint and volatile credentials stable. The
+      // managed OpenCode port is internal to the daemon, so selecting a fresh free port on recovery
+      // prevents an escaped/stale descendant from blocking the entire local runtime.
       if (this.child === child) this.child = undefined
       if (this.ready === expectedReady) this.ready = undefined
       await this.terminateChild(child)
       if (this.stopRequested) return
-      try {
-        await this.launch(launchConfig)
-      } catch {
-        this.launchConfig = undefined
-        this.options.onExit?.({ code: null, signal: null })
+
+      const attempts = Math.max(1, Math.floor(this.options.recoveryAttempts ?? DEFAULT_RECOVERY_ATTEMPTS))
+      const retryDelayMs = Math.max(0, this.options.recoveryRetryDelayMs ?? DEFAULT_RECOVERY_RETRY_DELAY_MS)
+      let lastError: unknown
+      for (let attempt = 1; attempt <= attempts && !this.stopRequested; attempt += 1) {
+        try {
+          const openCodePort = await findLoopbackPort(4096, [launchConfig.port])
+          await this.launch({ ...launchConfig, openCodePort })
+          return
+        } catch (error) {
+          lastError = error
+          if (attempt < attempts && retryDelayMs > 0) {
+            await new Promise((resolve) => setTimeout(resolve, retryDelayMs * attempt))
+          }
+        }
       }
+
+      if (this.stopRequested) return
+      this.launchConfig = undefined
+      process.stderr.write(`[embedded-daemon] recovery failed after ${attempts} attempt${attempts === 1 ? "" : "s"}: ${errorMessage(lastError)}\n`)
+      this.options.onExit?.({ code: null, signal: null })
     })().finally(() => {
       this.recovering = undefined
     })
     return this.recovering
+  }
+
+  private forceKillChildTree(child: ChildProcess): void {
+    const pid = child.pid
+    if (Number.isInteger(pid) && process.platform === "win32") {
+      const result = spawnSync("taskkill", ["/pid", String(pid), "/t", "/f"], {
+        stdio: "ignore",
+        windowsHide: true
+      })
+      if (result.status === 0) return
+    }
+    if (Number.isInteger(pid) && process.platform !== "win32") {
+      try {
+        process.kill(-(pid as number), "SIGKILL")
+        return
+      } catch {
+        // Fall through to direct child kill if the process group has already disappeared.
+      }
+    }
+    child.kill("SIGKILL")
   }
 
   private async terminateChild(child: ChildProcess): Promise<void> {
@@ -357,9 +403,9 @@ export class EmbeddedDaemonRuntime {
           finish()
           return
         }
-        child.kill("SIGKILL")
-        // SIGKILL is asynchronous from Node's point of view. Do not immediately relaunch on the
-        // same port: wait for the child exit event so the OS has actually released its listener.
+        this.forceKillChildTree(child)
+        // Hard termination is asynchronous from Node's point of view. Do not immediately relaunch
+        // on the same external port: wait for the daemon exit event so the OS has released it.
         forceExitTimer = setTimeout(finish, DEFAULT_FORCE_KILL_EXIT_TIMEOUT_MS)
         forceExitTimer.unref?.()
       }
