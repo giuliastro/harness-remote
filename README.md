@@ -163,6 +163,10 @@ Use the same machine from:
 
 The client lets you inspect Sessions, follow live activity, send prompts, answer supported questions or permissions, Stop native turns, switch model/harness where supported and review working-tree changes.
 
+The Session outcome keeps that review compact: it can show branch/worktree state, bounded changed-file evidence and aggregate Git totals such as tracked files, inserted/deleted lines and binary files. Raw diff hunks, patch contents and source text are not sent to the client for this summary.
+
+On desktop, Harness Remote supervises its embedded Machine daemon. If that local runtime becomes stopped or unresponsive, the app performs bounded recovery and cleans up the managed process tree before restarting it, including the managed OpenCode runtime when present.
+
 ## Local-first by design
 
 Harness Remote does not require your repository to be uploaded to a hosted workspace.
@@ -292,6 +296,10 @@ Harness Remote supports OpenCode, OMP, PI, Codex CLI and Claude Code while prese
 
 ACP-backed Session recovery also protects freshly created Sessions from stale initial snapshots: an older empty snapshot cannot overwrite the first prompt of a Session that is already loaded in memory.
 
+The Project/Session outcome surface provides bounded Git evidence for review: changed-file visibility plus aggregate tracked-file, insertion, deletion and binary-file counts, without transmitting raw diff contents as part of the summary.
+
+Desktop recovery supervises the embedded Machine daemon and can restart a stopped/unresponsive managed runtime while cleaning up its process tree and preserving managed OpenCode port ownership.
+
 Post-release work intentionally prioritizes Session correctness and maintainability over broad orchestration. Cross-machine handoff is a separate follow-up, and architectural cleanup must start from current `main` rather than reviving pre-release checkpoint/draft branches.
 
 The automatic multi-agent launcher is still being expanded: the current release can expose one selected ACP-backed primary alongside managed OpenCode, while additional concurrent ACP host instances remain follow-up work.
@@ -313,10 +321,13 @@ npm ci
 npm run dev
 ```
 
+Ongoing unreleased work is summarized in [Development status](docs/DEVELOPMENT_STATUS.md) so another development session can resume from the current integration state without reconstructing it from chat history.
+
 ## Documentation
 
 - [Quick start and launcher options](docs/QUICK_START.md)
 - [Harness Remote 3 product and architecture](docs/HARNESS_3_ROADMAP.md)
+- [Current development handoff](docs/DEVELOPMENT_STATUS.md)
 - [Harness capability matrix](docs/V3_HARNESS_CAPABILITY_MATRIX.md)
 - [Dependency and adapter notes](docs/DEPENDENCIES.md)
 - [Backend-specific reference](REFERENCE.md)

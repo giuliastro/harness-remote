@@ -166,11 +166,13 @@ export function NativeSessionOutcomePanel({
   const hiddenCount = total === undefined ? 0 : Math.max(0, total - visibleFiles.length)
   const branchOrHead = outcome?.branch || (outcome?.head ? outcome.head.slice(0, 8) : undefined)
   const state = outcome ? outcomeState(outcome) : undefined
+  const diffSummary = outcome?.diffSummary
   const summary = [
     review?.label,
     branchOrHead,
     state,
-    total !== undefined ? `${total} changed ${total === 1 ? "file" : "files"}` : undefined
+    total !== undefined ? `${total} changed ${total === 1 ? "file" : "files"}` : undefined,
+    diffSummary ? `+${diffSummary.insertions} / −${diffSummary.deletions}` : undefined
   ].filter(Boolean).join(" · ")
 
   return (
@@ -211,6 +213,9 @@ export function NativeSessionOutcomePanel({
                 {outcome.branch ? <span>Branch <strong>{outcome.branch}</strong></span> : null}
                 {outcome.head ? <span>HEAD <strong>{outcome.head.slice(0, 8)}</strong></span> : null}
                 <span>Worktree <strong>{state}</strong></span>
+                {diffSummary ? <span>Tracked <strong>{diffSummary.trackedFiles} {diffSummary.trackedFiles === 1 ? "file" : "files"}</strong></span> : null}
+                {diffSummary ? <span>Lines <strong>+{diffSummary.insertions} / −{diffSummary.deletions}</strong></span> : null}
+                {diffSummary?.binaryFiles ? <span>Binary <strong>{diffSummary.binaryFiles}</strong></span> : null}
               </div>
 
               {outcome.dirty === true && visibleFiles.length ? (

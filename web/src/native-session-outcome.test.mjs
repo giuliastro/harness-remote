@@ -28,6 +28,9 @@ assert.equal(panel.includes("loadDiff"), false, "generic outcome review must not
 assert.equal(panel.toLowerCase().includes("test passed"), false, "checks must not be inferred from transcript/UI prose")
 assert.ok(panel.includes("MAX_VISIBLE_FILES = 12"), "outcome UI must stay bounded even when the daemon returns a larger safe snapshot")
 assert.ok(panel.includes("omitted by safety or display bounds"), "hidden/bounded file names must remain visible as an explicit incomplete-evidence signal")
+assert.ok(panel.includes("const diffSummary = outcome?.diffSummary"), "bounded Git change totals must be shown from Project outcome metadata")
+assert.ok(panel.includes("Lines <strong>+{diffSummary.insertions} / −{diffSummary.deletions}</strong>"), "outcome must make added/removed line totals easy to read")
+assert.ok(panel.includes("Tracked <strong>{diffSummary.trackedFiles}"), "outcome must expose the tracked-file aggregate without loading diff contents")
 
 assert.ok(reviewEvidence.includes("attention.permissions > 0"), "known target permission must remain visible even when another attention source is unavailable")
 assert.ok(reviewEvidence.includes("attention.questions > 0"), "known structured questions must remain visible even when another attention source is unavailable")
@@ -40,7 +43,11 @@ assert.equal(reviewEvidence.includes("MessageEnvelope"), false, "review evidence
 assert.ok(client.includes("404 || status === 405 || status === 501"), "older daemons must degrade optional outcome metadata without blocking Session open")
 assert.ok(client.includes("normalized.split(\"/\").some((part) => part === \"..\")"), "client must defense-in-depth reject escaping paths")
 assert.ok(client.includes("payload.projectId !== projectId"), "outcome response must stay bound to the exact requested Project")
-assert.equal(client.includes("diff"), false, "outcome client must not request diff contents")
+assert.ok(client.includes("diffSummary?: MachineProjectOutcomeDiffSummary"), "outcome wire contract must explicitly model bounded aggregate diff evidence")
+assert.ok(client.includes("safeDiffSummary(source.diffSummary)"), "aggregate diff evidence must be sanitized before entering UI state")
+assert.equal(client.includes("/diff"), false, "outcome client must never request a raw diff endpoint")
+assert.equal(client.includes("patch"), false, "outcome client must not carry patch contents")
+assert.equal(client.includes("hunk"), false, "outcome client must not carry diff hunks")
 
 assert.ok(desktopTransport.includes("v1\\/project-(?:identity|outcome)"), "desktop Project metadata must stay on the machine daemon instead of being agent scoped")
 
