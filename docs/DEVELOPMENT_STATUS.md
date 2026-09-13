@@ -13,43 +13,37 @@
 
 ## Current integration baseline
 
-- Integration head after PR #468: `13aae765760b8f9deffbf61525144b7b7988246f`
+- Integration head after PR #469: `03c275dbe35932991bb6869ae4c766350ca97b6f`
 - PR #468 (`fix(P1): recover stopped embedded desktop daemon`) is merged into the integration branch only.
 - Real Zorin validation covered stopping the embedded `daemon-cli.js` with `SIGSTOP`; automatic recovery succeeded.
 - The desktop recovery path also covers child/orphan process cleanup, managed OpenCode internal-port recovery and bounded recovery retries.
+- PR #469 (`feat(P2): add bounded Git summary to Session outcome`) is merged into the integration branch only after green Linux/web regressions, macOS/Windows bridge tests, Chromium product smoke and Debug APK.
+- Session outcome now includes bounded Git aggregate evidence (tracked files, insertions, deletions and binary-file count) without transmitting raw diff hunks, patch/source contents or raw numstat output.
 
 ## Work in progress
 
-### P2 Session/Project outcome Git summary
+### Machine creation form gating
 
-Branch: `codex/p2-session-outcome-diff-summary`
+Branch: `codex/p2-machine-manager-new-form-gating`
 
-Goal: make the Session outcome answer “what changed?” without transmitting source diff contents.
+Goal: keep the Machines screen simple when a machine already exists or appears asynchronously.
 
 Implemented:
 
-- aggregate tracked-file count;
-- insertions and deletions;
-- binary-file count;
-- daemon-side `git diff --numstat -z --no-renames HEAD --` parsing;
-- no diff hunks, patch/source contents or raw numstat output cross the daemon boundary;
-- client-side validation of aggregate numeric fields;
-- compact Session outcome presentation next to existing branch/worktree/file evidence;
-- compatibility with older daemons where the optional summary is absent.
+- opening Machines no longer opens the new-machine fields automatically;
+- the editor appears only after the explicit Add machine action;
+- an empty install still opens the Machines screen, but first shows the simple empty state and Add machine action;
+- first-run button copy uses “Add machine” instead of “Add another machine”;
+- behavior is shared by Electron, web and Android rather than keyed to a desktop-only condition;
+- regression coverage prevents restoring the old `machines.length === 0 ? "new" : null` state race.
 
-The branch was synchronized with integration after #468 using merge commit `baf9a6ca40f0d3f8abfb8c42e0fd2ec0a5407e49` before the UI/client completion commits.
+This fixes the observed Electron startup case where the manager initially rendered before the managed local machine was discovered, leaving a stale blank creation form visible after the machine appeared.
 
-Next gate: focused tests, full PR CI, then merge to `codex/development-2026-09-11` only if green.
+Next gate: full PR CI, then merge to `codex/development-2026-09-11` only if green.
 
-### Next UX fix: Machine creation form
+## Next P2 direction
 
-After the P2 outcome PR is integrated, fix the universal machine-management flow on a separate branch:
-
-- if there are active/configured machines, do not leave the “new machine” fields expanded by default;
-- show a simple Add machine action instead;
-- reveal the fields only after the user chooses to add another machine;
-- when no machines exist, keep first-run setup immediately understandable;
-- behavior must be shared by Electron/web rather than special-cased for one platform.
+Continue issue #371 from the existing Native Session Home read model instead of creating a second synthetic Session index. The next low-risk slice should make operational buckets/scopes clearer (Active, Needs attention, Failed/interrupted, Completed/recent; Project/model filtering) using already-discovered records only, with no transcript reads, ACP/writer changes or new per-Session N+1 calls.
 
 ## Product direction
 
