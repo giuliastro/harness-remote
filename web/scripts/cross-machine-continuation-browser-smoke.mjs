@@ -307,7 +307,10 @@ try {
   await toggle.click()
 
   const panel = page.locator('.hr-cross-machine-panel')
-  await panel.getByText("Target Machine", { exact: true }).first().waitFor({ state: "visible", timeout: 12_000 })
+  const machineSelect = panel.locator('select').first()
+  await machineSelect.waitFor({ state: "visible", timeout: 12_000 })
+  assert.equal(await machineSelect.inputValue(), TARGET_MACHINE, "cross-machine panel did not select the available target machine")
+  assert.equal((await machineSelect.locator('option:checked').textContent())?.trim(), "Target Machine", "selected target machine label is incorrect")
   const projectSelect = panel.locator('label').filter({ hasText: "Project" }).locator('select')
   await projectSelect.selectOption(MATCH_PROJECT)
 
