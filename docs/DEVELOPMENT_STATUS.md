@@ -13,37 +13,34 @@
 
 ## Current integration baseline
 
-- Integration head after PR #469: `03c275dbe35932991bb6869ae4c766350ca97b6f`
-- PR #468 (`fix(P1): recover stopped embedded desktop daemon`) is merged into the integration branch only.
-- Real Zorin validation covered stopping the embedded `daemon-cli.js` with `SIGSTOP`; automatic recovery succeeded.
-- The desktop recovery path also covers child/orphan process cleanup, managed OpenCode internal-port recovery and bounded recovery retries.
-- PR #469 (`feat(P2): add bounded Git summary to Session outcome`) is merged into the integration branch only after green Linux/web regressions, macOS/Windows bridge tests, Chromium product smoke and Debug APK.
-- Session outcome now includes bounded Git aggregate evidence (tracked files, insertions, deletions and binary-file count) without transmitting raw diff hunks, patch/source contents or raw numstat output.
+- Integration head after PR #470: `b39c803375514ad3f31680a9c856a041ecc95ff6`.
+- PR #468 added bounded recovery of the embedded desktop daemon and was validated on Zorin with a real `SIGSTOP` recovery test.
+- PR #469 added bounded Git aggregate outcome evidence: tracked files, insertions, deletions and binary files, with no raw diff/hunks/source sent to the client.
+- PR #470 fixed the universal Machines UX race: connection fields now appear only after an explicit **Add machine** action, including when Electron discovers its managed local machine asynchronously.
+- #469 and #470 both passed the complete PR gate before integration: Linux/web regressions, macOS/Windows bridge tests, Chromium product smoke and Debug APK.
 
 ## Work in progress
 
-### Machine creation form gating
+### P2 cross-machine browser gate
 
-Branch: `codex/p2-machine-manager-new-form-gating`
+Branch: `codex/p2-cross-machine-browser-gate`
 
-Goal: keep the Machines screen simple when a machine already exists or appears asynchronously.
+Goal: make the existing cross-machine continuation safety smoke a permanent blocking regression instead of an unexecuted standalone script.
 
 Implemented:
 
-- opening Machines no longer opens the new-machine fields automatically;
-- the editor appears only after the explicit Add machine action;
-- an empty install still opens the Machines screen, but first shows the simple empty state and Add machine action;
-- first-run button copy uses “Add machine” instead of “Add another machine”;
-- behavior is shared by Electron, web and Android rather than keyed to a desktop-only condition;
-- regression coverage prevents restoring the old `machines.length === 0 ? "new" : null` state race.
-
-This fixes the observed Electron startup case where the manager initially rendered before the managed local machine was discovered, leaving a stale blank creation form visible after the machine appeared.
+- `cross-machine-continuation-browser-smoke.mjs` is wired into the blocking Chromium product gate;
+- the smoke exercises the existing cross-machine planning surface, target model discovery, Project identity continuity and fail-closed behavior for a mismatched repository;
+- `native-session-reliability-ci-contract.test.js` now requires that smoke to remain present in the blocking workflow;
+- no ACP adapter, Native Session writer semantics or harness runtime behavior is changed.
 
 Next gate: full PR CI, then merge to `codex/development-2026-09-11` only if green.
 
-## Next P2 direction
+## P2 roadmap position
 
-Continue issue #371 from the existing Native Session Home read model instead of creating a second synthetic Session index. The next low-risk slice should make operational buckets/scopes clearer (Active, Needs attention, Failed/interrupted, Completed/recent; Project/model filtering) using already-discovered records only, with no transcript reads, ACP/writer changes or new per-Session N+1 calls.
+Do not restart federation work already completed in PRs #411-#413: operational buckets plus machine/Project/harness/model/state filtering already exist in the current Native Session Home. Cross-machine creation/recovery, Project identity, lineage/portable-state boundaries and the first outcome surface were also implemented by later P2 PRs.
+
+Continue issue #371 from the current code. Prefer small reliability/completeness slices that strengthen the existing Native Session model instead of creating a second synthetic Session index or changing ACP/writer behavior without real-harness validation.
 
 ## Product direction
 
