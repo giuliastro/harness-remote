@@ -36,9 +36,12 @@ test("porcelain -z parses modified, untracked and rename entries without shell q
 })
 
 test("numstat summary counts tracked text and binary changes without retaining paths or hunks", () => {
-  const parsed = parseGitNumstatZ(
-    "12\t4\tsrc/app.js\0-\t-\tassets/logo.png\00\t7\tdeleted.txt\0"
-  )
+  const parsed = parseGitNumstatZ([
+    "12\t4\tsrc/app.js",
+    "-\t-\tassets/logo.png",
+    "0\t7\tdeleted.txt",
+    ""
+  ].join("\0"))
 
   assert.deepEqual(parsed, {
     trackedFiles: 3,
@@ -52,7 +55,12 @@ test("numstat summary counts tracked text and binary changes without retaining p
 })
 
 test("malformed numstat records are ignored instead of fabricating diff evidence", () => {
-  assert.deepEqual(parseGitNumstatZ("oops\01\tx\tfile\0-\t2\todd\0"), {
+  assert.deepEqual(parseGitNumstatZ([
+    "oops",
+    "1\tx\tfile",
+    "-\t2\todd",
+    ""
+  ].join("\0")), {
     trackedFiles: 0,
     insertions: 0,
     deletions: 0,
