@@ -460,7 +460,7 @@ try {
 
   const targetComposer = page.getByRole("textbox", { name: "Message Claude" })
   await targetComposer.waitFor({ state: "visible", timeout: 12_000 })
-  assert.equal(await targetComposer.isDisabled(), false, "new target Session opened without writable target authority")
+  await waitForDisabledState(targetComposer, false, "new target Session did not become writable after its live model catalog settled")
   await page.getByText("Handoff source", { exact: true }).waitFor({ state: "visible", timeout: 12_000 })
 
   assert.equal(targetCreateRequests.length, 1, "target Session creation was not exactly once")
