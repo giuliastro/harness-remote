@@ -220,6 +220,8 @@ On Android, scan/open the QR. Harness Remote claims the one-time token and impor
 
 If the phone cannot reach the preferred LAN address, use one of the alternate pairing links printed by the launcher. Desktop, web and Android can always use **Machines → Add machine** with the address, port, username and password printed by the launcher.
 
+Opening **Machines** shows the machines already available; connection fields are never opened automatically. On a new install the Machines screen opens with a simple **Add machine** action, and the fields appear only after you choose to add one.
+
 One machine endpoint exposes the harnesses managed by that machine — you do not need a separate public endpoint for every coding agent.
 
 ### 3. Or open the web client

@@ -183,7 +183,10 @@ function MachineEditor({ machine, onCancel, onSave }: MachineEditorProps) {
 
 function MachineManager({ machines, onClose, onPersist }: { machines: WorkspaceMachine[]; onClose: () => void; onPersist: (machines: WorkspaceMachine[]) => void }) {
   const t = useTranslator()
-  const [editingID, setEditingID] = useState<string | null>(machines.length === 0 ? "new" : null)
+  // Opening Machines is for inspecting the machines you already have. Creating another one is an
+  // explicit action, so an asynchronously discovered machine can never leave a stale blank editor
+  // open (desktop local runtime, QR pairing, or any future machine source all follow the same rule).
+  const [editingID, setEditingID] = useState<string | null>(null)
   const [confirmRemoveID, setConfirmRemoveID] = useState<string | null>(null)
   const [health, setHealth] = useState<Record<string, MachineManagerHealth<MachineSnapshot> | undefined>>({})
   const probeRequestIDs = useRef<Record<string, number>>({})
@@ -312,7 +315,7 @@ function MachineManager({ machines, onClose, onPersist }: { machines: WorkspaceM
           })}
           {draft ? <MachineEditor key={draft.id} machine={draft} onCancel={() => setEditingID(null)} onSave={save} /> : null}
         </div>
-        <footer className="uw-machine-manager-footer"><span>{t("sf.managerFooter", { machines: machines.length, agents: availableCount })}</span><button type="button" className="uw-manager-button primary" onClick={() => setEditingID("new")}>+ {t("sf.addMachineAction")}</button></footer>
+        <footer className="uw-machine-manager-footer"><span>{t("sf.managerFooter", { machines: machines.length, agents: availableCount })}</span><button type="button" className="uw-manager-button primary" onClick={() => setEditingID("new")}>+ {machines.length ? t("sf.addMachineAction") : t("sf.addMachine")}</button></footer>
       </section>
     </div>
   )
