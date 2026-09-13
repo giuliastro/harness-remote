@@ -126,6 +126,10 @@ jobs:
           node scripts/native-session-outcome-browser-smoke.mjs
         working-directory: web
 
+      - name: Run cross-machine continuation safety smoke
+        run: node scripts/cross-machine-continuation-browser-smoke.mjs
+        working-directory: web
+
       - name: Run complete controls and screenshot smoke
         run: node scripts/v3-browser-controls-smoke.mjs
         working-directory: web

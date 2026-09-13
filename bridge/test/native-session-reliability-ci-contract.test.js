@@ -28,7 +28,8 @@ const REQUIRED_BROWSER_SMOKES = [
   "scripts/native-opencode-real-regression-smoke.mjs",
   "scripts/native-opencode-permission-regression-smoke.mjs",
   "scripts/native-session-model-switch-smoke.mjs",
-  "scripts/native-session-outcome-browser-smoke.mjs"
+  "scripts/native-session-outcome-browser-smoke.mjs",
+  "scripts/cross-machine-continuation-browser-smoke.mjs"
 ]
 
 const REQUIRED_WEB_CONTRACTS = [
