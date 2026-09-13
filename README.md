@@ -302,9 +302,9 @@ The Project/Session outcome surface provides bounded Git evidence for review: ch
 
 Desktop recovery supervises the embedded Machine daemon and can restart a stopped/unresponsive managed runtime while cleaning up its process tree and preserving managed OpenCode port ownership.
 
-The blocking Chromium product gate also exercises cross-machine continuation safety: target capability/model discovery, Project identity continuity and fail-closed behavior when the selected target resolves to a different repository.
+The blocking Chromium product gate exercises cross-machine continuation end to end: target capability/model discovery, Project identity continuity and mismatched-repository fail-closed behavior, then exactly-once target Session creation, dual-store lineage, bounded context and authority boundaries, first-prompt delivery and opening the writable target Session.
 
-Post-release work intentionally prioritizes Session correctness and maintainability over broad orchestration. Cross-machine handoff is a separate follow-up, and architectural cleanup must start from current `main` rather than reviving pre-release checkpoint/draft branches.
+Post-release development intentionally prioritizes Session correctness and maintainability over broad orchestration. Cross-machine federation is being hardened through explicit safety, recovery and browser gates rather than by introducing a second synthetic Session model.
 
 The automatic multi-agent launcher is still being expanded: the current release can expose one selected ACP-backed primary alongside managed OpenCode, while additional concurrent ACP host instances remain follow-up work.
 
