@@ -322,15 +322,18 @@ try {
   await modelButton.click()
   assert.match(await panel.locator('.tdw-model-picker').innerText(), /Claude Target/, "target route did not load the target harness model catalog")
   await page.keyboard.press("Escape")
+  assert.match(await modelButton.innerText(), /Claude Target/, "target default model was not selected after catalog discovery")
 
   const firstMessage = panel.getByRole("textbox", { name: "First message on the target Session" })
   await firstMessage.fill("Continue the fix on the target machine")
   const continueButton = panel.getByRole("button", { name: "Continue on target machine" })
-  assert.equal(await continueButton.isDisabled(), false, "verified matching workspace did not become sendable")
+  const continueHandle = await continueButton.elementHandle()
+  assert.ok(continueHandle, "cross-machine continue button was not mounted")
+  await page.waitForFunction((button) => button instanceof HTMLButtonElement && !button.disabled, continueHandle, { timeout: 12_000 })
 
   await projectSelect.selectOption(DIFFERENT_PROJECT)
   await panel.getByText("This Project does not match the source repository/history. Cross-machine continuation is blocked.", { exact: true }).waitFor({ state: "visible", timeout: 12_000 })
-  assert.equal(await continueButton.isDisabled(), true, "mismatched Project left the cross-machine mutation enabled")
+  await page.waitForFunction((button) => button instanceof HTMLButtonElement && button.disabled, continueHandle, { timeout: 12_000 })
   assert.equal(await sourceComposer.isDisabled(), false, "blocked cross-machine plan disabled the ordinary source composer")
   assert.deepEqual(pageErrors, [], `browser errors in cross-machine planning surface: ${pageErrors.join(" | ")}`)
 
