@@ -5,7 +5,7 @@
 
 ## Branch policy
 
-- Persistent integration branch: `codex/development-2026-09-11`
+- Persistent integration branch: `codex/development-2026-09-11`.
 - Never merge development work directly into `main`.
 - Feature/fix PRs target `codex/development-2026-09-11` only.
 - Merge into the integration branch only after relevant tests and CI are green.
@@ -13,41 +13,50 @@
 
 ## Current integration baseline
 
-- Integration head after PR #471: `b30ccbd0c5a9dff878dc73a91870990b3bf01350`.
+- Integration head after PR #472: `3e5f65bbe11b99eccfc4536f432e9db7033540b6`.
 - PR #468 added bounded recovery of the embedded desktop daemon and was validated on Zorin with a real `SIGSTOP` recovery test.
 - PR #469 added bounded Git aggregate outcome evidence: tracked files, insertions, deletions and binary files, with no raw diff/hunks/source sent to the client.
-- PR #470 fixed the universal Machines UX race: connection fields now appear only after an explicit **Add machine** action, including when Electron discovers its managed local machine asynchronously.
-- PR #471 made cross-machine continuation safety a blocking Chromium regression: target model/capability discovery, Project identity continuity and mismatched-repository fail-closed behavior now run on every PR.
-- #469, #470 and #471 passed the complete PR gate before integration: Linux/web regressions, macOS/Windows bridge tests, Chromium product smoke and Debug APK.
+- PR #470 fixed the Machines UX race: connection fields now appear only after an explicit **Add machine** action, including when Electron discovers its managed local machine asynchronously.
+- PR #471 made cross-machine continuation planning/safety a blocking Chromium regression.
+- PR #472 extended that blocking smoke through real execution: exact-workspace recovery after a blocked Project choice, exactly-once target Native Session creation, source+target lineage persistence, authority reset, exactly-once first prompt and opening the target Session after live model-catalog bootstrap.
+- #472 also fixed the same-machine Project-catalog refresh race by preserving a still-valid explicit Project choice without carrying a machine-local Project id across machine changes.
+- The final #472 head passed the complete PR gate before integration: type/regressions, bridge macOS/Windows, full Chromium product/native-Session suite and signed Debug APK artifact.
 
-## Work in progress
+## Current roadmap boundary
 
-### P2 cross-machine browser execution
+There is no active implementation PR after #472.
 
-Branch: `codex/p2-cross-machine-browser-execution`
+### P0 — issue #368
 
-Goal: extend the blocking cross-machine browser regression through the real continuation mutation path instead of stopping at planning readiness.
+Repository/fixture-side automation is effectively exhausted. Do not add synthetic coverage for the remaining true boundaries. #368 stays open for:
 
-Implemented on the branch:
+- strict `gate:real-harness` execution against actually installed, concretely versioned OpenCode/Codex/Claude/OMP/PI builds on a traceable machine;
+- real daemon/adapter restart plus persisted-Session resume/claim evidence against those installed harnesses;
+- physical Android foreground/background/network-interruption checks;
+- repository-admin enforcement of `main` pull-request/required-check rules.
 
-- the smoke first proves mismatched Project continuity remains fail-closed and causes no target mutation;
-- an exact-workspace continuation then creates one target native Session with a durable request id;
-- the identical lineage edge must be stored on source and target machines before first-prompt delivery;
-- the first prompt must be delivered exactly once with its own durable request id and the bounded transferred Task Context;
-- the target Session must open writable in the production UI after the handoff;
-- a source-only permission sentinel is asserted absent from target creation, portable lineage and the target prompt;
-- portable controls must explicitly record source authority invalidation, target authorization re-evaluation and no attachment transfer.
+### P1 — issue #369
 
-The first full CI run exposed a real panel-state race before any mutation: a refreshed snapshot of the same target machine reloaded the Project catalog and cleared an explicit Project choice when more than one Project existed. The branch now preserves a still-valid Project selection across same-machine catalog refreshes, never carries a machine-local Project id to a different machine, and keeps the existing single-Project auto-selection behavior. A focused unit regression protects that selection rule. This UI-state fix does not change ACP adapters, Native Session writer semantics or handoff mutation ordering.
+Repo-side pairing, Attention semantics, desktop-owned local runtime, packaged-runtime execution, PATH recovery, health/reconnect recovery and Machines simplification are implemented. #468/#470 add the latest recovery/UX evidence.
 
-Next gate: rerun the complete PR CI and merge to `codex/development-2026-09-11` only if every gate, including the end-to-end Chromium smoke and Debug APK, is green.
+Do not invent more P1 UI/runtime surface merely because #369 remains open. It is intentionally left open while its declared P0 prerequisite still has real-environment/admin evidence outstanding.
 
-## P2 roadmap position
+### P2 — issue #371
 
-Do not restart federation work already completed in PRs #411-#413: operational buckets plus machine/Project/harness/model/state filtering already exist in the current Native Session Home. Cross-machine creation/recovery, Project identity, lineage/portable-state boundaries and the first outcome surface were also implemented by later P2 PRs.
+Do not restart federation or cross-machine continuity work already integrated:
 
-Continue issue #371 from the current code. Prefer small reliability/completeness slices that strengthen the existing Native Session model instead of creating a second synthetic Session index or changing ACP/writer behavior without real-harness validation.
+- #411-#413: federated Native Session read model, operational buckets and machine/Project/harness/model/state scopes;
+- later P2 slices: durable Project/native identity, lineage, portable handoff state and crash/retry-safe target creation/first prompt;
+- #435/#436: recovered portable state plus source-authority invalidation / target fail-closed authorization acceptance;
+- #437-#439/#469: bounded Project/outcome evidence, structured completion/attention/next action and Git aggregates;
+- #471/#472: blocking Chromium planning and full execution coverage.
+
+One deliberate non-claim remains: do not infer `checks run/failed` from transcript/tool prose. There is no provider-neutral structured source yet, so absence is safer than heuristic evidence.
+
+#371 remains open while its declared #368/#369 prerequisites are open at true-boundary evidence, not because another federation implementation is missing.
 
 ## Product direction
 
 Continue from `docs/HARNESS_3_ROADMAP.md`, prioritizing correctness/recovery, onboarding, attention visibility and Native Session federation. Avoid turning Harness Remote into a generic IDE/task manager or reimplementing capabilities that belong to native harnesses.
+
+Do not begin P3 provider-extension work merely to keep development moving while P0/P1/P2 true-boundary gates are unresolved. Prefer real validation or a clearly evidenced defect over speculative new surface area.
