@@ -14,9 +14,13 @@ const SOURCE_PROJECT = "project-cross-source"
 const MATCH_PROJECT = "project-cross-match"
 const DIFFERENT_PROJECT = "project-cross-different"
 const SOURCE_DIRECTORY = "/work/source-repo"
+const TARGET_DIRECTORY = "/target/matching"
 const SESSION_ID = "cross-machine-source-session"
+const TARGET_SESSION_ID = "cross-machine-target-session"
 const SESSION_TITLE = "Cross-machine Source Session"
 const TRANSCRIPT_MARKER = "CROSS-MACHINE-SOURCE-TRANSCRIPT"
+const SOURCE_PERMISSION_SENTINEL = "SOURCE-ONLY-PERMISSION-MUST-NOT-CROSS"
+const FIRST_MESSAGE = "Continue the fix on the target machine"
 const REPOSITORY = "a".repeat(64)
 const HISTORY = "b".repeat(64)
 const OTHER_REPOSITORY = "c".repeat(64)
@@ -26,6 +30,7 @@ const sourceSession = {
   title: SESSION_TITLE,
   directory: SOURCE_DIRECTORY,
   external: true,
+  permission: [{ permission: "bash", pattern: SOURCE_PERMISSION_SENTINEL, action: "deny" }],
   time: { created: 1000, updated: 1001 }
 }
 
@@ -53,6 +58,12 @@ const CLAUDE_MODELS = [{
 }]
 
 const streams = new Set()
+const sourceLinks = []
+const targetLinks = []
+const targetCreateRequests = []
+const targetPromptRequests = []
+const mutationOrder = []
+let targetCreated = false
 
 function corsHeaders() {
   return {
@@ -67,6 +78,13 @@ function corsHeaders() {
 function json(response, status, value, extra = {}) {
   response.writeHead(status, { "Content-Type": "application/json", ...corsHeaders(), ...extra })
   response.end(JSON.stringify(value))
+}
+
+async function readJson(request) {
+  const chunks = []
+  for await (const chunk of request) chunks.push(chunk)
+  const raw = Buffer.concat(chunks).toString("utf8")
+  return raw ? JSON.parse(raw) : {}
 }
 
 function sse(request, response) {
@@ -95,8 +113,19 @@ function projectIdentity(repositoryFingerprint) {
   }
 }
 
+function targetSession() {
+  return {
+    id: TARGET_SESSION_ID,
+    title: SESSION_TITLE,
+    directory: TARGET_DIRECTORY,
+    external: false,
+    model: { providerID: "anthropic", id: "claude-cross-target" },
+    time: { created: 2000, updated: 2001 }
+  }
+}
+
 function startSourceDaemon() {
-  const server = http.createServer((request, response) => {
+  const server = http.createServer(async (request, response) => {
     if (request.method === "OPTIONS") {
       response.writeHead(204, corsHeaders())
       response.end()
@@ -127,6 +156,18 @@ function startSourceDaemon() {
     if (request.method === "GET" && url.pathname === "/v1/project-identity") {
       assert.equal(url.searchParams.get("projectId"), SOURCE_PROJECT)
       json(response, 200, projectIdentity(REPOSITORY))
+      return
+    }
+    if (request.method === "GET" && url.pathname === "/v1/session-links") {
+      json(response, 200, { links: sourceLinks })
+      return
+    }
+    if (request.method === "POST" && url.pathname === "/v1/session-links") {
+      const body = await readJson(request)
+      assert.ok(body.link, "source lineage registration omitted its link")
+      sourceLinks.push(body.link)
+      mutationOrder.push("source-link")
+      json(response, 200, { link: body.link })
       return
     }
     if (request.method === "GET" && url.pathname === "/v1/agents/codex/experimental/session") {
@@ -162,7 +203,7 @@ function startSourceDaemon() {
 }
 
 function startTargetDaemon() {
-  const server = http.createServer((request, response) => {
+  const server = http.createServer(async (request, response) => {
     if (request.method === "OPTIONS") {
       response.writeHead(204, corsHeaders())
       response.end()
@@ -189,7 +230,7 @@ function startTargetDaemon() {
     if (request.method === "GET" && url.pathname === "/v1/projects") {
       json(response, 200, {
         projects: [
-          { id: MATCH_PROJECT, machineId: TARGET_MACHINE, name: "Matching Project", path: "/target/matching", kind: "git", configured: true },
+          { id: MATCH_PROJECT, machineId: TARGET_MACHINE, name: "Matching Project", path: TARGET_DIRECTORY, kind: "git", configured: true },
           { id: DIFFERENT_PROJECT, machineId: TARGET_MACHINE, name: "Different Project", path: "/target/different", kind: "git", configured: true }
         ]
       })
@@ -202,12 +243,65 @@ function startTargetDaemon() {
       else json(response, 404, { error: "Unknown Project" })
       return
     }
+    if (request.method === "GET" && url.pathname === "/v1/session-links") {
+      json(response, 200, { links: targetLinks })
+      return
+    }
+    if (request.method === "POST" && url.pathname === "/v1/session-links") {
+      const body = await readJson(request)
+      assert.ok(body.link, "target lineage registration omitted its link")
+      targetLinks.push(body.link)
+      mutationOrder.push("target-link")
+      json(response, 200, { link: body.link })
+      return
+    }
+    if (request.method === "POST" && url.pathname === "/v1/session-handoff-target") {
+      const body = await readJson(request)
+      targetCreateRequests.push(body)
+      mutationOrder.push("create-target")
+      assert.equal(body.projectId, MATCH_PROJECT)
+      assert.equal(body.targetAgentID, "claude")
+      assert.deepEqual(body.source, {
+        machineID: SOURCE_MACHINE,
+        agentID: "codex",
+        sessionID: SESSION_ID,
+        directory: SOURCE_DIRECTORY
+      })
+      assert.equal(body.title, SESSION_TITLE)
+      assert.deepEqual(body.model, { providerID: "anthropic", modelID: "claude-cross-target" })
+      assert.equal(JSON.stringify(body).includes(SOURCE_PERMISSION_SENTINEL), false, "source permission crossed target-creation boundary")
+      targetCreated = true
+      json(response, 200, {
+        status: "accepted",
+        clientRequestId: body.clientRequestId,
+        result: {
+          target: {
+            machineID: TARGET_MACHINE,
+            agentID: "claude",
+            sessionID: TARGET_SESSION_ID,
+            directory: TARGET_DIRECTORY
+          }
+        }
+      })
+      return
+    }
     if (request.method === "GET" && url.pathname === "/v1/agents/claude/experimental/session") {
-      json(response, 200, [])
+      json(response, 200, targetCreated ? [targetSession()] : [])
       return
     }
     if (request.method === "GET" && url.pathname === "/v1/agents/claude/session/status") {
-      json(response, 200, {})
+      json(response, 200, targetCreated ? { [TARGET_SESSION_ID]: { type: "idle" } } : {})
+      return
+    }
+    if (request.method === "GET" && url.pathname === `/v1/agents/claude/session/${TARGET_SESSION_ID}/message`) {
+      json(response, 200, [], { "X-Has-More": "0" })
+      return
+    }
+    if (request.method === "POST" && url.pathname === `/v1/agents/claude/session/${TARGET_SESSION_ID}/prompt`) {
+      const body = await readJson(request)
+      targetPromptRequests.push(body)
+      mutationOrder.push("first-prompt")
+      json(response, 200, { status: "accepted", clientRequestId: body.clientRequestId })
       return
     }
     if (request.method === "GET" && url.pathname === "/v1/agents/claude/models") {
@@ -338,10 +432,9 @@ try {
   await page.keyboard.press("Escape")
   assert.match(await modelButton.innerText(), /Claude Target/, "target default model was not selected after catalog discovery")
 
-  const firstMessageText = "Continue the fix on the target machine"
   const firstMessage = panel.getByRole("textbox", { name: "First message on the target Session" })
-  await firstMessage.fill(firstMessageText)
-  assert.equal(await firstMessage.inputValue(), firstMessageText, "target first-message input did not retain the requested text")
+  await firstMessage.fill(FIRST_MESSAGE)
+  assert.equal(await firstMessage.inputValue(), FIRST_MESSAGE, "target first-message input did not retain the requested text")
   assert.equal(await toggle.isDisabled(), false, "source Session became non-interactive while the verified cross-machine plan was open")
   assert.equal(await sourceComposer.isDisabled(), false, "source composer became non-interactive while the verified cross-machine plan was open")
   assert.equal(await machineSelect.inputValue(), TARGET_MACHINE, "target machine selection changed while preparing the first message")
@@ -358,9 +451,65 @@ try {
   await panel.getByText("This Project does not match the source repository/history. Cross-machine continuation is blocked.", { exact: true }).waitFor({ state: "visible", timeout: 12_000 })
   await waitForDisabledState(continueButton, true, "mismatched repository did not disable cross-machine continuation")
   assert.equal(await sourceComposer.isDisabled(), false, "blocked cross-machine plan disabled the ordinary source composer")
-  assert.deepEqual(pageErrors, [], `browser errors in cross-machine planning surface: ${pageErrors.join(" | ")}`)
+  assert.equal(targetCreateRequests.length, 0, "blocked Project continuity mutated the target machine")
 
-  console.log("cross-machine continuation Project/model safety browser smoke passed")
+  await projectSelect.selectOption(MATCH_PROJECT)
+  await readySummary.waitFor({ state: "visible", timeout: 12_000 })
+  await waitForDisabledState(continueButton, false, "matching Project did not recover after a blocked selection")
+  await continueButton.click()
+
+  const targetComposer = page.getByRole("textbox", { name: "Message Claude" })
+  await targetComposer.waitFor({ state: "visible", timeout: 12_000 })
+  assert.equal(await targetComposer.isDisabled(), false, "new target Session opened without writable target authority")
+  await page.getByText("Handoff source", { exact: true }).waitFor({ state: "visible", timeout: 12_000 })
+
+  assert.equal(targetCreateRequests.length, 1, "target Session creation was not exactly once")
+  assert.equal(sourceLinks.length, 1, "source machine did not receive exactly one lineage edge")
+  assert.equal(targetLinks.length, 1, "target machine did not receive exactly one lineage edge")
+  assert.equal(targetPromptRequests.length, 1, "target first prompt was not exactly once")
+  assert.deepEqual(mutationOrder, ["create-target", "source-link", "target-link", "first-prompt"], "cross-machine mutations occurred out of safety order")
+
+  const createRequest = targetCreateRequests[0]
+  assert.ok(createRequest.clientRequestId, "target creation omitted its durable request id")
+  const sourceLink = sourceLinks[0]
+  const targetLink = targetLinks[0]
+  assert.deepEqual(targetLink, sourceLink, "source and target daemons did not receive the same lineage edge")
+  assert.deepEqual(sourceLink.source, {
+    machineID: SOURCE_MACHINE,
+    agentID: "codex",
+    sessionID: SESSION_ID,
+    directory: SOURCE_DIRECTORY
+  })
+  assert.deepEqual(sourceLink.target, {
+    machineID: TARGET_MACHINE,
+    agentID: "claude",
+    sessionID: TARGET_SESSION_ID,
+    directory: TARGET_DIRECTORY
+  })
+  assert.match(sourceLink.transferredContext || "", new RegExp(TRANSCRIPT_MARKER), "bounded handoff context omitted the source transcript")
+  assert.deepEqual(sourceLink.portableState?.controls, {
+    sourceAuthority: "invalidated",
+    targetAuthorization: "re_evaluate",
+    attachments: "not_transferred"
+  }, "portable handoff controls did not preserve the authority boundary")
+  assert.equal(sourceLink.portableState?.project?.decision, "automatic", "exact workspace continuation was not recorded as automatic")
+  assert.equal(sourceLink.portableState?.project?.reason, "exact_workspace", "exact workspace evidence was not retained")
+  assert.equal(JSON.stringify(sourceLink).includes(SOURCE_PERMISSION_SENTINEL), false, "source permission leaked into portable lineage")
+
+  const promptRequest = targetPromptRequests[0]
+  assert.ok(promptRequest.clientRequestId, "target first prompt omitted its durable request id")
+  assert.notEqual(promptRequest.clientRequestId, createRequest.clientRequestId, "target creation and first prompt reused one mutation identity")
+  assert.equal(promptRequest.directory, TARGET_DIRECTORY)
+  assert.deepEqual(promptRequest.model, { providerID: "anthropic", modelID: "claude-cross-target" })
+  assert.deepEqual(promptRequest.attachments, [], "cross-machine first prompt transferred attachments")
+  assert.match(promptRequest.text, /TRANSFERRED TASK CONTEXT/)
+  assert.match(promptRequest.text, new RegExp(TRANSCRIPT_MARKER))
+  assert.match(promptRequest.text, /USER INSTRUCTION/)
+  assert.match(promptRequest.text, new RegExp(FIRST_MESSAGE))
+  assert.equal(JSON.stringify(promptRequest).includes(SOURCE_PERMISSION_SENTINEL), false, "source permission leaked into target first prompt")
+  assert.deepEqual(pageErrors, [], `browser errors in cross-machine execution surface: ${pageErrors.join(" | ")}`)
+
+  console.log("cross-machine continuation planning, authority boundary, lineage and first-prompt browser smoke passed")
   await context.close()
 } finally {
   if (browser) await browser.close().catch(() => {})
