@@ -276,6 +276,19 @@ function stopServer(server) {
   try { server.close() } catch {}
 }
 
+async function waitForDisabledState(locator, disabled, label, timeout = 12_000) {
+  const deadline = Date.now() + timeout
+  let lastState
+  while (Date.now() < deadline) {
+    try {
+      lastState = await locator.isDisabled()
+      if (lastState === disabled) return
+    } catch {}
+    await new Promise((resolve) => setTimeout(resolve, 50))
+  }
+  throw new Error(`${label}: expected disabled=${disabled}, observed disabled=${String(lastState)}`)
+}
+
 let sourceDaemon
 let targetDaemon
 let preview
@@ -314,7 +327,8 @@ try {
   const projectSelect = panel.locator('label').filter({ hasText: "Project" }).locator('select')
   await projectSelect.selectOption(MATCH_PROJECT)
 
-  await panel.getByText("Same repository, branch and HEAD verified; both worktrees are clean.", { exact: true }).waitFor({ state: "visible", timeout: 12_000 })
+  const readySummary = panel.getByText("Same repository, branch and HEAD verified; both worktrees are clean.", { exact: true })
+  await readySummary.waitFor({ state: "visible", timeout: 12_000 })
   await panel.getByText("Attachments and source permissions are not transferred.", { exact: true }).waitFor({ state: "visible", timeout: 12_000 })
 
   const modelButton = panel.locator('.tdw-model-trigger')
@@ -324,16 +338,25 @@ try {
   await page.keyboard.press("Escape")
   assert.match(await modelButton.innerText(), /Claude Target/, "target default model was not selected after catalog discovery")
 
+  const firstMessageText = "Continue the fix on the target machine"
   const firstMessage = panel.getByRole("textbox", { name: "First message on the target Session" })
-  await firstMessage.fill("Continue the fix on the target machine")
+  await firstMessage.fill(firstMessageText)
+  assert.equal(await firstMessage.inputValue(), firstMessageText, "target first-message input did not retain the requested text")
+  assert.equal(await toggle.isDisabled(), false, "source Session became non-interactive while the verified cross-machine plan was open")
+  assert.equal(await sourceComposer.isDisabled(), false, "source composer became non-interactive while the verified cross-machine plan was open")
+  assert.equal(await machineSelect.inputValue(), TARGET_MACHINE, "target machine selection changed while preparing the first message")
+  assert.equal(await projectSelect.inputValue(), MATCH_PROJECT, "target Project selection changed while preparing the first message")
+  assert.equal(await projectSelect.isDisabled(), false, "target Project unexpectedly returned to a loading state")
+  assert.equal(await modelButton.isDisabled(), false, "target model unexpectedly returned to a loading/unavailable state")
+  assert.match(await modelButton.innerText(), /Claude Target/, "target model selection changed while preparing the first message")
+  await readySummary.waitFor({ state: "visible", timeout: 12_000 })
+
   const continueButton = panel.getByRole("button", { name: "Continue on target machine" })
-  const continueHandle = await continueButton.elementHandle()
-  assert.ok(continueHandle, "cross-machine continue button was not mounted")
-  await page.waitForFunction((button) => button instanceof HTMLButtonElement && !button.disabled, continueHandle, { timeout: 12_000 })
+  await waitForDisabledState(continueButton, false, "verified matching workspace did not become sendable")
 
   await projectSelect.selectOption(DIFFERENT_PROJECT)
   await panel.getByText("This Project does not match the source repository/history. Cross-machine continuation is blocked.", { exact: true }).waitFor({ state: "visible", timeout: 12_000 })
-  await page.waitForFunction((button) => button instanceof HTMLButtonElement && button.disabled, continueHandle, { timeout: 12_000 })
+  await waitForDisabledState(continueButton, true, "mismatched repository did not disable cross-machine continuation")
   assert.equal(await sourceComposer.isDisabled(), false, "blocked cross-machine plan disabled the ordinary source composer")
   assert.deepEqual(pageErrors, [], `browser errors in cross-machine planning surface: ${pageErrors.join(" | ")}`)
 
