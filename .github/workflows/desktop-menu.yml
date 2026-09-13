@@ -73,6 +73,39 @@ jobs:
             Remove-Item Env:ELECTRON_RUN_AS_NODE -ErrorAction SilentlyContinue
           }
 
+      # Keep the PR smoke cheap: build an unpacked app for the runner's architecture instead of the
+      # release workflow's DMG/ZIP matrix, then execute the daemon from the exact Resources layout
+      # used by packaged macOS builds. This catches missing extraResources/module-graph regressions
+      # without duplicating release artifact production on every desktop PR.
+      - name: Verify embedded daemon runs from packaged macOS app
+        if: runner.os == 'macOS'
+        shell: bash
+        working-directory: web
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: false
+        run: |
+          set -euo pipefail
+          case "$(uname -m)" in
+            arm64) arch_flag=--arm64 ;;
+            x86_64) arch_flag=--x64 ;;
+            *) echo "Unsupported macOS runner architecture: $(uname -m)" >&2; exit 1 ;;
+          esac
+          npm run build:desktop
+          npx electron-builder --publish never --mac dir "$arch_flag"
+          app_bundle="$(find release -type d -name 'Harness Remote.app' -print -quit)"
+          if [ -z "$app_bundle" ]; then
+            echo "Packaged macOS app bundle was not produced." >&2
+            exit 1
+          fi
+          resources="$app_bundle/Contents/Resources"
+          daemon="$resources/bridge-runtime/src/daemon-cli.js"
+          package="$resources/bridge-runtime/package.json"
+          electron="$app_bundle/Contents/MacOS/Harness Remote"
+          test -f "$daemon" || { echo "Packaged desktop is missing embedded daemon: $daemon" >&2; exit 1; }
+          test -f "$package" || { echo "Packaged desktop is missing bridge package metadata: $package" >&2; exit 1; }
+          test -x "$electron" || { echo "Packaged desktop executable is missing or not executable: $electron" >&2; exit 1; }
+          ELECTRON_RUN_AS_NODE=1 "$electron" "$daemon" --backend omp --help
+
       # Boots Electron, installs the real menu and reads it back — the part the unit tests cannot
       # reach, on the platform that actually shows it.
       - name: Verify the application menu installs
