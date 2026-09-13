@@ -13,28 +13,33 @@
 
 ## Current integration baseline
 
-- Integration head after PR #470: `b39c803375514ad3f31680a9c856a041ecc95ff6`.
+- Integration head after PR #471: `b30ccbd0c5a9dff878dc73a91870990b3bf01350`.
 - PR #468 added bounded recovery of the embedded desktop daemon and was validated on Zorin with a real `SIGSTOP` recovery test.
 - PR #469 added bounded Git aggregate outcome evidence: tracked files, insertions, deletions and binary files, with no raw diff/hunks/source sent to the client.
 - PR #470 fixed the universal Machines UX race: connection fields now appear only after an explicit **Add machine** action, including when Electron discovers its managed local machine asynchronously.
-- #469 and #470 both passed the complete PR gate before integration: Linux/web regressions, macOS/Windows bridge tests, Chromium product smoke and Debug APK.
+- PR #471 made cross-machine continuation safety a blocking Chromium regression: target model/capability discovery, Project identity continuity and mismatched-repository fail-closed behavior now run on every PR.
+- #469, #470 and #471 passed the complete PR gate before integration: Linux/web regressions, macOS/Windows bridge tests, Chromium product smoke and Debug APK.
 
 ## Work in progress
 
-### P2 cross-machine browser gate
+### P2 cross-machine browser execution
 
-Branch: `codex/p2-cross-machine-browser-gate`
+Branch: `codex/p2-cross-machine-browser-execution`
 
-Goal: make the existing cross-machine continuation safety smoke a permanent blocking regression instead of an unexecuted standalone script.
+Goal: extend the blocking cross-machine browser regression through the real continuation mutation path instead of stopping at planning readiness.
 
-Implemented:
+Implemented on the branch:
 
-- `cross-machine-continuation-browser-smoke.mjs` is wired into the blocking Chromium product gate;
-- the smoke exercises the existing cross-machine planning surface, target model discovery, Project identity continuity and fail-closed behavior for a mismatched repository;
-- `native-session-reliability-ci-contract.test.js` now requires that smoke to remain present in the blocking workflow;
-- no ACP adapter, Native Session writer semantics or harness runtime behavior is changed.
+- the smoke first proves mismatched Project continuity remains fail-closed and causes no target mutation;
+- an exact-workspace continuation then creates one target native Session with a durable request id;
+- the identical lineage edge must be stored on source and target machines before first-prompt delivery;
+- the first prompt must be delivered exactly once with its own durable request id and the bounded transferred Task Context;
+- the target Session must open writable in the production UI after the handoff;
+- a source-only permission sentinel is asserted absent from target creation, portable lineage and the target prompt;
+- portable controls must explicitly record source authority invalidation, target authorization re-evaluation and no attachment transfer;
+- no ACP adapter, Native Session writer semantics or harness runtime implementation is changed by this slice.
 
-Next gate: full PR CI, then merge to `codex/development-2026-09-11` only if green.
+Next gate: review the branch diff, then run full PR CI and merge to `codex/development-2026-09-11` only if every gate, including Debug APK, is green.
 
 ## P2 roadmap position
 
