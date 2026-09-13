@@ -83,11 +83,52 @@ export function parseGitPorcelainV1Z(value, { maxFiles = MAX_PROJECT_OUTCOME_FIL
 }
 
 /**
+ * Summarize the tracked worktree diff against HEAD without exposing paths, hunks or source text.
+ * `--no-renames` keeps each NUL-delimited numstat record structurally simple and avoids depending on
+ * Git's rename formatting. Binary entries use `-` for additions/deletions and are counted separately.
+ */
+export function parseGitNumstatZ(value) {
+  const fields = String(value ?? "").split("\0")
+  if (fields.at(-1) === "") fields.pop()
+
+  let trackedFiles = 0
+  let insertions = 0
+  let deletions = 0
+  let binaryFiles = 0
+  for (const field of fields) {
+    if (!field) continue
+    const firstTab = field.indexOf("\t")
+    const secondTab = firstTab < 0 ? -1 : field.indexOf("\t", firstTab + 1)
+    if (firstTab <= 0 || secondTab <= firstTab + 1) continue
+
+    const added = field.slice(0, firstTab)
+    const deleted = field.slice(firstTab + 1, secondTab)
+    if (added === "-" || deleted === "-") {
+      if (added === "-" && deleted === "-") {
+        trackedFiles += 1
+        binaryFiles += 1
+      }
+      continue
+    }
+
+    const addedCount = Number(added)
+    const deletedCount = Number(deleted)
+    if (!Number.isSafeInteger(addedCount) || addedCount < 0 || !Number.isSafeInteger(deletedCount) || deletedCount < 0) continue
+    trackedFiles += 1
+    insertions += addedCount
+    deletions += deletedCount
+  }
+
+  return { trackedFiles, insertions, deletions, binaryFiles }
+}
+
+/**
  * Read a bounded, provider-neutral outcome snapshot from the daemon-local Git worktree.
  *
  * The snapshot is intentionally metadata-only: no diff hunks, file contents, remotes, credentials,
  * absolute paths, command output or harness/provider state cross the daemon boundary. Missing Git
- * evidence stays absent instead of being invented. This function never mutates the repository.
+ * evidence stays absent instead of being invented. Diff evidence is aggregate numstat only, never
+ * source text. This function never mutates the repository.
  */
 export async function inspectGitProjectOutcome(projectPath, { runGit = defaultRunGit, maxFiles = MAX_PROJECT_OUTCOME_FILES } = {}) {
   if (typeof projectPath !== "string" || !projectPath.trim()) return null
@@ -96,15 +137,17 @@ export async function inspectGitProjectOutcome(projectPath, { runGit = defaultRu
   if (!root.ok || !root.value.trim()) return null
 
   const repoRoot = root.value.trim()
-  const [head, branch, status] = await Promise.all([
+  const [head, branch, status, diff] = await Promise.all([
     readGit(runGit, ["-C", repoRoot, "rev-parse", "HEAD"]),
     readGit(runGit, ["-C", repoRoot, "branch", "--show-current"]),
-    readGit(runGit, ["-C", repoRoot, "status", "--porcelain=v1", "-z", "--untracked-files=all"])
+    readGit(runGit, ["-C", repoRoot, "status", "--porcelain=v1", "-z", "--untracked-files=all"]),
+    readGit(runGit, ["-C", repoRoot, "diff", "--numstat", "-z", "--no-renames", "HEAD", "--"])
   ])
 
   const parsed = status.ok
     ? parseGitPorcelainV1Z(status.value, { maxFiles })
     : { files: [], totalFiles: 0, truncated: false }
+  const diffSummary = diff.ok ? parseGitNumstatZ(diff.value) : undefined
 
   return {
     version: 1,
@@ -116,6 +159,7 @@ export async function inspectGitProjectOutcome(projectPath, { runGit = defaultRu
       files: parsed.files,
       totalChangedFiles: parsed.totalFiles,
       filesTruncated: parsed.truncated
-    } : {})
+    } : {}),
+    ...(diffSummary ? { diffSummary } : {})
   }
 }
