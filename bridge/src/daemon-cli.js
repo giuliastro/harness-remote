@@ -7,7 +7,7 @@ import { AcpAgentModelCatalog, HttpAgentModelCatalog } from "./agent-model-catal
 import { parseConfig, usage as bridgeUsage } from "./config.js"
 import { acpHarnessCapabilityContract, openCodeCapabilityContract } from "./harness-capability-contract.js"
 import { harnessProfile, resolveAcpLaunch } from "./harness-profiles.js"
-import { canListen, canListenForBind, harnessPortUnavailableMessage, resolveLaunchPlan } from "./launcher.js"
+import { canListen, canListenForBind, detectBackends, harnessPortUnavailableMessage, resolveLaunchPlan } from "./launcher.js"
 import { loadMachineIdentity } from "./machine-registry.js"
 import { MachineDaemon, createMachineDaemonServer } from "./machine-daemon.js"
 import { ManagedOpenCodeHost } from "./opencode-host.js"
@@ -85,6 +85,13 @@ export function daemonUsage() {
   return `${bridgeUsage()}\n\nMulti-host daemon options:\n  --opencode-command <path>  OpenCode executable (default: opencode)\n  --opencode-host <host>     Managed OpenCode bind host (default: 127.0.0.1)\n  --opencode-port <port>     Managed OpenCode port (default: 4096)\n  --opencode-timeout <ms>    How long managed OpenCode may take to become ready (default: 15000)\n  --no-opencode              Start only the primary ACP host`
 }
 
+/** Resolve built-in ACP hosts without rejecting a custom --acp-command primary. */
+export function resolveDaemonPlan(args, backend, detected = detectBackends()) {
+  return detected.includes(backend)
+    ? resolveLaunchPlan(args, detected)
+    : { detected }
+}
+
 export async function ensureOpenCodePortAvailable({ port, host, canListenImpl = canListen }) {
   if (await canListenImpl(port, host)) return
   throw new Error(`OpenCode port ${port} is already in use on ${host}. Is OpenCode already running? Use --opencode-port to choose another.`)
@@ -119,7 +126,7 @@ async function main() {
 
   const identity = await loadMachineIdentity(config.stateDirectory)
   const daemon = new MachineDaemon(identity)
-  const plan = resolveLaunchPlan(process.argv.slice(2))
+  const plan = resolveDaemonPlan(process.argv.slice(2), config.backend)
   const acpBackends = [...new Set([...plan.detected.filter((backend) => backend !== "opencode"), config.backend])]
   const primaryProfile = harnessProfile(config.backend)
   const acpHosts = new Map()
