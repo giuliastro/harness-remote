@@ -1,5 +1,6 @@
 import { api, type NativeSessionLinkRecord } from "./api"
 import { nativeSessionDisplayTitle } from "./native-session-title"
+import { liveSessionIndexStatus } from "./session-index-live-state"
 import type { BackendKind, MachineAgentHost, MessageEnvelope, ModelSelection, ServerConfig, Session, SessionStatus } from "./types"
 
 export type NativeSessionRecord = {
@@ -212,7 +213,10 @@ function nativeSessionRecords(
     renameSupported: agent.capabilities?.sessionRename === true,
     deleteSupported: agent.capabilities?.sessionDelete === true,
     session,
-    status: statuses[session.id] ?? session.status
+    // A lifecycle edge can precede convergence of the lightweight status endpoint. Use that fresher
+    // observation only inside its bounded grace period; durable discovery becomes authoritative again
+    // automatically afterwards, so a missed future event cannot pin presentation forever.
+    status: liveSessionIndexStatus(config, session.id) ?? statuses[session.id] ?? session.status
   }))
 }
 
