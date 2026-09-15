@@ -74,7 +74,7 @@ test("OpenCode session.status normalization preserves the streamed status type",
 })
 
 test("a fresh streamed idle edge beats a briefly stale busy status read", async () => {
-  const now = 100_000
+  const now = Date.now()
   noteSessionIndexLiveEvent(base, { type: "session.status", sessionID: "ses_a", status: "idle" }, now)
   assert.deepEqual(liveSessionIndexStatus(base, "ses_a", now), { type: "idle" })
 
