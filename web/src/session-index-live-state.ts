@@ -32,6 +32,15 @@ function endpointKey(config: Pick<ServerConfig, "host" | "port" | "username" | "
   return `${host}:${config.port}|${config.username.trim()}|${config.backend}`
 }
 
+function pruneLiveStatuses(key: string, now: number): void {
+  const bySession = liveStatuses.get(key)
+  if (!bySession) return
+  for (const [sessionID, entry] of bySession) {
+    if (now - entry.observedAt > LIVE_SESSION_STATUS_GRACE_MS) bySession.delete(sessionID)
+  }
+  if (bySession.size === 0) liveStatuses.delete(key)
+}
+
 function bump(config: Pick<ServerConfig, "host" | "port" | "username" | "backend">): number {
   const key = endpointKey(config)
   const next = (revisions.get(key) ?? 0) + 1
@@ -56,8 +65,10 @@ export function noteSessionIndexLiveEvent(
   if (!event.sessionID) return
 
   const key = endpointKey(config)
+  pruneLiveStatuses(key, now)
   if (event.type === "session.deleted") {
     liveStatuses.get(key)?.delete(event.sessionID)
+    if (liveStatuses.get(key)?.size === 0) liveStatuses.delete(key)
     return
   }
 
@@ -85,11 +96,8 @@ export function liveSessionIndexStatus(
   now = Date.now()
 ): SessionStatus | undefined {
   const key = endpointKey(config)
-  const entry = liveStatuses.get(key)?.get(sessionID)
-  if (!entry) return undefined
-  if (now - entry.observedAt <= LIVE_SESSION_STATUS_GRACE_MS) return entry.status
-  liveStatuses.get(key)?.delete(sessionID)
-  return undefined
+  pruneLiveStatuses(key, now)
+  return liveStatuses.get(key)?.get(sessionID)?.status
 }
 
 /**
