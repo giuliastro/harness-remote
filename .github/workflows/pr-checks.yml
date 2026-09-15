@@ -122,6 +122,7 @@ jobs:
           node scripts/native-opencode-browser-smoke.mjs
           node scripts/native-opencode-real-regression-smoke.mjs
           node scripts/native-opencode-permission-regression-smoke.mjs
+          node scripts/native-opencode-rail-state-smoke.mjs
           node scripts/native-session-model-switch-smoke.mjs
           node scripts/native-session-outcome-browser-smoke.mjs
         working-directory: web
@@ -174,6 +175,10 @@ jobs:
 
       - name: Setup Android SDK
         uses: android-actions/setup-android@v4
+        with:
+          # setup-android@v4 still defaults to the retired `tools` package. We install the exact
+          # platform/build-tools below, so skip that default package set and keep the gate reproducible.
+          packages: ''
 
       - name: Install Android 36 SDK packages
         run: sdkmanager "platform-tools" "platforms;android-36" "build-tools;36.0.0"

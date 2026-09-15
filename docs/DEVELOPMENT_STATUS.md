@@ -13,7 +13,7 @@
 
 ## Current integration baseline
 
-- Integration head after PR #510: `6932ac975a50350c2d6a54685e7fee6671bf45b5`.
+- Integration head after PR #511: `4dc68d3969672c446b954b79c538e733c82a4839`.
 - PR #468 added bounded recovery of the embedded desktop daemon and was validated on Zorin with a real `SIGSTOP` recovery test.
 - PR #469 added bounded Git aggregate outcome evidence: tracked files, insertions, deletions and binary files, with no raw diff/hunks/source sent to the client.
 - PR #470 fixed the Machines UX race: connection fields now appear only after an explicit **Add machine** action, including when Electron discovers its managed local machine asynchronously.
@@ -52,17 +52,22 @@
 - PR #508 retired two duplicate ACP handoff-creation source assertions after required bridge coverage proved the target native Session is created bare with only its directory and model/variant configuration is deferred out of resource creation. Checkpoint/reconciliation guards remain. Full regressions, Chromium, desktop matrix and signed Debug APK gates passed before integration; production code stayed untouched.
 - PR #509 retired three duplicate Native Session delete UI source guards after the required Chromium product smoke proved the real DOM confirmation, native DELETE transport and optimistic deletion/refresh lifecycle. Capability gating, rename behavior and production code stayed untouched. Full regressions, Chromium, desktop matrix and signed Debug APK gates passed before integration.
 - PR #510 retired two duplicate New Session UI source guards after the required Chromium product smoke proved the translated accessible control, real native create surface, exactly-once native Session creation and opening of the resulting Session. The `canCreateNativeSession` fail-closed capability gate and production code stayed untouched. Full regressions, Chromium, desktop matrix and signed Debug APK gates passed before integration.
+- PR #511 marked the 3.1.0 release-readiness boundary and advanced the integration head to `4dc68d3969672c446b954b79c538e733c82a4839`.
 - #474-#480 and #483-#510 are behavior-preserving contract/CI-hardening slices under issue #330; #481-#482 are release-evidence hardening under #368. Production ACP/harness behavior was not changed by these slices.
 
 ## Current roadmap boundary
 
-Active WIP branch: `codex/release-readiness-3.1.0`.
+Active WIP branch: `codex/port-opencode-session-rail-live-state`.
 
-The integration branch is now in release-candidate stabilization. Do not start another source-guard cleanup, P3 provider expansion or opportunistic runtime refactor before the next release. The automated gate at #510 is fully green: regressions/type-check, bridge macOS/Windows, Chromium product smoke including transcript/composer and cross-machine continuation, desktop Ubuntu/macOS/Windows, Debug APK build, signature and artifact.
+A real OpenCode rail regression discovered on the released line is being ported into 3.1 before release. Stable-line PR #512 covers the case where Session A is left while `Working`, completes while Session B is selected, but remains visually `Working` in the Session rail until A is reopened. The integration port invalidates Session discovery directly from lifecycle events, keeps a bounded fresh streamed status ahead of a briefly stale native status read, and adds a blocking Chromium smoke for A Working → navigate to B → A Ready without reopening A. The port deliberately does not change prompt/Send routing, Stop, ACP writer ownership, transcript reconciliation, or polling cadence, and existing #351 regressions remain mandatory.
 
-The intended next release is **Harness Remote 3.1.0**, not 3.0.3: compared with 3.0.2, the integration line contains substantial user-facing P1/P2 work including pairing/onboarding, Attention semantics, desktop-owned local runtime/recovery, Project/outcome evidence and cross-machine Native Session continuity. Freeze a release-candidate ref only after this docs-only readiness slice is integrated, then run the true-boundary evidence against that exact frozen commit.
+Validation also exposed an unrelated CI break: `android-actions/setup-android@v4` currently defaults to the retired Android SDK `tools` package. The candidate workflow skips that default package set and continues to install the exact Android 36 platform/build-tools explicitly. Do not merge the stable or integration fix until the complete respective CI, including signed Debug APK, is green.
 
-Release publication remains blocked only by true-boundary evidence and repository administration, not by another synthetic code slice:
+The integration branch is now in release-candidate stabilization. Do not start another source-guard cleanup, P3 provider expansion or opportunistic runtime refactor before the next release.
+
+The intended next release is **Harness Remote 3.1.0**, not 3.0.3: compared with 3.0.2, the integration line contains substantial user-facing P1/P2 work including pairing/onboarding, Attention semantics, desktop-owned local runtime/recovery, Project/outcome evidence and cross-machine Native Session continuity. Freeze a release-candidate ref only after this evidenced regression fix is integrated, then run the true-boundary evidence against that exact frozen commit.
+
+Release publication remains blocked by true-boundary evidence, repository administration and the current evidenced OpenCode rail fix:
 
 - strict `gate:real-harness` against the actually installed OpenCode/Codex/Claude/OMP/PI builds, using known-working models where available and recording unavailable inference explicitly;
 - real daemon/adapter restart plus persisted-Session resume/claim on the same candidate build;
@@ -75,10 +80,7 @@ The post-#501 audit found that `opencode-recovery.test.mjs` directly proves how 
 
 The remaining source-guard families around model fallback, adapter writer acquisition, projection disposal, OpenCode silent recovery, pending-prompt reconciliation and reply settle continue to protect critical semantics. Do not touch them during release-candidate stabilization.
 
-External PR #494 (`feat(bridge+web): add mimocode backend support + fix external session detection`) has been retargeted from `main` to `codex/development-2026-09-11` and is currently blocked with `REQUEST_CHANGES`. It is not part of the 3.1.0 candidate. Re-review after the release line is settled and only after both previously identified behavior blockers are resolved:
-
-- preserve explicit `--opencode-command`: `parseDaemonOptions()` captures it and the managed runtime must not discard it in favor of a fresh environment/PATH resolution;
-- preserve the OpenCode lifecycle invariant from PR #351: ordinary internal idle/pre-Send Sessions must not query `/session/status`. External busy adoption may use status only when scoped to genuinely external Sessions (or equivalent explicit state), while the existing running/recovery-watch path remains unchanged. Coverage should prove external status reads include the Session directory and internal idle/pre-Send OpenCode performs no status read.
+External PR #494 was closed without merge after real validation showed that its central Mimocode product goal was not met when OpenCode and Mimocode were installed together: both CLIs were detected but only OpenCode was exposed as the managed backend. Its external-session behavior was also narrower than the PR description suggested. Do not revive or port #494 as part of 3.1.
 
 ### P0 — issue #368
 
