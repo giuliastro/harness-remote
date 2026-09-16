@@ -20,6 +20,8 @@
 type Fingerprintable = object | null | undefined
 
 const fingerprints = new WeakMap<object, string>()
+const reuseListRevisions = new WeakMap<object[], number>()
+let reuseListRevision = 0
 
 /** Stable structural fingerprint, cached per object so a retained value is only serialized once. */
 export function fingerprint(value: Fingerprintable): string {
@@ -31,14 +33,33 @@ export function fingerprint(value: Fingerprintable): string {
   return computed
 }
 
+/**
+ * Force the next structural list reconciliation to publish a fresh identity even when its payload is
+ * unchanged. This is intentionally generic: callers use it only when out-of-band state affects a
+ * child read model that keys its refresh from the surrounding list identity.
+ */
+export function invalidateReuseListIdentity(): void {
+  reuseListRevision += 1
+}
+
+function rememberReuseRevision<T extends object>(list: T[]): T[] {
+  reuseListRevisions.set(list, reuseListRevision)
+  return list
+}
+
 /** Returns `previous` when the two lists are structurally equal, so React memos can bail out. */
 export function reuseList<T extends object>(previous: T[] | undefined, next: T[]): T[] {
-  if (!previous || previous.length !== next.length) return next
+  if (!previous) return rememberReuseRevision(next)
+  const previousRevision = reuseListRevisions.get(previous)
+  if (previousRevision !== undefined && previousRevision !== reuseListRevision) {
+    return rememberReuseRevision(next)
+  }
+  if (previous.length !== next.length) return rememberReuseRevision(next)
   for (let index = 0; index < next.length; index += 1) {
     if (previous[index] === next[index]) continue
-    if (fingerprint(previous[index]) !== fingerprint(next[index])) return next
+    if (fingerprint(previous[index]) !== fingerprint(next[index])) return rememberReuseRevision(next)
   }
-  return previous
+  return rememberReuseRevision(previous)
 }
 
 type TimestampedRecord = { id: string; updatedAt?: string }
