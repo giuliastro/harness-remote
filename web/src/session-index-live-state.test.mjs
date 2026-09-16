@@ -1,6 +1,7 @@
 import assert from "node:assert/strict"
 import test from "node:test"
 import { discoverAgentNativeSessionPage } from "./native-session-discovery.ts"
+import { reuseList } from "./workspace-runtime-merge.ts"
 import { taskDeskLiveEvent } from "./taskdesk-live-events.ts"
 import {
   LIVE_SESSION_STATUS_GRACE_MS,
@@ -45,7 +46,15 @@ function session(status) {
   }
 }
 
-test("OpenCode lifecycle edges invalidate the Session index while token chunks do not", () => {
+function runtimeList() {
+  return [{
+    machine: { id: "saved", config: base },
+    snapshot: { machine: { id: "machine-1", name: "Machine" }, agents: [agent] },
+    state: "online"
+  }]
+}
+
+test("OpenCode lifecycle edges invalidate the stable Session rail while token chunks do not", () => {
   let notifications = 0
   let observedStatus
   const unsubscribe = subscribeSessionIndexInvalidation(() => {
@@ -53,17 +62,21 @@ test("OpenCode lifecycle edges invalidate the Session index while token chunks d
     observedStatus = liveSessionIndexStatus(base, "ses_a")
   })
   const before = sessionIndexInvalidationRevision()
+  const previous = reuseList(undefined, runtimeList())
 
   noteSessionIndexLiveEvent(base, { type: "message.part.delta", sessionID: "ses_a" })
   assert.equal(sessionIndexInvalidationRevision(), before)
   assert.equal(notifications, 0, "streamed token chunks must not fan out into Session discovery")
   assert.equal(sessionIndexLifecycleEvent("message.part.delta"), false)
+  assert.equal(reuseList(previous, runtimeList()), previous, "token chunks must preserve structurally identical workspace sources")
 
   noteSessionIndexLiveEvent(base, { type: "session.status", sessionID: "ses_a", status: "busy" })
   assert.equal(sessionIndexInvalidationRevision(), before + 1)
   assert.equal(notifications, 1, "a lifecycle edge must invalidate the Session rail directly")
   assert.deepEqual(observedStatus, { type: "busy" }, "the invalidation subscriber must observe the already-updated live status")
   assert.equal(sessionIndexLifecycleEvent("session.status"), true)
+  const lifecycle = runtimeList()
+  assert.equal(reuseList(previous, lifecycle), lifecycle, "the next stable workspace reconciliation must publish fresh sources")
   unsubscribe()
 })
 
