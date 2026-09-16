@@ -17,6 +17,9 @@ const SESSION_INDEX_LIFECYCLE_EVENTS = new Set([
   "message.updated"
 ])
 
+// A status edge and `/session/status` are separate reads. Keep the fresher streamed status just long
+// enough for the Session-index reconciliation triggered by that same edge to win a short endpoint
+// lag, then fall back to the native index again. A later streamed status always supersedes it.
 export const LIVE_SESSION_STATUS_GRACE_MS = 15_000
 
 type LiveStatus = { status: SessionStatus; observedAt: number }
@@ -48,6 +51,7 @@ export function sessionIndexLifecycleEvent(type: string): boolean {
   return SESSION_INDEX_LIFECYCLE_EVENTS.has(type)
 }
 
+/** React-facing store: the value changes only when the Session rail should perform a fresh index read. */
 export function sessionIndexInvalidationRevision(): number {
   return invalidationRevision
 }
@@ -87,6 +91,7 @@ export function noteSessionIndexLiveEvent(
     liveStatuses.set(key, bySession)
   }
 
+  // External-store subscribers must only be notified after the related status cache is coherent.
   if (invalidates) invalidateSessionIndex()
 }
 
