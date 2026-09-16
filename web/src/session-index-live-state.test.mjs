@@ -1,15 +1,15 @@
 import assert from "node:assert/strict"
 import test from "node:test"
 import { discoverAgentNativeSessionPage } from "./native-session-discovery.ts"
-import { reuseList } from "./workspace-runtime-merge.ts"
 import { taskDeskLiveEvent } from "./taskdesk-live-events.ts"
 import {
   LIVE_SESSION_STATUS_GRACE_MS,
   liveSessionIndexStatus,
   noteSessionIndexLiveEvent,
   noteSessionIndexStreamConnected,
-  sessionIndexLiveRevision,
-  withSessionIndexLiveRevision
+  sessionIndexInvalidationRevision,
+  sessionIndexLifecycleEvent,
+  subscribeSessionIndexInvalidation
 } from "./session-index-live-state.ts"
 
 const base = {
@@ -35,11 +35,6 @@ const agent = {
   }
 }
 
-const machineSnapshot = {
-  machine: { id: "machine-1", name: "Machine" },
-  agents: [agent]
-}
-
 function session(status) {
   return {
     id: "ses_a",
@@ -50,19 +45,26 @@ function session(status) {
   }
 }
 
-test("OpenCode lifecycle edges invalidate an otherwise-identical machine snapshot, token chunks do not", () => {
-  noteSessionIndexStreamConnected(base)
-  const previous = [{ machine: { id: "saved" }, snapshot: withSessionIndexLiveRevision(base, machineSnapshot) }]
+test("OpenCode lifecycle edges invalidate the Session index while token chunks do not", () => {
+  let notifications = 0
+  let observedStatus
+  const unsubscribe = subscribeSessionIndexInvalidation(() => {
+    notifications += 1
+    observedStatus = liveSessionIndexStatus(base, "ses_a")
+  })
+  const before = sessionIndexInvalidationRevision()
 
-  const before = sessionIndexLiveRevision(base)
   noteSessionIndexLiveEvent(base, { type: "message.part.delta", sessionID: "ses_a" })
-  assert.equal(sessionIndexLiveRevision(base), before)
-  const tokenOnly = [{ machine: { id: "saved" }, snapshot: withSessionIndexLiveRevision(base, machineSnapshot) }]
-  assert.equal(reuseList(previous, tokenOnly), previous, "streamed token chunks must not fan out into Session discovery")
+  assert.equal(sessionIndexInvalidationRevision(), before)
+  assert.equal(notifications, 0, "streamed token chunks must not fan out into Session discovery")
+  assert.equal(sessionIndexLifecycleEvent("message.part.delta"), false)
 
   noteSessionIndexLiveEvent(base, { type: "session.status", sessionID: "ses_a", status: "busy" })
-  const lifecycle = [{ machine: { id: "saved" }, snapshot: withSessionIndexLiveRevision(base, machineSnapshot) }]
-  assert.equal(reuseList(previous, lifecycle), lifecycle, "a lifecycle edge must invalidate the Session rail even when /v1/machine is unchanged")
+  assert.equal(sessionIndexInvalidationRevision(), before + 1)
+  assert.equal(notifications, 1, "a lifecycle edge must invalidate the Session rail directly")
+  assert.deepEqual(observedStatus, { type: "busy" }, "the invalidation subscriber must observe the already-updated live status")
+  assert.equal(sessionIndexLifecycleEvent("session.status"), true)
+  unsubscribe()
 })
 
 test("OpenCode session.status normalization preserves the streamed status type", () => {
@@ -98,12 +100,12 @@ test("a fresh streamed idle edge beats a briefly stale busy status read", async 
   )
 })
 
-test("stream reconnect drops transient status authority and forces a new Session-index epoch", () => {
+test("stream reconnect drops transient status authority and invalidates the Session index", () => {
   noteSessionIndexLiveEvent(base, { type: "session.status", sessionID: "ses_a", status: "idle" })
-  const before = sessionIndexLiveRevision(base)
+  const before = sessionIndexInvalidationRevision()
   assert.equal(liveSessionIndexStatus(base, "ses_a")?.type, "idle")
 
   noteSessionIndexStreamConnected(base)
   assert.equal(liveSessionIndexStatus(base, "ses_a"), undefined)
-  assert.equal(sessionIndexLiveRevision(base), before + 1)
+  assert.equal(sessionIndexInvalidationRevision(), before + 1)
 })
