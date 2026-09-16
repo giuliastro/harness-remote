@@ -1,4 +1,5 @@
 import type { ServerConfig, SessionStatus } from "./types.js"
+import { invalidateReuseListIdentity } from "./workspace-runtime-merge"
 
 /**
  * Session-index invalidations are intentionally coarser than transcript streaming. Lifecycle edges
@@ -44,6 +45,10 @@ function pruneLiveStatuses(key: string, now: number): void {
 
 function invalidateSessionIndex(): void {
   invalidationRevision += 1
+  // Stable 3.0 keeps NativeSessionHome behind the workspace runtime identity. Make the next
+  // structural reconciliation publish once so the rail sees this lifecycle edge without changing
+  // the public MachineSnapshot/config payloads.
+  invalidateReuseListIdentity()
   for (const listener of invalidationListeners) listener()
 }
 
@@ -91,7 +96,8 @@ export function noteSessionIndexLiveEvent(
     liveStatuses.set(key, bySession)
   }
 
-  // External-store subscribers must only be notified after the related status cache is coherent.
+  // External-store subscribers and the 3.0 workspace invalidation must only be notified after the
+  // related status cache is coherent.
   if (invalidates) invalidateSessionIndex()
 }
 
