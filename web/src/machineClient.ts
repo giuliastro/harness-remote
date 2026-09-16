@@ -1,7 +1,6 @@
 import { Capacitor, CapacitorHttp } from "@capacitor/core"
 import { desktopRequestResult, isDesktopPlatform } from "./desktopBridge"
 import { authHeader, hasCredentials, machineBaseUrl } from "./serverConfig"
-import { withSessionIndexLiveRevision } from "./session-index-live-state"
 import type { MachineProject } from "./taskClient"
 import type { MachineSnapshot, ServerConfig } from "./types"
 
@@ -56,12 +55,8 @@ function cacheKey(config: ServerConfig): string {
 }
 
 function remember(config: ServerConfig, snapshot: MachineSnapshot): MachineSnapshot {
-  // `/v1/machine` intentionally contains no per-Session state. Carry the client-side live epoch so
-  // structural runtime reconciliation can still tell that a Session lifecycle edge happened and
-  // let the Session rail perform its own authoritative index read.
-  const current = withSessionIndexLiveRevision(config, snapshot)
-  discoveryCache.set(cacheKey(config), { snapshot: current, at: Date.now() })
-  return current
+  discoveryCache.set(cacheKey(config), { snapshot, at: Date.now() })
+  return snapshot
 }
 
 function recentCachedSnapshot(config: ServerConfig): MachineSnapshot | null {
@@ -186,7 +181,9 @@ export async function listMachineProjects(config: ServerConfig): Promise<Machine
   } catch (error) {
     const cached = recentCachedProjects(config)
     if (cached) return cached
-    if (controller.signal.aborted) throw new Error(`Project catalog at ${config.host}:${config.port} timed out after ${BROWSER_DISCOVERY_TIMEOUT_MS / 1000}s.`)
+    if (controller.signal.aborted) {
+      throw new Error(`Project catalog at ${config.host}:${config.port} timed out after ${BROWSER_DISCOVERY_TIMEOUT_MS / 1000}s.`)
+    }
     throw new Error(`Cannot reach ${config.host}:${config.port}.`)
   } finally {
     globalThis.clearTimeout(timer)
