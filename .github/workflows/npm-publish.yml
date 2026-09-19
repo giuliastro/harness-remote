@@ -85,16 +85,23 @@ jobs:
             echo "publish=true" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Prepare OIDC auth when no npm token is configured
+      - name: Prepare npm authentication
         if: steps.npm.outputs.publish == 'true'
         shell: bash
         run: |
+          name="$(node -p "require('./package.json').name")"
+
           if [ -n "$NPM_TOKEN" ]; then
             echo "Using repository NPM_TOKEN for this publish."
             exit 0
           fi
 
-          echo "No NPM_TOKEN is configured; attempting npm Trusted Publishing (OIDC)."
+          if ! npm view "$name" name >/dev/null 2>&1; then
+            echo "::error::$name does not exist on npm yet and this repository has no NPM_TOKEN. The first publish must be bootstrapped once with npm credentials; after that configure npm Trusted Publishing for giuliastro/harness-remote and workflow npm-publish.yml."
+            exit 1
+          fi
+
+          echo "No NPM_TOKEN is configured; using npm Trusted Publishing (OIDC)."
           if [ -z "${NPM_CONFIG_USERCONFIG:-}" ]; then
             echo "::error::setup-node did not expose NPM_CONFIG_USERCONFIG"
             exit 1
