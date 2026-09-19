@@ -37,7 +37,7 @@ assert.equal(en('detail.sessionActions'), 'Session actions')
 assert.equal(it('detail.sessionActions'), 'Azioni sessione')
 assert.equal(zh('detail.sessionActions'), '工作階段動作')
 
-const source = readFileSync(new URL('./i18n.ts', import.meta.url), 'utf8')
+const source = readFileSync(new URL('./i18n.ts', import.meta.url), 'utf8').replace(/\r\n/g, '\n')
 const languageMarkers = [
   ['en', '  en: {'],
   ['it', '  it: {'],
