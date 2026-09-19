@@ -14,7 +14,7 @@ function packageJson(directory) {
 }
 
 test("root and bridge packages expose the daemon through the executable wrapper", () => {
-  assert.equal(packageJson(repoRoot).bin["harness-remote-daemon"], "./bridge/src/daemon-bin.js")
+  assert.equal(packageJson(repoRoot).bin["harness-remote-daemon"], "bridge/src/daemon-bin.js")
   assert.equal(packageJson(bridgeRoot).bin["harness-remote-daemon"], "./src/daemon-bin.js")
 })
 
