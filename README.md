@@ -32,12 +32,6 @@ On the computer you want to control, install Node.js 20+ and make sure at least 
 Then run:
 
 ```bash
-npx harness-remote
-```
-
-Direct-from-GitHub fallback:
-
-```bash
 npx --yes github:giuliastro/harness-remote
 ```
 
@@ -46,9 +40,9 @@ Keep that terminal open. Harness Remote automatically detects the installed codi
 Common options are optional:
 
 ```bash
-npx harness-remote --root ~/dev
-npx harness-remote --port 4900
-npx harness-remote --cors https://giuliastro.github.io
+npx --yes github:giuliastro/harness-remote --root ~/dev
+npx --yes github:giuliastro/harness-remote --port 4900
+npx --yes github:giuliastro/harness-remote --cors https://giuliastro.github.io
 ```
 
 ### Android
@@ -67,7 +61,7 @@ The QR uses a short-lived one-time pairing token. Manual address/credential entr
 Use the [hosted web app](https://giuliastro.github.io/harness-remote/) and allow that browser origin when starting the remote gateway:
 
 ```bash
-npx harness-remote --cors https://giuliastro.github.io
+npx --yes github:giuliastro/harness-remote --cors https://giuliastro.github.io
 ```
 
 For local web development:
@@ -81,7 +75,7 @@ npm run dev
 Then start the gateway with:
 
 ```bash
-npx harness-remote --cors http://localhost:5173
+npx --yes github:giuliastro/harness-remote --cors http://localhost:5173
 ```
 
 See the [Quick start guide](docs/QUICK_START.md) for advanced options and troubleshooting.
