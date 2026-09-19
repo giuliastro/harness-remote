@@ -1,6 +1,7 @@
 import assert from "node:assert/strict"
 import test from "node:test"
 import { ensureHarnessPortAvailable, ensureOpenCodePortAvailable, parseDaemonOptions } from "../src/daemon-cli.js"
+import { resolveLaunchPlan } from "../src/launcher.js"
 
 const loopbackEnv = {
   HARNESS_REMOTE_HOST: "127.0.0.1",
@@ -15,6 +16,20 @@ test("daemon defaults to one ACP primary plus loopback managed OpenCode", () => 
   assert.equal(parsed.openCodeHost, "127.0.0.1")
   assert.equal(parsed.openCodePort, 4096)
   assert.equal(parsed.config.port, 4097)
+})
+
+test("daemon keeps a custom ACP command for a known primary with multiple detected CLIs", () => {
+  const args = ["--backend", "codex", "--acp-command", "/tools/custom-codex-acp"]
+  const parsed = parseDaemonOptions(args, { HARNESS_REMOTE_HOST: "127.0.0.1" })
+
+  assert.equal(parsed.config.backend, "codex")
+  assert.equal(parsed.config.acpCommand, "/tools/custom-codex-acp")
+  assert.deepEqual(resolveLaunchPlan(args, ["claude", "codex"]), {
+    mode: "daemon",
+    backend: "codex",
+    detected: ["claude", "codex"],
+    openCode: false
+  })
 })
 
 test("daemon does not inherit a LAN daemon bind for managed OpenCode", () => {
