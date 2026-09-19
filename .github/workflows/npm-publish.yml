@@ -1,32 +1,35 @@
 name: Publish npm CLI
 
 on:
-  workflow_dispatch: {}
-  push:
-    branches: [main]
-    paths:
-      - package.json
-      - bridge/src/**
-      - bridge/test/npm-package-contract.test.js
-      - .github/workflows/npm-publish.yml
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing release tag to publish or recover, for example v3.1.0
+        required: true
+        type: string
 
 permissions:
   contents: read
   id-token: write
 
 concurrency:
-  group: npm-publish-harness-remote
+  group: npm-publish-harness-remote-${{ github.event.release.tag_name || inputs.tag || github.ref_name }}
   cancel-in-progress: false
 
 jobs:
   publish:
+    name: Test, pack and publish CLI
     runs-on: ubuntu-latest
     env:
-      NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+      RELEASE_TAG: ${{ github.event.release.tag_name || inputs.tag || github.ref_name }}
 
     steps:
-      - name: Checkout
+      - name: Checkout exact release source
         uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.release.tag_name || inputs.tag || github.ref }}
 
       - name: Setup Node.js
         uses: actions/setup-node@v7
@@ -35,8 +38,8 @@ jobs:
           registry-url: 'https://registry.npmjs.org'
           package-manager-cache: false
 
-      - name: Use npm with Trusted Publishing support
-        run: npm install --global npm@^11.15.0
+      - name: Pin npm Trusted Publishing support
+        run: npm install --global npm@11.19.1
 
       - name: Install root dependencies
         run: npm install --ignore-scripts --no-package-lock
@@ -52,7 +55,7 @@ jobs:
           test -f "$tarball"
           echo "tarball=$tarball" >> "$GITHUB_OUTPUT"
 
-      - name: Smoke-test installed CLI
+      - name: Smoke-test packed CLI
         shell: bash
         run: |
           smoke="$RUNNER_TEMP/harness-remote-npm-smoke"
@@ -61,6 +64,20 @@ jobs:
           npm init -y >/dev/null
           npm install "$GITHUB_WORKSPACE/${{ steps.pack.outputs.tarball }}" >/dev/null
           ./node_modules/.bin/harness-remote --help
+
+      - name: Verify release tag matches package version
+        shell: bash
+        run: |
+          case "$RELEASE_TAG" in
+            v[0-9]*) ;;
+            *) echo "::error::Expected a semantic release tag, got '$RELEASE_TAG'"; exit 1 ;;
+          esac
+          expected="${RELEASE_TAG#v}"
+          actual="$(node -p "require('./package.json').version")"
+          test "$actual" = "$expected" || {
+            echo "::error::Release tag is $RELEASE_TAG but package.json is $actual"
+            exit 1
+          }
 
       - name: Check npm package ownership and version
         id: npm
@@ -72,7 +89,7 @@ jobs:
           if npm view "$name" name >/dev/null 2>&1; then
             repository="$(npm view "$name" repository.url 2>/dev/null || true)"
             if [[ "$repository" != *"giuliastro/harness-remote"* ]]; then
-              echo "::error::npm package name '$name' already exists and does not point to this repository: $repository"
+              echo "::error::npm package '$name' already exists and does not point to this repository: $repository"
               exit 1
             fi
           fi
@@ -85,24 +102,38 @@ jobs:
             echo "publish=true" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Prepare OIDC auth when no npm token is configured
+      - name: Prepare credential-free npm config for OIDC
         if: steps.npm.outputs.publish == 'true'
         shell: bash
         run: |
-          if [ -n "$NPM_TOKEN" ]; then
-            echo "Using repository NPM_TOKEN for this publish."
-            exit 0
-          fi
-
-          echo "No NPM_TOKEN is configured; attempting npm Trusted Publishing (OIDC)."
           if [ -z "${NPM_CONFIG_USERCONFIG:-}" ]; then
             echo "::error::setup-node did not expose NPM_CONFIG_USERCONFIG"
             exit 1
           fi
           printf '%s\n' 'registry=https://registry.npmjs.org/' > "$NPM_CONFIG_USERCONFIG"
+          if grep -q '_authToken' "$NPM_CONFIG_USERCONFIG"; then
+            echo "::error::npm user config still contains token authentication"
+            exit 1
+          fi
 
-      - name: Publish harness-remote
+      - name: Publish with npm Trusted Publishing
         if: steps.npm.outputs.publish == 'true'
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-        run: npm publish --access public --provenance
+        run: npm publish --access public --provenance --loglevel verbose
+
+      - name: Verify npm release is visible as latest
+        shell: bash
+        run: |
+          name="$(node -p "require('./package.json').name")"
+          version="$(node -p "require('./package.json').version")"
+          for attempt in $(seq 1 30); do
+            published="$(npm view "$name@$version" version 2>/dev/null || true)"
+            latest="$(npm view "$name" dist-tags.latest 2>/dev/null || true)"
+            if [ "$published" = "$version" ] && [ "$latest" = "$version" ]; then
+              echo "$name@$version is visible on npm and latest points to $version"
+              exit 0
+            fi
+            echo "npm propagation pending (attempt $attempt/30): version=${published:-missing}, latest=${latest:-missing}"
+            sleep 10
+          done
+          echo "::error::$name@$version did not become visible as npm latest"
+          exit 1
