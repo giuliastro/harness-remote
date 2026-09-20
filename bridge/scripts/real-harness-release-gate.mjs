@@ -229,10 +229,15 @@ export function parseSoakEvidence(output = "") {
   const coverage = {
     sessionCreation: hasPassed(checks, /two native Sessions created on/i),
     multiTurnStreaming: hasPassed(checks, /turn \d+ completed in \d+ms/i),
-    modelSelection: hasPassed(checks, /turn \d+ accepted with model /i),
+    modelSelection:
+      hasPassed(checks, /turn \d+ accepted with model /i)
+      || hasPassed(checks, /harness-default model policy verified/i),
     crossHarnessIsolation:
-      hasPassed(checks, /catalog unchanged (?:while switching away and back|after visiting)/i)
-      && hasPassed(checks, /prompt accepted after harness switch and model change/i),
+      (
+        hasPassed(checks, /catalog unchanged (?:while switching away and back|after visiting)/i)
+        || hasPassed(checks, /harness-default model policy unchanged (?:while switching away and back|after visiting)/i)
+      )
+      && hasPassed(checks, /prompt accepted after harness switch and model (?:change|policy check)/i),
     transcriptFidelity: hasPassed(checks, /one user turn per accepted prompt, no duplicates/i),
     stopAndResume:
       hasPassed(checks, /Stop accepted for /i)
