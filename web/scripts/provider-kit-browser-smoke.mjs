@@ -398,9 +398,12 @@ try {
     if (info.selection === "harness-default") {
       assert.equal(await modelTrigger.isDisabled(), true, `${provider} model picker must defer to harness default`)
       assert.match(await modelTrigger.textContent(), /Harness default/, `${provider} must visibly use the harness default`)
+    } else if (info.selection === "optional") {
+      await waitFor(async () => !(await modelTrigger.isDisabled()), `${provider} model picker enabled`)
+      assert.match(await modelTrigger.textContent(), /Harness default/, `${provider} existing Session must preserve its native model until the user changes it`)
     } else {
       await waitFor(async () => !(await modelTrigger.isDisabled()), `${provider} model picker enabled`)
-      assert.match(await modelTrigger.textContent(), /Test Model/, `${provider} catalog did not populate`)
+      assert.match(await modelTrigger.textContent(), /Test Model/, `${provider} required catalog did not populate`)
     }
     await sendAndExpect(page, provider, composer, `${provider.toUpperCase()}-EXISTING`)
   }
