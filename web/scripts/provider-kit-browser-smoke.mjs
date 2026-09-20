@@ -341,6 +341,13 @@ async function sendAndExpect(page, provider, composer, text) {
   await send.click()
   await page.locator(".tdw-conversation-state.working").waitFor({ state: "attached", timeout: 5_000 })
   const reply = `${provider.toUpperCase()}-REPLY-${text}`
+  // The native prompt endpoint acknowledges before the delayed transcript becomes durable. During
+  // that gap the product must stay in one coherent Working state; an early Ready with a separate
+  // spinner is exactly the MiMo regression this smoke is intended to prevent.
+  await new Promise((resolve) => setTimeout(resolve, 250))
+  assert.equal(await page.locator(".tdw-conversation-state.ready").count(), 0, `${provider} became Ready before its reply was durable`)
+  assert.equal(await page.locator(".tdw-conversation-state.working").count(), 1, `${provider} lost the authoritative Working state before reply`)
+  assert.equal(await page.getByText(reply, { exact: true }).count(), 0, `${provider} fake reply settled before the lifecycle assertion`)
   await page.getByText(reply, { exact: true }).waitFor({ state: "visible", timeout: 15_000 })
   await page.locator(".tdw-conversation-state.ready").waitFor({ state: "attached", timeout: 15_000 })
   assert.equal(await page.getByText(text, { exact: true }).count(), 1, `${provider} prompt duplicated`)
