@@ -491,8 +491,10 @@ try {
 
     await loadHome(page)
     createdComposer = await openProvider(page, provider, title)
-    await sendAndExpect(page, provider, createdComposer, `${provider.toUpperCase()}-REOPEN`)
+    await page.getByText(`${provider.toUpperCase()}-REPLY-${createdPrompt}`, { exact: true }).waitFor({ state: "visible", timeout: 15_000 })
+    await page.getByText(`${provider.toUpperCase()}-REPLY-${provider.toUpperCase()}-AFTER-STOP`, { exact: true }).waitFor({ state: "visible", timeout: 15_000 })
     assert.ok((claims.get(created.id) || 0) >= 1, `${provider} rediscovered Session was not claimed on reopen`)
+    await sendAndExpect(page, provider, createdComposer, `${provider.toUpperCase()}-REOPEN`)
   }
 
   // All harnesses have now completed create, prompt, Stop, reuse and reopen.
