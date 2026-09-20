@@ -3,7 +3,7 @@ import { desktopRequestResult, isDesktopPlatform } from "./desktopBridge"
 import { unwrapPayload } from "./machinePayload"
 import { authHeader, hasCredentials, machineBaseUrl } from "./serverConfig"
 import type { AttachmentPart } from "./attachments"
-import type { BackendKind, ModelOption, ModelSelection, ServerConfig } from "./types"
+import type { ModelOption, ModelSelection, ServerConfig } from "./types"
 
 const BROWSER_MACHINE_REQUEST_TIMEOUT_MS = 12_000
 const LIST_STALE_GRACE_MS = 45_000
@@ -181,17 +181,13 @@ function modelScopeKey(scope: AgentModelScope): string {
   return "default"
 }
 
-const AGENT_BACKENDS = new Set<BackendKind>(["opencode", "omp", "pi", "claude", "codex"])
-
 /**
  * Model membership belongs to the selected harness, not to the machine profile that happened to
  * open the workspace. Keep the agent path and desktop routing identity coherent at this shared
  * boundary so every picker call addresses the same harness on a multi-harness machine.
  */
 export function modelCatalogConfig(config: ServerConfig, agentId: string): ServerConfig {
-  const candidate = agentId as BackendKind
-  const backend = AGENT_BACKENDS.has(candidate) ? candidate : config.backend
-  return { ...config, agentId, backend }
+  return { ...config, agentId, backend: agentId }
 }
 
 function modelCatalogPath(agentId: string, scope: AgentModelScope): string {
