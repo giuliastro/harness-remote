@@ -49,15 +49,17 @@ export function acpHarnessCapabilityContract(profile) {
       variantConfigIDs
     },
     sessions: acpSessionContract(profile),
-    lifecycle: {
-      // Retain the v1 lifecycle shape for compatibility while Session-first consumers migrate to
-      // the more precise `sessions` contract above.
-      sessionAuthority: "native-harness",
-      create: "native-session",
-      resume: "native-session-when-supported",
-      stop: "native-abort",
-      reconnect: "daemon-reconciliation"
-    }
+    lifecycle: profile?.lifecycleContract
+      ? { ...profile.lifecycleContract }
+      : {
+          // Retain the v1 lifecycle shape for compatibility while Session-first consumers migrate to
+          // the more precise `sessions` contract above.
+          sessionAuthority: "native-harness",
+          create: "native-session",
+          resume: "native-session-when-supported",
+          stop: "native-abort",
+          reconnect: "daemon-reconciliation"
+        }
   }
 }
 

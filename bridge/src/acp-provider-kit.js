@@ -1,3 +1,5 @@
+const REQUIRED_LIFECYCLE_CONTRACT_FIELDS = ["sessionAuthority", "create", "resume", "stop", "reconnect"]
+
 const REQUIRED_SESSION_CONTRACT_FIELDS = [
   "authority",
   "discovery",
@@ -47,6 +49,12 @@ export function defineAcpProvider(definition) {
   for (const field of REQUIRED_SESSION_CONTRACT_FIELDS) {
     requireNonEmptyString(definition.sessionContract[field], `'${id}' Session contract.${field}`)
   }
+  if (!definition.lifecycleContract || typeof definition.lifecycleContract !== "object") {
+    throw new Error(`ACP provider '${id}' must declare a lifecycle contract`)
+  }
+  for (const field of REQUIRED_LIFECYCLE_CONTRACT_FIELDS) {
+    requireNonEmptyString(definition.lifecycleContract[field], `'${id}' lifecycle contract.${field}`)
+  }
 
   return {
     ...definition,
@@ -58,7 +66,8 @@ export function defineAcpProvider(definition) {
     launchPriority,
     capabilities: { ...definition.capabilities },
     modelVariantConfigIDs: stringArray(definition.modelVariantConfigIDs ?? [], "modelVariantConfigIDs"),
-    sessionContract: { ...definition.sessionContract }
+    sessionContract: { ...definition.sessionContract },
+    lifecycleContract: { ...definition.lifecycleContract }
   }
 }
 

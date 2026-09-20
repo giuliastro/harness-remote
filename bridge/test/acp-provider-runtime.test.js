@@ -13,6 +13,13 @@ function provider(overrides = {}) {
     permissionMode: "allow",
     authMethod: "example-auth",
     modelVariantConfigIDs: ["reasoning"],
+    lifecycleContract: {
+      sessionAuthority: "native-harness",
+      create: "native-session",
+      resume: "native-session-when-supported",
+      stop: "native-abort",
+      reconnect: "daemon-reconciliation"
+    },
     sessionContract: {
       authority: "native-harness",
       discovery: "native-list",

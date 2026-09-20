@@ -5,6 +5,14 @@ import { createPiHistoryLoader } from "./pi-session-history.js"
 import { OMP_EXTENSION_ACTION_PROVIDERS } from "./extension-actions.js"
 import { createAcpProviderRegistry, defineAcpProvider } from "./acp-provider-kit.js"
 
+const COMMON_ACP_LIFECYCLE_CONTRACT = {
+  sessionAuthority: "native-harness",
+  create: "native-session",
+  resume: "native-session-when-supported",
+  stop: "native-abort",
+  reconnect: "daemon-reconciliation"
+}
+
 const COMMON_CAPABILITIES = {
   sessions: true,
   prompt: true,
@@ -48,6 +56,7 @@ export const HARNESS_PROFILES = {
     // OMP exposes thinking as a real ACP config option. We probe only ids the running adapter
     // actually advertises; this list is a routing hint, never a source of invented variants.
     modelVariantConfigIDs: ["thinking"],
+    lifecycleContract: COMMON_ACP_LIFECYCLE_CONTRACT,
     sessionContract: {
       authority: "native-harness",
       discovery: "native-list",
@@ -97,6 +106,7 @@ export const HARNESS_PROFILES = {
     // Current PI ACP calls this `thinkingLevel`. The aliases are harmless compatibility hints for
     // adapter versions that rename the wire id; a variant is emitted only when that option exists.
     modelVariantConfigIDs: ["thinkingLevel", "thinking_level", "thinking"],
+    lifecycleContract: COMMON_ACP_LIFECYCLE_CONTRACT,
     sessionContract: {
       authority: "native-harness",
       discovery: "native-list",
@@ -139,6 +149,7 @@ export const HARNESS_PROFILES = {
     // The current adapter exposes model/mode but no low/medium/high reasoning-effort selector.
     // Keep this empty rather than fabricating OpenCode-style variants.
     modelVariantConfigIDs: [],
+    lifecycleContract: COMMON_ACP_LIFECYCLE_CONTRACT,
     sessionContract: {
       authority: "native-harness",
       discovery: "native-list",
@@ -190,6 +201,7 @@ export const HARNESS_PROFILES = {
     reloadOnHistoryRefresh: false,
     // The official adapter exposes reasoning effort independently from model selection.
     modelVariantConfigIDs: ["reasoning_effort", "reasoningEffort"],
+    lifecycleContract: COMMON_ACP_LIFECYCLE_CONTRACT,
     sessionContract: {
       authority: "native-harness",
       discovery: "native-list",
