@@ -244,10 +244,7 @@ export const HARNESS_PROFILES = {
     id: "mimo",
     label: "MiMo Code",
     command: "mimo",
-    // Keep MiMo explicit-only until its real ACP session/new path is proven on a released build.
-    // v0.1.14 initializes and lists Sessions but currently fails session/new upstream.
-    detectCommands: [],
-    experimental: true,
+    detectCommands: ["mimo"],
     launchPriority: 70,
     args: ["acp"],
     permissionMode: "allow",
@@ -261,9 +258,8 @@ export const HARNESS_PROFILES = {
       OPENCODE_CONFIG_CONTENT: JSON.stringify({ model: "mimo/mimo-auto" })
     },
     lifecycleContract: COMMON_ACP_LIFECYCLE_CONTRACT,
-    // MiMo Code is OpenCode-derived, but its ACP implementation currently has open
-    // compatibility issues around model defaults and Session prompting. Start with a
-    // fail-safe surface and widen it only after a real-machine smoke proves the wire.
+    // MiMo Code is OpenCode-derived. Its core ACP Session lifecycle is real-machine validated,
+    // while model/command discovery stays conservative until separately exercised.
     modelVariantConfigIDs: [],
     sessionContract: {
       authority: "native-harness",
