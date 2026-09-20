@@ -417,7 +417,7 @@ try {
     const create = page.locator(".hr-native-create-panel")
     await create.waitFor({ state: "visible" })
     await create.locator("select").nth(2).selectOption(provider)
-    await create.locator('input[type="text"]').fill(title)
+    await create.locator(".hr-native-create-title input").fill(title)
     await create.getByRole("button", { name: /Create/ }).click()
     await page.getByRole("heading", { name: title }).waitFor({ state: "visible", timeout: 15_000 })
 
@@ -445,7 +445,7 @@ try {
   const create = page.locator(".hr-native-create-panel")
   await create.waitFor({ state: "visible" })
   await create.locator("select").nth(2).selectOption("mimo")
-  await create.locator('input[type="text"]').fill("MiMo Created Browser")
+  await create.locator(".hr-native-create-title input").fill("MiMo Created Browser")
   await create.getByRole("button", { name: /Create/ }).click()
   await page.getByRole("heading", { name: "MiMo Created Browser" }).waitFor({ state: "visible", timeout: 15_000 })
   let composer = page.getByRole("textbox", { name: /Message MiMo Code/ })
