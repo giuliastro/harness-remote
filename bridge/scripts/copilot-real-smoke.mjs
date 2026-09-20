@@ -92,13 +92,15 @@ try {
   const before = await first.service.listSessions(directory)
   check(Array.isArray(before), "native session/list succeeds")
 
-  const created = await first.service.createSession({ directory, title: "Harness Remote Copilot smoke" })
+  const created = await first.service.createSession({ directory })
   check(Boolean(created?.id), "session/new returned a native Session id")
   console.log(`session ${created.id}`)
 
   const listed = await first.service.listSessions(directory)
   check(listed.some((session) => session.id === created.id), "new native Session is rediscovered by session/list")
 
+  // Copilot sends available_commands_update asynchronously just after session/new.
+  await sleep(500)
   const commands = await first.service.commands(created.id)
   const commandNames = commands.map((command) => command.name)
   check(commandNames.length > 0, "available_commands_update produced a runtime command catalog")
