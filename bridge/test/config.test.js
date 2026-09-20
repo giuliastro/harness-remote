@@ -57,6 +57,18 @@ test("selects Codex defaults for the ACP backend", () => {
   assert.match(parseConfig(["--backend", "codex"], {}).acpArgs[1], /@\d+\.\d+\.\d+$/, "the adapter version must stay pinned")
 })
 
+test("selects OpenCode 2 package fallback and MiMo native ACP defaults", () => {
+  const openCode2 = parseConfig(["--backend", "opencode2"], {})
+  assert.equal(openCode2.backend, "opencode2")
+  assert.equal(openCode2.acpCommand, process.platform === "win32" ? "npx.cmd" : "npx")
+  assert.deepEqual(openCode2.acpArgs, ["--yes", "--package=@opencode/cli", "opencode", "acp"])
+
+  const mimo = parseConfig(["--backend", "mimo"], {})
+  assert.equal(mimo.backend, "mimo")
+  assert.equal(mimo.acpCommand, "mimo")
+  assert.deepEqual(mimo.acpArgs, ["acp"])
+})
+
 test("prefers generic environment names while retaining OMP aliases", () => {
   const generic = parseConfig([], {
     HARNESS_REMOTE_BACKEND: "pi",
