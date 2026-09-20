@@ -13,7 +13,8 @@ import {
 import type { NativeSessionSurfaceTarget } from "../native-session-discovery"
 import type { NativeSessionRouteMachine } from "../native-session-routing"
 import { taskClient, type AgentModelScope } from "../taskClient"
-import type { BackendKind, MachineAgentHost, ModelOption, ModelSelection, ServerConfig } from "../types"
+import { backendForAgent } from "../serverConfig"
+import type { MachineAgentHost, ModelOption, ModelSelection, ServerConfig } from "../types"
 import { ModelPicker, modelOptionKey } from "./model-picker"
 
 const ROUTE_MODEL_SCOPE: AgentModelScope = {}
@@ -27,16 +28,10 @@ type Props = {
   onConnectionIssue?: () => void
 }
 
-function supportedBackend(value: string | undefined, fallback: BackendKind): BackendKind {
-  return value === "opencode" || value === "omp" || value === "pi" || value === "claude" || value === "codex"
-    ? value
-    : fallback
-}
-
 function configForAgent(base: ServerConfig, agent: MachineAgentHost): ServerConfig {
   return {
     ...base,
-    backend: supportedBackend(agent.backend, base.backend),
+    backend: backendForAgent(agent.backend, agent.id, base.backend),
     agentId: agent.id
   }
 }
