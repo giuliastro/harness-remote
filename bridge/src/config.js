@@ -1,6 +1,6 @@
 import { homedir } from "node:os"
 import path from "node:path"
-import { harnessProfile, resolveAcpLaunch } from "./harness-profiles.js"
+import { harnessProfile, listAcpProviderProfiles, resolveAcpLaunch } from "./harness-profiles.js"
 
 const LOOPBACK_HOSTS = new Set(["127.0.0.1", "::1", "localhost"])
 
@@ -140,5 +140,5 @@ export function parseConfig(args, environment = process.env) {
 }
 
 export function usage() {
-  return `Usage: harness-remote-bridge [options]\n\nOptions:\n  --backend <name>       ACP backend: omp or pi (default: omp)\n  --host <host>          Bind host (default: 127.0.0.1)\n  --port <port>          Bind port (default: 4097)\n  --username <username>  Enable HTTP Basic Auth\n  --password <password>  Enable HTTP Basic Auth\n  --acp-command <path>   ACP adapter command (default depends on backend)\n  --acp-arg <arg>        ACP adapter argument; repeatable\n  --root <path>          Allowed worktree root; repeatable\n  --cors <origin>        Allow browser requests from this exact origin; repeatable\n  --state-dir <path>     Persist bridge session snapshots\n  --log-requests         Log request method, path, and query\n  --help                 Show this help`
+  const backends = listAcpProviderProfiles().map((provider) => provider.id).join(", ")\n  return `Usage: harness-remote-bridge [options]\n\nOptions:\n  --backend <name>       ACP backend: ${backends} (default: omp)\n  --host <host>          Bind host (default: 127.0.0.1)\n  --port <port>          Bind port (default: 4097)\n  --username <username>  Enable HTTP Basic Auth\n  --password <password>  Enable HTTP Basic Auth\n  --acp-command <path>   ACP adapter command (default depends on backend)\n  --acp-arg <arg>        ACP adapter argument; repeatable\n  --root <path>          Allowed worktree root; repeatable\n  --cors <origin>        Allow browser requests from this exact origin; repeatable\n  --state-dir <path>     Persist bridge session snapshots\n  --log-requests         Log request method, path, and query\n  --help                 Show this help`
 }
