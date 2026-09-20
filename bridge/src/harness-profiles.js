@@ -203,6 +203,72 @@ export const HARNESS_PROFILES = {
       sessionDelete: false
     }
   }),
+  opencode2: defineAcpProvider({
+    id: "opencode2",
+    label: "OpenCode 2",
+    // OpenCode 2 can coexist with the stable OpenCode HTTP integration through the
+    // dedicated `opencode2` binary alias published by @opencode/cli. Keeping the
+    // alias explicit prevents a v1/v2 PATH collision from silently changing transport.
+    command: "opencode2",
+    detectCommands: ["opencode2"],
+    launchPriority: 60,
+    args: ["acp"],
+    permissionMode: "allow",
+    lifecycleContract: COMMON_ACP_LIFECYCLE_CONTRACT,
+    modelVariantConfigIDs: ["effort"],
+    sessionContract: {
+      authority: "native-harness",
+      discovery: "native-list",
+      transcript: "session-load",
+      externalWriterObservation: "unverified-session-load",
+      continuation: "session-load",
+      writerOwnership: "adapter-defined",
+      stop: "owned-session-native-cancel"
+    },
+    capabilities: {
+      ...COMMON_CAPABILITIES,
+      models: true,
+      todos: false,
+      commands: true,
+      permissions: true,
+      actions: false,
+      sessionRename: false,
+      sessionDelete: false
+    }
+  }),
+  mimo: defineAcpProvider({
+    id: "mimo",
+    label: "MiMo Code",
+    command: "mimo",
+    detectCommands: ["mimo"],
+    launchPriority: 70,
+    args: ["acp"],
+    permissionMode: "allow",
+    lifecycleContract: COMMON_ACP_LIFECYCLE_CONTRACT,
+    // MiMo Code is OpenCode-derived, but its ACP implementation currently has open
+    // compatibility issues around model defaults and Session prompting. Start with a
+    // fail-safe surface and widen it only after a real-machine smoke proves the wire.
+    modelVariantConfigIDs: [],
+    sessionContract: {
+      authority: "native-harness",
+      discovery: "native-list",
+      transcript: "session-load",
+      externalWriterObservation: "unverified-session-load",
+      continuation: "session-load",
+      writerOwnership: "adapter-defined",
+      stop: "owned-session-native-cancel"
+    },
+    capabilities: {
+      ...COMMON_CAPABILITIES,
+      models: false,
+      todos: false,
+      commands: false,
+      permissions: true,
+      actions: false,
+      sessionRename: false,
+      sessionDelete: false
+    }
+  }),
   codex: defineAcpProvider({
     id: "codex",
     label: "Codex CLI",
