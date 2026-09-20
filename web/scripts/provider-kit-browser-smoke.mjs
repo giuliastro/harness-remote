@@ -251,7 +251,7 @@ function startFakeDaemon() {
       const body = await requestJSON(request)
       promptBodies.push({ provider, sessionID: id, body })
       statuses.set(id, "busy")
-      if (body.text !== "MIMO-LONG") settleSuccess(id, body)
+      if (!body.text.endsWith("-LONG")) settleSuccess(id, body)
       json(response, 200, { status: "accepted", clientRequestId: body.clientRequestId, sessionID: id })
       return
     }
@@ -441,52 +441,29 @@ try {
     }
     await sendAndExpect(page, provider, createdComposer, `${provider.toUpperCase()}-CREATED`)
 
+    // Every harness must prove the same lifecycle: Working -> Stop -> Ready -> reuse the exact Session.
+    await createdComposer.fill(`${provider.toUpperCase()}-LONG`)
+    await page.getByRole("button", { name: "Send" }).click()
+    await page.locator(".tdw-conversation-state.working").waitFor({ state: "attached", timeout: 5_000 })
+    const stopButton = page.getByRole("button", { name: /Stop/ })
+    await stopButton.waitFor({ state: "visible", timeout: 5_000 })
+    await stopButton.click()
+    await page.locator(".tdw-conversation-state.stopped, .tdw-conversation-state.ready").waitFor({ state: "attached", timeout: 10_000 })
+    assert.equal(stopBodies[stopBodies.length - 1]?.provider, provider, `${provider} Stop routed to the wrong provider`)
+    await waitFor(async () => !(await createdComposer.isDisabled()), `${provider} composer enabled after Stop`)
+    await sendAndExpect(page, provider, createdComposer, `${provider.toUpperCase()}-AFTER-STOP`)
+
     await loadHome(page)
     createdComposer = await openProvider(page, provider, title)
     await sendAndExpect(page, provider, createdComposer, `${provider.toUpperCase()}-REOPEN`)
     assert.ok((claims.get(created.id) || 0) >= 1, `${provider} rediscovered Session was not claimed on reopen`)
   }
 
-  // Create a new MiMo Session from the real New Session UI.
-  await loadHome(page)
-  await page.getByRole("button", { name: "New Session" }).click()
-  const create = page.locator(".hr-native-create-panel")
-  await create.waitFor({ state: "visible" })
-  await create.locator("select").nth(2).selectOption("mimo")
-  await create.locator(".hr-native-create-title input").fill("MiMo Created Browser")
-  await create.getByRole("button", { name: /Create/ }).click()
-  await page.getByRole("heading", { name: "MiMo Created Browser" }).waitFor({ state: "visible", timeout: 15_000 })
-  let composer = page.getByRole("textbox", { name: /Message MiMo Code/ })
-  await waitFor(async () => !(await composer.isDisabled()), "created MiMo composer enabled")
-  const createdID = [...sessions.values()].find((entry) => entry.title === "MiMo Created Browser")?.id
-  assert.ok(createdID, "MiMo create did not reach the routed provider")
-  assert.equal(providerForSession(createdID), "mimo")
-
-  // Stop must retire Working, and the exact same native Session must accept another prompt.
-  await composer.fill("MIMO-LONG")
-  await page.getByRole("button", { name: "Send" }).click()
-  await page.locator(".tdw-conversation-state.working").waitFor({ state: "attached", timeout: 5_000 })
-  const stop = page.getByRole("button", { name: /Stop/ })
-  await stop.waitFor({ state: "visible", timeout: 5_000 })
-  await stop.click()
-  await page.locator(".tdw-conversation-state.stopped, .tdw-conversation-state.ready").waitFor({ state: "attached", timeout: 10_000 })
-  assert.equal(stopBodies.at(-1)?.provider, "mimo", "Stop routed to the wrong provider")
-
-  composer = page.getByRole("textbox", { name: /Message MiMo Code/ })
-  await waitFor(async () => !(await composer.isDisabled()), "MiMo composer enabled after Stop")
-  await sendAndExpect(page, "mimo", composer, "MIMO-AFTER-STOP")
-
-  // Reopen the same created Session after a full renderer navigation and continue it again.
-  await loadHome(page)
-  composer = await openProvider(page, "mimo", "MiMo Created Browser")
-  await sendAndExpect(page, "mimo", composer, "MIMO-REOPEN")
-
-  assert.equal(modelReads.get("mimo") || 0, 0, "MiMo reopen unexpectedly requested a model catalog")
-  for (const provider of Object.keys(PROVIDERS)) {
+  // All harnesses have now completed create, prompt, Stop, reuse and reopen.\n  for (const provider of Object.keys(PROVIDERS)) {
     assert.ok((claims.get(`${provider}-session`) || 0) >= 1, `existing ${provider} Session was never claimed`)
-    assert.ok(promptBodies.some((entry) => entry.provider === provider), `${provider} prompt did not route to its provider`)
+    assert.ok(promptBodies.filter((entry) => entry.provider === provider).length >= 5, `${provider} existing/create/Stop/reuse/reopen prompt coverage incomplete`)
+    assert.ok(stopBodies.some((entry) => entry.provider === provider), `${provider} Stop was never routed`)
   }
-  assert.ok(promptBodies.filter((entry) => entry.provider === "mimo").length >= 4, "MiMo create/Stop/reopen prompt coverage incomplete")
   assert.deepEqual(pageErrors, [], `browser errors: ${pageErrors.join(" | ")}`)
 
   console.log("All-harness filter, model policy, existing Session prompt lifecycle, create, Stop and reopen browser smoke passed")
