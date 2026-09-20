@@ -9,6 +9,26 @@ test("detects executable agent files on PATH without running them", () => {
   assert.deepEqual(detectBackends({ pathValue, platform: "linux", exists: (candidate) => existing.has(candidate), access: () => {} }), ["codex"])
 })
 
+test("detects GitHub Copilot from provider metadata without changing existing primary preference", () => {
+  const pathValue = ["/bin", "/tools"].join(path.delimiter)
+  const existing = new Set([
+    path.join("/tools", "copilot"),
+    path.join("/tools", "codex")
+  ])
+  assert.deepEqual(
+    detectBackends({ pathValue, platform: "linux", exists: (candidate) => existing.has(candidate), access: () => {} }),
+    ["copilot", "codex"]
+  )
+  assert.deepEqual(
+    resolveLaunchPlan([], ["copilot", "codex"]),
+    { mode: "daemon", backend: "codex", detected: ["copilot", "codex"], openCode: false }
+  )
+  assert.deepEqual(
+    resolveLaunchPlan([], ["copilot", "opencode"]),
+    { mode: "daemon", backend: "copilot", detected: ["copilot", "opencode"], openCode: true }
+  )
+})
+
 test("ignores non-executable PATH entries on Unix", () => {
   const candidate = path.join("/tools", "claude")
   assert.deepEqual(detectBackends({ pathValue: "/tools", platform: "linux", exists: (value) => value === candidate, access: () => { throw new Error("not executable") } }), [])
