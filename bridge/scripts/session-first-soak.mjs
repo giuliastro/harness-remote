@@ -198,13 +198,30 @@ log(`Session-first soak against ${URL_ROOT}`)
 log(`primary=${PRIMARY} secondary=${SECONDARY} cycles=${CYCLES}`)
 
 log("\n== cold state ==")
-log(JSON.stringify(stableState(await diagnostics()), null, 1))
+const coldDiagnostics = await diagnostics()
+log(JSON.stringify(stableState(coldDiagnostics), null, 1))
+const primaryAgent = (coldDiagnostics.agents ?? []).find((agent) => agent.id === PRIMARY)
+const secondaryAgent = (coldDiagnostics.agents ?? []).find((agent) => agent.id === SECONDARY)
+const primaryModelsSupported = primaryAgent?.capabilities?.models === true
+  && primaryAgent?.contract?.models?.selection !== "harness-default"
+const secondaryModelsSupported = secondaryAgent?.capabilities?.models === true
+  && secondaryAgent?.contract?.models?.selection !== "harness-default"
 
-log("\n== catalogs stay per harness ==")
-const primaryCatalog = await catalog(PRIMARY)
-const secondaryCatalog = await catalog(SECONDARY)
-log(`  ${PRIMARY}: ${primaryCatalog.models.length} models in ${primaryCatalog.ms}ms (${primaryCatalog.attempts} request(s))${primaryCatalog.error ? ` error=${primaryCatalog.error}` : ""}`)
-log(`  ${SECONDARY}: ${secondaryCatalog.models.length} models in ${secondaryCatalog.ms}ms (${secondaryCatalog.attempts} request(s))${secondaryCatalog.error ? ` error=${secondaryCatalog.error}` : ""}`)
+log("\n== model policy stays per harness ==")
+const emptyCatalog = { attempts: 0, ms: 0, status: 204, models: [], error: null }
+const primaryCatalog = primaryModelsSupported ? await catalog(PRIMARY) : emptyCatalog
+const secondaryCatalog = secondaryModelsSupported ? await catalog(SECONDARY) : emptyCatalog
+if (primaryModelsSupported) {
+  log(`  ${PRIMARY}: ${primaryCatalog.models.length} models in ${primaryCatalog.ms}ms (${primaryCatalog.attempts} request(s))${primaryCatalog.error ? ` error=${primaryCatalog.error}` : ""}`)
+} else {
+  check(true, `${PRIMARY} harness-default model policy verified`)
+}
+if (secondaryModelsSupported) {
+  log(`  ${SECONDARY}: ${secondaryCatalog.models.length} models in ${secondaryCatalog.ms}ms (${secondaryCatalog.attempts} request(s))${secondaryCatalog.error ? ` error=${secondaryCatalog.error}` : ""}`)
+} else {
+  check(true, `${SECONDARY} harness-default model policy verified`)
+}
+
 const ownership = catalogOwnershipEvidence({
   primary: PRIMARY,
   secondary: SECONDARY,
@@ -212,25 +229,34 @@ const ownership = catalogOwnershipEvidence({
   secondaryModels: secondaryCatalog.models,
   state: stableState(await diagnostics())
 })
-for (const evidence of ownership.checks) check(evidence.ok, evidence.message)
-if (ownership.catalogsIdentical) {
-  log("  note identical normalized catalogs are valid; isolation is proven by agent-scoped diagnostics and Session routing")
+if (primaryModelsSupported || secondaryModelsSupported) {
+  for (const evidence of ownership.checks) check(evidence.ok, evidence.message)
+  if (ownership.catalogsIdentical) {
+    log("  note identical normalized catalogs are valid; isolation is proven by agent-scoped diagnostics and Session routing")
+  }
 }
 
-const selection = selectSoakModels(primaryCatalog.models, REQUESTED_MODEL_SELECTORS, 3)
+const selection = primaryModelsSupported
+  ? selectSoakModels(primaryCatalog.models, REQUESTED_MODEL_SELECTORS, 3)
+  : { explicit: REQUESTED_MODEL_SELECTORS.length > 0, unresolved: [], models: [] }
 const models = selection.models
-if (selection.explicit) {
+if (!primaryModelsSupported && REQUESTED_MODEL_SELECTORS.length) {
+  check(false, `${PRIMARY} uses harness-default model policy and cannot accept explicit release model selectors`)
+}
+if (primaryModelsSupported && selection.explicit) {
   log(`  explicit model selection: ${REQUESTED_MODEL_SELECTORS.join(", ")}`)
   const unresolvedSummary = selection.unresolved.map(({ selector, reason }) => `${selector} (${reason})`).join(", ")
   check(selection.unresolved.length === 0, `${PRIMARY} resolves every explicitly requested model${unresolvedSummary ? `: ${unresolvedSummary}` : ""}`)
   check(models.length >= 2, `${PRIMARY} has at least two explicitly selected models to switch between (${models.length})`)
-} else {
+} else if (primaryModelsSupported) {
   check(models.length >= 2, `${PRIMARY} offers at least two distinct models to switch between (${models.length})`)
 }
-if (selection.unresolved.length || models.length < 2) {
-  log("\nCannot exercise model switching with the requested model selection. Stopping.")
+if ((primaryModelsSupported && (selection.unresolved.length || models.length < 2)) || (!primaryModelsSupported && REQUESTED_MODEL_SELECTORS.length)) {
+  log("\nCannot exercise the declared model policy. Stopping.")
   process.exit(1)
 }
+const modelAt = (index) => primaryModelsSupported ? models[index % models.length] : undefined
+const modelLabel = (model) => model ? `${model.modelID}${model.variant ? `:${model.variant}` : ""}` : "harness-default"
 
 log("\n== two Sessions, repeated model changes ==")
 const created = await Promise.all([createSession(PRIMARY, DIR_A, "Soak A"), createSession(PRIMARY, DIR_B, "Soak B")])
@@ -254,10 +280,10 @@ const expected = { A: [], B: [] }
 const userTurns = { A: 0, B: 0 }
 for (let turn = 1; turn <= 3; turn += 1) {
   for (const [name, sessionID, directory, offset] of [["A", A, DIR_A, 0], ["B", B, DIR_B, 1]]) {
-    const model = models[(turn + offset) % models.length]
+    const model = modelAt(turn + offset)
     const marker = `${name}-TURN-${turn}`
     const result = await prompt(PRIMARY, sessionID, directory, `Reply with exactly: ${marker}`, model)
-    check(result.data?.status === "accepted", `${name} turn ${turn} accepted with model ${model.modelID}${model.variant ? `:${model.variant}` : ""}`)
+    check(result.data?.status === "accepted", `${name} turn ${turn} accepted with model ${modelLabel(model)}`)
     expected[name].push(marker)
     userTurns[name] += 1
     const answered = await waitForTurn(PRIMARY, sessionID, directory, marker, expected[name].length)
@@ -267,21 +293,29 @@ for (let turn = 1; turn <= 3; turn += 1) {
 
 log(`\n== ${CYCLES} cross-harness cycles: ${PRIMARY} -> ${SECONDARY} -> ${PRIMARY} ==`)
 for (let cycle = 1; cycle <= CYCLES; cycle += 1) {
-  const away = await catalog(SECONDARY)
+  const away = secondaryModelsSupported ? await catalog(SECONDARY) : emptyCatalog
   const secondarySession = await createSession(SECONDARY, cycle % 2 ? DIR_A : DIR_B, `Soak ${SECONDARY} ${cycle}`)
-  const back = await catalog(PRIMARY)
+  const back = primaryModelsSupported ? await catalog(PRIMARY) : emptyCatalog
   const name = cycle % 2 ? "A" : "B"
   const sessionID = cycle % 2 ? A : B
   const directory = cycle % 2 ? DIR_A : DIR_B
-  const model = models[cycle % models.length]
+  const model = modelAt(cycle)
   const marker = `CYCLE-${cycle}`
   const result = await prompt(PRIMARY, sessionID, directory, `Reply with exactly: ${marker}`, model)
   expected[name].push(marker)
   userTurns[name] += 1
-  log(`  cycle ${cycle}: ${SECONDARY}=${away.models.length} ${PRIMARY}=${back.models.length} session=${secondarySession.status} prompt(${model.modelID})=${result.data?.status}`)
-  check(catalogFingerprint(away.models) === ownership.secondaryFingerprint, `cycle ${cycle}: ${SECONDARY} catalog unchanged while switching away and back`)
-  check(catalogFingerprint(back.models) === ownership.primaryFingerprint, `cycle ${cycle}: ${PRIMARY} catalog unchanged after visiting ${SECONDARY}`)
-  check(result.data?.status === "accepted", `cycle ${cycle}: ${PRIMARY} prompt accepted after harness switch and model change`)
+  log(`  cycle ${cycle}: ${SECONDARY}=${away.models.length} ${PRIMARY}=${back.models.length} session=${secondarySession.status} prompt(${modelLabel(model)})=${result.data?.status}`)
+  if (secondaryModelsSupported) {
+    check(catalogFingerprint(away.models) === ownership.secondaryFingerprint, `cycle ${cycle}: ${SECONDARY} catalog unchanged while switching away and back`)
+  } else {
+    check(true, `cycle ${cycle}: ${SECONDARY} harness-default model policy unchanged while switching away and back`)
+  }
+  if (primaryModelsSupported) {
+    check(catalogFingerprint(back.models) === ownership.primaryFingerprint, `cycle ${cycle}: ${PRIMARY} catalog unchanged after visiting ${SECONDARY}`)
+  } else {
+    check(true, `cycle ${cycle}: ${PRIMARY} harness-default model policy unchanged after visiting ${SECONDARY}`)
+  }
+  check(result.data?.status === "accepted", `cycle ${cycle}: ${PRIMARY} prompt accepted after harness switch and model policy check`)
   const answered = await waitForTurn(PRIMARY, sessionID, directory, marker, expected[name].length)
   check(answered.found, `cycle ${cycle}: ${name} completed ${marker} in ${answered.ms}ms`)
 }
@@ -330,7 +364,7 @@ for (const model of primaryCatalog.models) {
   variantsByModel.get(key).push(model)
 }
 const richest = [...variantsByModel.values()].sort((left, right) => right.length - left.length)[0] ?? []
-const variantModel = richest[richest.length - 1]
+const variantModel = primaryModelsSupported ? richest[richest.length - 1] : undefined
 if (!variantModel) {
   log(`  skipped: ${PRIMARY} advertises no model variant${selection.explicit ? " for the explicitly selected models" : ""}, so none is invented`)
 } else {
@@ -345,7 +379,7 @@ if (!variantModel) {
   userTurns.B += 1
   const answered = await waitForTurn(PRIMARY, B, DIR_B, marker, expected.B.length)
   check(answered.found, `the variant turn completed in ${answered.ms}ms`)
-  const followUp = await prompt(PRIMARY, B, DIR_B, "Reply with exactly: AFTER-VARIANT", models[0])
+  const followUp = await prompt(PRIMARY, B, DIR_B, "Reply with exactly: AFTER-VARIANT", modelAt(0))
   check(followUp.data?.status === "accepted", "the Session still accepts a plain model after a variant turn")
   expected.B.push("AFTER-VARIANT")
   userTurns.B += 1
@@ -354,7 +388,7 @@ if (!variantModel) {
 }
 
 log("\n== Stop leaves a visible interruption and a usable Session ==")
-await prompt(PRIMARY, A, DIR_A, "Count slowly from 1 to 400, one number per line.", models[0])
+await prompt(PRIMARY, A, DIR_A, "Count slowly from 1 to 400, one number per line.", modelAt(0))
 await sleep(2500)
 const stopped = await call(`/v1/agents/${encodeURIComponent(PRIMARY)}/session/${encodeURIComponent(A)}/stop`, {
   method: "POST",
@@ -362,8 +396,8 @@ const stopped = await call(`/v1/agents/${encodeURIComponent(PRIMARY)}/session/${
 })
 check(stopped.data?.status === "accepted", `Stop accepted for ${PRIMARY} (${stopped.status})`)
 await sleep(3000)
-const afterStop = await prompt(PRIMARY, A, DIR_A, "Reply with exactly: AFTER-STOP", models[1])
-check(afterStop.data?.status === "accepted", "Session accepts a new prompt with a new model after Stop")
+const afterStop = await prompt(PRIMARY, A, DIR_A, "Reply with exactly: AFTER-STOP", modelAt(1))
+check(afterStop.data?.status === "accepted", primaryModelsSupported ? "Session accepts a new prompt with a new model after Stop" : "Session accepts a new prompt with harness-default model policy after Stop")
 expected.A.push("AFTER-STOP")
 userTurns.A += 2 // the cancelled turn plus this one
 const resumed = await waitForTurn(PRIMARY, A, DIR_A, "AFTER-STOP", expected.A.length)
