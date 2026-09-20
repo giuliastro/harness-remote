@@ -43,7 +43,7 @@ export async function runAcpProviderRealSmoke(providerID, {
   const profile = harnessProfile(providerID)
   const executableName = executable ?? profile.detectCommands?.[0] ?? profile.command
   const label = displayName ?? profile.label ?? providerID
-  if (!findExecutable(executableName)) {
+  if (executableName && !findExecutable(executableName) && !profile.allowPackageFallback) {
     console.error(`${JSON.stringify(executableName)} is not on PATH. Install and authenticate ${label} first.`)
     process.exitCode = 2
     return
@@ -62,7 +62,8 @@ export async function runAcpProviderRealSmoke(providerID, {
       command: launch.command,
       args: launch.args,
       permissionMode: profile.permissionMode,
-      preferredAuthMethod: profile.authMethod
+      preferredAuthMethod: profile.authMethod,
+      authenticate: profile.authenticate
     })
     acp.on("stderr", (line) => process.stderr.write(`[${providerID}] ${line}\n`))
     const service = new AcpService(new AcpPromptEchoFilter(acp), {
