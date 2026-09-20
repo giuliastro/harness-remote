@@ -26,7 +26,7 @@ export type SavedServerProfile = {
   config: ServerConfig
 }
 
-const BACKENDS: BackendKind[] = ["opencode", "omp", "pi", "claude", "codex"]
+const BACKENDS = ["opencode", "omp", "pi", "claude", "codex"] as const
 
 function defaultConfig(backend: BackendKind): ServerConfig {
   return {
