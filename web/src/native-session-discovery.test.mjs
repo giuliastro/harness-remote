@@ -50,6 +50,14 @@ assert.equal(isHarnessRemoteInternalTestSession({
   directory: 'C:\\Temp\\harness-opencode2-smoke-AbC123'
 }), true)
 assert.equal(isHarnessRemoteInternalTestSession({
+  id: 'stable-smoke-copilot',
+  directory: '/home/test/.harness-remote/smoke-workspaces/copilot'
+}), true)
+assert.equal(isHarnessRemoteInternalTestSession({
+  id: 'stable-smoke-opencode2',
+  directory: 'C:\\Users\\test\\.harness-remote\\smoke-workspaces\\opencode2'
+}), true)
+assert.equal(isHarnessRemoteInternalTestSession({
   id: 'release-gate',
   title: 'Harness Remote release-gate discovery (copilot)',
   directory: '/repo'
