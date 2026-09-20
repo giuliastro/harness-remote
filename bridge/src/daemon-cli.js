@@ -1,12 +1,12 @@
 #!/usr/bin/env node
 import path from "node:path"
-import { AcpClient } from "./acp-client.js"
-import { AcpAgentModelCatalog, HttpAgentModelCatalog } from "./agent-model-catalog.js"
+import { HttpAgentModelCatalog } from "./agent-model-catalog.js"
+import { createAcpProviderRuntime, resolveAcpProviderIDs, resolveAcpProviderLaunch } from "./acp-provider-runtime.js"
 import { ApprovalDecisionStore } from "./approval-decision-store.js"
 import { createApprovalDecisionServer } from "./approval-decision-server.js"
 import { parseConfig, usage as bridgeUsage } from "./config.js"
-import { acpHarnessCapabilityContract, openCodeCapabilityContract } from "./harness-capability-contract.js"
-import { harnessProfile, resolveAcpLaunch } from "./harness-profiles.js"
+import { openCodeCapabilityContract } from "./harness-capability-contract.js"
+import { harnessProfile } from "./harness-profiles.js"
 import { canListen, canListenForBind, harnessPortUnavailableMessage, resolveLaunchPlan } from "./launcher.js"
 import { loadMachineIdentity } from "./machine-registry.js"
 import { MachineDaemon, createMachineDaemonServer } from "./machine-daemon.js"
@@ -120,55 +120,19 @@ async function main() {
   const identity = await loadMachineIdentity(config.stateDirectory)
   const daemon = new MachineDaemon(identity)
   const plan = resolveLaunchPlan(process.argv.slice(2))
-  const acpBackends = [...new Set([...plan.detected.filter((backend) => backend !== "opencode"), config.backend])]
   const primaryProfile = harnessProfile(config.backend)
   const acpHosts = new Map()
-  for (const backend of acpBackends) {
-    const profile = harnessProfile(backend)
-    const launch = backend === config.backend
-      ? { command: config.acpCommand, args: config.acpArgs }
-      : resolveAcpLaunch(profile)
-    const agentConfig = { ...config, backend: profile.id, acpCommand: launch.command, acpArgs: launch.args }
-    const acp = new AcpClient({
-      command: launch.command,
-      args: launch.args,
-      permissionMode: profile.permissionMode,
-      preferredAuthMethod: profile.authMethod
+  for (const providerID of resolveAcpProviderIDs(plan.detected, config.backend)) {
+    const provider = harnessProfile(providerID)
+    const launch = resolveAcpProviderLaunch(provider, {
+      primary: provider.id === config.backend,
+      config
     })
-    // Model discovery owns a separate ACP connection so its prompt-less technical Session cannot
-    // interfere with user-facing Session ownership. Membership and options come from the running
-    // adapter itself; do not spawn a second native harness process to filter the same catalog.
-    const modelCatalog = new AcpAgentModelCatalog({
-      agent: new AcpClient({ command: launch.command, args: launch.args, permissionMode: profile.permissionMode, preferredAuthMethod: profile.authMethod }),
-      agentID: profile.id,
-      directory: config.roots?.[0] ?? process.cwd(),
-      stateDirectory: config.stateDirectory,
-      variantConfigIDs: profile.modelVariantConfigIDs
-    })
-    // Load persisted technical-session ids before the server starts, so they never leak into lists.
-    await modelCatalog.preloadState()
-    daemon.registerAcpHost({
-      id: profile.id,
-      label: profile.label,
-      backend: profile.id,
-      capabilities: profile.capabilities,
-      contract: acpHarnessCapabilityContract(profile),
-      agent: acp,
-      modelCatalog,
-      bridgeConfig: agentConfig,
-      serviceOptions: {
-        snapshotDirectory: path.join(config.stateDirectory, profile.id),
-        historyLoader: profile.historyLoader,
-        preserveListedTimestamps: profile.preserveListedTimestamps,
-        hiddenSessionIDs: modelCatalog.hiddenSessionIDs,
-        reloadOnHistoryRefresh: profile.reloadOnHistoryRefresh,
-        replaySettleMs: profile.replaySettleMs,
-        promptSettleMs: profile.promptSettleMs
-      }
-    })
-    acpHosts.set(profile.id, acp)
-    acp.on("stderr", (line) => process.stderr.write(`[${profile.id}] ${line}\n`))
-    acp.on("exit", (error) => process.stderr.write(`[${profile.id}] ${error.message}\n`))
+    const runtime = await createAcpProviderRuntime({ provider, launch, config })
+    const acp = daemon.registerAcpHost(runtime.registration)
+    acpHosts.set(provider.id, acp)
+    acp.on("stderr", (line) => process.stderr.write(`[${provider.id}] ${line}\n`))
+    acp.on("exit", (error) => process.stderr.write(`[${provider.id}] ${error.message}\n`))
   }
   const acp = acpHosts.get(primaryProfile.id)
   if (!acp) throw new Error(`Primary harness ${primaryProfile.id} was not detected`)
