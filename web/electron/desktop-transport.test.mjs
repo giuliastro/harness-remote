@@ -92,6 +92,28 @@ after(async () => {
   await new Promise((resolve) => server.close(resolve))
 })
 
+test('desktop registry accepts provider-kit backends only when scoped to the matching agent', () => {
+  const dynamic = validateDesktopProfile({
+    ...localProfile,
+    id: 'mimo-profile',
+    backend: 'mimo',
+    agentId: 'mimo'
+  })
+  assert.equal(dynamic.backend, 'mimo')
+  assert.equal(dynamic.agentId, 'mimo')
+  assert.throws(() => validateDesktopProfile({
+    ...localProfile,
+    id: 'bad-dynamic',
+    backend: 'mimo'
+  }), /backend is invalid/)
+  assert.throws(() => validateDesktopProfile({
+    ...localProfile,
+    id: 'mismatched-dynamic',
+    backend: 'mimo',
+    agentId: 'opencode2'
+  }), /backend is invalid/)
+})
+
 test('validated registry rejects unsafe targets and persists approved profiles', async () => {
   assert.throws(() => validateDesktopProfile({ ...localProfile, host: 'https://user:pass@example.com' }), /invalid/)
   assert.throws(() => validateDesktopProfile({ ...localProfile, host: 'ftp://example.com' }), /unsupported/)
