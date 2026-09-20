@@ -10,6 +10,7 @@ await runAcpProviderRealSmoke("mimo", {
   defaultDirectory: process.cwd(),
   temporaryPrefix: "harness-mimo-smoke-",
   checkCommands: false,
-  checkModels: false,
+  checkModels: true,
+  requireModelSwitch: true,
   debugLaunchArgs: ["--print-logs", "--log-level", "DEBUG", "acp"]
 })
