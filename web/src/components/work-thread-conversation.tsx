@@ -817,7 +817,7 @@ export function WorkThreadConversation({
       const latestConversation = conversationRef.current
       const latestHasUserPrompt = Boolean(latestConversation.initialPrompt?.trim())
         || conversationTurns(latestConversation).some((turn) => Boolean(turn.prompt?.trim()))
-      const mayUseCatalogDefault = !deferModelFallback || routeChanged || !latestHasUserPrompt
+      const mayUseCatalogDefault = providerRequiresExplicitModel(catalogAgent) || !deferModelFallback || routeChanged || !latestHasUserPrompt
       const fallback = mayUseCatalogDefault
         ? catalog.models.find((model) => model.isDefault) || catalog.models[0]
         : undefined
@@ -843,9 +843,10 @@ export function WorkThreadConversation({
   // and leave explicit user choices and verified native model metadata alone.
   useEffect(() => {
     if (!deferModelFallback || routeChanged || !conversationHasUserPrompt || currentConversationModelKey) return
-    if (modelSelectionTouchedRef.current) return
+    const agent = destinationAgents.find((candidate) => candidate.id === targetAgentID)
+    if (providerRequiresExplicitModel(agent) || modelSelectionTouchedRef.current) return
     setTargetModelKey("")
-  }, [deferModelFallback, routeChanged, conversationHasUserPrompt, currentConversationModelKey])
+  }, [deferModelFallback, routeChanged, conversationHasUserPrompt, currentConversationModelKey, targetAgentID, routingSignature, agentsSignature])
 
   // Only a model verified by the current live catalog is sent explicitly. A null selection is
   // intentional: the controller distinguishes it from an omitted field, which means reuse the
@@ -858,8 +859,8 @@ export function WorkThreadConversation({
   // Existing native Sessions are allowed to keep their harness-owned current model when that exact
   // value cannot be reconstructed. What is not allowed is sending before the live catalog itself has
   // finished loading: a brand-new Codex/PI Session has no safe implicit model at that point.
-  const modelCatalogReady = !modelSelectionRequired || (!modelsLoading && models.length > 0)
-  const modelBootstrapBlocked = modelSelectionRequired && !modelCatalogReady
+  const modelCatalogReady = !modelCatalogSupported || (!modelsLoading && models.length > 0)
+  const modelBootstrapBlocked = modelSelectionRequired && (!modelCatalogReady || !selectedModel)
 
   async function loadOlder() {
     if (loadingOlder || !interactionEnabled) return
