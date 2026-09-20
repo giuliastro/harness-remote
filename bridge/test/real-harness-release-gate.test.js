@@ -55,7 +55,18 @@ function passingPreflight(harnesses) {
     status: 200,
     error: null,
     machineID: "machine-1",
-    agents: harnesses.map((id) => ({ id, registered: true, modelCatalog: { configured: true, source: "test", cachedModels: 2, phase: "ready" } })),
+    agents: harnesses.map((id) => ({
+      id,
+      registered: true,
+      modelsSupported: !["copilot", "mimo"].includes(id),
+      modelSelection: ["copilot", "mimo"].includes(id) ? "harness-default" : "required",
+      modelCatalog: {
+        configured: !["copilot", "mimo"].includes(id),
+        source: !["copilot", "mimo"].includes(id) ? "test" : null,
+        cachedModels: !["copilot", "mimo"].includes(id) ? 2 : 0,
+        phase: !["copilot", "mimo"].includes(id) ? "ready" : null
+      }
+    })),
     missingHarnesses: [],
     missingModelCatalogs: []
   }
@@ -171,8 +182,8 @@ test("preflight accepts registered harnesses even when their model inventories m
     return new Response(JSON.stringify({
       machine: { id: "machine-1" },
       agents: [
-        { id: "codex", backend: "codex", transport: "acp", state: "configured", modelCatalog: { source: "acp-config-options", cachedModels: 4, phase: "ready" } },
-        { id: "claude", backend: "claude", transport: "acp", state: "configured", modelCatalog: { source: "acp-config-options", cachedModels: 4, phase: "ready" } }
+        { id: "codex", backend: "codex", transport: "acp", state: "configured", capabilities: { models: true }, contract: { models: { selection: "required" } }, modelCatalog: { source: "acp-config-options", cachedModels: 4, phase: "ready" } },
+        { id: "claude", backend: "claude", transport: "acp", state: "configured", capabilities: { models: true }, contract: { models: { selection: "required" } }, modelCatalog: { source: "acp-config-options", cachedModels: 4, phase: "ready" } }
       ]
     }), { status: 200, headers: { "Content-Type": "application/json" } })
   }
@@ -198,7 +209,7 @@ test("preflight reports missing harnesses and missing model discovery before the
   const fetchImpl = async () => new Response(JSON.stringify({
     machine: { id: "machine-2" },
     agents: [
-      { id: "codex", backend: "codex", transport: "acp", state: "configured", modelCatalog: null }
+      { id: "codex", backend: "codex", transport: "acp", state: "configured", capabilities: { models: true }, contract: { models: { selection: "required" } }, modelCatalog: null }
     ]
   }), { status: 200, headers: { "Content-Type": "application/json" } })
 
@@ -206,6 +217,58 @@ test("preflight reports missing harnesses and missing model discovery before the
   assert.equal(result.passed, false)
   assert.deepEqual(result.missingHarnesses, ["claude"])
   assert.deepEqual(result.missingModelCatalogs, ["codex"])
+})
+
+test("preflight accepts harness-default providers without inventing a model catalog", async () => {
+  const fetchImpl = async () => new Response(JSON.stringify({
+    machine: { id: "machine-default-model" },
+    agents: [
+      {
+        id: "copilot",
+        backend: "copilot",
+        transport: "acp",
+        state: "configured",
+        capabilities: { models: false },
+        contract: { models: { selection: "harness-default" } },
+        modelCatalog: null
+      },
+      {
+        id: "mimo",
+        backend: "mimo",
+        transport: "acp",
+        state: "configured",
+        capabilities: { models: false },
+        contract: { models: { selection: "harness-default" } },
+        modelCatalog: null
+      }
+    ]
+  }), { status: 200, headers: { "Content-Type": "application/json" } })
+
+  const result = await preflightDaemon({ harnesses: ["copilot", "mimo"], fetchImpl })
+  assert.equal(result.passed, true)
+  assert.deepEqual(result.missingModelCatalogs, [])
+  assert.equal(result.agents[0].modelSelection, "harness-default")
+  assert.equal(result.agents[1].modelSelection, "harness-default")
+})
+
+test("harness-default soak evidence counts as explicit model-policy coverage", () => {
+  const output = [
+    "  ok   two native Sessions created on copilot",
+    "  ok   copilot harness-default model policy verified",
+    "  ok   A turn 1 completed in 12ms",
+    "  ok   cycle 1: mimo harness-default model policy unchanged while switching away and back",
+    "  ok   cycle 1: copilot prompt accepted after harness switch and model policy check",
+    "  ok   A: one user turn per accepted prompt, no duplicates (1/1)",
+    "  ok   Stop accepted for copilot (200)",
+    "  ok   Session accepts a new prompt with harness-default model policy after Stop",
+    "  ok   the interrupted turn stays visible in the transcript",
+    "  ok   copilot: adapter listeners did not grow unboundedly (4 -> 4)",
+    "  ok   no unresolved native Session mutation left (0)"
+  ].join("\n")
+  const evidence = parseSoakEvidence(output)
+  assert.equal(evidence.complete, true)
+  assert.equal(evidence.coverage.modelSelection, true)
+  assert.equal(evidence.coverage.crossHarnessIsolation, true)
 })
 
 test("preflight turns authentication failures into a concise gate failure", async () => {
