@@ -1,4 +1,4 @@
-import { findExecutable } from "./launcher.js"
+import { findExecutable } from "./executable-discovery.js"
 import { createCodexHistoryLoader } from "./codex-session-history.js"
 import { createOmpHistoryLoader } from "./omp-session-history.js"
 import { createPiHistoryLoader } from "./pi-session-history.js"
@@ -24,6 +24,8 @@ export const HARNESS_PROFILES = {
     id: "omp",
     label: "Oh My Pi",
     command: "omp",
+    detectCommands: ["omp"],
+    launchPriority: 30,
     args: ["acp"],
     permissionMode: "allow",
     historyLoader: createOmpHistoryLoader(),
@@ -76,6 +78,8 @@ export const HARNESS_PROFILES = {
     // explicitly and invoke the binary the package publishes, otherwise npm may try to execute the
     // literal package spec and exit 127 on a real machine.
     command: process.platform === "win32" ? "npx.cmd" : "npx",
+    detectCommands: ["pi"],
+    launchPriority: 40,
     args: ["--yes", "--package=@automatalabs/pi-acp@0.5.0", "pi-acp"],
     adapterCommand: "pi-acp",
     permissionMode: "allow",
@@ -120,6 +124,8 @@ export const HARNESS_PROFILES = {
     // run `claude login` or set ANTHROPIC_API_KEY before starting the bridge.
     // Requires Node 22+ (same as the PI adapter it mirrors).
     command: process.platform === "win32" ? "npx.cmd" : "npx",
+    detectCommands: ["claude"],
+    launchPriority: 20,
     // Pinned to avoid the `notarget` scenario that PI hit. Like PI, install the scoped package
     // explicitly and invoke its published binary instead of relying on npx package-spec inference.
     // 0.63.0 embeds Claude Agent SDK 0.3.220, whose Claude Code core rejects newer advertised
@@ -162,6 +168,8 @@ export const HARNESS_PROFILES = {
     // user must have run `codex login` (ChatGPT account) or set an OpenAI API key first.
     // Requires Node 22+ (same as the PI and Claude adapters it mirrors).
     command: process.platform === "win32" ? "npx.cmd" : "npx",
+    detectCommands: ["codex"],
+    launchPriority: 10,
     // Pinned to avoid the `notarget` scenario that PI hit. Like PI, install the scoped package
     // explicitly and invoke its published binary instead of relying on npx package-spec inference.
     args: ["--yes", "--package=@agentclientprotocol/codex-acp@1.1.14", "codex-acp"],
