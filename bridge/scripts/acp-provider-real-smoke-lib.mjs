@@ -63,7 +63,8 @@ export async function runAcpProviderRealSmoke(providerID, {
       args: launch.args,
       permissionMode: profile.permissionMode,
       preferredAuthMethod: profile.authMethod,
-      authenticate: profile.authenticate
+      authenticate: profile.authenticate,
+      environment: profile.environment
     })
     acp.on("stderr", (line) => process.stderr.write(`[${providerID}] ${line}\n`))
     const service = new AcpService(new AcpPromptEchoFilter(acp), {
@@ -108,6 +109,14 @@ export async function runAcpProviderRealSmoke(providerID, {
       const models = await first.service.models(created.id)
       check(models.length > 0, "runtime model catalog is available through ACP config options")
       console.log(`models: ${models.slice(0, 8).map((model) => model.value ?? model.name ?? "?").join(", ")}${models.length > 8 ? ", …" : ""}`)
+      const requestedModel = argument("model")
+      const preferredSmokeModel = requestedModel
+        ?? models.find((model) => (model.value ?? model.name) === "opencode/big-pickle")?.value
+        ?? models.find((model) => (model.value ?? model.name) === "opencode/big-pickle")?.name
+      if (preferredSmokeModel) {
+        await first.service.setModel(created.id, preferredSmokeModel)
+        console.log(`smoke model: ${preferredSmokeModel}`)
+      }
     }
 
     await first.service.promptAndWait(created.id, `Reply with exactly ${responseMarker} and nothing else.`)
