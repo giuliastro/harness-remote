@@ -179,6 +179,11 @@ export async function runAcpProviderRealSmoke(providerID, {
     const reopened = await second.service.claimSession(created.id)
     check(reopened === true, "fresh ACP process reopens the native Session through session/load or resume")
 
+    page = await second.service.messagePage(created.id, { limit: 400 })
+    answer = visibleText(page.messages)
+    check(answer.includes(responseMarker), "reopened native Session history contains the original assistant reply before a new prompt")
+    check(answer.includes(afterStopMarker), "reopened native Session history contains the post-Stop reply before a new prompt")
+
     const reopenMarker = `${responseMarker}-REOPENED`
     await second.service.promptAndWait(created.id, `Reply with exactly ${reopenMarker} and nothing else.`)
     page = await second.service.messagePage(created.id, { limit: 400 })
