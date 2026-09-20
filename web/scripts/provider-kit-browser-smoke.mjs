@@ -8,11 +8,6 @@ const DAEMON_PORT = 4437
 const APP_ORIGIN = `http://127.0.0.1:${PREVIEW_PORT}`
 const STORAGE_KEY = "harness-remote.workspace.machines.v1"
 const DIRECTORY = "/work/provider-kit-browser"
-const PROVIDERS = {
-  copilot: { label: "GitHub Copilot CLI", models: false, selection: "harness-default" },
-  opencode2: { label: "OpenCode 2", models: true, selection: "required" },
-  mimo: { label: "MiMo Code", models: false, selection: "harness-default" }
-}
 const ALL_AGENTS = [
   ["opencode", "OpenCode", "http", true, "required"],
   ["opencode2", "OpenCode 2", "acp", true, "required"],
@@ -23,6 +18,10 @@ const ALL_AGENTS = [
   ["omp", "Oh My Pi", "acp", true, "required"],
   ["pi", "PI", "acp", true, "required"]
 ]
+const PROVIDERS = Object.fromEntries(ALL_AGENTS.map(([id, label, transport, models, selection]) => [
+  id,
+  { label, transport, models, selection }
+]))
 
 let clock = 10_000
 let createdCounter = 0
@@ -60,9 +59,9 @@ function addSession(provider, id, title, external = true) {
   clock += 2
 }
 
-addSession("copilot", "copilot-session", "Copilot Provider Kit")
-addSession("opencode2", "opencode2-session", "OpenCode 2 Provider Kit")
-addSession("mimo", "mimo-session", "MiMo Provider Kit")
+for (const [provider, { label }] of Object.entries(PROVIDERS)) {
+  addSession(provider, `${provider}-session`, `${label} Existing`)
+}
 
 function providerForSession(sessionID) {
   return sessions.get(sessionID)?.provider
@@ -182,13 +181,20 @@ function startFakeDaemon() {
     }
     if (request.method === "GET" && path === "/models") {
       modelReads.set(provider, (modelReads.get(provider) || 0) + 1)
-      if (provider !== "opencode2") {
+      const providerInfo = PROVIDERS[provider]
+      if (!providerInfo?.models) {
         json(response, 500, { error: `${provider} must not require a model catalog` })
         return
       }
       json(response, 200, {
-        models: [{ providerID: "opencode", providerName: "OpenCode 2", modelID: "big-pickle", modelName: "Big Pickle", isDefault: true }],
-        stale: false, refreshedAt: new Date().toISOString(), source: "provider-kit-browser"
+        models: [{
+          providerID: provider,
+          providerName: providerInfo.label,
+          modelID: "test-model",
+          modelName: `${providerInfo.label} Test Model`,
+          isDefault: true
+        }],
+        stale: false, refreshedAt: new Date().toISOString(), source: "all-harness-browser"
       })
       return
     }
@@ -383,35 +389,32 @@ try {
   await loadHome(page)
   await assertFilterIdentity(page)
 
-  for (const [provider, title] of [
-    ["copilot", "Copilot Provider Kit"],
-    ["opencode2", "OpenCode 2 Provider Kit"],
-    ["mimo", "MiMo Provider Kit"]
-  ]) {
+  for (const [provider, info] of Object.entries(PROVIDERS)) {
+    const title = `${info.label} Existing`
     await loadHome(page)
     const composer = await openProvider(page, provider, title)
     const modelTrigger = page.locator(".tdw-model-control .tdw-model-trigger")
     await modelTrigger.waitFor({ state: "visible", timeout: 15_000 })
-    if (PROVIDERS[provider].selection === "harness-default") {
+    if (info.selection === "harness-default") {
       assert.equal(await modelTrigger.isDisabled(), true, `${provider} model picker must defer to harness default`)
       assert.match(await modelTrigger.textContent(), /Harness default/, `${provider} must visibly use the harness default`)
     } else {
-      await waitFor(async () => !(await modelTrigger.isDisabled()), "OpenCode 2 model picker enabled")
-      assert.match(await modelTrigger.textContent(), /Big Pickle/, "OpenCode 2 catalog did not populate")
+      await waitFor(async () => !(await modelTrigger.isDisabled()), `${provider} model picker enabled`)
+      assert.match(await modelTrigger.textContent(), /Test Model/, `${provider} catalog did not populate`)
     }
-    await sendAndExpect(page, provider, composer, `${provider.toUpperCase()}-PROMPT`)
+    await sendAndExpect(page, provider, composer, `${provider.toUpperCase()}-EXISTING`)
   }
 
-  assert.equal(modelReads.get("copilot") || 0, 0, "Copilot must not request a model catalog")
-  assert.equal(modelReads.get("mimo") || 0, 0, "MiMo must not request a model catalog")
-  assert.ok((modelReads.get("opencode2") || 0) > 0, "OpenCode 2 must request its model catalog")
+  for (const [provider, info] of Object.entries(PROVIDERS)) {
+    const reads = modelReads.get(provider) || 0
+    if (info.models) assert.ok(reads > 0, `${provider} must request its model catalog`)
+    else assert.equal(reads, 0, `${provider} must not request a model catalog`)
+  }
 
-  // Creation must route through the selected Provider Kit id, and a rediscovered ACP Session must
+  // Creation and rediscovery are exercised for every supported harness. A created Session must
   // reopen through the same provider rather than falling back to the daemon's primary/OpenCode path.
-  for (const [provider, title] of [
-    ["copilot", "Copilot Created Browser"],
-    ["opencode2", "OpenCode 2 Created Browser"]
-  ]) {
+  for (const [provider, info] of Object.entries(PROVIDERS)) {
+    const title = `${info.label} Created Browser`
     await loadHome(page)
     await page.getByRole("button", { name: "New Session" }).click()
     const create = page.locator(".hr-native-create-panel")
@@ -426,10 +429,12 @@ try {
     const created = [...sessions.values()].find((entry) => entry.title === title)
     assert.ok(created, `${provider} create did not reach the routed provider`)
     assert.equal(created.provider, provider, `${provider} create was routed to ${created.provider}`)
-    if (provider === "opencode2") {
-      const modelTrigger = page.locator(".tdw-model-control .tdw-model-trigger")
-      await waitFor(async () => !(await modelTrigger.isDisabled()), "created OpenCode 2 model picker enabled")
-      assert.match(await modelTrigger.textContent(), /Big Pickle/, "created OpenCode 2 did not select its required verified model")
+    const createdModelTrigger = page.locator(".tdw-model-control .tdw-model-trigger")
+    if (info.models) {
+      await waitFor(async () => !(await createdModelTrigger.isDisabled()), `created ${provider} model picker enabled`)
+      assert.match(await createdModelTrigger.textContent(), /Test Model/, `created ${provider} did not select its required verified model`)
+    } else {
+      assert.equal(await createdModelTrigger.isDisabled(), true, `created ${provider} model picker must stay harness-default`)
     }
     await sendAndExpect(page, provider, createdComposer, `${provider.toUpperCase()}-CREATED`)
 
@@ -474,13 +479,14 @@ try {
   await sendAndExpect(page, "mimo", composer, "MIMO-REOPEN")
 
   assert.equal(modelReads.get("mimo") || 0, 0, "MiMo reopen unexpectedly requested a model catalog")
-  assert.ok((claims.get("mimo-session") || 0) >= 1, "existing MiMo Session was never claimed")
-  assert.ok(promptBodies.some((entry) => entry.provider === "copilot"), "Copilot prompt did not route to Copilot")
-  assert.ok(promptBodies.some((entry) => entry.provider === "opencode2"), "OpenCode 2 prompt did not route to OpenCode 2")
+  for (const provider of Object.keys(PROVIDERS)) {
+    assert.ok((claims.get(`${provider}-session`) || 0) >= 1, `existing ${provider} Session was never claimed`)
+    assert.ok(promptBodies.some((entry) => entry.provider === provider), `${provider} prompt did not route to its provider`)
+  }
   assert.ok(promptBodies.filter((entry) => entry.provider === "mimo").length >= 4, "MiMo create/Stop/reopen prompt coverage incomplete")
   assert.deepEqual(pageErrors, [], `browser errors: ${pageErrors.join(" | ")}`)
 
-  console.log("Provider Kit filter, model policy, prompt lifecycle, create, Stop and reopen browser smoke passed")
+  console.log("All-harness filter, model policy, existing Session prompt lifecycle, create, Stop and reopen browser smoke passed")
   await context.close()
 } finally {
   for (const timer of timers) clearTimeout(timer)
