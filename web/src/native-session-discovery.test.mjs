@@ -33,6 +33,13 @@ assert.deepEqual(nativeSessionConfig(base, codex), {
   agentId: 'codex'
 })
 
+const dynamicProvider = { ...codex, id: 'mimo', label: 'MiMo Code', backend: 'mimo' }
+assert.deepEqual(nativeSessionConfig(base, dynamicProvider), {
+  ...base,
+  backend: 'mimo',
+  agentId: 'mimo'
+}, 'machine-advertised provider ids must not fall back to the saved OpenCode backend')
+
 const calls = []
 const client = {
   async listGlobalSessions(config) {
