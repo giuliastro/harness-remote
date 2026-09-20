@@ -403,6 +403,7 @@ export class AcpService {
       this.#restoredSnapshots.delete(sessionID)
       this.#todos.delete(sessionID)
       this.#configOptions.delete(sessionID)
+      this.#modelSwitchMethods.delete(sessionID)
       this.#commandCatalogs.delete(sessionID)
       for (const resolve of this.#commandCatalogWaiters.get(sessionID) ?? []) resolve()
       this.#commandCatalogWaiters.delete(sessionID)
@@ -423,6 +424,7 @@ export class AcpService {
   })
   #todos = new Map()
   #configOptions = new Map()
+  #modelSwitchMethods = new Map()
   #commandCatalogs = new Map()
   #commandCatalogWaiters = new Map()
   #actionStates = new Map()
@@ -596,7 +598,7 @@ export class AcpService {
     await this.#acp.start()
     const result = await this.#acp.request("session/new", { cwd: directory, mcpServers: [] })
     this.#acpOpenSessions.add(result.sessionId)
-    this.#rememberConfigOptions(result.sessionId, result.configOptions)
+    this.#rememberSessionConfiguration(result.sessionId, result)
     const session = {
       sessionId: result.sessionId,
       cwd: directory,
@@ -686,6 +688,7 @@ export class AcpService {
       this.#ownedSessions.delete(sessionID)
       this.#adoptedSessions.delete(sessionID)
       this.#configOptions.delete(sessionID)
+      this.#modelSwitchMethods.delete(sessionID)
       this.#commandCatalogs.delete(sessionID)
       this.#actionStates.delete(sessionID)
       this.#authoritativeActionStates.delete(sessionID)
@@ -1159,12 +1162,13 @@ export class AcpService {
       await this.#setModelVariant(sessionID, variant)
       return
     }
-    const changed = await this.#acp.request("session/set_config_option", { sessionId: sessionID, configId: "model", value })
-    // Adopt the options the adapter reports for the model it now holds. A harness whose dependent
-    // controls differ per model - PI advertises a different thinkingLevel range for each one, from a
-    // single `off` up to `max` - otherwise leaves this Session describing the previous model, so the
-    // variant about to be applied would be checked against the wrong set of values.
-    if (Array.isArray(changed?.configOptions)) this.#rememberConfigOptions(sessionID, changed.configOptions)
+    const switchMethod = this.#modelSwitchMethods.get(sessionID) ?? "config_option"
+    const changed = switchMethod === "legacy_model"
+      ? await this.#acp.request("session/set_model", { sessionId: sessionID, modelId: value })
+      : await this.#acp.request("session/set_config_option", { sessionId: sessionID, configId: "model", value })
+    // Adopt whatever model surface the adapter reports after the change. Config-option providers can
+    // change dependent controls per model; legacy-model providers may return an updated models state.
+    this.#rememberSessionConfiguration(sessionID, changed)
     const current = this.#configOptions.get(sessionID)?.find((item) => item.id === "model")
     if (current) current.currentValue = value
     else option.currentValue = value
@@ -1720,7 +1724,7 @@ export class AcpService {
       if (this.#replaySettleMs > 0) {
         await new Promise((resolve) => setTimeout(resolve, this.#replaySettleMs))
       }
-      this.#rememberConfigOptions(sessionID, result.configOptions)
+      this.#rememberSessionConfiguration(sessionID, result)
       const replayedMessages = mergeFragmentedPiSnapshot(this.#messages.get(sessionID) ?? [])
       this.#messages.set(sessionID, replaceHistory ? replayedMessages : mergeReplay(previousMessages, replayedMessages))
       // Replayed history is finished work by definition, and the adapter does not always close the
@@ -1778,7 +1782,7 @@ export class AcpService {
       300_000
     )
     this.#acpOpenSessions.add(sessionID)
-    this.#rememberConfigOptions(sessionID, result?.configOptions)
+    this.#rememberSessionConfiguration(sessionID, result)
     this.#loaded.add(sessionID)
     this.#persistSnapshot(sessionID)
     return true
@@ -1801,7 +1805,42 @@ export class AcpService {
   }
 
   #rememberConfigOptions(sessionID, configOptions) {
-    if (Array.isArray(configOptions)) this.#configOptions.set(sessionID, configOptions)
+    if (!Array.isArray(configOptions)) return
+    this.#configOptions.set(sessionID, configOptions)
+    if (configOptions.some((item) => item?.id === "model")) {
+      this.#modelSwitchMethods.set(sessionID, "config_option")
+    }
+  }
+
+  #rememberSessionConfiguration(sessionID, result) {
+    if (Array.isArray(result?.configOptions)) {
+      this.#rememberConfigOptions(sessionID, result.configOptions)
+      if (result.configOptions.some((item) => item?.id === "model")) return
+    }
+
+    const available = Array.isArray(result?.models?.availableModels)
+      ? result.models.availableModels
+      : []
+    if (!available.length) return
+
+    const options = available
+      .filter((candidate) => typeof candidate?.modelId === "string" && candidate.modelId)
+      .map((candidate) => ({
+        value: candidate.modelId,
+        ...(typeof candidate.name === "string" && candidate.name ? { name: candidate.name } : {}),
+        ...(typeof candidate.description === "string" && candidate.description ? { description: candidate.description } : {})
+      }))
+    if (!options.length) return
+
+    this.#configOptions.set(sessionID, [{
+      id: "model",
+      name: "Model",
+      category: "model",
+      type: "select",
+      currentValue: typeof result.models?.currentModelId === "string" ? result.models.currentModelId : options[0].value,
+      options
+    }])
+    this.#modelSwitchMethods.set(sessionID, "legacy_model")
   }
 
   #recordPrompt(sessionID, text, attachments = []) {
