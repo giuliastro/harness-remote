@@ -4,7 +4,8 @@
   "type": "module",
   "bin": {
     "harness-remote": "bridge/src/launcher.js",
-    "harness-remote-daemon": "bridge/src/daemon-bin.js"
+    "harness-remote-daemon": "bridge/src/daemon-bin.js",
+    "harness-remote-copilot-smoke": "bridge/scripts/copilot-real-smoke.mjs"
   },
   "scripts": {
     "start": "node bridge/src/launcher.js",
@@ -43,6 +44,7 @@
   ],
   "files": [
     "bridge/src",
+    "bridge/scripts/copilot-real-smoke.mjs",
     "README.md",
     "LICENSE",
     "REFERENCE.md",
