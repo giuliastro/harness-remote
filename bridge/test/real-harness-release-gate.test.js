@@ -58,13 +58,13 @@ function passingPreflight(harnesses) {
     agents: harnesses.map((id) => ({
       id,
       registered: true,
-      modelsSupported: id !== "mimo",
-      modelSelection: id === "mimo" ? "harness-default" : id === "opencode2" ? "required" : "optional",
+      modelsSupported: true,
+      modelSelection: id === "opencode2" ? "required" : "optional",
       modelCatalog: {
-        configured: id !== "mimo",
-        source: id !== "mimo" ? "test" : null,
-        cachedModels: id !== "mimo" ? 2 : 0,
-        phase: id !== "mimo" ? "ready" : null
+        configured: true,
+        source: "test",
+        cachedModels: 2,
+        phase: "ready"
       }
     })),
     missingHarnesses: [],
@@ -219,7 +219,7 @@ test("preflight reports missing harnesses and missing model discovery before the
   assert.deepEqual(result.missingModelCatalogs, ["codex"])
 })
 
-test("preflight requires Copilot runtime models while allowing MiMo harness-default", async () => {
+test("preflight requires runtime model discovery for both Copilot and MiMo", async () => {
   const fetchImpl = async () => new Response(JSON.stringify({
     machine: { id: "machine-provider-models" },
     agents: [
@@ -237,9 +237,9 @@ test("preflight requires Copilot runtime models while allowing MiMo harness-defa
         backend: "mimo",
         transport: "acp",
         state: "configured",
-        capabilities: { models: false },
-        contract: { models: { selection: "harness-default" } },
-        modelCatalog: null
+        capabilities: { models: true },
+        contract: { models: { selection: "optional" } },
+        modelCatalog: { source: "acp-session", cachedModels: 5, phase: "ready" }
       }
     ]
   }), { status: 200, headers: { "Content-Type": "application/json" } })
@@ -250,7 +250,9 @@ test("preflight requires Copilot runtime models while allowing MiMo harness-defa
   assert.equal(result.agents[0].modelsSupported, true)
   assert.equal(result.agents[0].modelSelection, "optional")
   assert.equal(result.agents[0].modelCatalog.cachedModels, 7)
-  assert.equal(result.agents[1].modelSelection, "harness-default")
+  assert.equal(result.agents[1].modelsSupported, true)
+  assert.equal(result.agents[1].modelSelection, "optional")
+  assert.equal(result.agents[1].modelCatalog.cachedModels, 5)
 })
 
 test("harness-default soak evidence counts as explicit model-policy coverage", () => {
