@@ -958,7 +958,12 @@ export function WorkThreadConversation({
         conversationRef.current = next
         setAwaitingReplyTurnID(next.currentTurn?.id ?? null)
         modelSelectionTouchedRef.current = false
-        await refreshCurrentTail(next)
+        // Prompt acceptance is the Send boundary. Tail reconciliation is opportunistic and may
+        // coalesce a burst of live events into several serialized reads; awaiting that drain here
+        // keeps sendInFlightRef locked after the UI has already settled back to Ready, so the next
+        // click can be silently discarded. Release the Send lock immediately and let the guarded
+        // tail reader converge in the background like the live-event path already does.
+        void refreshCurrentTail(next)
         void refreshAttention(next)
       }
     } catch (reason) {
