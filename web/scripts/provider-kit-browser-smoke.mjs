@@ -459,7 +459,8 @@ try {
     assert.ok((claims.get(created.id) || 0) >= 1, `${provider} rediscovered Session was not claimed on reopen`)
   }
 
-  // All harnesses have now completed create, prompt, Stop, reuse and reopen.\n  for (const provider of Object.keys(PROVIDERS)) {
+  // All harnesses have now completed create, prompt, Stop, reuse and reopen.
+  for (const provider of Object.keys(PROVIDERS)) {
     assert.ok((claims.get(`${provider}-session`) || 0) >= 1, `existing ${provider} Session was never claimed`)
     assert.ok(promptBodies.filter((entry) => entry.provider === provider).length >= 5, `${provider} existing/create/Stop/reuse/reopen prompt coverage incomplete`)
     assert.ok(stopBodies.some((entry) => entry.provider === provider), `${provider} Stop was never routed`)
