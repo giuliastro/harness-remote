@@ -193,6 +193,12 @@ function startFakeDaemon() {
           modelID: "test-model",
           modelName: `${providerInfo.label} Test Model`,
           isDefault: true
+        }, {
+          providerID: provider,
+          providerName: providerInfo.label,
+          modelID: "test-model-alt",
+          modelName: `${providerInfo.label} Alternate Model`,
+          isDefault: false
         }],
         stale: false, refreshedAt: new Date().toISOString(), source: "all-harness-browser"
       })
@@ -393,19 +399,32 @@ try {
     const title = `${info.label} Existing`
     await loadHome(page)
     const composer = await openProvider(page, provider, title)
+    await page.getByText(`${provider.toUpperCase()}-HISTORY-USER`, { exact: true }).waitFor({ state: "visible", timeout: 15_000 })
+    await page.getByText(`${provider.toUpperCase()}-HISTORY-REPLY`, { exact: true }).waitFor({ state: "visible", timeout: 15_000 })
     const modelTrigger = page.locator(".tdw-model-control .tdw-model-trigger")
     await modelTrigger.waitFor({ state: "visible", timeout: 15_000 })
     if (info.selection === "harness-default") {
       assert.equal(await modelTrigger.isDisabled(), true, `${provider} model picker must defer to harness default`)
       assert.match(await modelTrigger.textContent(), /Harness default/, `${provider} must visibly use the harness default`)
-    } else if (info.selection === "optional") {
-      await waitFor(async () => !(await modelTrigger.isDisabled()), `${provider} model picker enabled`)
-      assert.match(await modelTrigger.textContent(), /Harness default/, `${provider} existing Session must preserve its native model until the user changes it`)
     } else {
       await waitFor(async () => !(await modelTrigger.isDisabled()), `${provider} model picker enabled`)
-      assert.match(await modelTrigger.textContent(), /Test Model/, `${provider} required catalog did not populate`)
+      if (info.selection === "optional") {
+        assert.match(await modelTrigger.textContent(), /Harness default/, `${provider} existing Session must preserve its native model until the user changes it`)
+      } else {
+        assert.match(await modelTrigger.textContent(), /Test Model/, `${provider} required catalog did not populate`)
+      }
+      await modelTrigger.click()
+      const alternate = page.locator(".tdw-model-main").filter({ hasText: `${info.label} Alternate Model` })
+      await alternate.waitFor({ state: "visible", timeout: 5_000 })
+      await alternate.click()
+      assert.match(await modelTrigger.textContent(), /Alternate Model/, `${provider} picker did not retain the chosen alternate model`)
     }
-    await sendAndExpect(page, provider, composer, `${provider.toUpperCase()}-EXISTING`)
+    const existingPrompt = `${provider.toUpperCase()}-EXISTING`
+    await sendAndExpect(page, provider, composer, existingPrompt)
+    if (info.selection !== "harness-default") {
+      const routed = [...promptBodies].reverse().find((entry) => entry.provider === provider && entry.body.text === existingPrompt)
+      assert.equal(routed?.body?.model?.modelID, "test-model-alt", `${provider} Send did not carry the selected model`)
+    }
   }
 
   for (const [provider, info] of Object.entries(PROVIDERS)) {
@@ -439,7 +458,12 @@ try {
     } else {
       assert.equal(await createdModelTrigger.isDisabled(), true, `created ${provider} model picker must stay harness-default`)
     }
-    await sendAndExpect(page, provider, createdComposer, `${provider.toUpperCase()}-CREATED`)
+    const createdPrompt = `${provider.toUpperCase()}-CREATED`
+    await sendAndExpect(page, provider, createdComposer, createdPrompt)
+    if (info.models) {
+      const routed = [...promptBodies].reverse().find((entry) => entry.provider === provider && entry.body.text === createdPrompt)
+      assert.equal(routed?.body?.model?.modelID, "test-model", `created ${provider} Send did not carry its verified catalog model`)
+    }
 
     // Every harness must prove the same lifecycle: Working -> Stop -> Ready -> reuse the exact Session.
     await createdComposer.fill(`${provider.toUpperCase()}-LONG`)
