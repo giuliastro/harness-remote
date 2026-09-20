@@ -14,7 +14,7 @@ test("Copilot provider uses the native ACP stdio server without changing establi
   assert.equal(provider.permissionMode, "allow")
 })
 
-test("Copilot provider advertises only the ACP capabilities currently justified by the server", () => {
+test("Copilot provider advertises the current runtime ACP model capability without inventing models", () => {
   const provider = harnessProfile("copilot")
   const contract = acpHarnessCapabilityContract(provider)
 
@@ -25,7 +25,7 @@ test("Copilot provider advertises only the ACP capabilities currently justified 
   assert.equal(provider.capabilities.permissions, true)
   assert.equal(provider.capabilities.commands, true)
 
-  assert.equal(provider.capabilities.models, false)
+  assert.equal(provider.capabilities.models, true)
   assert.equal(provider.capabilities.todos, false)
   assert.equal(provider.capabilities.questions, false)
   assert.equal(provider.capabilities.actions, false)
@@ -38,5 +38,7 @@ test("Copilot provider advertises only the ACP capabilities currently justified 
   assert.equal(contract.sessions.continuation, "session-load")
   assert.equal(contract.sessions.stop, "owned-session-native-cancel")
   assert.equal(contract.lifecycle.reconnect, "daemon-reconciliation")
-  assert.deepEqual(contract.models.variantConfigIDs, [])
+  assert.equal(contract.models.selection, "optional")
+  assert.equal(contract.models.source, "acp-config-options")
+  assert.deepEqual(contract.models.variantConfigIDs, ["reasoning_effort"])
 })
