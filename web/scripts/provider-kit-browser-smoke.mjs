@@ -381,13 +381,14 @@ try {
   ]) {
     await loadHome(page)
     const composer = await openProvider(page, provider, title)
-    const modelSelect = page.locator(".tdw-model-control select")
-    await modelSelect.waitFor({ state: "visible", timeout: 15_000 })
+    const modelTrigger = page.locator(".tdw-model-control .tdw-model-trigger")
+    await modelTrigger.waitFor({ state: "visible", timeout: 15_000 })
     if (PROVIDERS[provider].selection === "harness-default") {
-      assert.equal(await modelSelect.isDisabled(), true, `${provider} model picker must defer to harness default`)
+      assert.equal(await modelTrigger.isDisabled(), true, `${provider} model picker must defer to harness default`)
+      assert.match(await modelTrigger.textContent(), /Harness default/, `${provider} must visibly use the harness default`)
     } else {
-      await waitFor(async () => !(await modelSelect.isDisabled()), "OpenCode 2 model picker enabled")
-      assert.match(await modelSelect.textContent(), /Big Pickle/, "OpenCode 2 catalog did not populate")
+      await waitFor(async () => !(await modelTrigger.isDisabled()), "OpenCode 2 model picker enabled")
+      assert.match(await modelTrigger.textContent(), /Big Pickle/, "OpenCode 2 catalog did not populate")
     }
     await sendAndExpect(page, provider, composer, `${provider.toUpperCase()}-PROMPT`)
   }
