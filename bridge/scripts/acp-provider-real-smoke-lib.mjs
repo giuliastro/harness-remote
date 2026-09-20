@@ -32,7 +32,8 @@ export async function runAcpProviderRealSmoke(providerID, {
   marker,
   temporaryPrefix,
   checkCommands = false,
-  checkModels = false
+  checkModels = false,
+  debugLaunchArgs = []
 } = {}) {
   const failures = []
   const check = (condition, description) => {
@@ -55,12 +56,14 @@ export async function runAcpProviderRealSmoke(providerID, {
     : await mkdtemp(path.join(tmpdir(), temporaryPrefix ?? `harness-${providerID}-smoke-`))
   const directory = path.resolve(requestedDirectory ?? temporaryDirectory)
   const launch = resolveAcpLaunch(profile)
+  const debug = process.argv.includes("--debug")
+  const launchArgs = debug && debugLaunchArgs.length ? [...debugLaunchArgs] : [...launch.args]
   const responseMarker = marker ?? `${providerID.toUpperCase()}-HR-SMOKE`
 
   function runtime() {
     const acp = new AcpClient({
       command: launch.command,
-      args: launch.args,
+      args: launchArgs,
       permissionMode: profile.permissionMode,
       preferredAuthMethod: profile.authMethod,
       authenticate: profile.authenticate,
@@ -83,7 +86,7 @@ export async function runAcpProviderRealSmoke(providerID, {
   try {
     first = runtime()
     await first.acp.start()
-    console.log(`${label} ${first.acp.agentInfo?.version ?? "?"} via ${launch.command} ${launch.args.join(" ")}`)
+    console.log(`${label} ${first.acp.agentInfo?.version ?? "?"} via ${launch.command} ${launchArgs.join(" ")}`)
     console.log(`workspace ${directory}`)
     check(Boolean(first.acp.agentInfo), "ACP initialize returned agentInfo")
 
