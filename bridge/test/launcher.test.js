@@ -38,11 +38,11 @@ test("detects OpenCode 2 and MiMo as ACP providers without changing established 
   ])
   assert.deepEqual(
     detectBackends({ pathValue, platform: "linux", exists: (candidate) => existing.has(candidate), access: () => {} }),
-    ["copilot", "opencode2"]
+    ["copilot", "opencode2", "mimo"]
   )
   assert.deepEqual(
-    resolveLaunchPlan([], ["copilot", "opencode2"]),
-    { mode: "daemon", backend: "copilot", detected: ["copilot", "opencode2"], openCode: false }
+    resolveLaunchPlan([], ["copilot", "opencode2", "mimo"]),
+    { mode: "daemon", backend: "copilot", detected: ["copilot", "opencode2", "mimo"], openCode: false }
   )
   assert.deepEqual(
     resolveLaunchPlan(["--backend", "opencode2"], ["copilot", "opencode2", "mimo"]),
