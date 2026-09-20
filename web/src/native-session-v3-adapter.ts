@@ -68,6 +68,7 @@ const conversations = new Map<string, NativeConversationEntry>()
 export function nativeSessionIsWorking(status?: string): boolean {
   const value = status?.trim().toLowerCase() || ""
   return value === "busy"
+    || value === "starting"
     || value === "running"
     || value === "working"
     || value === "retry"
