@@ -60,6 +60,12 @@ test("provider registry rejects duplicate ids", () => {
   )
 })
 
+test("provider descriptor carries an explicit authentication policy", () => {
+  assert.equal(exampleProvider().authenticate, true)
+  assert.equal(exampleProvider({ authenticate: false }).authenticate, false)
+  assert.throws(() => exampleProvider({ authenticate: "no" }), /authenticate must be a boolean/)
+})
+
 test("provider descriptor requires explicit capabilities and Session semantics", () => {
   assert.throws(() => defineAcpProvider({
     id: "missing-session",
