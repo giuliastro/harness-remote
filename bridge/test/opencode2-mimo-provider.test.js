@@ -38,7 +38,8 @@ test("MiMo provider starts conservatively until real ACP validation widens capab
   assert.equal(provider.label, "MiMo Code")
   assert.equal(provider.command, "mimo")
   assert.deepEqual(provider.args, ["acp"])
-  assert.deepEqual(provider.detectCommands, ["mimo"])
+  assert.deepEqual(provider.detectCommands, [])
+  assert.equal(provider.experimental, true)
   assert.equal(provider.launchPriority, 70)
   assert.equal(provider.authenticate, false)
   assert.deepEqual(provider.environment, {
