@@ -860,7 +860,8 @@ export function WorkThreadConversation({
   // value cannot be reconstructed. What is not allowed is sending before the live catalog itself has
   // finished loading: a brand-new Codex/PI Session has no safe implicit model at that point.
   const modelCatalogReady = !modelCatalogSupported || (!modelsLoading && models.length > 0)
-  const modelBootstrapBlocked = modelSelectionRequired && (!modelCatalogReady || !selectedModel)
+  const modelBootstrapBlocked = (modelCatalogSupported && !modelCatalogReady)
+    || (modelSelectionRequired && !selectedModel)
 
   async function loadOlder() {
     if (loadingOlder || !interactionEnabled) return
