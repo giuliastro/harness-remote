@@ -30,6 +30,7 @@ const COMMON_CAPABILITIES = {
 export const HARNESS_PROFILES = {
   omp: defineAcpProvider({
     id: "omp",
+    modelSelection: "optional",
     label: "Oh My Pi",
     command: "omp",
     detectCommands: ["omp"],
@@ -79,6 +80,7 @@ export const HARNESS_PROFILES = {
   }),
   pi: defineAcpProvider({
     id: "pi",
+    modelSelection: "optional",
     label: "PI",
     // @automatalabs/pi-acp embeds PI through its published SDK and runs on Node. Version 0.5.0
     // advertises PI's credential- and provider-filter-aware model catalog directly over ACP, so
@@ -128,6 +130,7 @@ export const HARNESS_PROFILES = {
   }),
   claude: defineAcpProvider({
     id: "claude",
+    modelSelection: "optional",
     label: "Claude Code",
     // Uses the official ACP adapter for the Claude Agent SDK. The adapter speaks ACP JSON-RPC
     // over stdio and wraps @anthropic-ai/claude-agent-sdk under the hood. The user must have
@@ -283,6 +286,7 @@ export const HARNESS_PROFILES = {
   }),
   codex: defineAcpProvider({
     id: "codex",
+    modelSelection: "optional",
     label: "Codex CLI",
     // Uses the official ACP adapter for the OpenAI Codex CLI. The adapter speaks ACP JSON-RPC
     // over stdio and embeds @openai/codex, so no separate Codex installation is needed. The
