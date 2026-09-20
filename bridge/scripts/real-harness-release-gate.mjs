@@ -241,7 +241,7 @@ export function parseSoakEvidence(output = "") {
     transcriptFidelity: hasPassed(checks, /one user turn per accepted prompt, no duplicates/i),
     stopAndResume:
       hasPassed(checks, /Stop accepted for /i)
-      && hasPassed(checks, /Session accepts a new prompt with a new model after Stop/i)
+      && hasPassed(checks, /Session accepts a new prompt with (?:a new model|harness-default model policy) after Stop/i)
       && hasPassed(checks, /interrupted turn stays visible in the transcript/i),
     resourceBounds:
       hasPassed(checks, /adapter listeners did not grow unboundedly/i)
