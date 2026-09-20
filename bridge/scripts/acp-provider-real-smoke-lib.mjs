@@ -1,4 +1,4 @@
-import { mkdir } from "node:fs/promises"
+import { mkdir, writeFile } from "node:fs/promises"
 import { homedir } from "node:os"
 import path from "node:path"
 import { AcpClient } from "../src/acp-client.js"
@@ -59,6 +59,15 @@ export async function runAcpProviderRealSmoke(providerID, {
   const internalWorkspace = path.join(homedir(), ".harness-remote", "smoke-workspaces", providerID)
   const fallbackDirectory = requestedDirectory ?? defaultDirectory ?? internalWorkspace
   await mkdir(fallbackDirectory, { recursive: true })
+  // Some ACP adapters (notably MiMo) reject session/new in a truly empty workspace. Seed only the
+  // Harness Remote-owned workspace; an explicit user --cwd/defaultDirectory is never modified.
+  if (!requestedDirectory && !defaultDirectory) {
+    await writeFile(
+      path.join(internalWorkspace, ".harness-remote-smoke-workspace"),
+      "Harness Remote internal provider smoke workspace.\n",
+      { flag: "a" }
+    )
+  }
   const directory = path.resolve(fallbackDirectory)
   const launch = resolveAcpLaunch(profile)
   const debug = process.argv.includes("--debug")
