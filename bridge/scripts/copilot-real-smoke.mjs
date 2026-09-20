@@ -154,6 +154,11 @@ try {
   const reopened = await second.service.claimSession(created.id)
   check(reopened === true, "fresh ACP process reopens the native Session through session/load")
 
+  page = await second.service.messagePage(created.id, { limit: 400 })
+  answer = visibleText(page.messages)
+  check(answer.includes("COPILOT-HR-SMOKE"), "reopened native Session history contains the original assistant reply before a new prompt")
+  check(answer.includes("COPILOT-AFTER-STOP"), "reopened native Session history contains the post-Stop reply before a new prompt")
+
   await second.service.promptAndWait(created.id, "Reply with exactly COPILOT-REOPENED and nothing else.")
   page = await second.service.messagePage(created.id, { limit: 400 })
   answer = visibleText(page.messages)
