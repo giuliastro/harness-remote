@@ -29,6 +29,27 @@ test("detects GitHub Copilot from provider metadata without changing existing pr
   )
 })
 
+test("detects OpenCode 2 and MiMo as ACP providers without changing established primaries", () => {
+  const pathValue = ["/bin", "/tools"].join(path.delimiter)
+  const existing = new Set([
+    path.join("/tools", "opencode2"),
+    path.join("/tools", "mimo"),
+    path.join("/tools", "copilot")
+  ])
+  assert.deepEqual(
+    detectBackends({ pathValue, platform: "linux", exists: (candidate) => existing.has(candidate), access: () => {} }),
+    ["copilot", "opencode2", "mimo"]
+  )
+  assert.deepEqual(
+    resolveLaunchPlan([], ["copilot", "opencode2", "mimo"]),
+    { mode: "daemon", backend: "copilot", detected: ["copilot", "opencode2", "mimo"], openCode: false }
+  )
+  assert.deepEqual(
+    resolveLaunchPlan(["--backend", "opencode2"], ["copilot", "opencode2", "mimo"]),
+    { mode: "daemon", backend: "opencode2", detected: ["copilot", "opencode2", "mimo"], openCode: false }
+  )
+})
+
 test("ignores non-executable PATH entries on Unix", () => {
   const candidate = path.join("/tools", "claude")
   assert.deepEqual(detectBackends({ pathValue: "/tools", platform: "linux", exists: (value) => value === candidate, access: () => { throw new Error("not executable") } }), [])
