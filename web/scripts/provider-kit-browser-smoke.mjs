@@ -347,9 +347,11 @@ async function sendAndExpect(page, provider, composer, text) {
   await new Promise((resolve) => setTimeout(resolve, 250))
   assert.equal(await page.locator(".tdw-conversation-state.ready").count(), 0, `${provider} became Ready before its reply was durable`)
   assert.equal(await page.locator(".tdw-conversation-state.working").count(), 1, `${provider} lost the authoritative Working state before reply`)
+  assert.equal(await page.locator(".uw-message-pending .bui-typing").count(), 1, `${provider} spinner must share the same Working lifecycle`)
   assert.equal(await page.getByText(reply, { exact: true }).count(), 0, `${provider} fake reply settled before the lifecycle assertion`)
   await page.getByText(reply, { exact: true }).waitFor({ state: "visible", timeout: 15_000 })
   await page.locator(".tdw-conversation-state.ready").waitFor({ state: "attached", timeout: 15_000 })
+  assert.equal(await page.locator(".uw-message-pending .bui-typing").count(), 0, `${provider} spinner must disappear when the reply becomes Ready`)
   assert.equal(await page.getByText(text, { exact: true }).count(), 1, `${provider} prompt duplicated`)
   assert.equal(await page.getByText(reply, { exact: true }).count(), 1, `${provider} reply duplicated`)
 }
