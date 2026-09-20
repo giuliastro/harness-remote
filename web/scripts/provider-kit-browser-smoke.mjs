@@ -493,7 +493,11 @@ try {
     createdComposer = await openProvider(page, provider, title)
     await page.getByText(`${provider.toUpperCase()}-REPLY-${createdPrompt}`, { exact: true }).waitFor({ state: "visible", timeout: 15_000 })
     await page.getByText(`${provider.toUpperCase()}-REPLY-${provider.toUpperCase()}-AFTER-STOP`, { exact: true }).waitFor({ state: "visible", timeout: 15_000 })
-    assert.ok((claims.get(created.id) || 0) >= 1, `${provider} rediscovered Session was not claimed on reopen`)
+    if (info.transport === "acp") {
+      assert.ok((claims.get(created.id) || 0) >= 1, `${provider} rediscovered ACP Session was not explicitly claimed on reopen`)
+    } else {
+      assert.equal(claims.get(created.id) || 0, 0, `${provider} native HTTP Session must not invent an ACP claim step`)
+    }
     await sendAndExpect(page, provider, createdComposer, `${provider.toUpperCase()}-REOPEN`)
   }
 
