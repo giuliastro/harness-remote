@@ -171,6 +171,37 @@ export const HARNESS_PROFILES = {
       sessionDelete: true
     }
   }),
+  copilot: defineAcpProvider({
+    id: "copilot",
+    label: "GitHub Copilot CLI",
+    command: "copilot",
+    detectCommands: ["copilot"],
+    launchPriority: 50,
+    args: ["--acp", "--stdio"],
+    permissionMode: "allow",
+    lifecycleContract: COMMON_ACP_LIFECYCLE_CONTRACT,
+    modelVariantConfigIDs: [],
+    sessionContract: {
+      authority: "native-harness",
+      discovery: "native-list",
+      transcript: "session-load",
+      externalWriterObservation: "unverified-session-load",
+      continuation: "session-load",
+      writerOwnership: "adapter-defined",
+      stop: "owned-session-native-cancel"
+    },
+    capabilities: {
+      ...COMMON_CAPABILITIES,
+      models: false,
+      todos: false,
+      commands: false,
+      questions: false,
+      permissions: true,
+      actions: false,
+      sessionRename: false,
+      sessionDelete: false
+    }
+  }),
   codex: defineAcpProvider({
     id: "codex",
     label: "Codex CLI",
