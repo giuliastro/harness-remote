@@ -110,6 +110,22 @@ test("preserves ACP Session pagination and sends an opaque cursor unchanged", as
   client.close()
 })
 
+test("merges provider-scoped environment overrides into the ACP child process", async () => {
+  let spawnOptions
+  const client = new AcpClient({
+    environment: { HARNESS_TEST_MARKER: "provider" },
+    spawnProcess: (command, args, options) => {
+      spawnOptions = options
+      return new FakeChild((child, request) => respondToHandshake(child, request))
+    }
+  })
+
+  await client.start()
+  assert.equal(spawnOptions.env.HARNESS_TEST_MARKER, "provider")
+  assert.equal(spawnOptions.env.PATH, process.env.PATH)
+  client.close()
+})
+
 test("launches an ACP adapter with the configured command and arguments", async () => {
   const calls = []
   const client = new AcpClient({
