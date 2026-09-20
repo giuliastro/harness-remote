@@ -107,8 +107,8 @@ storage.set(SERVER_PROFILES_STORAGE_KEY, JSON.stringify([{
   config: { backend: 'mimo', host: 'workstation.local', port: 4097, username: 'harness', password: 'secret', agentId: 'copilot' }
 }]))
 const unsafeDynamic = loadServerProfiles()[0]
-assert.equal(unsafeDynamic.config.backend, 'opencode', 'mismatched dynamic backend/agentId must fail closed to the legacy profile fallback')
-assert.equal(unsafeDynamic.config.agentId, 'copilot', 'agentId is preserved as routing evidence rather than rewritten to OpenCode')
+assert.equal(unsafeDynamic.config.backend, 'copilot', 'a valid agent-scoped route must repair a stale backend instead of falling back to OpenCode')
+assert.equal(unsafeDynamic.config.agentId, 'copilot', 'agentId remains the authoritative provider route')
 
 const storageKeys = readFileSync(new URL('./storageKeys.ts', import.meta.url), 'utf8')
 assert.match(storageKeys, /SERVER_PROFILES_STORAGE_KEY/, 'the crash-recovery reset must clear saved servers')

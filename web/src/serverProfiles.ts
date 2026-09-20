@@ -50,7 +50,12 @@ function parseConfig(value: unknown, fallbackBackend: BackendKind): ServerConfig
   if (!value || typeof value !== "object") return null
   const candidate = value as Partial<ServerConfig>
   const agentId = typeof candidate.agentId === "string" && candidate.agentId.trim() ? candidate.agentId.trim() : undefined
-  const backend = isBackend(candidate.backend, agentId) ? candidate.backend : fallbackBackend
+  const routedAgent = agentId && /^[A-Za-z0-9._-]+$/.test(agentId) ? agentId : undefined
+  // A daemon profile is agent-scoped. If an older client persisted a stale backend beside a valid
+  // agent route, the route identity is stronger evidence than the stale compatibility field.
+  const backend = routedAgent
+    ? (candidate.backend === routedAgent ? routedAgent : routedAgent)
+    : isBackend(candidate.backend) ? candidate.backend : fallbackBackend
   if (typeof candidate.host !== "string" || typeof candidate.port !== "number" || typeof candidate.username !== "string" || typeof candidate.password !== "string") return null
   return { ...defaultConfig(backend), ...candidate, backend, agentId }
 }
