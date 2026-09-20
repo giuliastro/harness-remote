@@ -21,10 +21,10 @@ test("Copilot uses its runtime catalog without forcing a replacement model on ex
   assert.equal(providerUsesModelCatalog(provider), true)
   assert.equal(providerRequiresExplicitModel(provider), false)
 })
-test("MiMo remains writable without model discovery", () => {
-  const provider = agent("mimo", false, "harness-default")
-  assert.equal(providerModelSelectionMode(provider), "harness-default")
-  assert.equal(providerUsesModelCatalog(provider), false)
+test("MiMo uses its ACP runtime catalog without forcing a replacement model on existing Sessions", () => {
+  const provider = agent("mimo", true, "optional")
+  assert.equal(providerModelSelectionMode(provider), "optional")
+  assert.equal(providerUsesModelCatalog(provider), true)
   assert.equal(providerRequiresExplicitModel(provider), false)
 })
 test("OpenCode 2 requires its verified provider catalog", () => {
