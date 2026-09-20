@@ -87,3 +87,27 @@ test("clearing a runtime profile removes only the volatile entry", async () => {
     await rm(root, { recursive: true, force: true })
   }
 })
+test("desktop profile validation accepts provider-kit ids without a frontend allowlist", async () => {
+  const root = await mkdtemp(join(tmpdir(), "hr-runtime-profile-provider-kit-"))
+  const path = join(root, "profiles.json")
+  const registry = new ProfileRegistry(path)
+  try {
+    let revision = 1
+    for (const backend of ["copilot", "opencode2", "mimo"]) {
+      const routed = profile(`provider-${backend}`, { backend, agentId: backend })
+      await registry.replace([routed], revision++)
+      assert.equal(registry.get(routed.id).backend, backend)
+      assert.equal(registry.get(routed.id).agentId, backend)
+    }
+
+    assert.throws(
+      () => registry.replace([
+        profile("provider-mismatch", { backend: "opencode2", agentId: "mimo" })
+      ], revision),
+      DesktopProfileError,
+      "desktop routing must reject a provider backend that disagrees with its routed agent id"
+    )
+  } finally {
+    await rm(root, { recursive: true, force: true })
+  }
+})
