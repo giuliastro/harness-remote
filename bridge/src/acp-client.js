@@ -27,6 +27,7 @@ export class AcpClient extends EventEmitter {
   #permissionMode
   #preferredAuthMethod
   #authenticate
+  #environment
   #child
   #buffer = ""
   #nextID = 1
@@ -38,13 +39,14 @@ export class AcpClient extends EventEmitter {
   #stderr = ""
   #stderrPartial = ""
 
-  constructor({ command = "omp", args = ["acp"], permissionMode = "deny", preferredAuthMethod, authenticate = true, spawnProcess = spawn } = {}) {
+  constructor({ command = "omp", args = ["acp"], permissionMode = "deny", preferredAuthMethod, authenticate = true, environment = {}, spawnProcess = spawn } = {}) {
     super()
     this.#command = command
     this.#args = args
     this.#permissionMode = permissionMode
     this.#preferredAuthMethod = preferredAuthMethod
     this.#authenticate = authenticate !== false
+    this.#environment = environment && typeof environment === "object" ? { ...environment } : {}
     this.#spawn = spawnProcess
   }
 
@@ -128,7 +130,8 @@ export class AcpClient extends EventEmitter {
       : ["/d", "/s", "/c", this.#command, ...this.#args]
     const child = this.#spawn(windowsCommand, windowsArgs, {
       stdio: ["pipe", "pipe", "pipe"],
-      windowsHide: true
+      windowsHide: true,
+      env: { ...process.env, ...this.#environment }
     })
     this.#child = child
     // Each attempt reports its own stderr. Carrying the buffer across restarts made every exit
