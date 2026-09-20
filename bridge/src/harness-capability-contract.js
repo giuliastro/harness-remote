@@ -77,7 +77,7 @@ export function openCodeCapabilityContract() {
     },
     models: {
       source: "runtime-provider-api",
-      selection: "required",
+      selection: "optional",
       cacheScope: "machine",
       variants: "provider-advertised",
       variantConfigIDs: []
