@@ -206,13 +206,17 @@ export const HARNESS_PROFILES = {
   opencode2: defineAcpProvider({
     id: "opencode2",
     label: "OpenCode 2",
-    // OpenCode 2 can coexist with the stable OpenCode HTTP integration through the
-    // dedicated `opencode2` binary alias published by @opencode/cli. Keeping the
-    // alias explicit prevents a v1/v2 PATH collision from silently changing transport.
-    command: "opencode2",
+    // Official OpenCode 2 still publishes the executable name `opencode`, which collides with
+    // the existing OpenCode installation on machines that want both generations. Prefer an
+    // optional `opencode2` alias when present; otherwise explicit selection launches the official
+    // v2 npm package without replacing the user's current `opencode` binary.
+    command: process.platform === "win32" ? "npx.cmd" : "npx",
     detectCommands: ["opencode2"],
     launchPriority: 60,
-    args: ["acp"],
+    args: ["--yes", "--package=@opencode/cli", "opencode", "acp"],
+    adapterCommand: "opencode2",
+    adapterArgs: ["acp"],
+    allowPackageFallback: true,
     permissionMode: "allow",
     lifecycleContract: COMMON_ACP_LIFECYCLE_CONTRACT,
     modelVariantConfigIDs: ["effort"],
@@ -244,6 +248,9 @@ export const HARNESS_PROFILES = {
     launchPriority: 70,
     args: ["acp"],
     permissionMode: "allow",
+    // Current MiMo ACP advertises `opencode-login` but its authenticate RPC throws
+    // "Authentication not implemented". It relies on credentials configured in the CLI itself.
+    authenticate: false,
     lifecycleContract: COMMON_ACP_LIFECYCLE_CONTRACT,
     // MiMo Code is OpenCode-derived, but its ACP implementation currently has open
     // compatibility issues around model defaults and Session prompting. Start with a
@@ -350,6 +357,6 @@ export function listAcpProviderProfiles() {
 export function resolveAcpLaunch(profile, { find = findExecutable } = {}) {
   if (!profile.adapterCommand) return { command: profile.command, args: [...profile.args], source: "harness" }
   const installed = find(profile.adapterCommand)
-  if (installed) return { command: installed, args: [], source: "path" }
+  if (installed) return { command: installed, args: [...(profile.adapterArgs ?? [])], source: "path" }
   return { command: profile.command, args: [...profile.args], source: "npx" }
 }
