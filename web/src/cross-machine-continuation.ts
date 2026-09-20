@@ -29,7 +29,8 @@ import {
   parsePortableHandoffState,
   type NativeSessionPortableHandoffState
 } from "./portable-handoff-state"
-import type { BackendKind, MachineAgentHost, MessageEnvelope, ModelSelection, ServerConfig } from "./types"
+import { backendForAgent } from "./serverConfig"
+import type { MachineAgentHost, MessageEnvelope, ModelSelection, ServerConfig } from "./types"
 
 export type CrossMachineContinuationResult = {
   target: NativeSessionSurfaceTarget
@@ -145,12 +146,6 @@ function machineConfig(config: ServerConfig): ServerConfig {
   return { ...config, agentId: undefined }
 }
 
-function supportedBackend(value: string | undefined, fallback: BackendKind): BackendKind {
-  return value === "opencode" || value === "omp" || value === "pi" || value === "claude" || value === "codex"
-    ? value
-    : fallback
-}
-
 function historyEntry(source: NativeSessionSurfaceTarget, messages: MessageEnvelope[]): NativeSessionHistoryEntry {
   return {
     ref: source.ref,
@@ -172,7 +167,7 @@ function targetRecord(
     key: `${targetAgent.id}:${pending.target.sessionID}`,
     agentId: targetAgent.id,
     agentLabel: targetAgent.label || targetAgent.id,
-    backend: supportedBackend(targetAgent.backend, targetMachine.config.backend),
+    backend: backendForAgent(targetAgent.backend, targetAgent.id, targetMachine.config.backend),
     transport: targetAgent.transport,
     stopCapability: targetAgent.contract?.sessions?.stop,
     abortSupported: targetAgent.capabilities?.abort === true,
