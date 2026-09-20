@@ -70,6 +70,18 @@ try {
     backend: "codex",
     agentId: "codex"
   }, "native create must scope the request to the selected harness")
+
+  const dynamicAgent = { ...agent, id: "mimo", label: "MiMo Code", backend: "mimo" }
+  const dynamic = await createNativeSessionTarget({
+    machineID: "machine-1",
+    baseConfig,
+    agent: dynamicAgent,
+    directory: "/repo/project"
+  })
+  const [dynamicConfig] = calls.at(-1)
+  assert.equal(dynamicConfig.backend, "mimo", "dynamic providers must never fall back to the saved OpenCode backend")
+  assert.equal(dynamicConfig.agentId, "mimo")
+  assert.equal(dynamic.record.backend, "mimo")
   assert.equal(title, "Implement the fix", "native create must trim the optional title")
   assert.equal(model, undefined, "native create must not invent or reuse a stale explicit model")
   assert.equal(directory, "/repo/project", "native create must stay in the selected Project directory")
