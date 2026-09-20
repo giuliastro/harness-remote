@@ -118,7 +118,8 @@ test("provider runtime builds separate user and model ACP clients and a complete
       command: "/tools/example-acp",
       args: ["serve", "--stdio"],
       permissionMode: "allow",
-      preferredAuthMethod: "example-auth"
+      preferredAuthMethod: "example-auth",
+      authenticate: true
     })
   }
 
