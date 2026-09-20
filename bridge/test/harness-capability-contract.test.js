@@ -28,7 +28,8 @@ test("ACP capability contract preserves runtime-specific model controls without 
     assert.equal(contract.models.selection, "optional", "established ACP Sessions must keep their harness-owned model unless the user changes it")
   }
   assert.equal(acpHarnessCapabilityContract(harnessProfile("opencode2")).models.selection, "required")
-  assert.equal(acpHarnessCapabilityContract(harnessProfile("copilot")).models.selection, "harness-default")
+  assert.equal(acpHarnessCapabilityContract(harnessProfile("copilot")).models.selection, "optional")
+  assert.ok(acpHarnessCapabilityContract(harnessProfile("copilot")).models.variantConfigIDs.includes("reasoning_effort"))
   assert.equal(acpHarnessCapabilityContract(harnessProfile("mimo")).models.selection, "harness-default")
 })
 
