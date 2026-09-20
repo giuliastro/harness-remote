@@ -176,6 +176,7 @@ export const HARNESS_PROFILES = {
   }),
   copilot: defineAcpProvider({
     id: "copilot",
+    modelSelection: "optional",
     label: "GitHub Copilot CLI",
     command: "copilot",
     detectCommands: ["copilot"],
@@ -183,7 +184,8 @@ export const HARNESS_PROFILES = {
     args: ["--acp", "--stdio"],
     permissionMode: "allow",
     lifecycleContract: COMMON_ACP_LIFECYCLE_CONTRACT,
-    modelVariantConfigIDs: [],
+    // Current Copilot ACP advertises model and reasoning_effort as real per-Session config options.
+    modelVariantConfigIDs: ["reasoning_effort"],
     sessionContract: {
       authority: "native-harness",
       discovery: "native-list",
@@ -195,7 +197,7 @@ export const HARNESS_PROFILES = {
     },
     capabilities: {
       ...COMMON_CAPABILITIES,
-      models: false,
+      models: true,
       todos: false,
       // Copilot ACP advertises its current slash-command set through available_commands_update.
       commands: true,
