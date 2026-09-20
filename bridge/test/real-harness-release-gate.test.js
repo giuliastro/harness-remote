@@ -58,13 +58,13 @@ function passingPreflight(harnesses) {
     agents: harnesses.map((id) => ({
       id,
       registered: true,
-      modelsSupported: !["copilot", "mimo"].includes(id),
-      modelSelection: ["copilot", "mimo"].includes(id) ? "harness-default" : "required",
+      modelsSupported: id !== "mimo",
+      modelSelection: id === "mimo" ? "harness-default" : id === "opencode2" ? "required" : "optional",
       modelCatalog: {
-        configured: !["copilot", "mimo"].includes(id),
-        source: !["copilot", "mimo"].includes(id) ? "test" : null,
-        cachedModels: !["copilot", "mimo"].includes(id) ? 2 : 0,
-        phase: !["copilot", "mimo"].includes(id) ? "ready" : null
+        configured: id !== "mimo",
+        source: id !== "mimo" ? "test" : null,
+        cachedModels: id !== "mimo" ? 2 : 0,
+        phase: id !== "mimo" ? "ready" : null
       }
     })),
     missingHarnesses: [],
@@ -219,18 +219,18 @@ test("preflight reports missing harnesses and missing model discovery before the
   assert.deepEqual(result.missingModelCatalogs, ["codex"])
 })
 
-test("preflight accepts harness-default providers without inventing a model catalog", async () => {
+test("preflight requires Copilot runtime models while allowing MiMo harness-default", async () => {
   const fetchImpl = async () => new Response(JSON.stringify({
-    machine: { id: "machine-default-model" },
+    machine: { id: "machine-provider-models" },
     agents: [
       {
         id: "copilot",
         backend: "copilot",
         transport: "acp",
         state: "configured",
-        capabilities: { models: false },
-        contract: { models: { selection: "harness-default" } },
-        modelCatalog: null
+        capabilities: { models: true },
+        contract: { models: { selection: "optional" } },
+        modelCatalog: { source: "acp-config-options", cachedModels: 7, phase: "ready" }
       },
       {
         id: "mimo",
@@ -247,22 +247,24 @@ test("preflight accepts harness-default providers without inventing a model cata
   const result = await preflightDaemon({ harnesses: ["copilot", "mimo"], fetchImpl })
   assert.equal(result.passed, true)
   assert.deepEqual(result.missingModelCatalogs, [])
-  assert.equal(result.agents[0].modelSelection, "harness-default")
+  assert.equal(result.agents[0].modelsSupported, true)
+  assert.equal(result.agents[0].modelSelection, "optional")
+  assert.equal(result.agents[0].modelCatalog.cachedModels, 7)
   assert.equal(result.agents[1].modelSelection, "harness-default")
 })
 
 test("harness-default soak evidence counts as explicit model-policy coverage", () => {
   const output = [
-    "  ok   two native Sessions created on copilot",
-    "  ok   copilot harness-default model policy verified",
+    "  ok   two native Sessions created on mimo",
+    "  ok   mimo harness-default model policy verified",
     "  ok   A turn 1 completed in 12ms",
     "  ok   cycle 1: mimo harness-default model policy unchanged while switching away and back",
-    "  ok   cycle 1: copilot prompt accepted after harness switch and model policy check",
+    "  ok   cycle 1: mimo prompt accepted after harness switch and model policy check",
     "  ok   A: one user turn per accepted prompt, no duplicates (1/1)",
-    "  ok   Stop accepted for copilot (200)",
+    "  ok   Stop accepted for mimo (200)",
     "  ok   Session accepts a new prompt with harness-default model policy after Stop",
     "  ok   the interrupted turn stays visible in the transcript",
-    "  ok   copilot: adapter listeners did not grow unboundedly (4 -> 4)",
+    "  ok   mimo: adapter listeners did not grow unboundedly (4 -> 4)",
     "  ok   no unresolved native Session mutation left (0)"
   ].join("\n")
   const evidence = parseSoakEvidence(output)
