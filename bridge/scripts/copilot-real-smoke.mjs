@@ -11,10 +11,11 @@
  * Coverage:
  *   1. provider launch + ACP initialize;
  *   2. native session/list + session/new rediscovery;
- *   3. runtime available_commands_update;
- *   4. prompt streaming through AcpService;
- *   5. Stop/cancel and reuse of the same Session;
- *   6. a fresh ACP process reopens the native Session through session/load and continues it.
+ *   3. runtime model catalog + real per-Session model switch;
+ *   4. runtime available_commands_update;
+ *   5. prompt streaming through AcpService;
+ *   6. Stop/cancel and reuse of the same Session;
+ *   7. a fresh ACP process reopens the native Session through session/load and continues it.
  */
 import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
@@ -98,6 +99,21 @@ try {
 
   const listed = await first.service.listSessions(directory)
   check(listed.some((session) => session.id === created.id), "new native Session is rediscovered by session/list")
+
+  const models = await first.service.models(created.id)
+  check(models.length >= 2, `runtime model catalog exposes selectable models (${models.length})`)
+  const currentModel = models.find((model) => model.currentValue)
+  const alternateModel = models.find((model) => !model.currentValue)
+  check(Boolean(currentModel), "runtime model catalog identifies the current Copilot model")
+  check(Boolean(alternateModel), "runtime model catalog offers an alternate Copilot model")
+  if (alternateModel?.value) {
+    await first.service.setModel(created.id, alternateModel.value)
+    const switchedModels = await first.service.models(created.id)
+    check(
+      switchedModels.some((model) => model.value === alternateModel.value && model.currentValue),
+      `session/set_config_option switched Copilot to advertised model ${alternateModel.value}`
+    )
+  }
 
   // Copilot sends available_commands_update asynchronously just after session/new.
   await sleep(500)
