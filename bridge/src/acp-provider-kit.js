@@ -35,6 +35,9 @@ export function defineAcpProvider(definition) {
   const label = requireNonEmptyString(definition.label, "label")
   const command = requireNonEmptyString(definition.command, "command")
   const args = stringArray(definition.args ?? [], "args")
+  const detectCommands = stringArray(definition.detectCommands ?? [], "detectCommands")
+  const launchPriority = definition.launchPriority ?? 100
+  if (!Number.isFinite(launchPriority)) throw new Error(`ACP provider '${id}' launchPriority must be a finite number`)
   if (!definition.capabilities || typeof definition.capabilities !== "object") {
     throw new Error(`ACP provider '${id}' must declare capabilities`)
   }
@@ -51,6 +54,8 @@ export function defineAcpProvider(definition) {
     label,
     command,
     args,
+    detectCommands,
+    launchPriority,
     capabilities: { ...definition.capabilities },
     modelVariantConfigIDs: stringArray(definition.modelVariantConfigIDs ?? [], "modelVariantConfigIDs"),
     sessionContract: { ...definition.sessionContract }
