@@ -3,7 +3,7 @@
  * Real GitHub Copilot CLI ACP smoke for the Provider Kit.
  *
  * This is deliberately opt-in: it starts the user's real Copilot CLI, creates a real native
- * Session and spends a small amount of inference. By default it uses a temporary empty workspace.
+ * Session and spends a small amount of inference. By default it uses a stable internal workspace
  *
  *   node bridge/scripts/copilot-real-smoke.mjs
  *   node bridge/scripts/copilot-real-smoke.mjs --cwd /absolute/path
@@ -17,8 +17,8 @@
  *   6. Stop/cancel and reuse of the same Session;
  *   7. a fresh ACP process reopens the native Session through session/load and continues it.
  */
-import { mkdtemp, rm } from "node:fs/promises"
-import { tmpdir } from "node:os"
+import { mkdir } from "node:fs/promises"
+import { homedir } from "node:os"
 import path from "node:path"
 import { AcpClient } from "../src/acp-client.js"
 import { AcpPromptEchoFilter } from "../src/acp-prompt-echo-filter.js"
@@ -58,8 +58,9 @@ if (!findExecutable("copilot")) {
 }
 
 const requestedDirectory = argument("cwd")
-const temporaryDirectory = requestedDirectory ? null : await mkdtemp(path.join(tmpdir(), "harness-copilot-smoke-"))
-const directory = path.resolve(requestedDirectory ?? temporaryDirectory)
+const internalWorkspace = path.join(homedir(), ".harness-remote", "smoke-workspaces", "copilot")
+const directory = path.resolve(requestedDirectory ?? internalWorkspace)
+await mkdir(directory, { recursive: true })
 const launch = resolveAcpLaunch(profile)
 
 function runtime() {
@@ -164,7 +165,6 @@ try {
 } finally {
   first?.acp.close()
   second?.acp.close()
-  if (temporaryDirectory) await rm(temporaryDirectory, { recursive: true, force: true })
 }
 
 if (failures.length) {
