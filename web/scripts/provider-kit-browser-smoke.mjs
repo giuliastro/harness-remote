@@ -421,9 +421,7 @@ try {
     await create.getByRole("button", { name: /Create/ }).click()
     await page.getByRole("heading", { name: title }).waitFor({ state: "visible", timeout: 15_000 })
 
-    let createdComposer = page.getByRole("textbox", { name: new RegExp("Message " + PROVIDERS[provider].label.replace(/[.*+?^${}()|[\]\\]/g, "\\  assert.ok((modelReads.get("opencode2") || 0) > 0, "OpenCode 2 must request its model catalog")
-
-  // Create a new MiMo Session from the real New Session UI.")) })
+    let createdComposer = page.getByRole("textbox", { name: new RegExp("Message " + PROVIDERS[provider].label) })
     await waitFor(async () => !(await createdComposer.isDisabled()), `${provider} created composer enabled`)
     const created = [...sessions.values()].find((entry) => entry.title === title)
     assert.ok(created, `${provider} create did not reach the routed provider`)
