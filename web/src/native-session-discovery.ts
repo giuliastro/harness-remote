@@ -227,13 +227,24 @@ async function withinNativeSessionDiscoveryBudget<T>(
   }
 }
 
+export function isHarnessRemoteInternalTestSession(session: Session): boolean {
+  const directory = String(session.directory ?? "").replace(/\\/g, "/")
+  const leaf = directory.split("/").filter(Boolean).at(-1) ?? ""
+  if (/^harness-[a-z0-9._-]+-smoke-[a-z0-9._-]+$/i.test(leaf)) return true
+
+  const title = String(session.title ?? "").trim()
+  return /^Harness Remote (?:smoke|release-gate\b)/i.test(title)
+}
+
 function nativeSessionRecords(
   agent: MachineAgentHost,
   config: ServerConfig,
   sessions: Session[],
   statuses: Record<string, SessionStatus> = {}
 ): NativeSessionRecord[] {
-  return sessions.map((session) => ({
+  return sessions
+    .filter((session) => !isHarnessRemoteInternalTestSession(session))
+    .map((session) => ({
     key: `${agent.id}:${session.id}`,
     agentId: agent.id,
     agentLabel: agent.label || agent.id,
