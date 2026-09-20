@@ -452,17 +452,29 @@ try {
     assert.ok(created, `${provider} create did not reach the routed provider`)
     assert.equal(created.provider, provider, `${provider} create was routed to ${created.provider}`)
     const createdModelTrigger = page.locator(".tdw-model-control .tdw-model-trigger")
+    let expectedCreatedModel = null
     if (info.models) {
       await waitFor(async () => !(await createdModelTrigger.isDisabled()), `created ${provider} model picker enabled`)
-      assert.match(await createdModelTrigger.textContent(), /Test Model/, `created ${provider} did not select its required verified model`)
+      if (info.selection === "required") {
+        assert.match(await createdModelTrigger.textContent(), /Test Model/, `created ${provider} did not select its required verified model`)
+        expectedCreatedModel = "test-model"
+      } else {
+        assert.match(await createdModelTrigger.textContent(), /Harness default/, `created ${provider} must preserve its harness default until the user chooses a model`)
+        await createdModelTrigger.click()
+        const explicit = page.locator(".tdw-model-main").filter({ hasText: `${info.label} Test Model` })
+        await explicit.waitFor({ state: "visible", timeout: 5_000 })
+        await explicit.click()
+        assert.match(await createdModelTrigger.textContent(), /Test Model/, `created ${provider} picker did not retain the user's explicit model`)
+        expectedCreatedModel = "test-model"
+      }
     } else {
       assert.equal(await createdModelTrigger.isDisabled(), true, `created ${provider} model picker must stay harness-default`)
     }
     const createdPrompt = `${provider.toUpperCase()}-CREATED`
     await sendAndExpect(page, provider, createdComposer, createdPrompt)
-    if (info.models) {
+    if (expectedCreatedModel) {
       const routed = [...promptBodies].reverse().find((entry) => entry.provider === provider && entry.body.text === createdPrompt)
-      assert.equal(routed?.body?.model?.modelID, "test-model", `created ${provider} Send did not carry its verified catalog model`)
+      assert.equal(routed?.body?.model?.modelID, expectedCreatedModel, `created ${provider} Send did not carry the selected verified catalog model`)
     }
 
     // Every harness must prove the same lifecycle: Working -> Stop -> Ready -> reuse the exact Session.
