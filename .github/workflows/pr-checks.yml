@@ -128,6 +128,7 @@ jobs:
           node scripts/native-opencode-multiturn-stress-smoke.mjs
           node scripts/native-session-model-switch-smoke.mjs
           node scripts/native-session-outcome-browser-smoke.mjs
+          node scripts/provider-kit-browser-smoke.mjs
         working-directory: web
 
       - name: Run cross-machine continuation safety smoke
