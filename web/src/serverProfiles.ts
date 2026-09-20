@@ -38,16 +38,20 @@ function defaultConfig(backend: BackendKind): ServerConfig {
   }
 }
 
-function isBackend(value: unknown): value is BackendKind {
-  return value === "opencode" || value === "omp" || value === "pi" || value === "claude" || value === "codex"
+function isBackend(value: unknown, agentId?: string): value is BackendKind {
+  if (value === "opencode" || value === "omp" || value === "pi" || value === "claude" || value === "codex") return true
+  return typeof value === "string"
+    && Boolean(agentId)
+    && value === agentId
+    && /^[A-Za-z0-9._-]+$/.test(value)
 }
 
 function parseConfig(value: unknown, fallbackBackend: BackendKind): ServerConfig | null {
   if (!value || typeof value !== "object") return null
   const candidate = value as Partial<ServerConfig>
-  const backend = isBackend(candidate.backend) ? candidate.backend : fallbackBackend
-  if (typeof candidate.host !== "string" || typeof candidate.port !== "number" || typeof candidate.username !== "string" || typeof candidate.password !== "string") return null
   const agentId = typeof candidate.agentId === "string" && candidate.agentId.trim() ? candidate.agentId.trim() : undefined
+  const backend = isBackend(candidate.backend, agentId) ? candidate.backend : fallbackBackend
+  if (typeof candidate.host !== "string" || typeof candidate.port !== "number" || typeof candidate.username !== "string" || typeof candidate.password !== "string") return null
   return { ...defaultConfig(backend), ...candidate, backend, agentId }
 }
 
@@ -56,7 +60,17 @@ function profileID(): string {
 }
 
 function profileName(backend: BackendKind, position: number): string {
-  const label = backend === "omp" ? "Oh My Pi" : backend === "pi" ? "PI" : backend === "claude" ? "Claude Code" : backend === "codex" ? "Codex CLI" : "OpenCode"
+  const label = backend === "omp"
+    ? "Oh My Pi"
+    : backend === "pi"
+      ? "PI"
+      : backend === "claude"
+        ? "Claude Code"
+        : backend === "codex"
+          ? "Codex CLI"
+          : backend === "opencode"
+            ? "OpenCode"
+            : backend
   return position === 0 ? `${label} server` : `${label} server ${position + 1}`
 }
 

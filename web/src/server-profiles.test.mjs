@@ -86,6 +86,30 @@ const unknownPort = loadServerProfiles()[0]
 assert.equal(unknownPort.config.port, 4096, 'a profile with no known machine daemon port must not be guessed')
 assert.equal(unknownPort.config.agentId, undefined, 'an unknown daemon port must not fabricate an agent route')
 
+
+// Dynamic Provider Kit profiles are valid only when backend and agentId identify the same routed
+// machine agent. They must survive persistence without silently falling back to OpenCode.
+storage.clear()
+for (const backend of ['copilot', 'opencode2', 'mimo']) {
+  const profile = {
+    id: `dynamic-${backend}`,
+    name: `${backend} machine profile`,
+    config: { backend, host: 'workstation.local', port: 4097, username: 'harness', password: 'secret', agentId: backend }
+  }
+  storage.set(SERVER_PROFILES_STORAGE_KEY, JSON.stringify([profile]))
+  const restored = loadServerProfiles()[0]
+  assert.equal(restored.config.backend, backend, `${backend} backend must survive restart`)
+  assert.equal(restored.config.agentId, backend, `${backend} agent route must survive restart`)
+}
+storage.set(SERVER_PROFILES_STORAGE_KEY, JSON.stringify([{
+  id: 'unsafe-dynamic-profile',
+  name: 'unsafe',
+  config: { backend: 'mimo', host: 'workstation.local', port: 4097, username: 'harness', password: 'secret', agentId: 'copilot' }
+}]))
+const unsafeDynamic = loadServerProfiles()[0]
+assert.equal(unsafeDynamic.config.backend, 'opencode', 'mismatched dynamic backend/agentId must fail closed to the legacy profile fallback')
+assert.equal(unsafeDynamic.config.agentId, 'copilot', 'agentId is preserved as routing evidence rather than rewritten to OpenCode')
+
 const storageKeys = readFileSync(new URL('./storageKeys.ts', import.meta.url), 'utf8')
 assert.match(storageKeys, /SERVER_PROFILES_STORAGE_KEY/, 'the crash-recovery reset must clear saved servers')
 assert.match(storageKeys, /ACTIVE_PROFILE_STORAGE_KEY/, 'the crash-recovery reset must clear the selected server')
