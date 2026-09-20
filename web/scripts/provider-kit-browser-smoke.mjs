@@ -11,7 +11,7 @@ const DIRECTORY = "/work/provider-kit-browser"
 const ALL_AGENTS = [
   ["opencode", "OpenCode", "http", true, "optional"],
   ["opencode2", "OpenCode 2", "acp", true, "required"],
-  ["copilot", "GitHub Copilot CLI", "acp", false, "harness-default"],
+  ["copilot", "GitHub Copilot CLI", "acp", true, "optional"],
   ["mimo", "MiMo Code", "acp", false, "harness-default"],
   ["codex", "Codex CLI", "acp", true, "optional"],
   ["claude", "Claude Code", "acp", true, "optional"],
