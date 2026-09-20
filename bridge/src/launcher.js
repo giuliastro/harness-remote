@@ -4,21 +4,24 @@ import fs from "node:fs"
 import net from "node:net"
 import { networkInterfaces } from "node:os"
 import path from "node:path"
+import { findExecutable } from "./executable-discovery.js"
+import { listAcpProviderProfiles } from "./harness-profiles.js"
 import { spawn } from "node:child_process"
 import { fileURLToPath } from "node:url"
 import { ManagedOpenCodeHost } from "./opencode-host.js"
 
-const BACKEND_EXECUTABLES = {
-  omp: ["omp"],
-  pi: ["pi"],
-  claude: ["claude"],
-  codex: ["codex"],
-  opencode: ["opencode"]
+const OPENCODE_BACKEND = { id: "opencode", detectCommands: ["opencode"] }
+
+function acpProviderProfiles() {
+  return listAcpProviderProfiles()
 }
 
-// This is product policy, not alphabetical order: prefer the broadest/most-tested ACP path first.
-// Reordering this changes the default primary on every multi-agent machine.
-const ACP_BACKENDS = ["codex", "claude", "omp", "pi"]
+function acpBackendPreference() {
+  return acpProviderProfiles()
+    .slice()
+    .sort((left, right) => left.launchPriority - right.launchPriority)
+    .map((provider) => provider.id)
+}
 const VIRTUAL_INTERFACE = /^(docker|br-|veth|virbr|tun|tap|utun)/i
 
 function optionValue(args, name) {
@@ -30,40 +33,14 @@ function hasOption(args, name) {
   return args.includes(name)
 }
 
-function executableNames(name, platform = process.platform) {
-  if (platform !== "win32") return [name]
-  const extensions = (process.env.PATHEXT ?? ".EXE;.CMD;.BAT;.COM")
-    .split(";")
-    .filter(Boolean)
-    .map((extension) => extension.toLowerCase())
-  return [name, ...extensions.map((extension) => `${name}${extension}`)]
-}
 
-function executable(candidate, { platform = process.platform, exists = fs.existsSync, access = fs.accessSync } = {}) {
-  if (!exists(candidate)) return false
-  if (platform === "win32") return true
-  try {
-    access(candidate, fs.constants.X_OK)
-    return true
-  } catch {
-    return false
-  }
-}
-
-export function findExecutable(name, { pathValue = process.env.PATH ?? "", platform = process.platform, exists = fs.existsSync, access = fs.accessSync } = {}) {
-  for (const directory of pathValue.split(path.delimiter).filter(Boolean)) {
-    for (const candidate of executableNames(name, platform)) {
-      const fullPath = path.join(directory, candidate)
-      if (executable(fullPath, { platform, exists, access })) return fullPath
-    }
-  }
-  return null
-}
+export { findExecutable }
 
 export function detectBackends(options = {}) {
-  return Object.entries(BACKEND_EXECUTABLES)
-    .filter(([, commands]) => commands.some((command) => findExecutable(command, options)))
-    .map(([backend]) => backend)
+  const providers = [...acpProviderProfiles(), OPENCODE_BACKEND]
+  return providers
+    .filter((provider) => provider.detectCommands.some((command) => findExecutable(command, options)))
+    .map((provider) => provider.id)
 }
 
 export function resolveBackend(args, detected = detectBackends()) {
@@ -97,11 +74,12 @@ export function resolveLaunchPlan(args, detected = detectBackends()) {
   if (detected.length === 1) return { mode: "single", backend: explicit ?? detected[0], detected }
 
   if (explicit === "opencode") return { mode: "single", backend: explicit, detected }
-  if (explicit && !ACP_BACKENDS.includes(explicit)) {
+  const acpBackends = acpBackendPreference()
+  if (explicit && !acpBackends.includes(explicit)) {
     throw new Error(`Unsupported ACP backend '${explicit}' for machine-daemon startup.`)
   }
 
-  const primary = explicit ?? ACP_BACKENDS.find((backend) => detected.includes(backend))
+  const primary = explicit ?? acpBackends.find((backend) => detected.includes(backend))
   if (!primary) return { mode: "single", backend: detected[0], detected }
   return {
     mode: "daemon",
