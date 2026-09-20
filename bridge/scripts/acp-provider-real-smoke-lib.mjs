@@ -31,6 +31,7 @@ export async function runAcpProviderRealSmoke(providerID, {
   executable,
   marker,
   temporaryPrefix,
+  defaultDirectory,
   checkCommands = false,
   checkModels = false,
   debugLaunchArgs = []
@@ -51,10 +52,11 @@ export async function runAcpProviderRealSmoke(providerID, {
   }
 
   const requestedDirectory = argument("cwd")
-  const temporaryDirectory = requestedDirectory
+  const fallbackDirectory = requestedDirectory ?? defaultDirectory
+  const temporaryDirectory = fallbackDirectory
     ? null
     : await mkdtemp(path.join(tmpdir(), temporaryPrefix ?? `harness-${providerID}-smoke-`))
-  const directory = path.resolve(requestedDirectory ?? temporaryDirectory)
+  const directory = path.resolve(fallbackDirectory ?? temporaryDirectory)
   const launch = resolveAcpLaunch(profile)
   const debug = process.argv.includes("--debug")
   const launchArgs = debug && debugLaunchArgs.length ? [...debugLaunchArgs] : [...launch.args]
