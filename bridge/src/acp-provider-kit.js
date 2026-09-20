@@ -55,6 +55,14 @@ export function defineAcpProvider(definition) {
   if (!definition.capabilities || typeof definition.capabilities !== "object") {
     throw new Error(`ACP provider '${id}' must declare capabilities`)
   }
+  const modelSelection = definition.modelSelection
+    ?? (definition.capabilities.models === true ? "required" : "harness-default")
+  if (!["required", "optional", "harness-default"].includes(modelSelection)) {
+    throw new Error(`ACP provider '${id}' modelSelection must be required, optional, or harness-default`)
+  }
+  if (modelSelection !== "harness-default" && definition.capabilities.models !== true) {
+    throw new Error(`ACP provider '${id}' modelSelection '${modelSelection}' requires capabilities.models=true`)
+  }
   if (!definition.sessionContract || typeof definition.sessionContract !== "object") {
     throw new Error(`ACP provider '${id}' must declare a Session contract`)
   }
@@ -79,6 +87,7 @@ export function defineAcpProvider(definition) {
     authenticate: definition.authenticate !== false,
     ...(definition.environment ? { environment: { ...definition.environment } } : {}),
     capabilities: { ...definition.capabilities },
+    modelSelection,
     modelVariantConfigIDs: stringArray(definition.modelVariantConfigIDs ?? [], "modelVariantConfigIDs"),
     sessionContract: { ...definition.sessionContract },
     lifecycleContract: { ...definition.lifecycleContract }

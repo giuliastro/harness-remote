@@ -42,6 +42,8 @@ export type HarnessCapabilityContract = {
   }
   models: {
     source: string
+    /** Whether Harness Remote must choose a verified model, may choose one, or must defer to the harness. */
+    selection?: "required" | "optional" | "harness-default"
     cacheScope: string
     variants: string
     variantConfigIDs: string[]

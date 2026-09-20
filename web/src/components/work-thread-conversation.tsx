@@ -10,6 +10,7 @@ import type { SavedServerProfile } from "../serverProfiles"
 import { taskClient, type AgentModelScope } from "../taskClient"
 import { startTaskDeskSessionLiveRefresh } from "../taskdesk-session-live-refresh"
 import { backendForAgent } from "../serverConfig"
+import { providerRequiresExplicitModel, providerUsesModelCatalog } from "../provider-model-selection"
 import type {
   CommandInfo,
   MachineAgentHost,
@@ -791,6 +792,14 @@ export function WorkThreadConversation({
       setModelError(null)
       return
     }
+    const catalogAgent = destinationAgents.find((agent) => agent.id === targetAgentID)
+    if (!providerUsesModelCatalog(catalogAgent)) {
+      setModels([])
+      setTargetModelKey("")
+      setModelsLoading(false)
+      setModelError(null)
+      return
+    }
     setModels([])
     setModelsLoading(true)
     setModelError(null)
@@ -844,7 +853,8 @@ export function WorkThreadConversation({
   // resurrect a persisted provider model that has since been removed.
   const selectedModel = models.find((model) => modelKey(model) === targetModelKey)
   const selectedModelAgent = destinationAgents.find((agent) => agent.id === targetAgentID)
-  const modelSelectionRequired = selectedModelAgent?.capabilities?.models === true
+  const modelSelectionRequired = providerRequiresExplicitModel(selectedModelAgent)
+  const modelCatalogSupported = providerUsesModelCatalog(selectedModelAgent)
   // Existing native Sessions are allowed to keep their harness-owned current model when that exact
   // value cannot be reconstructed. What is not allowed is sending before the live catalog itself has
   // finished loading: a brand-new Codex/PI Session has no safe implicit model at that point.
@@ -1065,8 +1075,8 @@ export function WorkThreadConversation({
             <ModelPicker compact models={models} value={targetModelKey} onChange={(value) => {
               modelSelectionTouchedRef.current = true
               setTargetModelKey(value)
-            }} disabled={!interactionEnabled || working || replyPending || sending || modelsLoading || !targetAgentID} loading={modelsLoading} placeholder={modelBootstrapBlocked ? (modelError ? "Model unavailable" : "Loading models…") : deferModelFallback ? "Harness default" : undefined} unavailableHint={modelError || undefined} />
-            {modelError ? <small className="tdw-field-note" title={modelError}>Model catalog unavailable. Sending is paused until a model can be verified.</small> : null}
+            }} disabled={!interactionEnabled || working || replyPending || sending || modelsLoading || !targetAgentID || !modelCatalogSupported} loading={modelsLoading} placeholder={!modelCatalogSupported ? "Harness default" : modelBootstrapBlocked ? (modelError ? "Model unavailable" : "Loading models…") : deferModelFallback ? "Harness default" : undefined} unavailableHint={modelError || undefined} />
+            {modelError ? <small className="tdw-field-note" title={modelError}>{modelSelectionRequired ? "Model catalog unavailable. Sending is paused until a model can be verified." : "Model catalog unavailable. The harness default will be used."}</small> : null}
           </label>
         </div>
         <ConversationStatePill working={working || replyPending || sending || replySettling || modelBootstrapBlocked} attention={hasAttention} workingLabel={conversationStateLabel} startedAt={sending ? undefined : conversation.currentTurn?.startedAt} status={conversation.status} detail={conversation.error?.message || undefined} />
