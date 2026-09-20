@@ -5,9 +5,9 @@ await runAcpProviderRealSmoke("mimo", {
   displayName: "MiMo Code",
   executable: "mimo",
   marker: "MIMO-HR-SMOKE",
-  // MiMo 0.1.14 session/new is validated against a real workspace. Empty temporary directories
-  // can fail inside the upstream SDK before the Session is created, so default to the caller cwd.
-  defaultDirectory: process.cwd(),
+  // MiMo rejects a truly empty workspace on some releases. The shared smoke helper seeds a stable
+  // Harness Remote-owned workspace, so this gate never creates persistent test Sessions in the
+  // caller's real project.
   temporaryPrefix: "harness-mimo-smoke-",
   checkCommands: false,
   checkModels: true,
