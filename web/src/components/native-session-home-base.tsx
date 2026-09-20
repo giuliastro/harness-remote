@@ -685,6 +685,19 @@ export function NativeSessionHome({
 
   const agentChoices = useMemo(() => {
     const choices = new Map<string, { id: string; label: string; count: number }>()
+    // The harness filter describes what the selected machine can run, not only which harnesses
+    // already happen to have Session history. A newly added provider must therefore be visible
+    // before its first Session exists.
+    for (const { machine, snapshot } of sources) {
+      if (machineFilter && machine.id !== machineFilter) continue
+      for (const agent of snapshot?.agents || []) {
+        choices.set(agent.id, {
+          id: agent.id,
+          label: agent.label || agent.id,
+          count: 0
+        })
+      }
+    }
     for (const item of machineScopedRecords) {
       const existing = choices.get(item.record.agentId)
       if (existing) existing.count += 1
@@ -695,7 +708,7 @@ export function NativeSessionHome({
       })
     }
     return [...choices.values()].sort((left, right) => left.label.localeCompare(right.label))
-  }, [machineScopedRecords])
+  }, [machineFilter, machineScopedRecords, sources])
 
   useEffect(() => {
     if (agentFilter && !agentChoices.some((choice) => choice.id === agentFilter)) setAgentFilter("")
