@@ -122,7 +122,9 @@ test("merges provider-scoped environment overrides into the ACP child process", 
 
   await client.start()
   assert.equal(spawnOptions.env.HARNESS_TEST_MARKER, "provider")
-  assert.equal(spawnOptions.env.PATH, process.env.PATH)
+  const inherited = Object.entries(process.env).find(([, value]) => value !== undefined)
+  assert.ok(inherited, "the test process must expose at least one environment variable")
+  assert.equal(spawnOptions.env[inherited[0]], inherited[1])
   client.close()
 })
 
