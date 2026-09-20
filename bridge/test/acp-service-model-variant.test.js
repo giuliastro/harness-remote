@@ -175,3 +175,68 @@ test("a variant the newly selected model does not offer is refused before it rea
     "the model change still applied; only the unsupported level was withheld"
   )
 })
+
+
+class LegacyModelSurfaceAcp {
+  calls = []
+  promptCapabilities = {}
+  processID = 5150
+  #current = "mimo/mimo-v2.5"
+  #models = [
+    { modelId: "mimo/mimo-v2.5", name: "MiMo V2.5" },
+    { modelId: "mimo/mimo-v2.5-pro", name: "MiMo V2.5 Pro" }
+  ]
+  on() { return this }
+  off() { return this }
+  async start() {}
+  close() {}
+  notify() {}
+  diagnostics() { return { processID: this.processID } }
+  async listSessions() {
+    return [{ sessionId: "s1", cwd: "/repo", title: "S1", updatedAt: new Date().toISOString() }]
+  }
+  #state() {
+    return { currentModelId: this.#current, availableModels: this.#models }
+  }
+  async request(method, params) {
+    this.calls.push([method, params])
+    if (method === "session/load" || method === "session/new") {
+      return { sessionId: "s1", models: this.#state() }
+    }
+    if (method === "session/set_model") {
+      if (!this.#models.some((candidate) => candidate.modelId === params.modelId)) {
+        throw new Error("unknown model id")
+      }
+      this.#current = params.modelId
+      return { models: this.#state() }
+    }
+    if (method === "session/prompt") return { stopReason: "end_turn" }
+    return {}
+  }
+  subscribe() { return () => {} }
+}
+
+test("ACP legacy models state populates the same runtime model catalog", async () => {
+  const acp = new LegacyModelSurfaceAcp()
+  const service = new AcpService(acp, {})
+  const models = await service.models("s1")
+  assert.deepEqual(models, [
+    { value: "mimo/mimo-v2.5", name: "MiMo V2.5", currentValue: true },
+    { value: "mimo/mimo-v2.5-pro", name: "MiMo V2.5 Pro", currentValue: false }
+  ])
+})
+
+test("ACP legacy models state switches through session/set_model rather than inventing configOptions", async () => {
+  const acp = new LegacyModelSurfaceAcp()
+  const service = new AcpService(acp, {})
+  await service.setModel("s1", "mimo/mimo-v2.5-pro")
+  const modelCalls = acp.calls.filter(([method]) => method === "session/set_model")
+  assert.equal(modelCalls.length, 1)
+  assert.deepEqual(modelCalls[0][1], { sessionId: "s1", modelId: "mimo/mimo-v2.5-pro" })
+  assert.equal(
+    acp.calls.some(([method]) => method === "session/set_config_option"),
+    false,
+    "legacy model sessions must never receive a config-option model mutation"
+  )
+  assert.equal((await service.models("s1")).find((model) => model.currentValue)?.value, "mimo/mimo-v2.5-pro")
+})
