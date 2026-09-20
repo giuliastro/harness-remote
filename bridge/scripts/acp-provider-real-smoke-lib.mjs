@@ -1,5 +1,5 @@
-import { mkdtemp, rm } from "node:fs/promises"
-import { tmpdir } from "node:os"
+import { mkdir } from "node:fs/promises"
+import { homedir } from "node:os"
 import path from "node:path"
 import { AcpClient } from "../src/acp-client.js"
 import { AcpPromptEchoFilter } from "../src/acp-prompt-echo-filter.js"
@@ -53,11 +53,13 @@ export async function runAcpProviderRealSmoke(providerID, {
   }
 
   const requestedDirectory = argument("cwd")
-  const fallbackDirectory = requestedDirectory ?? defaultDirectory
-  const temporaryDirectory = fallbackDirectory
-    ? null
-    : await mkdtemp(path.join(tmpdir(), temporaryPrefix ?? `harness-${providerID}-smoke-`))
-  const directory = path.resolve(fallbackDirectory ?? temporaryDirectory)
+  // ACP providers persist native Session ids beyond this process and several do not expose native
+  // deletion. Removing a temporary workspace afterwards leaves a permanently broken Session in the
+  // provider index. Use one stable internal workspace instead; the Session rail filters this path.
+  const internalWorkspace = path.join(homedir(), ".harness-remote", "smoke-workspaces", providerID)
+  const fallbackDirectory = requestedDirectory ?? defaultDirectory ?? internalWorkspace
+  await mkdir(fallbackDirectory, { recursive: true })
+  const directory = path.resolve(fallbackDirectory)
   const launch = resolveAcpLaunch(profile)
   const debug = process.argv.includes("--debug")
   const launchArgs = debug && debugLaunchArgs.length ? [...debugLaunchArgs] : [...launch.args]
@@ -180,7 +182,6 @@ export async function runAcpProviderRealSmoke(providerID, {
   } finally {
     first?.acp.close()
     second?.acp.close()
-    if (temporaryDirectory) await rm(temporaryDirectory, { recursive: true, force: true })
   }
 
   if (failures.length) {
