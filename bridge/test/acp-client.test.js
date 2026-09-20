@@ -142,6 +142,21 @@ test("accepts alternate or absent ACP authentication methods", async () => {
   unauthenticated.close()
 })
 
+test("can skip authenticate when a provider advertises a non-implemented auth method", async () => {
+  let authenticateRequests = 0
+  const client = new AcpClient({
+    authenticate: false,
+    spawnProcess: fakeSpawn((child, request) => {
+      respondToHandshake(child, request, [{ id: "opencode-login" }])
+      if (request.method === "authenticate") authenticateRequests += 1
+    })
+  })
+
+  await client.start()
+  assert.equal(authenticateRequests, 0)
+  client.close()
+})
+
 test("prefers the profile's auth method over the first advertised one", async () => {
   // Codex's adapter lists `api-key` first, which demands an API key from the environment;
   // a `codex login` is what `chat-gpt` reads from disk, so the profile names it explicitly.
