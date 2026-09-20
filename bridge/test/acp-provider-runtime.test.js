@@ -1,4 +1,5 @@
 import assert from "node:assert/strict"
+import path from "node:path"
 import test from "node:test"
 import { createAcpProviderRuntime, resolveAcpProviderIDs, resolveAcpProviderLaunch } from "../src/acp-provider-runtime.js"
 import { defineAcpProvider } from "../src/acp-provider-kit.js"
@@ -129,7 +130,7 @@ test("provider runtime builds separate user and model ACP clients and a complete
   assert.equal(registration.bridgeConfig.backend, "example")
   assert.equal(registration.bridgeConfig.acpCommand, "/tools/example-acp")
   assert.deepEqual(registration.bridgeConfig.acpArgs, ["serve", "--stdio"])
-  assert.equal(registration.serviceOptions.snapshotDirectory, "/state/example")
+  assert.equal(registration.serviceOptions.snapshotDirectory, path.join("/state", "example"))
   assert.equal(registration.serviceOptions.historyLoader, historyLoader)
   assert.equal(registration.serviceOptions.hiddenSessionIDs, runtime.modelCatalog.hiddenSessionIDs)
   assert.equal(registration.serviceOptions.reloadOnHistoryRefresh, false)
