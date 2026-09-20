@@ -34,6 +34,7 @@ export async function runAcpProviderRealSmoke(providerID, {
   defaultDirectory,
   checkCommands = false,
   checkModels = false,
+  requireModelSwitch = false,
   debugLaunchArgs = []
 } = {}) {
   const failures = []
@@ -118,8 +119,20 @@ export async function runAcpProviderRealSmoke(providerID, {
       const preferredSmokeModel = requestedModel
         ?? models.find((model) => (model.value ?? model.name) === "opencode/big-pickle")?.value
         ?? models.find((model) => (model.value ?? model.name) === "opencode/big-pickle")?.name
+        ?? (requireModelSwitch
+          ? models.find((model) => !model.currentValue)?.value ?? models.find((model) => !model.currentValue)?.name
+          : undefined)
+      if (requireModelSwitch) {
+        check(models.length >= 2, "runtime model catalog exposes at least two selectable models")
+        check(Boolean(preferredSmokeModel), "an alternate advertised model is available for switching")
+      }
       if (preferredSmokeModel) {
         await first.service.setModel(created.id, preferredSmokeModel)
+        const switched = await first.service.models(created.id)
+        check(
+          switched.some((model) => (model.value ?? model.name) === preferredSmokeModel && model.currentValue),
+          `runtime model switch is reflected by the Session (${preferredSmokeModel})`
+        )
         console.log(`smoke model: ${preferredSmokeModel}`)
       }
     }
