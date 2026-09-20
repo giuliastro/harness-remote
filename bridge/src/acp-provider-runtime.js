@@ -47,7 +47,8 @@ export async function createAcpProviderRuntime({
     args: [...launch.args],
     permissionMode: provider.permissionMode,
     preferredAuthMethod: provider.authMethod,
-    authenticate: provider.authenticate
+    authenticate: provider.authenticate,
+    environment: provider.environment
   }
   const agent = new Client(clientOptions)
   const modelCatalog = new ModelCatalog({
