@@ -15,14 +15,18 @@ function agent(id, models, selection) {
     }} : {})
   }
 }
-for (const id of ["copilot", "mimo"]) {
-  test(`${id} remains writable without model discovery`, () => {
-    const provider = agent(id, false, "harness-default")
-    assert.equal(providerModelSelectionMode(provider), "harness-default")
-    assert.equal(providerUsesModelCatalog(provider), false)
-    assert.equal(providerRequiresExplicitModel(provider), false)
-  })
-}
+test("Copilot uses its runtime catalog without forcing a replacement model on existing Sessions", () => {
+  const provider = agent("copilot", true, "optional")
+  assert.equal(providerModelSelectionMode(provider), "optional")
+  assert.equal(providerUsesModelCatalog(provider), true)
+  assert.equal(providerRequiresExplicitModel(provider), false)
+})
+test("MiMo remains writable without model discovery", () => {
+  const provider = agent("mimo", false, "harness-default")
+  assert.equal(providerModelSelectionMode(provider), "harness-default")
+  assert.equal(providerUsesModelCatalog(provider), false)
+  assert.equal(providerRequiresExplicitModel(provider), false)
+})
 test("OpenCode 2 requires its verified provider catalog", () => {
   const provider = agent("opencode2", true, "required")
   assert.equal(providerUsesModelCatalog(provider), true)
