@@ -229,7 +229,8 @@ async function withinNativeSessionDiscoveryBudget<T>(
 
 export function isHarnessRemoteInternalTestSession(session: Session): boolean {
   const directory = String(session.directory ?? "").replace(/\\/g, "/")
-  const leaf = directory.split("/").filter(Boolean).at(-1) ?? ""
+  const parts = directory.split("/").filter(Boolean)
+  const leaf = parts.length ? parts[parts.length - 1] : ""
   if (/^harness-[a-z0-9._-]+-smoke-[a-z0-9._-]+$/i.test(leaf)) return true
 
   const title = String(session.title ?? "").trim()
