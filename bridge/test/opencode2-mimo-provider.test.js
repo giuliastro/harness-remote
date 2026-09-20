@@ -31,7 +31,7 @@ test("OpenCode 2 provider uses the dedicated binary alias and rich ACP surface",
   assert.equal(contract.sessions.transcript, "session-load")
 })
 
-test("MiMo provider keeps a conservative surface after real ACP lifecycle validation", () => {
+test("MiMo provider exposes runtime ACP models while keeping unverified surfaces conservative", () => {
   const provider = harnessProfile("mimo")
   const contract = acpHarnessCapabilityContract(provider)
 
@@ -51,7 +51,7 @@ test("MiMo provider keeps a conservative surface after real ACP lifecycle valida
   assert.equal(provider.capabilities.streaming, true)
   assert.equal(provider.capabilities.permissions, true)
 
-  assert.equal(provider.capabilities.models, false)
+  assert.equal(provider.capabilities.models, true)
   assert.equal(provider.capabilities.commands, false)
   assert.equal(provider.capabilities.todos, false)
   assert.equal(provider.capabilities.questions, false)
@@ -59,6 +59,7 @@ test("MiMo provider keeps a conservative surface after real ACP lifecycle valida
   assert.equal(provider.capabilities.sessionRename, false)
   assert.equal(provider.capabilities.sessionDelete, false)
 
+  assert.equal(contract.models.selection, "optional")
   assert.deepEqual(contract.models.variantConfigIDs, [])
   assert.equal(contract.sessions.discovery, "native-list")
   assert.equal(contract.sessions.transcript, "session-load")
