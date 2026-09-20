@@ -110,7 +110,7 @@ test("generic ACP capability contract consumes provider-declared Session semanti
 test("existing ACP harnesses are exposed through the same provider registry", () => {
   const providers = listAcpProviderProfiles()
   assert.deepEqual(providers.map((provider) => provider.id), ["omp", "pi", "claude", "copilot", "opencode2", "mimo", "codex"])
-  assert.deepEqual(providers.map((provider) => provider.detectCommands), [["omp"], ["pi"], ["claude"], ["copilot"], ["opencode2"], [], ["codex"]])
+  assert.deepEqual(providers.map((provider) => provider.detectCommands), [["omp"], ["pi"], ["claude"], ["copilot"], ["opencode2"], ["mimo"], ["codex"]])
   assert.deepEqual(
     providers.slice().sort((left, right) => left.launchPriority - right.launchPriority).map((provider) => provider.id),
     ["codex", "claude", "omp", "pi", "copilot", "opencode2", "mimo"]
