@@ -8,8 +8,11 @@ test("OpenCode 2 provider uses the dedicated binary alias and rich ACP surface",
   const contract = acpHarnessCapabilityContract(provider)
 
   assert.equal(provider.label, "OpenCode 2")
-  assert.equal(provider.command, "opencode2")
-  assert.deepEqual(provider.args, ["acp"])
+  assert.equal(provider.command, process.platform === "win32" ? "npx.cmd" : "npx")
+  assert.deepEqual(provider.args, ["--yes", "--package=@opencode/cli", "opencode", "acp"])
+  assert.equal(provider.adapterCommand, "opencode2")
+  assert.deepEqual(provider.adapterArgs, ["acp"])
+  assert.equal(provider.allowPackageFallback, true)
   assert.deepEqual(provider.detectCommands, ["opencode2"])
   assert.equal(provider.launchPriority, 60)
 
@@ -37,6 +40,7 @@ test("MiMo provider starts conservatively until real ACP validation widens capab
   assert.deepEqual(provider.args, ["acp"])
   assert.deepEqual(provider.detectCommands, ["mimo"])
   assert.equal(provider.launchPriority, 70)
+  assert.equal(provider.authenticate, false)
 
   assert.equal(provider.capabilities.sessions, true)
   assert.equal(provider.capabilities.prompt, true)
