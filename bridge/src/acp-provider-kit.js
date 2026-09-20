@@ -39,6 +39,9 @@ export function defineAcpProvider(definition) {
   const args = stringArray(definition.args ?? [], "args")
   const detectCommands = stringArray(definition.detectCommands ?? [], "detectCommands")
   const launchPriority = definition.launchPriority ?? 100
+  if (definition.authenticate !== undefined && typeof definition.authenticate !== "boolean") {
+    throw new Error(`ACP provider '${id}' authenticate must be a boolean`)
+  }
   if (!Number.isFinite(launchPriority)) throw new Error(`ACP provider '${id}' launchPriority must be a finite number`)
   if (!definition.capabilities || typeof definition.capabilities !== "object") {
     throw new Error(`ACP provider '${id}' must declare capabilities`)
@@ -64,6 +67,7 @@ export function defineAcpProvider(definition) {
     args,
     detectCommands,
     launchPriority,
+    authenticate: definition.authenticate !== false,
     capabilities: { ...definition.capabilities },
     modelVariantConfigIDs: stringArray(definition.modelVariantConfigIDs ?? [], "modelVariantConfigIDs"),
     sessionContract: { ...definition.sessionContract },
