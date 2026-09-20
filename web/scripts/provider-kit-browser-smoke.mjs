@@ -9,14 +9,14 @@ const APP_ORIGIN = `http://127.0.0.1:${PREVIEW_PORT}`
 const STORAGE_KEY = "harness-remote.workspace.machines.v1"
 const DIRECTORY = "/work/provider-kit-browser"
 const ALL_AGENTS = [
-  ["opencode", "OpenCode", "http", true, "required"],
+  ["opencode", "OpenCode", "http", true, "optional"],
   ["opencode2", "OpenCode 2", "acp", true, "required"],
   ["copilot", "GitHub Copilot CLI", "acp", false, "harness-default"],
   ["mimo", "MiMo Code", "acp", false, "harness-default"],
-  ["codex", "Codex CLI", "acp", true, "required"],
-  ["claude", "Claude Code", "acp", true, "required"],
-  ["omp", "Oh My Pi", "acp", true, "required"],
-  ["pi", "PI", "acp", true, "required"]
+  ["codex", "Codex CLI", "acp", true, "optional"],
+  ["claude", "Claude Code", "acp", true, "optional"],
+  ["omp", "Oh My Pi", "acp", true, "optional"],
+  ["pi", "PI", "acp", true, "optional"]
 ]
 const PROVIDERS = Object.fromEntries(ALL_AGENTS.map(([id, label, transport, models, selection]) => [
   id,
