@@ -1,6 +1,7 @@
 import { api, type NativeSessionLinkRecord } from "./api"
 import { nativeSessionDisplayTitle } from "./native-session-title"
 import { liveSessionIndexStatus } from "./session-index-live-state"
+import { backendForAgent } from "./serverConfig"
 import type { BackendKind, MachineAgentHost, MessageEnvelope, ModelSelection, ServerConfig, Session, SessionStatus } from "./types"
 
 export type NativeSessionRecord = {
@@ -96,12 +97,6 @@ export type NativeSessionSurfaceTarget = {
   canStop: boolean
 }
 
-function supportedBackend(value: string, fallback: BackendKind): BackendKind {
-  return value === "opencode" || value === "omp" || value === "pi" || value === "claude" || value === "codex"
-    ? value
-    : fallback
-}
-
 function supportedStopCapability(value: string | undefined): boolean {
   return value === "owned-session-native-cancel" || value === "native-abort"
 }
@@ -124,7 +119,7 @@ function sessionModel(session: Session): ModelSelection | null {
 export function nativeSessionConfig(base: ServerConfig, agent: MachineAgentHost): ServerConfig {
   return {
     ...base,
-    backend: supportedBackend(agent.backend || agent.id, base.backend),
+    backend: backendForAgent(agent.backend, agent.id, base.backend),
     agentId: agent.id
   }
 }
