@@ -41,6 +41,9 @@ test("MiMo provider starts conservatively until real ACP validation widens capab
   assert.deepEqual(provider.detectCommands, ["mimo"])
   assert.equal(provider.launchPriority, 70)
   assert.equal(provider.authenticate, false)
+  assert.deepEqual(provider.environment, {
+    OPENCODE_CONFIG_CONTENT: JSON.stringify({ model: "mimo/mimo-auto" })
+  })
 
   assert.equal(provider.capabilities.sessions, true)
   assert.equal(provider.capabilities.prompt, true)
