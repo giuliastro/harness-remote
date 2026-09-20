@@ -244,7 +244,10 @@ export const HARNESS_PROFILES = {
     id: "mimo",
     label: "MiMo Code",
     command: "mimo",
-    detectCommands: ["mimo"],
+    // Keep MiMo explicit-only until its real ACP session/new path is proven on a released build.
+    // v0.1.14 initializes and lists Sessions but currently fails session/new upstream.
+    detectCommands: [],
+    experimental: true,
     launchPriority: 70,
     args: ["acp"],
     permissionMode: "allow",
