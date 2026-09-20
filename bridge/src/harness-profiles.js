@@ -247,6 +247,7 @@ export const HARNESS_PROFILES = {
   }),
   mimo: defineAcpProvider({
     id: "mimo",
+    modelSelection: "optional",
     label: "MiMo Code",
     command: "mimo",
     detectCommands: ["mimo"],
@@ -263,8 +264,8 @@ export const HARNESS_PROFILES = {
       OPENCODE_CONFIG_CONTENT: JSON.stringify({ model: "mimo/mimo-auto" })
     },
     lifecycleContract: COMMON_ACP_LIFECYCLE_CONTRACT,
-    // MiMo Code is OpenCode-derived. Its core ACP Session lifecycle is real-machine validated,
-    // while model/command discovery stays conservative until separately exercised.
+    // MiMo Code is OpenCode-derived. Model discovery accepts either the current configOptions
+    // surface or the legacy ACP models state used by earlier MiMo builds.
     modelVariantConfigIDs: [],
     sessionContract: {
       authority: "native-harness",
@@ -277,7 +278,7 @@ export const HARNESS_PROFILES = {
     },
     capabilities: {
       ...COMMON_CAPABILITIES,
-      models: false,
+      models: true,
       todos: false,
       commands: false,
       permissions: true,
