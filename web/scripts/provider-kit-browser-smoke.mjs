@@ -406,6 +406,41 @@ try {
   assert.equal(modelReads.get("mimo") || 0, 0, "MiMo must not request a model catalog")
   assert.ok((modelReads.get("opencode2") || 0) > 0, "OpenCode 2 must request its model catalog")
 
+  // Creation must route through the selected Provider Kit id, and a rediscovered ACP Session must
+  // reopen through the same provider rather than falling back to the daemon's primary/OpenCode path.
+  for (const [provider, title] of [
+    ["copilot", "Copilot Created Browser"],
+    ["opencode2", "OpenCode 2 Created Browser"]
+  ]) {
+    await loadHome(page)
+    await page.getByRole("button", { name: "New Session" }).click()
+    const create = page.locator(".hr-native-create-panel")
+    await create.waitFor({ state: "visible" })
+    await create.locator("select").nth(2).selectOption(provider)
+    await create.locator('input[type="text"]').fill(title)
+    await create.getByRole("button", { name: /Create/ }).click()
+    await page.getByRole("heading", { name: title }).waitFor({ state: "visible", timeout: 15_000 })
+
+    let createdComposer = page.getByRole("textbox", { name: new RegExp("Message " + PROVIDERS[provider].label.replace(/[.*+?^${}()|[\]\\]/g, "\\  assert.ok((modelReads.get("opencode2") || 0) > 0, "OpenCode 2 must request its model catalog")
+
+  // Create a new MiMo Session from the real New Session UI.")) })
+    await waitFor(async () => !(await createdComposer.isDisabled()), `${provider} created composer enabled`)
+    const created = [...sessions.values()].find((entry) => entry.title === title)
+    assert.ok(created, `${provider} create did not reach the routed provider`)
+    assert.equal(created.provider, provider, `${provider} create was routed to ${created.provider}`)
+    if (provider === "opencode2") {
+      const modelTrigger = page.locator(".tdw-model-control .tdw-model-trigger")
+      await waitFor(async () => !(await modelTrigger.isDisabled()), "created OpenCode 2 model picker enabled")
+      assert.match(await modelTrigger.textContent(), /Big Pickle/, "created OpenCode 2 did not select its required verified model")
+    }
+    await sendAndExpect(page, provider, createdComposer, `${provider.toUpperCase()}-CREATED`)
+
+    await loadHome(page)
+    createdComposer = await openProvider(page, provider, title)
+    await sendAndExpect(page, provider, createdComposer, `${provider.toUpperCase()}-REOPEN`)
+    assert.ok((claims.get(created.id) || 0) >= 1, `${provider} rediscovered Session was not claimed on reopen`)
+  }
+
   // Create a new MiMo Session from the real New Session UI.
   await loadHome(page)
   await page.getByRole("button", { name: "New Session" }).click()
