@@ -194,7 +194,8 @@ export const HARNESS_PROFILES = {
       ...COMMON_CAPABILITIES,
       models: false,
       todos: false,
-      commands: false,
+      // Copilot ACP advertises its current slash-command set through available_commands_update.
+      commands: true,
       questions: false,
       permissions: true,
       actions: false,
