@@ -251,6 +251,12 @@ export const HARNESS_PROFILES = {
     // Current MiMo ACP advertises `opencode-login` but its authenticate RPC throws
     // "Authentication not implemented". It relies on credentials configured in the CLI itself.
     authenticate: false,
+    // Work around upstream #865 without mutating the user's config: MiMo's ACP ignores the
+    // DB-backed default set by `mimo auth login`, while inline config is honored by defaultModel().
+    // The override is process-scoped and only supplies a safe bootstrap model for session/new.
+    environment: {
+      OPENCODE_CONFIG_CONTENT: JSON.stringify({ model: "mimo/mimo-auto" })
+    },
     lifecycleContract: COMMON_ACP_LIFECYCLE_CONTRACT,
     // MiMo Code is OpenCode-derived, but its ACP implementation currently has open
     // compatibility issues around model defaults and Session prompting. Start with a
