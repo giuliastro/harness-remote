@@ -245,6 +245,11 @@ const claudePrimaryConfig = {
   backend: 'claude', host: '127.0.0.1', port: 4099, username: 'harness', password: 'pw', agentId: 'claude'
 }
 assert.deepEqual(modelCatalogConfig(claudePrimaryConfig, 'codex'), { ...claudePrimaryConfig, backend: 'codex', agentId: 'codex' })
+assert.deepEqual(
+  modelCatalogConfig(claudePrimaryConfig, 'opencode2'),
+  { ...claudePrimaryConfig, backend: 'opencode2', agentId: 'opencode2' },
+  'provider-kit harness ids must route model requests without a frontend allowlist'
+)
 const currentCatalog = await taskClient.listAgentModels(claudePrimaryConfig, 'codex')
 assert.equal(currentCatalog.models[0]?.modelID, 'gpt-5.6-sol')
 assert.equal(sent.length, 1, 'native Session model discovery must be one current-catalog request')
