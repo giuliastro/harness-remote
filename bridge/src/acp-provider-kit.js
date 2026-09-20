@@ -42,6 +42,15 @@ export function defineAcpProvider(definition) {
   if (definition.authenticate !== undefined && typeof definition.authenticate !== "boolean") {
     throw new Error(`ACP provider '${id}' authenticate must be a boolean`)
   }
+  if (definition.environment !== undefined) {
+    if (!definition.environment || typeof definition.environment !== "object" || Array.isArray(definition.environment)) {
+      throw new Error(`ACP provider '${id}' environment must be an object`)
+    }
+    for (const [name, value] of Object.entries(definition.environment)) {
+      requireNonEmptyString(name, `'${id}' environment key`)
+      if (typeof value !== "string") throw new Error(`ACP provider '${id}' environment values must be strings`)
+    }
+  }
   if (!Number.isFinite(launchPriority)) throw new Error(`ACP provider '${id}' launchPriority must be a finite number`)
   if (!definition.capabilities || typeof definition.capabilities !== "object") {
     throw new Error(`ACP provider '${id}' must declare capabilities`)
@@ -68,6 +77,7 @@ export function defineAcpProvider(definition) {
     detectCommands,
     launchPriority,
     authenticate: definition.authenticate !== false,
+    ...(definition.environment ? { environment: { ...definition.environment } } : {}),
     capabilities: { ...definition.capabilities },
     modelVariantConfigIDs: stringArray(definition.modelVariantConfigIDs ?? [], "modelVariantConfigIDs"),
     sessionContract: { ...definition.sessionContract },
