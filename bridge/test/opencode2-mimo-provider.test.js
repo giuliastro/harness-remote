@@ -31,15 +31,14 @@ test("OpenCode 2 provider uses the dedicated binary alias and rich ACP surface",
   assert.equal(contract.sessions.transcript, "session-load")
 })
 
-test("MiMo provider starts conservatively until real ACP validation widens capabilities", () => {
+test("MiMo provider keeps a conservative surface after real ACP lifecycle validation", () => {
   const provider = harnessProfile("mimo")
   const contract = acpHarnessCapabilityContract(provider)
 
   assert.equal(provider.label, "MiMo Code")
   assert.equal(provider.command, "mimo")
   assert.deepEqual(provider.args, ["acp"])
-  assert.deepEqual(provider.detectCommands, [])
-  assert.equal(provider.experimental, true)
+  assert.deepEqual(provider.detectCommands, ["mimo"])
   assert.equal(provider.launchPriority, 70)
   assert.equal(provider.authenticate, false)
   assert.deepEqual(provider.environment, {
