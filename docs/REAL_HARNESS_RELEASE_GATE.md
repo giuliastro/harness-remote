@@ -1,6 +1,6 @@
 # Real-harness release gate
 
-Harness Remote treats installed coding harnesses as the authority for their Native Sessions. Unit tests and browser fixtures are necessary, but they cannot prove that the current OpenCode, Codex, Claude, OMP and PI integrations still behave correctly against real installed harnesses.
+Harness Remote treats installed coding harnesses as the authority for their Native Sessions. Unit tests and browser fixtures are necessary, but they cannot prove that the current OpenCode, Codex, Claude, OMP, PI, GitHub Copilot CLI, OpenCode 2 and MiMo integrations still behave correctly against real installed harnesses.
 
 This gate turns the existing Session-first soak into a repeatable release check and records what was actually verified on a machine.
 
@@ -37,6 +37,42 @@ npm start -- \
 
 Use the same commit/build for every harness in one release evidence set.
 
+## Authenticated GitHub Actions gate
+
+The repository also contains `.github/workflows/real-harness-auth.yml`, a deliberately opt-in
+GitHub Actions gate that recreates a real eight-harness machine on an ephemeral Ubuntu runner. It is
+not the ordinary PR regression suite: it installs the pinned harness CLIs, supplies non-interactive
+provider credentials, runs the real Copilot/OpenCode 2/MiMo create-Stop-reopen probes, starts the
+multi-harness daemon and finally runs this strict release gate across all eight harnesses.
+
+Trigger it either with **Run workflow** or by adding the `real-harness` label to a same-repository
+pull request. A labeled PR reruns the authenticated gate after later pushes. Fork pull requests never
+receive repository secrets and therefore do not run this job.
+
+Repository secrets required for the full authenticated gate:
+
+| Secret | Used by |
+| --- | --- |
+| `OPENAI_API_KEY` | Codex API-key auth; OpenCode, OpenCode 2, OMP and PI provider inference |
+| `ANTHROPIC_API_KEY` | Claude ACP inference; also seeds PI's ephemeral stored credential file |
+| `MIMO_API_KEY` | MiMo Code via Xiaomi's OpenAI-compatible API |
+
+Copilot normally needs **no repository secret**. The workflow grants its built-in `GITHUB_TOKEN`
+`copilot-requests: write` and the Copilot CLI consumes that token non-interactively. If the account
+or organization policy does not permit Copilot requests through the Actions token, configure the
+optional `COPILOT_GITHUB_TOKEN` repository secret with a fine-grained PAT that has Copilot Requests
+permission; the preflight prefers that token when present.
+
+The workflow deliberately fails before inference if a required provider secret is absent. It never
+prints secret values, lengths or prefixes. PI receives a temporary `~/.pi/agent/auth.json` with
+mode 0600 on the ephemeral runner because the pinned PI ACP adapter prefers stored credentials.
+That file is never uploaded. MiMo receives a secret-free inline config containing
+`{env:MIMO_API_KEY}`; the literal key never enters the repository or the evidence artifact.
+
+Only `bridge/artifacts/real-harness-authenticated.json` is uploaded as release evidence. Raw daemon
+logs and credential files are not artifacts. The JSON report is designed to contain no provider
+keys, HTTP Basic password, prompt bodies or complete model catalogs.
+
 ## Strict release run
 
 From `bridge/`:
@@ -53,7 +89,7 @@ npm run gate:real-harness
 By default the gate validates:
 
 ```text
-opencode,codex,claude,omp,pi
+opencode,codex,claude,omp,pi,copilot,opencode2,mimo
 ```
 
 Each harness becomes primary once. The secondary rotates so that switching/isolation is exercised as part of every leg.
@@ -228,5 +264,10 @@ For each release candidate, preserve the JSON report and record the distinction 
 | Claude | yes/no | yes/no | yes/no | report + notes |
 | OMP | yes/no | yes/no | yes/no | report + notes |
 | PI | yes/no | yes/no | yes/no | report + notes |
+| GitHub Copilot CLI | yes/no | yes/no | yes/no | report + notes |
+| OpenCode 2 | yes/no | yes/no | yes/no | report + notes |
+| MiMo Code | yes/no | yes/no | yes/no | report + notes |
 
-A green GitHub Actions run proves the automated regression/product gates. It does **not** by itself fill the final “Verified on this real build” column.
+A green ordinary PR-check run proves the deterministic regression/product gates. It does **not** by
+itself fill the final “Verified on this real build” column. A successful **authenticated real-harness
+gate** with report verdict `verified` is the automated evidence intended for that column.
