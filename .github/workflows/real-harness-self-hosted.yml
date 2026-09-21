@@ -89,7 +89,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          RUN_ROOT="$HOME/.harness-remote/smoke-workspaces/gha-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          RUN_ROOT="$HOME/.harness-remote/smoke-workspaces/release-gate"
           STATE_DIR="$RUNNER_TEMP/harness-real-state-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
           HR_DIR_A="$RUN_ROOT/project-a"
           HR_DIR_B="$RUN_ROOT/project-b"
@@ -110,18 +110,12 @@ jobs:
           echo "HARNESS_REMOTE_STATE_DIR=$STATE_DIR" >> "$GITHUB_ENV"
 
       - name: Real Copilot ACP create Stop history reopen smoke
-        env:
-          HR_SMOKE_WORKSPACE: ${{ env.HR_DIR_A }}
         run: npm --prefix bridge run smoke:copilot
 
       - name: Real OpenCode 2 ACP create Stop history reopen smoke
-        env:
-          HR_SMOKE_WORKSPACE: ${{ env.HR_DIR_A }}
         run: npm --prefix bridge run smoke:opencode2
 
       - name: Real MiMo ACP create Stop history reopen smoke
-        env:
-          HR_SMOKE_WORKSPACE: ${{ env.HR_DIR_A }}
         run: npm --prefix bridge run smoke:mimo
 
       - name: Start eight-harness machine daemon with existing local logins
@@ -192,14 +186,14 @@ jobs:
           if-no-files-found: warn
           retention-days: 14
 
-      - name: Remove only workflow-owned temporary files
+      - name: Remove only workflow-owned ephemeral state
         if: always()
         shell: bash
         run: |
           set -euo pipefail
-          if [ -n "${HR_RUN_ROOT:-}" ] && [[ "$HR_RUN_ROOT" == "$HOME/.harness-remote/smoke-workspaces/"* ]]; then
-            rm -rf -- "$HR_RUN_ROOT"
-          fi
+          # Keep ~/.harness-remote/smoke-workspaces: native harnesses can persist Session ids
+          # without exposing a deletion primitive. Removing those directories would leave broken
+          # history records. Harness Remote filters this namespace from the normal Session rail.
           if [ -n "${HARNESS_REMOTE_STATE_DIR:-}" ] && [[ "$HARNESS_REMOTE_STATE_DIR" == "$RUNNER_TEMP/"* ]]; then
             rm -rf -- "$HARNESS_REMOTE_STATE_DIR"
           fi
