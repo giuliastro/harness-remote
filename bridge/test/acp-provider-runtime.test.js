@@ -188,7 +188,7 @@ test("provider runtime starts a scoped provider from the common configured root"
     cwd: "/fallback"
   })
 
-  assert.deepEqual(clients.map((client) => client.options.cwd), ["/work", "/work"])
+  assert.deepEqual(clients.map((client) => client.options.cwd), [path.resolve("/work"), path.resolve("/work")])
 })
 
 test("provider runtime falls back to cwd when no project root is configured", async () => {
