@@ -49,7 +49,14 @@ assert.throws(
   () => validateMimoInlineConfig({
     ...complete,
     HARNESS_REMOTE_MIMO_CONFIG_CONTENT: JSON.stringify({
-      provider: { mimo: { options: { apiKey: complete.MIMO_API_KEY } } }
+      provider: {
+        mimo: {
+          options: {
+            apiKey: "{env:MIMO_API_KEY}",
+            leakedKey: complete.MIMO_API_KEY
+          }
+        }
+      }
     })
   }),
   /literal MiMo key/

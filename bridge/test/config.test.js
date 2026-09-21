@@ -3,6 +3,7 @@ import { homedir } from "node:os"
 import path from "node:path"
 import test from "node:test"
 import { parseConfig } from "../src/config.js"
+import { harnessProfile, resolveAcpLaunch } from "../src/harness-profiles.js"
 
 test("defaults to a loopback-only unauthenticated listener", () => {
   assert.deepEqual(parseConfig([], {}), {
@@ -57,11 +58,18 @@ test("selects Codex defaults for the ACP backend", () => {
   assert.match(parseConfig(["--backend", "codex"], {}).acpArgs[1], /@\d+\.\d+\.\d+$/, "the adapter version must stay pinned")
 })
 
-test("selects OpenCode 2 package fallback and MiMo native ACP defaults", () => {
+test("selects the OpenCode 2 launch and MiMo native ACP defaults", () => {
   const openCode2 = parseConfig(["--backend", "opencode2"], {})
+  const resolvedOpenCode2 = resolveAcpLaunch(harnessProfile("opencode2"))
   assert.equal(openCode2.backend, "opencode2")
-  assert.equal(openCode2.acpCommand, process.platform === "win32" ? "npx.cmd" : "npx")
-  assert.deepEqual(openCode2.acpArgs, ["--yes", "--package=@opencode/cli", "opencode", "acp"])
+  assert.equal(openCode2.acpCommand, resolvedOpenCode2.command)
+  assert.deepEqual(openCode2.acpArgs, resolvedOpenCode2.args)
+
+  assert.deepEqual(resolveAcpLaunch(harnessProfile("opencode2"), { find: () => null }), {
+    command: process.platform === "win32" ? "npx.cmd" : "npx",
+    args: ["--yes", "--package=@opencode/cli", "opencode", "acp"],
+    source: "npx"
+  })
 
   const mimo = parseConfig(["--backend", "mimo"], {})
   assert.equal(mimo.backend, "mimo")

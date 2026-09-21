@@ -17,6 +17,31 @@ export function resolveAcpProviderIDs(detected = [], primaryID) {
   ].filter(Boolean))]
 }
 
+function isWithin(parent, child) {
+  const relative = path.relative(parent, child)
+  return relative === "" || (!relative.startsWith(`..${path.sep}`) && relative !== ".." && !path.isAbsolute(relative))
+}
+
+function commonDirectory(directories) {
+  let common = path.resolve(directories[0])
+  for (const directory of directories.slice(1)) {
+    const candidate = path.resolve(directory)
+    while (!isWithin(common, candidate)) {
+      const parent = path.dirname(common)
+      if (parent === common) break
+      common = parent
+    }
+  }
+  return common
+}
+
+/** Resolve the process directory required by providers that scope ACP to one filesystem tree. */
+export function resolveAcpProviderWorkingDirectory(provider, { config, cwd = process.cwd() } = {}) {
+  if (provider?.workingDirectory !== "common-root") return undefined
+  const roots = config?.roots?.length ? config.roots : [cwd]
+  return commonDirectory(roots)
+}
+
 /** Resolve launch details without teaching generic daemon code provider-specific executable rules. */
 export function resolveAcpProviderLaunch(provider, { primary = false, config, resolveLaunch = resolveAcpLaunch } = {}) {
   if (primary) {
@@ -42,13 +67,15 @@ export async function createAcpProviderRuntime({
   ModelCatalog = AcpAgentModelCatalog,
   cwd = process.cwd()
 }) {
+  const workingDirectory = resolveAcpProviderWorkingDirectory(provider, { config, cwd })
   const clientOptions = {
     command: launch.command,
     args: [...launch.args],
     permissionMode: provider.permissionMode,
     preferredAuthMethod: provider.authMethod,
     authenticate: provider.authenticate,
-    ...(provider.environment ? { environment: provider.environment } : {})
+    ...(provider.environment ? { environment: provider.environment } : {}),
+    ...(workingDirectory ? { cwd: workingDirectory } : {})
   }
   const agent = new Client(clientOptions)
   const modelCatalog = new ModelCatalog({

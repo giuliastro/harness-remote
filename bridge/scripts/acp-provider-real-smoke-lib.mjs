@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process"
 import { mkdir, writeFile } from "node:fs/promises"
 import { homedir } from "node:os"
 import path from "node:path"
@@ -26,6 +27,22 @@ function visibleText(messages, role = "assistant") {
     .join("\n")
 }
 
+function ensureGitWorkspace(directory) {
+  try {
+    execFileSync("git", ["-C", directory, "rev-parse", "--show-toplevel"], { stdio: "ignore" })
+  } catch {
+    execFileSync("git", ["-C", directory, "init", "--quiet", "--initial-branch=main"], { stdio: "ignore" })
+  }
+  try {
+    execFileSync("git", ["-C", directory, "rev-parse", "--verify", "HEAD"], { stdio: "ignore" })
+  } catch {
+    execFileSync("git", ["-C", directory, "config", "user.email", "harness-remote-smoke@example.invalid"], { stdio: "ignore" })
+    execFileSync("git", ["-C", directory, "config", "user.name", "Harness Remote smoke"], { stdio: "ignore" })
+    execFileSync("git", ["-C", directory, "add", "--all"], { stdio: "ignore" })
+    execFileSync("git", ["-C", directory, "commit", "--quiet", "-m", "Initialize Harness Remote smoke workspace"], { stdio: "ignore" })
+  }
+}
+
 export async function runAcpProviderRealSmoke(providerID, {
   displayName,
   executable,
@@ -35,6 +52,8 @@ export async function runAcpProviderRealSmoke(providerID, {
   checkCommands = false,
   checkModels = false,
   requireModelSwitch = false,
+  requiresGitWorkspace = false,
+  adjustLaunchArgs = ({ args }) => args,
   debugLaunchArgs = []
 } = {}) {
   const failures = []
@@ -69,15 +88,21 @@ export async function runAcpProviderRealSmoke(providerID, {
     )
   }
   const directory = path.resolve(fallbackDirectory)
+  if (!requestedDirectory && !defaultDirectory && requiresGitWorkspace) ensureGitWorkspace(directory)
   const launch = resolveAcpLaunch(profile)
   const debug = process.argv.includes("--debug")
-  const launchArgs = debug && debugLaunchArgs.length ? [...debugLaunchArgs] : [...launch.args]
+  const launchArgs = adjustLaunchArgs({
+    command: launch.command,
+    args: debug && debugLaunchArgs.length ? [...debugLaunchArgs] : [...launch.args],
+    directory
+  })
   const responseMarker = marker ?? `${providerID.toUpperCase()}-HR-SMOKE`
 
   function runtime() {
     const acp = new AcpClient({
       command: launch.command,
       args: launchArgs,
+      cwd: directory,
       permissionMode: profile.permissionMode,
       preferredAuthMethod: profile.authMethod,
       authenticate: profile.authenticate,

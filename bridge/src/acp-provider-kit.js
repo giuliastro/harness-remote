@@ -39,6 +39,9 @@ export function defineAcpProvider(definition) {
   const args = stringArray(definition.args ?? [], "args")
   const detectCommands = stringArray(definition.detectCommands ?? [], "detectCommands")
   const launchPriority = definition.launchPriority ?? 100
+  if (definition.workingDirectory !== undefined && definition.workingDirectory !== "common-root") {
+    throw new Error(`ACP provider '${id}' workingDirectory must be 'common-root'`)
+  }
   if (definition.authenticate !== undefined && typeof definition.authenticate !== "boolean") {
     throw new Error(`ACP provider '${id}' authenticate must be a boolean`)
   }

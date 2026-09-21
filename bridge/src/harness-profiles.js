@@ -265,6 +265,10 @@ export const HARNESS_PROFILES = {
       OPENCODE_CONFIG_CONTENT: process.env.HARNESS_REMOTE_MIMO_CONFIG_CONTENT
         || JSON.stringify({ model: "mimo/mimo-auto" })
     },
+    // MiMo's ACP server restricts session/new to the process working tree. A machine daemon can
+    // expose several configured projects, so the generic runtime starts both ACP clients from
+    // their common ancestor instead of making the first project the only usable root.
+    workingDirectory: "common-root",
     lifecycleContract: COMMON_ACP_LIFECYCLE_CONTRACT,
     // MiMo Code is OpenCode-derived. Model discovery accepts either the current configOptions
     // surface or the legacy ACP models state used by earlier MiMo builds.

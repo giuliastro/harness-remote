@@ -128,6 +128,21 @@ test("merges provider-scoped environment overrides into the ACP child process", 
   client.close()
 })
 
+test("launches an ACP adapter from the configured workspace", async () => {
+  let spawnOptions
+  const client = new AcpClient({
+    cwd: "/work/project",
+    spawnProcess: (command, args, options) => {
+      spawnOptions = options
+      return new FakeChild((child, request) => respondToHandshake(child, request))
+    }
+  })
+
+  await client.start()
+  assert.equal(spawnOptions.cwd, "/work/project")
+  client.close()
+})
+
 test("launches an ACP adapter with the configured command and arguments", async () => {
   const calls = []
   const client = new AcpClient({
