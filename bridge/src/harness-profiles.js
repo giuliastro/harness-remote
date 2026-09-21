@@ -3,6 +3,7 @@ import { createCodexHistoryLoader } from "./codex-session-history.js"
 import { createOmpHistoryLoader } from "./omp-session-history.js"
 import { createPiHistoryLoader } from "./pi-session-history.js"
 import { OMP_EXTENSION_ACTION_PROVIDERS } from "./extension-actions.js"
+import { createAcpProviderRegistry, defineAcpProvider } from "./acp-provider-kit.js"
 
 const COMMON_CAPABILITIES = {
   sessions: true,
@@ -19,7 +20,7 @@ const COMMON_CAPABILITIES = {
 }
 
 export const HARNESS_PROFILES = {
-  omp: {
+  omp: defineAcpProvider({
     id: "omp",
     label: "Oh My Pi",
     command: "omp",
@@ -45,6 +46,15 @@ export const HARNESS_PROFILES = {
     // OMP exposes thinking as a real ACP config option. We probe only ids the running adapter
     // actually advertises; this list is a routing hint, never a source of invented variants.
     modelVariantConfigIDs: ["thinking"],
+    sessionContract: {
+      authority: "native-harness",
+      discovery: "native-list",
+      transcript: "native-journal",
+      externalWriterObservation: "unverified-via-journal",
+      continuation: "session-load",
+      writerOwnership: "adapter-defined",
+      stop: "owned-session-native-cancel"
+    },
     capabilities: {
       ...COMMON_CAPABILITIES,
       models: true,
@@ -55,8 +65,8 @@ export const HARNESS_PROFILES = {
       sessionDelete: true
     },
     actionProviders: OMP_EXTENSION_ACTION_PROVIDERS
-  },
-  pi: {
+  }),
+  pi: defineAcpProvider({
     id: "pi",
     label: "PI",
     // @automatalabs/pi-acp embeds PI through its published SDK and runs on Node. Version 0.5.0
@@ -83,6 +93,15 @@ export const HARNESS_PROFILES = {
     // Current PI ACP calls this `thinkingLevel`. The aliases are harmless compatibility hints for
     // adapter versions that rename the wire id; a variant is emitted only when that option exists.
     modelVariantConfigIDs: ["thinkingLevel", "thinking_level", "thinking"],
+    sessionContract: {
+      authority: "native-harness",
+      discovery: "native-list",
+      transcript: "native-journal-authoritative",
+      externalWriterObservation: "supported-via-journal",
+      continuation: "session-load",
+      writerOwnership: "claim-on-session-load",
+      stop: "owned-session-native-cancel"
+    },
     capabilities: {
       ...COMMON_CAPABILITIES,
       models: true,
@@ -92,8 +111,8 @@ export const HARNESS_PROFILES = {
       sessionRename: true,
       sessionDelete: true
     }
-  },
-  claude: {
+  }),
+  claude: defineAcpProvider({
     id: "claude",
     label: "Claude Code",
     // Uses the official ACP adapter for the Claude Agent SDK. The adapter speaks ACP JSON-RPC
@@ -114,6 +133,15 @@ export const HARNESS_PROFILES = {
     // The current adapter exposes model/mode but no low/medium/high reasoning-effort selector.
     // Keep this empty rather than fabricating OpenCode-style variants.
     modelVariantConfigIDs: [],
+    sessionContract: {
+      authority: "native-harness",
+      discovery: "native-list",
+      transcript: "session-load",
+      externalWriterObservation: "unverified-session-load",
+      continuation: "session-load",
+      writerOwnership: "adapter-defined",
+      stop: "owned-session-native-cancel"
+    },
     capabilities: {
       ...COMMON_CAPABILITIES,
       // The adapter advertises a `model` config option like OMP and PI do; its values are bare ids
@@ -125,8 +153,8 @@ export const HARNESS_PROFILES = {
       sessionRename: true,
       sessionDelete: true
     }
-  },
-  codex: {
+  }),
+  codex: defineAcpProvider({
     id: "codex",
     label: "Codex CLI",
     // Uses the official ACP adapter for the OpenAI Codex CLI. The adapter speaks ACP JSON-RPC
@@ -154,6 +182,15 @@ export const HARNESS_PROFILES = {
     reloadOnHistoryRefresh: false,
     // The official adapter exposes reasoning effort independently from model selection.
     modelVariantConfigIDs: ["reasoning_effort", "reasoningEffort"],
+    sessionContract: {
+      authority: "native-harness",
+      discovery: "native-list",
+      transcript: "native-journal",
+      externalWriterObservation: "supported-via-journal",
+      continuation: "session-load",
+      writerOwnership: "single-writer",
+      stop: "owned-session-native-cancel"
+    },
     capabilities: {
       ...COMMON_CAPABILITIES,
       // The adapter advertises model ids as bare ids rather than `provider/model`, which is
@@ -166,13 +203,21 @@ export const HARNESS_PROFILES = {
       sessionRename: true,
       sessionDelete: true
     }
-  }
+  })
 }
 
+const ACP_PROVIDER_REGISTRY = createAcpProviderRegistry(Object.values(HARNESS_PROFILES))
+
 export function harnessProfile(id) {
-  const profile = HARNESS_PROFILES[id]
-  if (!profile) throw new Error(`Unsupported backend: ${id}`)
-  return profile
+  return ACP_PROVIDER_REGISTRY.get(id)
+}
+
+export function acpProviderProfile(id) {
+  return ACP_PROVIDER_REGISTRY.get(id)
+}
+
+export function listAcpProviderProfiles() {
+  return ACP_PROVIDER_REGISTRY.list()
 }
 
 /**
