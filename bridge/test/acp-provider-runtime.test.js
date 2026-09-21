@@ -55,11 +55,11 @@ test("provider working directory covers all configured roots", () => {
   assert.equal(resolveAcpProviderWorkingDirectory(provider({ workingDirectory: "common-root" }), {
     config: { roots: ["/work/a/project", "/work/b/project"] },
     cwd: "/fallback"
-  }), "/work")
+  }), path.resolve("/work"))
   assert.equal(resolveAcpProviderWorkingDirectory(provider({ workingDirectory: "common-root" }), {
     config: { roots: [] },
     cwd: "/fallback"
-  }), "/fallback")
+  }), path.resolve("/fallback"))
   assert.equal(resolveAcpProviderWorkingDirectory(provider(), {
     config: { roots: ["/work/project"] },
     cwd: "/fallback"
