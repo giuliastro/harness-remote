@@ -259,9 +259,11 @@ export const HARNESS_PROFILES = {
     authenticate: false,
     // Work around upstream #865 without mutating the user's config: MiMo's ACP ignores the
     // DB-backed default set by `mimo auth login`, while inline config is honored by defaultModel().
-    // The override is process-scoped and only supplies a safe bootstrap model for session/new.
+    // CI may supply a secret-free inline provider config that references MIMO_API_KEY by environment
+    // name. Normal users keep the safe mimo-auto bootstrap and are not opted into API billing.
     environment: {
-      OPENCODE_CONFIG_CONTENT: JSON.stringify({ model: "mimo/mimo-auto" })
+      OPENCODE_CONFIG_CONTENT: process.env.HARNESS_REMOTE_MIMO_CONFIG_CONTENT
+        || JSON.stringify({ model: "mimo/mimo-auto" })
     },
     lifecycleContract: COMMON_ACP_LIFECYCLE_CONTRACT,
     // MiMo Code is OpenCode-derived. Model discovery accepts either the current configOptions
