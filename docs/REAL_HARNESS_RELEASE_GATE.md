@@ -37,6 +37,50 @@ npm start -- \
 
 Use the same commit/build for every harness in one release evidence set.
 
+## Self-hosted real gate without API keys
+
+When the development machine already has all supported harnesses installed and authenticated, prefer
+`.github/workflows/real-harness-self-hosted.yml`. It runs on that same Linux account and therefore
+reuses the harnesses' existing local login/session stores instead of copying credentials into GitHub
+Secrets.
+
+The workflow targets a runner with all of these labels:
+
+```text
+self-hosted, linux, x64, harness-real
+```
+
+Register the repository runner from **Settings → Actions → Runners → New self-hosted runner** while
+logged into the same Linux user that normally runs Codex, Claude, OpenCode, OMP, PI, Copilot and
+MiMo. During `config.sh`, add the custom label `harness-real`. GitHub supplies a short-lived
+registration token in those setup instructions.
+
+Do not run this runner under a separate service account if the purpose is real-login validation:
+that account would have a different `HOME` and would not see the existing harness credentials.
+Running the runner interactively with `./run.sh` is the simplest first validation. If it is later
+installed as a service, keep it under the same Linux user and verify that `HOME` and PATH still
+resolve to the authenticated harness installations.
+
+The self-hosted gate never reads, copies or uploads credential files. It:
+
+- verifies all eight executables are on PATH;
+- creates only Harness Remote-owned workspaces below
+  `~/.harness-remote/smoke-workspaces/`, which the normal Session rail filters;
+- keeps those workspaces durable because some native harnesses persist Session ids but expose no
+  deletion primitive; deleting a workspace would create broken history records;
+- uses an isolated temporary Harness Remote daemon state directory;
+- creates a temporary `opencode2` wrapper under `$RUNNER_TEMP` only when that alias is absent;
+- runs the real Copilot/OpenCode 2/MiMo create → prompt → Stop → history → reopen smokes;
+- starts the eight-harness daemon using the machine's existing local authentication;
+- runs the strict real-harness release gate for
+  `opencode,codex,claude,omp,pi,copilot,opencode2,mimo`;
+- uploads only the credential-free JSON evidence report.
+
+Trigger it manually with **Run workflow**, or add the `real-harness-local` label to a
+same-repository pull request. Once that label is present, later pushes rerun the real local gate.
+A missing executable, expired login, provider failure, model failure, broken history, Stop failure or
+routing failure makes the workflow fail; none is converted into an inference-unavailable pass.
+
 ## Authenticated GitHub Actions gate
 
 The repository also contains `.github/workflows/real-harness-auth.yml`, a deliberately opt-in
