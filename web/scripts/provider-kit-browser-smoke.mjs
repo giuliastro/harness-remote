@@ -503,8 +503,12 @@ try {
   }
 
   // All harnesses have now completed create, prompt, Stop, reuse and reopen.
-  for (const provider of Object.keys(PROVIDERS)) {
-    assert.ok((claims.get(`${provider}-session`) || 0) >= 1, `existing ${provider} Session was never claimed`)
+  for (const [provider, info] of Object.entries(PROVIDERS)) {
+    if (info.transport === "acp") {
+      assert.ok((claims.get(`${provider}-session`) || 0) >= 1, `existing ${provider} ACP Session was never claimed`)
+    } else {
+      assert.equal(claims.get(`${provider}-session`) || 0, 0, `existing ${provider} HTTP Session must not invent an ACP claim step`)
+    }
     assert.ok(promptBodies.filter((entry) => entry.provider === provider).length >= 5, `${provider} existing/create/Stop/reuse/reopen prompt coverage incomplete`)
     assert.ok(stopBodies.some((entry) => entry.provider === provider), `${provider} Stop was never routed`)
   }
