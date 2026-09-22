@@ -1,3 +1,5 @@
+import { normalizeOpenCodeV2Response, openCodeApiBody, openCodeApiPath } from "./opencode-compat.js"
+
 function runtimeError(code, message, options = {}) {
   const error = new Error(message)
   error.code = code
@@ -45,7 +47,8 @@ export function createCrossMachineTargetRuntime({ daemon, machineID, acpService,
       throw runtimeError("agent_unavailable", error instanceof Error ? error.message : `Agent ${targetAgentID} is unavailable`)
     }
     const query = directory ? `?directory=${encodeURIComponent(directory)}` : ""
-    const url = `http://${host.readinessHost ?? host.host ?? "127.0.0.1"}:${host.port}/session${query}`
+    const pathname = "/session"
+    const url = `http://${host.readinessHost ?? host.host ?? "127.0.0.1"}:${host.port}${openCodeApiPath(host, pathname, query)}`
     const headers = { Accept: "application/json" }
     const authorization = internalAuthorization(host)
     if (authorization) headers.Authorization = authorization
@@ -60,7 +63,10 @@ export function createCrossMachineTargetRuntime({ daemon, machineID, acpService,
     let payload
     try { payload = await response.json() }
     catch { throw runtimeError("agent_unavailable", `Listing ${targetAgentID} Sessions returned an unreadable response`) }
-    const sessions = Array.isArray(payload) ? payload : Array.isArray(payload?.sessions) ? payload.sessions : []
+    const normalized = host.apiBasePath === "/api"
+      ? normalizeOpenCodeV2Response({ pathname, payload, statusCode: response.status, directory }).payload
+      : payload
+    const sessions = Array.isArray(normalized) ? normalized : Array.isArray(normalized?.sessions) ? normalized.sessions : []
     return sessions
       .map((session) => ({ id: session?.id || session?.sessionId, directory: session?.directory || session?.cwd || directory }))
       .filter((session) => session.id && (!directory || session.directory === directory))
@@ -144,12 +150,14 @@ export function createCrossMachineTargetRuntime({ daemon, machineID, acpService,
       catch (error) {
         throw runtimeError("agent_unavailable", error instanceof Error ? error.message : `Agent ${targetAgentID} is unavailable`)
       }
-      const url = `http://${host.readinessHost ?? host.host ?? "127.0.0.1"}:${host.port}/session?directory=${encodeURIComponent(directory)}`
+      const pathname = "/session"
+      const query = `?directory=${encodeURIComponent(directory)}`
+      const url = `http://${host.readinessHost ?? host.host ?? "127.0.0.1"}:${host.port}${openCodeApiPath(host, pathname, query)}`
       const headers = { Accept: "application/json", "Content-Type": "application/json" }
       const authorization = internalAuthorization(host)
       if (authorization) headers.Authorization = authorization
       let response
-      try { response = await fetchImpl(url, { method: "POST", headers, body: "{}" }) }
+      try { response = await fetchImpl(url, { method: "POST", headers, body: JSON.stringify(openCodeApiBody(host, pathname, {}, directory)) }) }
       catch {
         throw runtimeError("handoff_uncertain", `Creating ${targetAgentID} Session is uncertain`, { ambiguous: true, recovery })
       }
@@ -160,7 +168,12 @@ export function createCrossMachineTargetRuntime({ daemon, machineID, acpService,
         if (response.status >= 500) throw runtimeError("handoff_uncertain", message, { ambiguous: true, recovery })
         throw runtimeError("handoff_rejected", message)
       }
-      try { targetSession = await response.json() }
+      try {
+        const payload = await response.json()
+        targetSession = host.apiBasePath === "/api"
+          ? normalizeOpenCodeV2Response({ pathname, payload, statusCode: response.status, directory }).payload
+          : payload
+      }
       catch {
         throw runtimeError("handoff_uncertain", `Creating ${targetAgentID} Session returned an unreadable response`, { ambiguous: true, recovery })
       }

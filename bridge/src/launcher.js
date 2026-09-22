@@ -44,11 +44,52 @@ function hasOption(args, name) {
 
 export { findExecutable }
 
+/**
+ * The official OpenCode v2 CLI currently uses `opencode` as its executable name.
+ * Some local installs expose `opencode2` as a shell wrapper around that same binary.
+ * Treating both names as separate backends makes the same OpenCode database appear
+ * twice and sends sessions to the wrong transport. Keep the established HTTP
+ * `opencode` backend as the canonical owner in that case.
+ */
+export function equivalentOpenCodeExecutables(opencodePath, opencode2Path, {
+  realpathSync = fs.realpathSync,
+  readFileSync = fs.readFileSync
+} = {}) {
+  if (!opencodePath || !opencode2Path) return false
+
+  try {
+    if (realpathSync(opencodePath) === realpathSync(opencode2Path)) return true
+  } catch {
+    // A test double or a broken symlink may not resolve. The wrapper check below is safe.
+  }
+
+  try {
+    const source = readFileSync(opencode2Path, "utf8")
+    return /(?:^|\n)\s*exec\s+["']?\$\(dirname\s+["']?\$0["']?\)[\\/]opencode["']?(?:\s|$)/m.test(source)
+  } catch {
+    return false
+  }
+}
+
 export function detectBackends(options = {}) {
   const providers = [...acpProviderProfiles(), OPENCODE_BACKEND]
-  return providers
+  const detected = providers
     .filter((provider) => provider.detectCommands.some((command) => findExecutable(command, options)))
     .map((provider) => provider.id)
+
+  if (
+    detected.includes("opencode")
+    && detected.includes("opencode2")
+    && equivalentOpenCodeExecutables(
+      findExecutable("opencode", options),
+      findExecutable("opencode2", options),
+      options
+    )
+  ) {
+    return detected.filter((backend) => backend !== "opencode2")
+  }
+
+  return detected
 }
 
 export function resolveBackend(args, detected = detectBackends()) {

@@ -15,10 +15,10 @@ function agent(id, models, selection) {
     }} : {})
   }
 }
-test("Copilot uses its runtime catalog without forcing a replacement model on existing Sessions", () => {
-  const provider = agent("copilot", true, "optional")
-  assert.equal(providerModelSelectionMode(provider), "optional")
-  assert.equal(providerUsesModelCatalog(provider), true)
+test("Copilot defers model selection to the native CLI when no ACP catalog is available", () => {
+  const provider = agent("copilot", false, "harness-default")
+  assert.equal(providerModelSelectionMode(provider), "harness-default")
+  assert.equal(providerUsesModelCatalog(provider), false)
   assert.equal(providerRequiresExplicitModel(provider), false)
 })
 test("MiMo uses its ACP runtime catalog without forcing a replacement model on existing Sessions", () => {

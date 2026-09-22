@@ -41,9 +41,13 @@ test("MiMo provider exposes runtime ACP models while keeping unverified surfaces
   assert.deepEqual(provider.detectCommands, ["mimo"])
   assert.equal(provider.launchPriority, 70)
   assert.equal(provider.authenticate, false)
-  assert.deepEqual(provider.environment, {
-    OPENCODE_CONFIG_CONTENT: JSON.stringify({ model: "mimo/mimo-auto" })
-  })
+  assert.deepEqual(
+    provider.environment,
+    process.env.HARNESS_REMOTE_MIMO_CONFIG_CONTENT
+      ? { MIMOCODE_CONFIG_CONTENT: process.env.HARNESS_REMOTE_MIMO_CONFIG_CONTENT }
+      : undefined
+  )
+  assert.equal(provider.requireAssistantResponse, true)
 
   assert.equal(provider.capabilities.sessions, true)
   assert.equal(provider.capabilities.prompt, true)

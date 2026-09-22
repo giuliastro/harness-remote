@@ -115,7 +115,8 @@ export async function runAcpProviderRealSmoke(providerID, {
       reloadOnHistoryRefresh: profile.reloadOnHistoryRefresh,
       replaySettleMs: profile.replaySettleMs,
       promptSettleMs: profile.promptSettleMs,
-      modelVariantConfigIDs: profile.modelVariantConfigIDs
+      modelVariantConfigIDs: profile.modelVariantConfigIDs,
+      requireAssistantResponse: profile.requireAssistantResponse
     })
     return { acp, service }
   }

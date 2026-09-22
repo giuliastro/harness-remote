@@ -4,6 +4,7 @@ import { ManagedEventFanout } from "./managed-event-fanout.js"
 import { inspectGitProjectIdentity } from "./project-identity.js"
 import { inspectGitProjectOutcome } from "./project-outcome.js"
 import { normalizeTaskModel } from "./task-model.js"
+import { normalizeOpenCodeV2Response, openCodeApiBody, openCodeApiModelBody, openCodeApiPath } from "./opencode-compat.js"
 
 const AGENT_ROUTE = /^\/v1\/agents\/([^/]+)(\/.*)?$/
 const TASK_WORKTREE_ROUTE = /^\/v1\/tasks\/([^/]+)\/worktree$/
@@ -122,6 +123,9 @@ export function proxyManagedHttpRequest({
   requestImpl = http.request,
   timeoutMs = DEFAULT_PROXY_TIMEOUT_MS
 }) {
+  if (host.apiBasePath === "/api") {
+    return proxyOpenCodeV2Request({ request, response, route, host, requestImpl, timeoutMs })
+  }
   return new Promise((resolve, reject) => {
     let upstreamResponse
     let settled = false
@@ -177,6 +181,144 @@ export function proxyManagedHttpRequest({
     }
     request.pipe(upstream)
   })
+}
+
+async function readRequestBody(request) {
+  const chunks = []
+  for await (const chunk of request) chunks.push(Buffer.from(chunk))
+  return Buffer.concat(chunks)
+}
+
+function requestOpenCodeV2({ requestImpl, host, method, pathname, search = "", headers, body, timeoutMs }) {
+  const encodedBody = body === undefined ? undefined : Buffer.from(JSON.stringify(body))
+  const upstreamHeaders = { ...headers }
+  delete upstreamHeaders["content-length"]
+  delete upstreamHeaders["Content-Length"]
+  delete upstreamHeaders["accept-encoding"]
+  delete upstreamHeaders["Accept-Encoding"]
+  upstreamHeaders["Accept-Encoding"] = "identity"
+  if (encodedBody) upstreamHeaders["Content-Length"] = String(encodedBody.length)
+
+  return new Promise((resolve, reject) => {
+    let settled = false
+    let timer
+    const finish = (error, result) => {
+      if (settled) return
+      settled = true
+      if (timer) clearTimeout(timer)
+      if (error) reject(error)
+      else resolve(result)
+    }
+    const upstream = requestImpl({
+      host: host.readinessHost ?? host.host ?? "127.0.0.1",
+      port: host.port,
+      method,
+      path: openCodeApiPath(host, pathname, search),
+      headers: upstreamHeaders
+    }, (incoming) => {
+      const chunks = []
+      incoming.on("data", (chunk) => chunks.push(Buffer.from(chunk)))
+      incoming.once("error", (error) => {
+        upstream.destroy()
+        finish(error)
+      })
+      incoming.once("aborted", () => {
+        upstream.destroy()
+        finish(new Error("Managed agent response was aborted"))
+      })
+      incoming.once("end", () => {
+        const raw = Buffer.concat(chunks).toString("utf8")
+        let payload
+        try { payload = raw ? JSON.parse(raw) : undefined } catch { payload = raw }
+        finish(undefined, { statusCode: incoming.statusCode ?? 502, payload })
+      })
+    })
+    upstream.once("error", (error) => finish(error))
+    if (timeoutMs > 0) {
+      timer = setTimeout(() => upstream.destroy(new Error(`Managed agent request timed out after ${timeoutMs}ms`)), timeoutMs)
+    }
+    if (encodedBody) upstream.end(encodedBody)
+    else upstream.end()
+  })
+}
+
+async function proxyOpenCodeV2Request({ request, response, route, host, requestImpl, timeoutMs }) {
+  // OpenCode v2 has no todo/action routes. The stable bridge contract treats these as optional
+  // surfaces, so an empty collection keeps opening a valid native Session independent of v2.
+  if (request.method === "GET" && (route.path.endsWith("/todo") || route.path.endsWith("/action"))) {
+    response.writeHead(200, { "Content-Type": "application/json" })
+    response.end("[]")
+    return
+  }
+
+  const rawBody = request.method === "GET" || request.method === "HEAD" ? Buffer.alloc(0) : await readRequestBody(request)
+  let body
+  if (rawBody.length) {
+    try { body = JSON.parse(rawBody.toString("utf8")) } catch { body = undefined }
+  }
+  const directory = new URLSearchParams(route.search).get("directory") || ""
+  const headers = proxyHeaders(request.headers, internalAuthorization(host))
+  const effectiveTimeoutMs = (route.path.endsWith("/prompt_async") || route.path.endsWith("/prompt"))
+    ? Math.max(timeoutMs, 300_000)
+    : timeoutMs
+
+  // OpenCode v2 deliberately keeps model selection out of the prompt body. The stable bridge API
+  // carries it with the prompt, so translate that one mutation into the native model endpoint
+  // before delivering the text. A failed switch is returned to the client and the prompt is never
+  // sent against the wrong model.
+  const modelBody = openCodeApiModelBody(host, route.path, body)
+  if (modelBody) {
+    const sessionMatch = /^\/session\/([^/]+)\//.exec(route.path)
+    if (sessionMatch) {
+      const switched = await requestOpenCodeV2({
+        requestImpl,
+        host,
+        method: "POST",
+        pathname: `/session/${sessionMatch[1]}/model`,
+        headers,
+        body: modelBody,
+        timeoutMs: effectiveTimeoutMs
+      })
+      if (switched.statusCode >= 400) {
+        response.setHeader("Content-Type", "application/json")
+        response.writeHead(switched.statusCode)
+        response.end(switched.payload === undefined ? "" : JSON.stringify(switched.payload))
+        return
+      }
+    }
+  }
+
+  const upstreamBody = openCodeApiBody(host, route.path, body, directory)
+  const upstream = await requestOpenCodeV2({
+    requestImpl,
+    host,
+    method: request.method,
+    pathname: route.path,
+    search: route.search,
+    headers,
+    body: upstreamBody,
+    timeoutMs: effectiveTimeoutMs
+  })
+  const sessionMatch = /^\/session\/([^/]+)\/message(?:$|\?)/.exec(route.path)
+  const normalized = upstream.statusCode < 400
+    ? normalizeOpenCodeV2Response({
+      pathname: route.path,
+      payload: upstream.payload,
+      statusCode: upstream.statusCode,
+      directory,
+      sessionID: sessionMatch ? decodeURIComponent(sessionMatch[1]) : undefined
+    })
+    : { payload: upstream.payload }
+  const serialized = normalized.payload === undefined ? "" : JSON.stringify(normalized.payload)
+  response.setHeader("Content-Type", "application/json")
+  if (normalized.nextCursor) {
+    response.setHeader("x-next-cursor", normalized.nextCursor)
+    response.setHeader("x-has-more", "1")
+  } else if (route.path.endsWith("/message")) {
+    response.setHeader("x-has-more", "0")
+  }
+  response.writeHead(upstream.statusCode)
+  response.end(serialized)
 }
 
 async function ensureManagedHttpAvailable(daemon, entry, agentID) {
@@ -425,7 +567,7 @@ export function createAgentRoutingServer({
       if (!fanout) {
         fanout = new ManagedEventFanout({
           host: entry.host,
-          path: `${route.path}${route.search}`,
+          path: openCodeApiPath(entry.host, route.path, route.search),
           ensureAvailable: () => ensureManagedHttpAvailable(daemon, entry, route.agentID)
         })
         eventFanouts.set(key, fanout)

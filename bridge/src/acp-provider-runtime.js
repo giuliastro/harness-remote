@@ -116,7 +116,8 @@ export async function createAcpProviderRuntime({
         hiddenSessionIDs: modelCatalog.hiddenSessionIDs,
         reloadOnHistoryRefresh: provider.reloadOnHistoryRefresh,
         replaySettleMs: provider.replaySettleMs,
-        promptSettleMs: provider.promptSettleMs
+        promptSettleMs: provider.promptSettleMs,
+        requireAssistantResponse: provider.requireAssistantResponse
       }
     }
   }

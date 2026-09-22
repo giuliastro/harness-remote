@@ -219,7 +219,7 @@ test("preflight reports missing harnesses and missing model discovery before the
   assert.deepEqual(result.missingModelCatalogs, ["codex"])
 })
 
-test("preflight requires runtime model discovery for both Copilot and MiMo", async () => {
+test("preflight accepts Copilot native model policy and still requires MiMo discovery", async () => {
   const fetchImpl = async () => new Response(JSON.stringify({
     machine: { id: "machine-provider-models" },
     agents: [
@@ -228,9 +228,9 @@ test("preflight requires runtime model discovery for both Copilot and MiMo", asy
         backend: "copilot",
         transport: "acp",
         state: "configured",
-        capabilities: { models: true },
-        contract: { models: { selection: "optional" } },
-        modelCatalog: { source: "acp-config-options", cachedModels: 7, phase: "ready" }
+        capabilities: { models: false },
+        contract: { models: { selection: "harness-default" } },
+        modelCatalog: null
       },
       {
         id: "mimo",
@@ -247,9 +247,9 @@ test("preflight requires runtime model discovery for both Copilot and MiMo", asy
   const result = await preflightDaemon({ harnesses: ["copilot", "mimo"], fetchImpl })
   assert.equal(result.passed, true)
   assert.deepEqual(result.missingModelCatalogs, [])
-  assert.equal(result.agents[0].modelsSupported, true)
-  assert.equal(result.agents[0].modelSelection, "optional")
-  assert.equal(result.agents[0].modelCatalog.cachedModels, 7)
+  assert.equal(result.agents[0].modelsSupported, false)
+  assert.equal(result.agents[0].modelSelection, "harness-default")
+  assert.equal(result.agents[0].modelCatalog.configured, false)
   assert.equal(result.agents[1].modelsSupported, true)
   assert.equal(result.agents[1].modelSelection, "optional")
   assert.equal(result.agents[1].modelCatalog.cachedModels, 5)

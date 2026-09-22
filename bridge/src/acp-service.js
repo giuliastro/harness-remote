@@ -416,6 +416,7 @@ export class AcpService {
       this.#turnGenerations.delete(sessionID)
       this.#cancelledSessions.delete(sessionID)
       this.#promptedSessions.delete(sessionID)
+      this.#turnResponseObserved.delete(sessionID)
       this.#queues.delete(sessionID)
       this.#dirtySnapshots.delete(sessionID)
       this.#dirtyStart.delete(sessionID)
@@ -449,6 +450,7 @@ export class AcpService {
   #turnGenerations = new Map()
   #cancelledSessions = new Set()
   #promptedSessions = new Set()
+  #turnResponseObserved = new Set()
   #chunkMessageIDs = new Map()
   // PI's journal is authoritative, but a provider rejection can be emitted by ACP before the journal
   // has flushed its terminal assistant error. These ids keep only that short-lived bridge copy alive.
@@ -467,6 +469,7 @@ export class AcpService {
   #nativeRenameCommand
   #journalPageWhileOwned
   #modelVariantConfigIDs
+  #requireAssistantResponse
   constructor(acp, {
     snapshotDirectory,
     historyLoader,
@@ -498,6 +501,7 @@ export class AcpService {
      * id the running adapter actually advertised.
      */
     modelVariantConfigIDs = [],
+    requireAssistantResponse = false,
     actionProviders = []
   } = {}) {
     this.#acp = acp
@@ -511,6 +515,7 @@ export class AcpService {
     this.#nativeRenameCommand = nativeRenameCommand
     this.#journalPageWhileOwned = journalPageWhileOwned
     this.#modelVariantConfigIDs = modelVariantConfigIDs
+    this.#requireAssistantResponse = requireAssistantResponse === true
     this.#actionProviders = actionProviders
     acp.on("notification", (notification) => this.#handleNotification(notification))
   }
@@ -832,6 +837,7 @@ export class AcpService {
     this.#turnGenerations.delete(sessionID)
     this.#cancelledSessions.delete(sessionID)
     this.#promptedSessions.delete(sessionID)
+    this.#turnResponseObserved.delete(sessionID)
     this.#queues.delete(sessionID)
     this.#active.delete(sessionID)
     this.#acpOpenSessions.delete(sessionID)
@@ -1269,10 +1275,12 @@ export class AcpService {
     this.#turnGenerations.set(sessionID, generation)
     this.#cancelledSessions.delete(sessionID)
     this.#promptedSessions.add(sessionID)
+    this.#turnResponseObserved.delete(sessionID)
     if (!recorded) this.#recordPrompt(sessionID, text, attachments)
     this.#active.add(sessionID)
     this.#chunkMessageIDs.delete(`${sessionID}:assistant`)
     this.#emit("session.updated", sessionID)
+    let promptFailed = false
     void this.#acp.request("session/prompt", {
       sessionId: sessionID,
       prompt: [
@@ -1280,6 +1288,7 @@ export class AcpService {
         ...attachments.map((attachment) => ({ type: "image", mimeType: attachment.mime, data: attachment.data }))
       ]
     }, 300_000).catch((error) => {
+      promptFailed = true
       if (this.#turnGenerations.get(sessionID) === generation) {
         this.#recordTurnFailure(sessionID, error.message)
         this.#emit("session.error", sessionID, { message: error.message })
@@ -1293,12 +1302,23 @@ export class AcpService {
         await new Promise((resolve) => setTimeout(resolve, this.#promptSettleMs))
       }
       if (this.#turnGenerations.get(sessionID) !== generation) return
+      if (
+        this.#requireAssistantResponse
+        && !promptFailed
+        && !this.#cancelledSessions.has(sessionID)
+        && !this.#turnResponseObserved.has(sessionID)
+      ) {
+        const message = "Harness completed the prompt without an assistant response"
+        this.#recordTurnFailure(sessionID, message)
+        this.#emit("session.error", sessionID, { message })
+      }
       this.#active.delete(sessionID)
       // Older adapters intentionally deliver assistant chunks after their RPC response, so their
       // historical zero-drain behavior must stay permissive. PI opts into a real drain window above;
       // once it closes, an even later chunk belongs to a subsequent native lifecycle, not this turn.
       if (this.#promptSettleMs > 0) this.#promptedSessions.delete(sessionID)
       this.#chunkMessageIDs.delete(`${sessionID}:assistant`)
+      this.#turnResponseObserved.delete(sessionID)
       // The turn is over, so no activity it started is still running, whatever the adapter said.
       this.#settleActivity(sessionID)
       this.#emit("session.updated", sessionID)
@@ -2001,6 +2021,9 @@ export class AcpService {
     if (role === "assistant" && !replaying && !this.#active.has(sessionId) && !this.#promptedSessions.has(sessionId)) return
     if (role === "user" && !replaying && this.#isAcknowledgedPromptChunk(sessionId, update.content.text)) return
     if (role === "user" && !image && isHarnessInjectedText(update.content.text)) return
+    if (!replaying && role === "assistant" && (partType === "text" || partType === "file")) {
+      this.#turnResponseObserved.add(sessionId)
+    }
     if (!replaying && session) session.updatedAt = new Date().toISOString()
     const counterpartKey = `${sessionId}:${role === "user" ? "assistant" : "user"}`
     this.#chunkMessageIDs.delete(counterpartKey)

@@ -1,5 +1,6 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises"
 import path from "node:path"
+import { openCodeApiPath } from "./opencode-compat.js"
 
 // Managed OpenCode may need a lazy host start before its provider inventory is available. ACP
 // adapters may need a first npx launch, authentication and one technical Session.
@@ -465,18 +466,22 @@ export class HttpAgentModelCatalog extends CachedCatalog {
 
     // `/config/providers` is configuration inventory and can retain entries that runtime resolution
     // later rejects. OpenCode's runtime provider inventory is the picker authority.
-    for (const pathname of ["/provider", "/api/provider"]) {
-      const response = await this.#fetch(base, pathname, auth)
+    const providerPaths = this.host.apiBasePath === "/api" ? ["/provider"] : ["/provider", "/api/provider"]
+    for (const pathname of providerPaths) {
+      const response = await this.#fetch(base, openCodeApiPath(this.host, pathname), auth)
       if (response.status === 404 || response.status === 405) continue
       if (!response.ok) throw new Error(`Refreshing ${this.agentID} models from ${pathname} failed with HTTP ${response.status}`)
-      const models = modelsFromRuntimeProvidersResponse(await response.json())
+      const payload = await response.json()
+      const models = Array.isArray(payload?.all)
+        ? modelsFromRuntimeProvidersResponse(payload)
+        : modelsFromProvidersResponse({ providers: Array.isArray(payload?.data) ? payload.data : [], default: payload?.default })
       if (!models.length) throw new Error(`Agent ${this.agentID} did not advertise any connected runtime models`)
       this.source = `opencode-runtime:${pathname}`
       return this.remember(models)
     }
 
     // Compatibility only for OpenCode versions from before the runtime provider route.
-    const response = await this.#fetch(base, "/config/providers", auth)
+    const response = await this.#fetch(base, openCodeApiPath(this.host, "/config/providers"), auth)
     if (!response.ok) throw new Error(`Refreshing ${this.agentID} models failed with HTTP ${response.status}`)
     const models = modelsFromProvidersResponse(await response.json())
     if (!models.length) throw new Error(`Agent ${this.agentID} did not advertise any models`)

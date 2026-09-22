@@ -176,7 +176,10 @@ export const HARNESS_PROFILES = {
   }),
   copilot: defineAcpProvider({
     id: "copilot",
-    modelSelection: "optional",
+    // The current GitHub Copilot CLI ACP server exposes `mode` and `allow_all`, but no model
+    // config option. Do not ask the daemon to build a catalog that the server cannot provide;
+    // the Copilot CLI remains the owner of its configured model.
+    modelSelection: "harness-default",
     label: "GitHub Copilot CLI",
     command: "copilot",
     detectCommands: ["copilot"],
@@ -184,8 +187,7 @@ export const HARNESS_PROFILES = {
     args: ["--acp", "--stdio"],
     permissionMode: "allow",
     lifecycleContract: COMMON_ACP_LIFECYCLE_CONTRACT,
-    // Current Copilot ACP advertises model and reasoning_effort as real per-Session config options.
-    modelVariantConfigIDs: ["reasoning_effort"],
+    modelVariantConfigIDs: [],
     sessionContract: {
       authority: "native-harness",
       discovery: "native-list",
@@ -197,7 +199,7 @@ export const HARNESS_PROFILES = {
     },
     capabilities: {
       ...COMMON_CAPABILITIES,
-      models: true,
+      models: false,
       todos: false,
       // Copilot ACP advertises its current slash-command set through available_commands_update.
       commands: true,
@@ -257,14 +259,13 @@ export const HARNESS_PROFILES = {
     // Current MiMo ACP advertises `opencode-login` but its authenticate RPC throws
     // "Authentication not implemented". It relies on credentials configured in the CLI itself.
     authenticate: false,
-    // Work around upstream #865 without mutating the user's config: MiMo's ACP ignores the
-    // DB-backed default set by `mimo auth login`, while inline config is honored by defaultModel().
-    // CI may supply a secret-free inline provider config that references MIMO_API_KEY by environment
-    // name. Normal users keep the safe mimo-auto bootstrap and are not opted into API billing.
-    environment: {
-      OPENCODE_CONFIG_CONTENT: process.env.HARNESS_REMOTE_MIMO_CONFIG_CONTENT
-        || JSON.stringify({ model: "mimo/mimo-auto" })
-    },
+    // MiMo reads its inline configuration from MIMOCODE_CONFIG_CONTENT. Do not force
+    // mimo/mimo-auto when no configuration was supplied: that upstream free service is no longer
+    // available and turns every prompt into a silent ACP success with no assistant message.
+    ...(process.env.HARNESS_REMOTE_MIMO_CONFIG_CONTENT
+      ? { environment: { MIMOCODE_CONFIG_CONTENT: process.env.HARNESS_REMOTE_MIMO_CONFIG_CONTENT } }
+      : {}),
+    requireAssistantResponse: true,
     // MiMo's ACP server restricts session/new to the process working tree. A machine daemon can
     // expose several configured projects, so the generic runtime starts both ACP clients from
     // their common ancestor instead of making the first project the only usable root.

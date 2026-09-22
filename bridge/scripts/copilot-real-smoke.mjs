@@ -11,7 +11,7 @@
  * Coverage:
  *   1. provider launch + ACP initialize;
  *   2. native session/list + session/new rediscovery;
- *   3. runtime model catalog + real per-Session model switch when advertised;
+ *   3. the native model policy (the current Copilot ACP does not expose a model catalog);
  *   4. runtime available_commands_update;
  *   5. prompt streaming through AcpService;
  *   6. Stop/cancel and reuse of the same Session;
@@ -101,31 +101,9 @@ try {
   const listed = await first.service.listSessions(directory)
   check(listed.some((session) => session.id === created.id), "new native Session is rediscovered by session/list")
 
-  const models = await first.service.models(created.id)
-  if (!models.length) {
-    check(
-      profile.modelSelection === "optional",
-      "Copilot may omit its optional runtime model catalog"
-    )
-    console.log("ok   Copilot did not advertise a model config option; model switching is not available in this CLI build")
-  } else {
-    const currentModel = models.find((model) => model.currentValue)
-    check(Boolean(currentModel), "runtime model catalog identifies the current Copilot model")
-    if (models.length >= 2) {
-      const alternateModel = models.find((model) => !model.currentValue)
-      check(Boolean(alternateModel), "runtime model catalog offers an alternate Copilot model")
-      if (alternateModel?.value) {
-        await first.service.setModel(created.id, alternateModel.value)
-        const switchedModels = await first.service.models(created.id)
-        check(
-          switchedModels.some((model) => model.value === alternateModel.value && model.currentValue),
-          `session/set_config_option switched Copilot to advertised model ${alternateModel.value}`
-        )
-      }
-    } else {
-      console.log("ok   Copilot advertised one runtime model; alternate model switching is not available")
-    }
-  }
+  check(profile.modelSelection === "harness-default", "Copilot uses the native CLI model policy")
+  check(profile.capabilities.models === false, "Copilot does not require a model catalog")
+  console.log("ok   Copilot ACP exposes no model catalog; the bridge will not request one")
 
   // Copilot sends available_commands_update asynchronously just after session/new.
   await sleep(500)
