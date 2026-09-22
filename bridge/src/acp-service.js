@@ -403,6 +403,7 @@ export class AcpService {
       this.#restoredSnapshots.delete(sessionID)
       this.#todos.delete(sessionID)
       this.#configOptions.delete(sessionID)
+      this.#modelSwitchMethods.delete(sessionID)
       this.#commandCatalogs.delete(sessionID)
       for (const resolve of this.#commandCatalogWaiters.get(sessionID) ?? []) resolve()
       this.#commandCatalogWaiters.delete(sessionID)
@@ -415,6 +416,7 @@ export class AcpService {
       this.#turnGenerations.delete(sessionID)
       this.#cancelledSessions.delete(sessionID)
       this.#promptedSessions.delete(sessionID)
+      this.#turnResponseObserved.delete(sessionID)
       this.#queues.delete(sessionID)
       this.#dirtySnapshots.delete(sessionID)
       this.#dirtyStart.delete(sessionID)
@@ -423,6 +425,7 @@ export class AcpService {
   })
   #todos = new Map()
   #configOptions = new Map()
+  #modelSwitchMethods = new Map()
   #commandCatalogs = new Map()
   #commandCatalogWaiters = new Map()
   #actionStates = new Map()
@@ -447,6 +450,7 @@ export class AcpService {
   #turnGenerations = new Map()
   #cancelledSessions = new Set()
   #promptedSessions = new Set()
+  #turnResponseObserved = new Set()
   #chunkMessageIDs = new Map()
   // PI's journal is authoritative, but a provider rejection can be emitted by ACP before the journal
   // has flushed its terminal assistant error. These ids keep only that short-lived bridge copy alive.
@@ -465,6 +469,7 @@ export class AcpService {
   #nativeRenameCommand
   #journalPageWhileOwned
   #modelVariantConfigIDs
+  #requireAssistantResponse
   constructor(acp, {
     snapshotDirectory,
     historyLoader,
@@ -496,6 +501,7 @@ export class AcpService {
      * id the running adapter actually advertised.
      */
     modelVariantConfigIDs = [],
+    requireAssistantResponse = false,
     actionProviders = []
   } = {}) {
     this.#acp = acp
@@ -509,6 +515,7 @@ export class AcpService {
     this.#nativeRenameCommand = nativeRenameCommand
     this.#journalPageWhileOwned = journalPageWhileOwned
     this.#modelVariantConfigIDs = modelVariantConfigIDs
+    this.#requireAssistantResponse = requireAssistantResponse === true
     this.#actionProviders = actionProviders
     acp.on("notification", (notification) => this.#handleNotification(notification))
   }
@@ -596,7 +603,7 @@ export class AcpService {
     await this.#acp.start()
     const result = await this.#acp.request("session/new", { cwd: directory, mcpServers: [] })
     this.#acpOpenSessions.add(result.sessionId)
-    this.#rememberConfigOptions(result.sessionId, result.configOptions)
+    this.#rememberSessionConfiguration(result.sessionId, result)
     const session = {
       sessionId: result.sessionId,
       cwd: directory,
@@ -686,6 +693,7 @@ export class AcpService {
       this.#ownedSessions.delete(sessionID)
       this.#adoptedSessions.delete(sessionID)
       this.#configOptions.delete(sessionID)
+      this.#modelSwitchMethods.delete(sessionID)
       this.#commandCatalogs.delete(sessionID)
       this.#actionStates.delete(sessionID)
       this.#authoritativeActionStates.delete(sessionID)
@@ -829,6 +837,7 @@ export class AcpService {
     this.#turnGenerations.delete(sessionID)
     this.#cancelledSessions.delete(sessionID)
     this.#promptedSessions.delete(sessionID)
+    this.#turnResponseObserved.delete(sessionID)
     this.#queues.delete(sessionID)
     this.#active.delete(sessionID)
     this.#acpOpenSessions.delete(sessionID)
@@ -1159,12 +1168,13 @@ export class AcpService {
       await this.#setModelVariant(sessionID, variant)
       return
     }
-    const changed = await this.#acp.request("session/set_config_option", { sessionId: sessionID, configId: "model", value })
-    // Adopt the options the adapter reports for the model it now holds. A harness whose dependent
-    // controls differ per model - PI advertises a different thinkingLevel range for each one, from a
-    // single `off` up to `max` - otherwise leaves this Session describing the previous model, so the
-    // variant about to be applied would be checked against the wrong set of values.
-    if (Array.isArray(changed?.configOptions)) this.#rememberConfigOptions(sessionID, changed.configOptions)
+    const switchMethod = this.#modelSwitchMethods.get(sessionID) ?? "config_option"
+    const changed = switchMethod === "legacy_model"
+      ? await this.#acp.request("session/set_model", { sessionId: sessionID, modelId: value })
+      : await this.#acp.request("session/set_config_option", { sessionId: sessionID, configId: "model", value })
+    // Adopt whatever model surface the adapter reports after the change. Config-option providers can
+    // change dependent controls per model; legacy-model providers may return an updated models state.
+    this.#rememberSessionConfiguration(sessionID, changed)
     const current = this.#configOptions.get(sessionID)?.find((item) => item.id === "model")
     if (current) current.currentValue = value
     else option.currentValue = value
@@ -1265,10 +1275,12 @@ export class AcpService {
     this.#turnGenerations.set(sessionID, generation)
     this.#cancelledSessions.delete(sessionID)
     this.#promptedSessions.add(sessionID)
+    this.#turnResponseObserved.delete(sessionID)
     if (!recorded) this.#recordPrompt(sessionID, text, attachments)
     this.#active.add(sessionID)
     this.#chunkMessageIDs.delete(`${sessionID}:assistant`)
     this.#emit("session.updated", sessionID)
+    let promptFailed = false
     void this.#acp.request("session/prompt", {
       sessionId: sessionID,
       prompt: [
@@ -1276,6 +1288,7 @@ export class AcpService {
         ...attachments.map((attachment) => ({ type: "image", mimeType: attachment.mime, data: attachment.data }))
       ]
     }, 300_000).catch((error) => {
+      promptFailed = true
       if (this.#turnGenerations.get(sessionID) === generation) {
         this.#recordTurnFailure(sessionID, error.message)
         this.#emit("session.error", sessionID, { message: error.message })
@@ -1289,12 +1302,23 @@ export class AcpService {
         await new Promise((resolve) => setTimeout(resolve, this.#promptSettleMs))
       }
       if (this.#turnGenerations.get(sessionID) !== generation) return
+      if (
+        this.#requireAssistantResponse
+        && !promptFailed
+        && !this.#cancelledSessions.has(sessionID)
+        && !this.#turnResponseObserved.has(sessionID)
+      ) {
+        const message = "Harness completed the prompt without an assistant response"
+        this.#recordTurnFailure(sessionID, message)
+        this.#emit("session.error", sessionID, { message })
+      }
       this.#active.delete(sessionID)
       // Older adapters intentionally deliver assistant chunks after their RPC response, so their
       // historical zero-drain behavior must stay permissive. PI opts into a real drain window above;
       // once it closes, an even later chunk belongs to a subsequent native lifecycle, not this turn.
       if (this.#promptSettleMs > 0) this.#promptedSessions.delete(sessionID)
       this.#chunkMessageIDs.delete(`${sessionID}:assistant`)
+      this.#turnResponseObserved.delete(sessionID)
       // The turn is over, so no activity it started is still running, whatever the adapter said.
       this.#settleActivity(sessionID)
       this.#emit("session.updated", sessionID)
@@ -1720,7 +1744,7 @@ export class AcpService {
       if (this.#replaySettleMs > 0) {
         await new Promise((resolve) => setTimeout(resolve, this.#replaySettleMs))
       }
-      this.#rememberConfigOptions(sessionID, result.configOptions)
+      this.#rememberSessionConfiguration(sessionID, result)
       const replayedMessages = mergeFragmentedPiSnapshot(this.#messages.get(sessionID) ?? [])
       this.#messages.set(sessionID, replaceHistory ? replayedMessages : mergeReplay(previousMessages, replayedMessages))
       // Replayed history is finished work by definition, and the adapter does not always close the
@@ -1778,7 +1802,7 @@ export class AcpService {
       300_000
     )
     this.#acpOpenSessions.add(sessionID)
-    this.#rememberConfigOptions(sessionID, result?.configOptions)
+    this.#rememberSessionConfiguration(sessionID, result)
     this.#loaded.add(sessionID)
     this.#persistSnapshot(sessionID)
     return true
@@ -1801,7 +1825,42 @@ export class AcpService {
   }
 
   #rememberConfigOptions(sessionID, configOptions) {
-    if (Array.isArray(configOptions)) this.#configOptions.set(sessionID, configOptions)
+    if (!Array.isArray(configOptions)) return
+    this.#configOptions.set(sessionID, configOptions)
+    if (configOptions.some((item) => item?.id === "model")) {
+      this.#modelSwitchMethods.set(sessionID, "config_option")
+    }
+  }
+
+  #rememberSessionConfiguration(sessionID, result) {
+    if (Array.isArray(result?.configOptions)) {
+      this.#rememberConfigOptions(sessionID, result.configOptions)
+      if (result.configOptions.some((item) => item?.id === "model")) return
+    }
+
+    const available = Array.isArray(result?.models?.availableModels)
+      ? result.models.availableModels
+      : []
+    if (!available.length) return
+
+    const options = available
+      .filter((candidate) => typeof candidate?.modelId === "string" && candidate.modelId)
+      .map((candidate) => ({
+        value: candidate.modelId,
+        ...(typeof candidate.name === "string" && candidate.name ? { name: candidate.name } : {}),
+        ...(typeof candidate.description === "string" && candidate.description ? { description: candidate.description } : {})
+      }))
+    if (!options.length) return
+
+    this.#configOptions.set(sessionID, [{
+      id: "model",
+      name: "Model",
+      category: "model",
+      type: "select",
+      currentValue: typeof result.models?.currentModelId === "string" ? result.models.currentModelId : options[0].value,
+      options
+    }])
+    this.#modelSwitchMethods.set(sessionID, "legacy_model")
   }
 
   #recordPrompt(sessionID, text, attachments = []) {
@@ -1962,6 +2021,9 @@ export class AcpService {
     if (role === "assistant" && !replaying && !this.#active.has(sessionId) && !this.#promptedSessions.has(sessionId)) return
     if (role === "user" && !replaying && this.#isAcknowledgedPromptChunk(sessionId, update.content.text)) return
     if (role === "user" && !image && isHarnessInjectedText(update.content.text)) return
+    if (!replaying && role === "assistant" && (partType === "text" || partType === "file")) {
+      this.#turnResponseObserved.add(sessionId)
+    }
     if (!replaying && session) session.updatedAt = new Date().toISOString()
     const counterpartKey = `${sessionId}:${role === "user" ? "assistant" : "user"}`
     this.#chunkMessageIDs.delete(counterpartKey)

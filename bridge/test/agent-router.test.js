@@ -218,6 +218,63 @@ test("managed HTTP routing replaces client credentials with host credentials", a
   }
 })
 
+test("OpenCode v2 switches the requested model before delivering a prompt", async () => {
+  const upstreamRequests = []
+  const upstream = http.createServer(async (request, response) => {
+    let body = ""
+    for await (const chunk of request) body += chunk
+    upstreamRequests.push({ path: request.url, body: body ? JSON.parse(body) : undefined })
+    if (request.url === "/api/session/ses_1/model") {
+      response.writeHead(204)
+      response.end()
+      return
+    }
+    if (request.url === "/api/session/ses_1/prompt?directory=%2Fwork") {
+      response.writeHead(200, { "Content-Type": "application/json" })
+      response.end(JSON.stringify({ data: { id: "msg_user", type: "user", text: "hello", time: { created: 1 } } }))
+      return
+    }
+    response.writeHead(404)
+    response.end(JSON.stringify({ error: "unexpected route" }))
+  })
+  const upstreamPort = await listen(upstream)
+  const managed = {
+    readinessHost: "127.0.0.1",
+    port: upstreamPort,
+    username: "opencode",
+    password: "internal-secret",
+    apiBasePath: "/api"
+  }
+  const server = routedServer(managed)
+  const port = await listen(server)
+  try {
+    const response = await fetch(`http://127.0.0.1:${port}/v1/agents/opencode/session/ses_1/prompt_async?directory=%2Fwork`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        parts: [{ type: "text", text: "hello" }],
+        model: { providerID: "openrouter", modelID: "free" },
+        variant: "high"
+      })
+    })
+    assert.equal(response.status, 200)
+    assert.equal(await response.json(), true)
+    assert.deepEqual(upstreamRequests, [
+      {
+        path: "/api/session/ses_1/model",
+        body: { model: { providerID: "openrouter", id: "free", variant: "high" } }
+      },
+      {
+        path: "/api/session/ses_1/prompt?directory=%2Fwork",
+        body: { text: "hello", files: [] }
+      }
+    ])
+  } finally {
+    await close(server)
+    await close(upstream)
+  }
+})
+
 test("managed HTTP agent routes keep daemon authentication", async () => {
   let proxied = false
   const managed = { readinessHost: "127.0.0.1", port: 4096, username: "internal", password: "secret" }

@@ -1,4 +1,5 @@
-export type BackendKind = "opencode" | "omp" | "pi" | "claude" | "codex"
+/** Provider ids are runtime data from the machine registry. Keep the historical literals for editor hints, but never reject a standards-compatible provider id in the client. */
+export type BackendKind = "opencode" | "omp" | "pi" | "claude" | "codex" | (string & {})
 
 export type ServerConfig = {
   backend: BackendKind
@@ -41,6 +42,8 @@ export type HarnessCapabilityContract = {
   }
   models: {
     source: string
+    /** Whether Harness Remote must choose a verified model, may choose one, or must defer to the harness. */
+    selection?: "required" | "optional" | "harness-default"
     cacheScope: string
     variants: string
     variantConfigIDs: string[]

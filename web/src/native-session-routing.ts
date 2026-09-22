@@ -12,6 +12,7 @@ import {
   nativeSessionTransferredContext,
   sendNativeSessionPrompt
 } from "./native-session-prompt"
+import { backendForAgent } from "./serverConfig"
 import type { MachineAgentHost, ModelSelection, ServerConfig } from "./types"
 
 export type NativeSessionRouteMachine = {
@@ -102,15 +103,13 @@ function historyEntry(source: NativeSessionSurfaceTarget, messages: NativeSessio
   }
 }
 
-function targetRecord(source: NativeSessionSurfaceTarget, ref: NativeSessionRef, agent: MachineAgentHost): NativeSessionRecord {
+export function nativeSessionRouteTargetRecord(source: NativeSessionSurfaceTarget, ref: NativeSessionRef, agent: MachineAgentHost): NativeSessionRecord {
   const now = Date.now()
   return {
     key: `${agent.id}:${ref.sessionID}`,
     agentId: agent.id,
     agentLabel: agent.label || agent.id,
-    backend: agent.backend === "omp" || agent.backend === "pi" || agent.backend === "claude" || agent.backend === "codex"
-      ? agent.backend
-      : "opencode",
+    backend: backendForAgent(agent.backend, agent.id, source.backend),
     transport: agent.transport,
     stopCapability: agent.contract?.sessions?.stop,
     abortSupported: agent.capabilities?.abort === true,
@@ -198,7 +197,7 @@ export async function continueNativeSessionOnRoute({
   const next = nativeSessionSurfaceTarget(
     pending.target.machineID,
     targetMachine.config,
-    targetRecord(source, pending.target, targetAgent)
+    nativeSessionRouteTargetRecord(source, pending.target, targetAgent)
   )
   const routedTarget: NativeSessionSurfaceTarget = {
     ...next,

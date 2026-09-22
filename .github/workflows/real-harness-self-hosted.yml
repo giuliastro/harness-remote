@@ -1,0 +1,200 @@
+name: Real harness gate - self hosted
+
+"on":
+  workflow_dispatch: {}
+  pull_request:
+    types: [labeled, synchronize, reopened]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: real-harness-local-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  real-harness-local:
+    name: Real local logins across all harnesses
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (
+        github.event.pull_request.head.repo.full_name == github.repository &&
+        contains(github.event.pull_request.labels.*.name, 'real-harness-local')
+      )
+    runs-on: [self-hosted, linux, x64, harness-real]
+    timeout-minutes: 120
+
+    env:
+      HR_URL: http://127.0.0.1:4097
+      HR_USER: harness
+      HR_PASS: local-real-gate
+      HR_CYCLES: "1"
+      HR_TURN_BUDGET_MS: "180000"
+      NO_BROWSER: "1"
+      OPENCODE_DISABLE_AUTOUPDATE: "true"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          clean: true
+
+      - name: Verify runner identity and toolchain
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "Runner user: $(id -un)"
+          echo "HOME: $HOME"
+          node --version
+          npm --version
+          git --version
+          if [ ! -w "$HOME" ]; then
+            echo "Self-hosted runner HOME is not writable. Run the GitHub runner as the same Linux user that owns the harness logins." >&2
+            exit 1
+          fi
+
+      - name: Add temporary OpenCode 2 alias if needed
+        shell: bash
+        run: |
+          set -euo pipefail
+          BIN_DIR="$RUNNER_TEMP/harness-real-bin"
+          mkdir -p "$BIN_DIR"
+          if ! command -v opencode2 >/dev/null 2>&1; then
+            cat > "$BIN_DIR/opencode2" <<'EOF'
+          #!/usr/bin/env bash
+          exec npx --yes --package=@opencode/cli opencode "$@"
+          EOF
+            chmod +x "$BIN_DIR/opencode2"
+          fi
+          echo "$BIN_DIR" >> "$GITHUB_PATH"
+
+      - name: Verify all eight real harness executables
+        shell: bash
+        run: |
+          set -euo pipefail
+          missing=0
+          for command in opencode codex claude omp pi copilot opencode2 mimo; do
+            if command -v "$command" >/dev/null 2>&1; then
+              echo "ok  $command -> $(command -v "$command")"
+            else
+              echo "FAIL missing harness executable: $command" >&2
+              missing=1
+            fi
+          done
+          if [ "$missing" -ne 0 ]; then
+            exit 1
+          fi
+
+      - name: Prepare isolated smoke workspace and state
+        shell: bash
+        run: |
+          set -euo pipefail
+          RUN_ROOT="$HOME/.harness-remote/smoke-workspaces/release-gate"
+          STATE_DIR="$RUNNER_TEMP/harness-real-state-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          HR_DIR_A="$RUN_ROOT/project-a"
+          HR_DIR_B="$RUN_ROOT/project-b"
+
+          mkdir -p "$HR_DIR_A" "$HR_DIR_B" "$STATE_DIR"
+          for dir in "$HR_DIR_A" "$HR_DIR_B"; do
+            git -C "$dir" init -q
+            git -C "$dir" config user.email "harness-remote-ci@example.invalid"
+            git -C "$dir" config user.name "Harness Remote CI"
+            printf 'Harness Remote real local gate.\n' > "$dir/README.md"
+            git -C "$dir" add README.md
+            git -C "$dir" commit -qm "seed"
+          done
+
+          echo "HR_RUN_ROOT=$RUN_ROOT" >> "$GITHUB_ENV"
+          echo "HR_DIR_A=$HR_DIR_A" >> "$GITHUB_ENV"
+          echo "HR_DIR_B=$HR_DIR_B" >> "$GITHUB_ENV"
+          echo "HARNESS_REMOTE_STATE_DIR=$STATE_DIR" >> "$GITHUB_ENV"
+
+      - name: Real Copilot ACP create Stop history reopen smoke
+        run: npm --prefix bridge run smoke:copilot
+
+      - name: Real OpenCode 2 ACP create Stop history reopen smoke
+        run: npm --prefix bridge run smoke:opencode2
+
+      - name: Real MiMo ACP create Stop history reopen smoke
+        run: npm --prefix bridge run smoke:mimo
+
+      - name: Start eight-harness machine daemon with existing local logins
+        shell: bash
+        run: |
+          set -euo pipefail
+          LOG="$RUNNER_TEMP/harness-real-daemon-${GITHUB_RUN_ID}.log"
+          PID="$RUNNER_TEMP/harness-real-daemon-${GITHUB_RUN_ID}.pid"
+
+          node bridge/src/daemon-cli.js \
+            --backend codex \
+            --host 127.0.0.1 \
+            --port 4097 \
+            --username "$HR_USER" \
+            --password "$HR_PASS" \
+            --state-dir "$HARNESS_REMOTE_STATE_DIR" \
+            --root "$HR_DIR_A" \
+            --root "$HR_DIR_B" \
+            --opencode-port 4096 \
+            > "$LOG" 2>&1 &
+          echo "$!" > "$PID"
+          echo "HR_DAEMON_LOG=$LOG" >> "$GITHUB_ENV"
+          echo "HR_DAEMON_PID=$PID" >> "$GITHUB_ENV"
+
+          ready=0
+          for attempt in $(seq 1 90); do
+            if curl --silent --fail --user "$HR_USER:$HR_PASS" "$HR_URL/v1/diagnostics" >/dev/null; then
+              ready=1
+              break
+            fi
+            sleep 2
+          done
+          if [ "$ready" -ne 1 ]; then
+            echo "Harness daemon did not become ready." >&2
+            tail -n 200 "$LOG" >&2 || true
+            exit 1
+          fi
+
+      - name: Run strict real-inference gate on all eight harnesses
+        working-directory: bridge
+        run: |
+          npm run gate:real-harness -- \
+            --harnesses opencode,codex,claude,omp,pi,copilot,opencode2,mimo \
+            --report artifacts/real-harness-local.json
+
+      - name: Print sanitized daemon tail on failure
+        if: failure()
+        shell: bash
+        run: |
+          if [ -n "${HR_DAEMON_LOG:-}" ] && [ -f "$HR_DAEMON_LOG" ]; then
+            sed -E 's/(api[_-]?key|token|authorization|password)[=: ][^ ]+/<redacted>/Ig' "$HR_DAEMON_LOG" | tail -n 250
+          fi
+
+      - name: Stop local test daemon
+        if: always()
+        shell: bash
+        run: |
+          if [ -n "${HR_DAEMON_PID:-}" ] && [ -f "$HR_DAEMON_PID" ]; then
+            kill "$(cat "$HR_DAEMON_PID")" 2>/dev/null || true
+          fi
+
+      - name: Upload credential-free release evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: real-harness-local-${{ github.event.pull_request.head.sha || github.sha }}
+          path: bridge/artifacts/real-harness-local.json
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Remove only workflow-owned ephemeral state
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Keep ~/.harness-remote/smoke-workspaces: native harnesses can persist Session ids
+          # without exposing a deletion primitive. Removing those directories would leave broken
+          # history records. Harness Remote filters this namespace from the normal Session rail.
+          if [ -n "${HARNESS_REMOTE_STATE_DIR:-}" ] && [[ "$HARNESS_REMOTE_STATE_DIR" == "$RUNNER_TEMP/"* ]]; then
+            rm -rf -- "$HARNESS_REMOTE_STATE_DIR"
+          fi
+          rm -rf -- "$RUNNER_TEMP/harness-real-bin"

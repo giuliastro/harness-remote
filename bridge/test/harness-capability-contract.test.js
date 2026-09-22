@@ -24,6 +24,13 @@ test("ACP capability contract preserves runtime-specific model controls without 
   assert.ok(codex.models.variantConfigIDs.some((id) => ["reasoning_effort", "reasoningEffort"].includes(id)))
   assert.deepEqual(claude.models.variantConfigIDs, [])
   assert.equal(claude.models.variants, "runtime-advertised-only")
+  for (const contract of [omp, pi, codex, claude]) {
+    assert.equal(contract.models.selection, "optional", "established ACP Sessions must keep their harness-owned model unless the user changes it")
+  }
+  assert.equal(acpHarnessCapabilityContract(harnessProfile("opencode2")).models.selection, "required")
+  assert.equal(acpHarnessCapabilityContract(harnessProfile("copilot")).models.selection, "harness-default")
+  assert.deepEqual(acpHarnessCapabilityContract(harnessProfile("copilot")).models.variantConfigIDs, [])
+  assert.equal(acpHarnessCapabilityContract(harnessProfile("mimo")).models.selection, "optional")
 })
 
 test("Session-first contract separates discovery, transcript reads and writer acquisition per ACP harness", () => {
@@ -62,6 +69,7 @@ test("OpenCode capability contract describes daemon-owned SSE fanout and native 
   assert.equal(contract.transport.events, "sse-daemon-fanout")
   assert.equal(contract.toolCalls.representation, "opencode-message-parts")
   assert.equal(contract.models.source, "runtime-provider-api")
+  assert.equal(contract.models.selection, "optional")
   assert.equal(contract.models.cacheScope, "machine")
   assert.equal(contract.models.variants, "provider-advertised")
   assert.equal(contract.lifecycle.sessionAuthority, "native-harness")

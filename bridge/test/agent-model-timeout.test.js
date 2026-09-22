@@ -19,28 +19,39 @@ test("ACP model discovery reserves a larger but finite cold-adapter budget", () 
 })
 
 test("ACP catalog passes one shrinking total budget through startup and Session creation", async () => {
-  const seen = []
-  let startupBudget
-  const agent = {
-    async start(timeoutMs) { startupBudget = timeoutMs },
-    async request(method, _params, timeoutMs) {
-      seen.push({ method, timeoutMs })
-      throw new Error(`ACP request timed out after ${timeoutMs}ms`)
-    },
-    close() {}
+  const stateDirectory = await mkdtemp(path.join(tmpdir(), "harness-model-budget-"))
+  try {
+    const seen = []
+    let startupBudget
+    const agent = {
+      async start(timeoutMs) { startupBudget = timeoutMs },
+      async request(method, _params, timeoutMs) {
+        seen.push({ method, timeoutMs })
+        throw new Error(`ACP request timed out after ${timeoutMs}ms`)
+      },
+      close() {}
+    }
+    // This test validates budget propagation, not scheduler speed. A 25 ms wall-clock budget was
+    // small enough for Windows CI filesystem startup to consume it before the fake session/new call,
+    // making the assertion platform-timing dependent. Use a real temporary state directory and a
+    // comfortably bounded budget while still asserting that every later phase receives no more than
+    // the original startup allowance.
+    const timeoutMs = 500
+    const catalog = new AcpAgentModelCatalog({
+      agent,
+      agentID: "codex",
+      directory: stateDirectory,
+      stateDirectory,
+      timeoutMs
+    })
+    await assert.rejects(() => catalog.list({ allowStale: false }), /timed out(?: during .*?)? after/)
+    assert.ok(startupBudget > 0 && startupBudget <= timeoutMs)
+    assert.equal(seen[0]?.method, "session/new")
+    assert.ok(seen[0]?.timeoutMs > 0 && seen[0]?.timeoutMs <= startupBudget)
+    assert.equal(catalog.diagnostics().inFlight, false)
+  } finally {
+    await rm(stateDirectory, { recursive: true, force: true })
   }
-  const catalog = new AcpAgentModelCatalog({
-    agent,
-    agentID: "codex",
-    directory: "/repo",
-    stateDirectory: "/state",
-    timeoutMs: 25
-  })
-  await assert.rejects(() => catalog.list({ allowStale: false }), /timed out(?: during .*?)? after/)
-  assert.ok(startupBudget > 0 && startupBudget <= 25)
-  assert.equal(seen[0]?.method, "session/new")
-  assert.ok(seen[0]?.timeoutMs > 0 && seen[0]?.timeoutMs <= startupBudget)
-  assert.equal(catalog.diagnostics().inFlight, false)
 })
 
 test("optional ACP variant probing is bounded and cannot invalidate base models", async () => {

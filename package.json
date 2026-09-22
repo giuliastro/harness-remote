@@ -5,7 +5,10 @@
   "bin": {
     "harness-remote": "bridge/src/launcher.js",
     "harness-remote-daemon": "bridge/src/daemon-bin.js",
-    "harness-remote-copilot-smoke": "bridge/scripts/copilot-real-smoke.mjs"
+    "harness-remote-copilot-smoke": "bridge/scripts/copilot-real-smoke.mjs",
+    "harness-remote-opencode2-smoke": "bridge/scripts/opencode2-real-smoke.mjs",
+    "harness-remote-mimo-smoke": "bridge/scripts/mimo-real-smoke.mjs",
+    "harness-remote-web": "bridge/scripts/web-dev.mjs"
   },
   "scripts": {
     "start": "node bridge/src/launcher.js",
@@ -48,7 +51,20 @@
     "README.md",
     "LICENSE",
     "REFERENCE.md",
-    "docs/QUICK_START.md"
+    "docs/QUICK_START.md",
+    "bridge/scripts/acp-provider-real-smoke-lib.mjs",
+    "bridge/scripts/opencode2-real-smoke.mjs",
+    "bridge/scripts/mimo-real-smoke.mjs",
+    "bridge/scripts/web-dev.mjs",
+    "web/src",
+    "web/public",
+    "web/index.html",
+    "web/vite.config.ts",
+    "web/tsconfig.json",
+    "web/tsconfig.app.json",
+    "web/tsconfig.node.json",
+    "web/package.json",
+    "web/package-lock.json"
   ],
   "publishConfig": {
     "access": "public"

@@ -146,6 +146,48 @@ test("health readiness verifies the generated credentials", async () => {
   assert.equal(request.options.headers.Authorization, `Basic ${Buffer.from("harness:secret").toString("base64")}`)
 })
 
+test("health readiness falls back to OpenCode v2's native username", async () => {
+  const authorizations = []
+  const result = await waitForOpenCodeHealth({
+    host: "127.0.0.1",
+    port: 4096,
+    username: "harness",
+    password: "secret",
+    timeoutMs: 50,
+    fetchImpl: async (_url, options) => {
+      authorizations.push(options.headers.Authorization)
+      return { status: authorizations.length === 1 ? 401 : 200 }
+    }
+  })
+
+  assert.deepEqual(authorizations, [
+    `Basic ${Buffer.from("harness:secret").toString("base64")}`,
+    `Basic ${Buffer.from("opencode:secret").toString("base64")}`
+  ])
+  assert.deepEqual(result, { username: "opencode", apiBasePath: "" })
+})
+
+test("health readiness ignores OpenCode v2's HTML shell and selects its JSON API", async () => {
+  const paths = []
+  const result = await waitForOpenCodeHealth({
+    host: "127.0.0.1",
+    port: 4096,
+    username: "harness",
+    password: "secret",
+    timeoutMs: 50,
+    fetchImpl: async (url) => {
+      const path = new URL(url).pathname
+      paths.push(path)
+      return path === "/global/health"
+        ? { status: 200, headers: { get: () => "text/html" } }
+        : { status: 200, headers: { get: () => "application/json" } }
+    }
+  })
+
+  assert.deepEqual(paths, ["/global/health", "/api/info"])
+  assert.deepEqual(result, { username: "harness", apiBasePath: "/api" })
+})
+
 test("health readiness rejects an authentication mismatch immediately", async () => {
   await assert.rejects(waitForOpenCodeHealth({
     host: "127.0.0.1",

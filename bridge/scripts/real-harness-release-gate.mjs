@@ -5,7 +5,7 @@ import path from "node:path"
 import { fileURLToPath } from "node:url"
 import { verifyRealHarnessSessionDiscovery } from "./real-harness-session-discovery.mjs"
 
-export const SUPPORTED_HARNESSES = ["opencode", "codex", "claude", "omp", "pi"]
+export const SUPPORTED_HARNESSES = ["opencode", "codex", "claude", "omp", "pi", "copilot", "opencode2", "mimo"]
 
 const REQUIRED_SOAK_COVERAGE = [
   "sessionCreation",
@@ -124,12 +124,17 @@ function authorization(user = process.env.HR_USER ?? "", pass = process.env.HR_P
 
 function preflightAgent(agentID, agents) {
   const agent = agents.find((candidate) => candidate?.id === agentID)
+  const modelsSupported = agent?.capabilities?.models === true
+  const modelSelection = agent?.contract?.models?.selection
+    ?? (modelsSupported ? "required" : "harness-default")
   return {
     id: agentID,
     registered: Boolean(agent),
     backend: agent?.backend ?? null,
     transport: agent?.transport ?? null,
     state: agent?.state ?? null,
+    modelsSupported,
+    modelSelection,
     modelCatalog: agent?.modelCatalog
       ? {
           configured: true,
@@ -171,7 +176,9 @@ export async function preflightDaemon({
     const agents = Array.isArray(data?.agents) ? data.agents : []
     const selected = harnesses.map((agentID) => preflightAgent(agentID, agents))
     const missingHarnesses = selected.filter((agent) => !agent.registered).map((agent) => agent.id)
-    const missingModelCatalogs = selected.filter((agent) => agent.registered && !agent.modelCatalog.configured).map((agent) => agent.id)
+    const missingModelCatalogs = selected
+      .filter((agent) => agent.registered && agent.modelsSupported && agent.modelSelection !== "harness-default" && !agent.modelCatalog.configured)
+      .map((agent) => agent.id)
     return {
       passed: missingHarnesses.length === 0 && missingModelCatalogs.length === 0,
       status: response.status,
@@ -222,14 +229,19 @@ export function parseSoakEvidence(output = "") {
   const coverage = {
     sessionCreation: hasPassed(checks, /two native Sessions created on/i),
     multiTurnStreaming: hasPassed(checks, /turn \d+ completed in \d+ms/i),
-    modelSelection: hasPassed(checks, /turn \d+ accepted with model /i),
+    modelSelection:
+      hasPassed(checks, /turn \d+ accepted with model /i)
+      || hasPassed(checks, /harness-default model policy verified/i),
     crossHarnessIsolation:
-      hasPassed(checks, /catalog unchanged (?:while switching away and back|after visiting)/i)
-      && hasPassed(checks, /prompt accepted after harness switch and model change/i),
+      (
+        hasPassed(checks, /catalog unchanged (?:while switching away and back|after visiting)/i)
+        || hasPassed(checks, /harness-default model policy unchanged (?:while switching away and back|after visiting)/i)
+      )
+      && hasPassed(checks, /prompt accepted after harness switch and model (?:change|policy check)/i),
     transcriptFidelity: hasPassed(checks, /one user turn per accepted prompt, no duplicates/i),
     stopAndResume:
       hasPassed(checks, /Stop accepted for /i)
-      && hasPassed(checks, /Session accepts a new prompt with a new model after Stop/i)
+      && hasPassed(checks, /Session accepts a new prompt with (?:a new model|harness-default model policy) after Stop/i)
       && hasPassed(checks, /interrupted turn stays visible in the transcript/i),
     resourceBounds:
       hasPassed(checks, /adapter listeners did not grow unboundedly/i)
@@ -367,7 +379,10 @@ export async function runGate({
   const preflightResult = await preflight({ harnesses })
   if (preflightResult.passed) {
     for (const agent of preflightResult.agents) {
-      console.log(`  ok   ${agent.id}: registered, model discovery=${agent.modelCatalog.source ?? "configured"}`)
+      const modelEvidence = agent.modelsSupported && agent.modelSelection !== "harness-default"
+        ? `model discovery=${agent.modelCatalog.source ?? "configured"}`
+        : "model policy=harness-default"
+      console.log(`  ok   ${agent.id}: registered, ${modelEvidence}`)
     }
   } else {
     console.error(`  FAIL ${preflightResult.error ?? "Daemon preflight failed."}`)

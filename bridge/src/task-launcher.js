@@ -1,4 +1,5 @@
 import { taskLaunchError } from "./task-errors.js"
+import { normalizeOpenCodeV2Response, openCodeApiBody, openCodeApiModelBody, openCodeApiPath } from "./opencode-compat.js"
 import { promptModelBody } from "./task-model.js"
 
 const MAX_OUTCOME_CHARS = 6_000
@@ -13,6 +14,23 @@ function basicAuthorization(username, password) {
 
 function httpHost(host) {
   return host.includes(":") && !host.startsWith("[") ? `[${host}]` : host
+}
+
+function runApiHost(run) {
+  return { apiBasePath: run?.apiBasePath ?? "" }
+}
+
+async function switchHttpModel({ fetchImpl, base, host, sessionID, body, authorization }) {
+  const pathname = `/session/${encodeURIComponent(sessionID)}/prompt`
+  const modelBody = openCodeApiModelBody(host, pathname, body)
+  if (!modelBody) return
+  const headers = { Accept: "application/json", "Content-Type": "application/json", ...(authorization ? { Authorization: authorization } : {}) }
+  const response = await fetchImpl(`${base}${openCodeApiPath(host, `/session/${encodeURIComponent(sessionID)}/model`)}`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify(modelBody)
+  })
+  if (!response.ok) throw new Error(`Selecting the ${host.apiBasePath === "/api" ? "OpenCode" : "native"} model failed with HTTP ${response.status}`)
 }
 
 async function responseJSON(response, label) {
@@ -228,19 +246,37 @@ export class TaskLauncher {
   }
 
   async #httpSessionMessages(task, run, agentID) {
+    const host = runApiHost(run)
+    const pathname = `/session/${encodeURIComponent(run.sessionId)}/message`
+    const search = `?limit=40&directory=${encodeURIComponent(task.workspace.path)}`
     const response = await this.fetchImpl(
-      `${run.base}/session/${encodeURIComponent(run.sessionId)}/message?limit=40&directory=${encodeURIComponent(task.workspace.path)}`,
+      `${run.base}${openCodeApiPath(host, pathname, search)}`,
       { headers: run.authorization ? { Authorization: run.authorization } : {} }
     )
-    return responseJSON(response, `Reading ${agentID} session after transport recovery`)
+    const payload = await responseJSON(response, `Reading ${agentID} session after transport recovery`)
+    return host.apiBasePath === "/api"
+      ? normalizeOpenCodeV2Response({
+        pathname,
+        payload,
+        statusCode: response.status,
+        directory: task.workspace.path,
+        sessionID: run.sessionId
+      }).payload
+      : payload
   }
 
   async #httpSessionStatus(task, run, agentID) {
+    const host = runApiHost(run)
+    const pathname = "/session/status"
+    const search = `?directory=${encodeURIComponent(task.workspace.path)}`
     const response = await this.fetchImpl(
-      `${run.base}/session/status?directory=${encodeURIComponent(task.workspace.path)}`,
+      `${run.base}${openCodeApiPath(host, pathname, search)}`,
       { headers: run.authorization ? { Authorization: run.authorization } : {} }
     )
-    const statuses = await responseJSON(response, `Reading ${agentID} status after transport recovery`)
+    const payload = await responseJSON(response, `Reading ${agentID} status after transport recovery`)
+    const statuses = host.apiBasePath === "/api"
+      ? normalizeOpenCodeV2Response({ pathname, payload, statusCode: response.status }).payload
+      : payload
     return openCodeStatus(statuses?.[run.sessionId])
   }
 
@@ -316,14 +352,20 @@ export class TaskLauncher {
       const host = entry.host.readinessHost ?? entry.host.host ?? "127.0.0.1"
       const base = `http://${httpHost(host)}:${entry.host.port}`
       const authorization = basicAuthorization(entry.host.username, entry.host.password)
-      const response = await this.fetchImpl(`${base}/session?directory=${encodeURIComponent(task.workspace.path)}`, {
+      const apiHost = entry.host
+      const pathname = "/session"
+      const search = `?directory=${encodeURIComponent(task.workspace.path)}`
+      const response = await this.fetchImpl(`${base}${openCodeApiPath(apiHost, pathname, search)}`, {
         method: "POST",
         headers: { "Content-Type": "application/json", ...(authorization ? { Authorization: authorization } : {}) },
-        body: JSON.stringify({ title })
+        body: JSON.stringify(openCodeApiBody(apiHost, pathname, { title }, task.workspace.path))
       })
-      const session = await responseJSON(response, `Creating ${agentID} session`)
+      const payload = await responseJSON(response, `Creating ${agentID} session`)
+      const session = apiHost.apiBasePath === "/api"
+        ? normalizeOpenCodeV2Response({ pathname, payload, statusCode: response.status, directory: task.workspace.path }).payload
+        : payload
       if (!session?.id) throw new Error(`Agent ${agentID} did not return a session id`)
-      return { sessionId: session.id, transport: "http", directory: task.workspace.path, base, authorization }
+      return { sessionId: session.id, transport: "http", directory: task.workspace.path, base, authorization, apiBasePath: apiHost.apiBasePath ?? "" }
     }
 
     throw taskLaunchError("unsupported_agent", `Agent ${agentID} cannot launch tasks`)
@@ -382,7 +424,7 @@ export class TaskLauncher {
       const host = entry.host.readinessHost ?? entry.host.host ?? "127.0.0.1"
       const base = `http://${httpHost(host)}:${entry.host.port}`
       const authorization = basicAuthorization(entry.host.username, entry.host.password)
-      return { sessionId: previousRun.sessionId, transport: "http", directory: task.workspace.path, base, authorization }
+      return { sessionId: previousRun.sessionId, transport: "http", directory: task.workspace.path, base, authorization, apiBasePath: entry.host.apiBasePath ?? previousRun.apiBasePath ?? "" }
     }
 
     throw taskLaunchError("unsupported_agent", `Agent ${agentID} cannot resume tasks`)
@@ -411,17 +453,34 @@ export class TaskLauncher {
     }
 
     if (entry.kind === "http") {
-      void this.fetchImpl(`${run.base}/session/${encodeURIComponent(run.sessionId)}/message?directory=${encodeURIComponent(task.workspace.path)}`, {
+      const host = entry.host
+      const pathname = host.apiBasePath === "/api"
+        ? `/session/${encodeURIComponent(run.sessionId)}/prompt`
+        : `/session/${encodeURIComponent(run.sessionId)}/message`
+      const search = `?directory=${encodeURIComponent(task.workspace.path)}`
+      const body = { parts: [{ type: "text", text: task.prompt }], model: promptModelBody(model), variant: model?.variant || undefined }
+      void switchHttpModel({
+        fetchImpl: this.fetchImpl,
+        base: run.base,
+        host,
+        sessionID: run.sessionId,
+        body,
+        authorization: run.authorization
+      }).then(() => this.fetchImpl(`${run.base}${openCodeApiPath(host, pathname, search)}`, {
         method: "POST",
         headers: { "Content-Type": "application/json", ...(run.authorization ? { Authorization: run.authorization } : {}) },
-        body: JSON.stringify({ parts: [{ type: "text", text: task.prompt }], model: promptModelBody(model), variant: model?.variant || undefined })
-      }).then((response) => responseJSON(response, `Starting ${agentID} task`))
+        body: JSON.stringify(openCodeApiBody(host, pathname, body))
+      })).then((response) => responseJSON(response, `Starting ${agentID} task`))
         .then((result) => {
           const failure = readableError(result?.info?.error)
           if (failure) throw new Error(failure)
           const outcome = outcomeFromResult(result)
+          if (!outcome && host.apiBasePath === "/api") {
+            return this.#recoverHttpPrompt(task, run, agentID, new Error(`${agentID} prompt accepted; awaiting final response`))
+          }
           if (!outcome) throw new Error(`${agentID} stopped before producing a final response`)
           onCompleted?.({ outcome })
+          return undefined
         })
         .catch(async (error) => {
           if (!recoverableHttpTransportError(error)) {
@@ -449,11 +508,17 @@ export class TaskLauncher {
       const host = entry.host.readinessHost ?? entry.host.host ?? "127.0.0.1"
       const base = `http://${httpHost(host)}:${entry.host.port}`
       const authorization = basicAuthorization(entry.host.username, entry.host.password)
-      const response = await this.fetchImpl(`${base}/session/status?directory=${encodeURIComponent(task.workspace?.path ?? run.directory ?? "")}`, {
+      const apiHost = entry.host
+      const pathname = "/session/status"
+      const search = `?directory=${encodeURIComponent(task.workspace?.path ?? run.directory ?? "")}`
+      const response = await this.fetchImpl(`${base}${openCodeApiPath(apiHost, pathname, search)}`, {
         headers: authorization ? { Authorization: authorization } : {}
       })
       if (!response.ok) return "unknown"
-      const statuses = await response.json()
+      const payload = await response.json()
+      const statuses = apiHost.apiBasePath === "/api"
+        ? normalizeOpenCodeV2Response({ pathname, payload, statusCode: response.status }).payload
+        : payload
       return openCodeStatus(statuses?.[run.sessionId])
     } catch {
       return "unknown"

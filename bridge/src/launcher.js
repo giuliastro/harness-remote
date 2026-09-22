@@ -22,6 +22,14 @@ function acpBackendPreference() {
     .sort((left, right) => left.launchPriority - right.launchPriority)
     .map((provider) => provider.id)
 }
+
+function supportedBackendIDs() {
+  return [...acpProviderProfiles().map((provider) => provider.id), OPENCODE_BACKEND.id]
+}
+
+function supportedBackendText() {
+  return supportedBackendIDs().join(", ")
+}
 const VIRTUAL_INTERFACE = /^(docker|br-|veth|virbr|tun|tap|utun)/i
 
 function optionValue(args, name) {
@@ -36,11 +44,52 @@ function hasOption(args, name) {
 
 export { findExecutable }
 
+/**
+ * The official OpenCode v2 CLI currently uses `opencode` as its executable name.
+ * Some local installs expose `opencode2` as a shell wrapper around that same binary.
+ * Treating both names as separate backends makes the same OpenCode database appear
+ * twice and sends sessions to the wrong transport. Keep the established HTTP
+ * `opencode` backend as the canonical owner in that case.
+ */
+export function equivalentOpenCodeExecutables(opencodePath, opencode2Path, {
+  realpathSync = fs.realpathSync,
+  readFileSync = fs.readFileSync
+} = {}) {
+  if (!opencodePath || !opencode2Path) return false
+
+  try {
+    if (realpathSync(opencodePath) === realpathSync(opencode2Path)) return true
+  } catch {
+    // A test double or a broken symlink may not resolve. The wrapper check below is safe.
+  }
+
+  try {
+    const source = readFileSync(opencode2Path, "utf8")
+    return /(?:^|\n)\s*exec\s+["']?\$\(dirname\s+["']?\$0["']?\)[\\/]opencode["']?(?:\s|$)/m.test(source)
+  } catch {
+    return false
+  }
+}
+
 export function detectBackends(options = {}) {
   const providers = [...acpProviderProfiles(), OPENCODE_BACKEND]
-  return providers
+  const detected = providers
     .filter((provider) => provider.detectCommands.some((command) => findExecutable(command, options)))
     .map((provider) => provider.id)
+
+  if (
+    detected.includes("opencode")
+    && detected.includes("opencode2")
+    && equivalentOpenCodeExecutables(
+      findExecutable("opencode", options),
+      findExecutable("opencode2", options),
+      options
+    )
+  ) {
+    return detected.filter((backend) => backend !== "opencode2")
+  }
+
+  return detected
 }
 
 export function resolveBackend(args, detected = detectBackends()) {
@@ -50,7 +99,7 @@ export function resolveBackend(args, detected = detectBackends()) {
   if (detected.length > 1) {
     throw new Error(`Multiple supported agent CLIs were found on PATH (${detected.join(", ")}). Re-run with --backend <${detected.join("|")}>.`)
   }
-  throw new Error("No supported agent CLI was found on PATH. Install/select omp, pi, claude, codex, or opencode, then re-run with --backend if needed.")
+  throw new Error(`No supported agent CLI was found on PATH. Install/select one of: ${supportedBackendText()}, then re-run with --backend if needed.`)
 }
 
 /** Choose the low-friction startup shape without executing any discovered CLI. */
@@ -60,7 +109,7 @@ export function resolveLaunchPlan(args, detected = detectBackends()) {
 
   if (detected.length === 0) {
     if (explicit) return { mode: "single", backend: explicit, detected }
-    throw new Error("No supported agent CLI was found on PATH. Install/select omp, pi, claude, codex, or opencode, then re-run with --backend if needed.")
+    throw new Error(`No supported agent CLI was found on PATH. Install/select one of: ${supportedBackendText()}, then re-run with --backend if needed.`)
   }
 
   if (forceSingle) {
@@ -224,7 +273,7 @@ export function formatStartupSummary({ plan, addresses, port, username, password
 }
 
 export function launcherUsage() {
-  return `Usage: harness-remote [options]\n\nQuick start options:\n  --backend <name>       Select omp, pi, claude, codex, or opencode (on multi-agent machines, selects the daemon primary)\n  --single               Force the legacy single-backend path instead of the machine daemon\n  --host <host>          Bind host (quick-start default: 0.0.0.0)\n  --port <port>          Preferred port (OpenCode single-host default: 4096; daemon/ACP default: 4097)\n  --username <username>  Override generated Basic Auth username\n  --password <password>  Override generated Basic Auth password\n  --cors <origin>        Allow a browser client from this exact origin; repeatable\n  --help                 Show this help\n\nWith one detected agent, Harness starts the existing single-backend path. With multiple detected agents and at least one ACP backend, it starts the machine daemon automatically and exposes every detected ACP harness through the machine endpoint; OpenCode is included when installed and receives a free loopback port automatically.`
+  return `Usage: harness-remote [options]\n\nQuick start options:\n  --backend <name>       Select one of: ${supportedBackendText()} (on multi-agent machines, selects the daemon primary)\n  --single               Force the legacy single-backend path instead of the machine daemon\n  --host <host>          Bind host (quick-start default: 0.0.0.0)\n  --port <port>          Preferred port (OpenCode single-host default: 4096; daemon/ACP default: 4097)\n  --username <username>  Override generated Basic Auth username\n  --password <password>  Override generated Basic Auth password\n  --cors <origin>        Allow a browser client from this exact origin; repeatable\n  --help                 Show this help\n\nWith one detected agent, Harness starts the existing single-backend path. With multiple detected agents and at least one ACP backend, it starts the machine daemon automatically and exposes every detected ACP harness through the machine endpoint; OpenCode is included when installed and receives a free loopback port automatically.`
 }
 
 export async function startManagedOpenCode({ host, port, username, password, command = "opencode", Host = ManagedOpenCodeHost } = {}) {

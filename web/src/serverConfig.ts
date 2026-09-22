@@ -74,6 +74,15 @@ export function baseUrl(config: ServerConfig): string {
  * native HTTP client, and a server that does not know the header simply ignores it, so those pass
  * `preflight: false` and keep the hint that tells a daemon which harness was asked for.
  */
+/** Resolve routing identity from machine-advertised provider metadata without a client-side allowlist. */
+export function backendForAgent(
+  backend: string | undefined,
+  agentId: string | undefined,
+  fallback: string
+): string {
+  return backend?.trim() || agentId?.trim() || fallback
+}
+
 export function routingHeaders(
   config: Pick<ServerConfig, "backend" | "agentId">,
   { preflight = true }: { preflight?: boolean } = {}

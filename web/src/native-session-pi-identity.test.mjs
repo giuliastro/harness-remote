@@ -59,7 +59,7 @@ function ids(messages) {
 }
 
 test('native Session working-state aliases remain behavioral rather than source-text contracts', () => {
-  for (const status of ['busy', 'running', 'working', 'retry', 'waiting', 'in_progress', 'in-progress']) {
+  for (const status of ['busy', 'starting', 'running', 'working', 'retry', 'waiting', 'in_progress', 'in-progress']) {
     assert.equal(nativeSessionIsWorking(status), true, `${status} must keep the Session visibly working`)
   }
   assert.equal(nativeSessionIsWorking('  WAITING  '), true, 'working-state matching remains trimmed and case-insensitive')

@@ -26,6 +26,9 @@ export class AcpClient extends EventEmitter {
   #spawn
   #permissionMode
   #preferredAuthMethod
+  #authenticate
+  #environment
+  #cwd
   #child
   #buffer = ""
   #nextID = 1
@@ -37,12 +40,15 @@ export class AcpClient extends EventEmitter {
   #stderr = ""
   #stderrPartial = ""
 
-  constructor({ command = "omp", args = ["acp"], permissionMode = "deny", preferredAuthMethod, spawnProcess = spawn } = {}) {
+  constructor({ command = "omp", args = ["acp"], permissionMode = "deny", preferredAuthMethod, authenticate = true, environment = {}, cwd, spawnProcess = spawn } = {}) {
     super()
     this.#command = command
     this.#args = args
     this.#permissionMode = permissionMode
     this.#preferredAuthMethod = preferredAuthMethod
+    this.#authenticate = authenticate !== false
+    this.#environment = environment && typeof environment === "object" ? { ...environment } : {}
+    this.#cwd = typeof cwd === "string" && cwd ? cwd : undefined
     this.#spawn = spawnProcess
   }
 
@@ -126,7 +132,9 @@ export class AcpClient extends EventEmitter {
       : ["/d", "/s", "/c", this.#command, ...this.#args]
     const child = this.#spawn(windowsCommand, windowsArgs, {
       stdio: ["pipe", "pipe", "pipe"],
-      windowsHide: true
+      windowsHide: true,
+      env: { ...process.env, ...this.#environment },
+      ...(this.#cwd ? { cwd: this.#cwd } : {})
     })
     this.#child = child
     // Each attempt reports its own stderr. Carrying the buffer across restarts made every exit
@@ -171,14 +179,16 @@ export class AcpClient extends EventEmitter {
       // environment variable that is usually unset, and fail later at inference rather than here.
       // Codex's adapter lists `api-key` first too, but its ChatGPT login method is what reads a
       // `codex login` from disk, so a profile may name the method its harness expects.
-      const authMethods = Array.isArray(initialized.authMethods) ? initialized.authMethods : []
-      let authMethod = this.#preferredAuthMethod
-        ? authMethods.find((method) => method?.id === this.#preferredAuthMethod)
-        : undefined
-      authMethod ??= authMethods.find((method) => method?.id === "agent")
-        ?? authMethods.find((method) => method?.id && method.type !== "env_var")
-        ?? authMethods.find((method) => method?.id)
-      if (authMethod) await this.request("authenticate", { methodId: authMethod.id }, remaining("authenticate"))
+      if (this.#authenticate) {
+        const authMethods = Array.isArray(initialized.authMethods) ? initialized.authMethods : []
+        let authMethod = this.#preferredAuthMethod
+          ? authMethods.find((method) => method?.id === this.#preferredAuthMethod)
+          : undefined
+        authMethod ??= authMethods.find((method) => method?.id === "agent")
+          ?? authMethods.find((method) => method?.id && method.type !== "env_var")
+          ?? authMethods.find((method) => method?.id)
+        if (authMethod) await this.request("authenticate", { methodId: authMethod.id }, remaining("authenticate"))
+      }
     } catch (error) {
       this.close()
       throw error

@@ -3,7 +3,7 @@
  * Real GitHub Copilot CLI ACP smoke for the Provider Kit.
  *
  * This is deliberately opt-in: it starts the user's real Copilot CLI, creates a real native
- * Session and spends a small amount of inference. By default it uses a temporary empty workspace.
+ * Session and spends a small amount of inference. By default it uses a stable internal workspace
  *
  *   node bridge/scripts/copilot-real-smoke.mjs
  *   node bridge/scripts/copilot-real-smoke.mjs --cwd /absolute/path
@@ -11,13 +11,14 @@
  * Coverage:
  *   1. provider launch + ACP initialize;
  *   2. native session/list + session/new rediscovery;
- *   3. runtime available_commands_update;
- *   4. prompt streaming through AcpService;
- *   5. Stop/cancel and reuse of the same Session;
- *   6. a fresh ACP process reopens the native Session through session/load and continues it.
+ *   3. the native model policy (the current Copilot ACP does not expose a model catalog);
+ *   4. runtime available_commands_update;
+ *   5. prompt streaming through AcpService;
+ *   6. Stop/cancel and reuse of the same Session;
+ *   7. a fresh ACP process reopens the native Session through session/load and continues it.
  */
-import { mkdtemp, rm } from "node:fs/promises"
-import { tmpdir } from "node:os"
+import { mkdir } from "node:fs/promises"
+import { homedir } from "node:os"
 import path from "node:path"
 import { AcpClient } from "../src/acp-client.js"
 import { AcpPromptEchoFilter } from "../src/acp-prompt-echo-filter.js"
@@ -57,8 +58,9 @@ if (!findExecutable("copilot")) {
 }
 
 const requestedDirectory = argument("cwd")
-const temporaryDirectory = requestedDirectory ? null : await mkdtemp(path.join(tmpdir(), "harness-copilot-smoke-"))
-const directory = path.resolve(requestedDirectory ?? temporaryDirectory)
+const internalWorkspace = path.join(homedir(), ".harness-remote", "smoke-workspaces", "copilot")
+const directory = path.resolve(requestedDirectory ?? internalWorkspace)
+await mkdir(directory, { recursive: true })
 const launch = resolveAcpLaunch(profile)
 
 function runtime() {
@@ -99,6 +101,10 @@ try {
   const listed = await first.service.listSessions(directory)
   check(listed.some((session) => session.id === created.id), "new native Session is rediscovered by session/list")
 
+  check(profile.modelSelection === "harness-default", "Copilot uses the native CLI model policy")
+  check(profile.capabilities.models === false, "Copilot does not require a model catalog")
+  console.log("ok   Copilot ACP exposes no model catalog; the bridge will not request one")
+
   // Copilot sends available_commands_update asynchronously just after session/new.
   await sleep(500)
   const commands = await first.service.commands(created.id)
@@ -137,6 +143,11 @@ try {
   const reopened = await second.service.claimSession(created.id)
   check(reopened === true, "fresh ACP process reopens the native Session through session/load")
 
+  page = await second.service.messagePage(created.id, { limit: 400 })
+  answer = visibleText(page.messages)
+  check(answer.includes("COPILOT-HR-SMOKE"), "reopened native Session history contains the original assistant reply before a new prompt")
+  check(answer.includes("COPILOT-AFTER-STOP"), "reopened native Session history contains the post-Stop reply before a new prompt")
+
   await second.service.promptAndWait(created.id, "Reply with exactly COPILOT-REOPENED and nothing else.")
   page = await second.service.messagePage(created.id, { limit: 400 })
   answer = visibleText(page.messages)
@@ -148,7 +159,6 @@ try {
 } finally {
   first?.acp.close()
   second?.acp.close()
-  if (temporaryDirectory) await rm(temporaryDirectory, { recursive: true, force: true })
 }
 
 if (failures.length) {

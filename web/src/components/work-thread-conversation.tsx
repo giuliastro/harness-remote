@@ -9,8 +9,9 @@ import type { NativeSessionRouteContinueInput, NativeSessionRouteMachine } from 
 import type { SavedServerProfile } from "../serverProfiles"
 import { taskClient, type AgentModelScope } from "../taskClient"
 import { startTaskDeskSessionLiveRefresh } from "../taskdesk-session-live-refresh"
+import { backendForAgent } from "../serverConfig"
+import { providerRequiresExplicitModel, providerUsesModelCatalog } from "../provider-model-selection"
 import type {
-  BackendKind,
   CommandInfo,
   MachineAgentHost,
   MessageEnvelope,
@@ -123,17 +124,11 @@ function assistantMessageHasSignal(message: WorkThreadMessage): boolean {
   })
 }
 
-function supportedBackend(value: string, fallback: BackendKind): BackendKind {
-  return value === "opencode" || value === "omp" || value === "pi" || value === "claude" || value === "codex"
-    ? value
-    : fallback
-}
-
 function configForAgent(base: ServerConfig, agents: MachineAgentHost[], agentID: string): ServerConfig {
   const agent = agents.find((candidate) => candidate.id === agentID)
   return {
     ...base,
-    backend: supportedBackend(agent?.backend || agentID, base.backend),
+    backend: backendForAgent(agent?.backend, agentID, base.backend),
     agentId: agentID
   }
 }
@@ -797,6 +792,14 @@ export function WorkThreadConversation({
       setModelError(null)
       return
     }
+    const catalogAgent = destinationAgents.find((agent) => agent.id === targetAgentID)
+    if (!providerUsesModelCatalog(catalogAgent)) {
+      setModels([])
+      setTargetModelKey("")
+      setModelsLoading(false)
+      setModelError(null)
+      return
+    }
     setModels([])
     setModelsLoading(true)
     setModelError(null)
@@ -814,7 +817,7 @@ export function WorkThreadConversation({
       const latestConversation = conversationRef.current
       const latestHasUserPrompt = Boolean(latestConversation.initialPrompt?.trim())
         || conversationTurns(latestConversation).some((turn) => Boolean(turn.prompt?.trim()))
-      const mayUseCatalogDefault = !deferModelFallback || routeChanged || !latestHasUserPrompt
+      const mayUseCatalogDefault = providerRequiresExplicitModel(catalogAgent) || !deferModelFallback || routeChanged || !latestHasUserPrompt
       const fallback = mayUseCatalogDefault
         ? catalog.models.find((model) => model.isDefault) || catalog.models[0]
         : undefined
@@ -840,9 +843,10 @@ export function WorkThreadConversation({
   // and leave explicit user choices and verified native model metadata alone.
   useEffect(() => {
     if (!deferModelFallback || routeChanged || !conversationHasUserPrompt || currentConversationModelKey) return
-    if (modelSelectionTouchedRef.current) return
+    const agent = destinationAgents.find((candidate) => candidate.id === targetAgentID)
+    if (providerRequiresExplicitModel(agent) || modelSelectionTouchedRef.current) return
     setTargetModelKey("")
-  }, [deferModelFallback, routeChanged, conversationHasUserPrompt, currentConversationModelKey])
+  }, [deferModelFallback, routeChanged, conversationHasUserPrompt, currentConversationModelKey, targetAgentID, routingSignature, agentsSignature])
 
   // Only a model verified by the current live catalog is sent explicitly. A null selection is
   // intentional: the controller distinguishes it from an omitted field, which means reuse the
@@ -850,12 +854,14 @@ export function WorkThreadConversation({
   // resurrect a persisted provider model that has since been removed.
   const selectedModel = models.find((model) => modelKey(model) === targetModelKey)
   const selectedModelAgent = destinationAgents.find((agent) => agent.id === targetAgentID)
-  const modelSelectionRequired = selectedModelAgent?.capabilities?.models === true
+  const modelSelectionRequired = providerRequiresExplicitModel(selectedModelAgent)
+  const modelCatalogSupported = providerUsesModelCatalog(selectedModelAgent)
   // Existing native Sessions are allowed to keep their harness-owned current model when that exact
   // value cannot be reconstructed. What is not allowed is sending before the live catalog itself has
   // finished loading: a brand-new Codex/PI Session has no safe implicit model at that point.
-  const modelCatalogReady = !modelSelectionRequired || (!modelsLoading && models.length > 0)
-  const modelBootstrapBlocked = modelSelectionRequired && !modelCatalogReady
+  const modelCatalogReady = !modelCatalogSupported || (!modelsLoading && models.length > 0)
+  const modelBootstrapBlocked = (modelCatalogSupported && !modelCatalogReady)
+    || (modelSelectionRequired && !selectedModel)
 
   async function loadOlder() {
     if (loadingOlder || !interactionEnabled) return
@@ -952,7 +958,12 @@ export function WorkThreadConversation({
         conversationRef.current = next
         setAwaitingReplyTurnID(next.currentTurn?.id ?? null)
         modelSelectionTouchedRef.current = false
-        await refreshCurrentTail(next)
+        // Prompt acceptance is the Send boundary. Tail reconciliation is opportunistic and may
+        // coalesce a burst of live events into several serialized reads; awaiting that drain here
+        // keeps sendInFlightRef locked after the UI has already settled back to Ready, so the next
+        // click can be silently discarded. Release the Send lock immediately and let the guarded
+        // tail reader converge in the background like the live-event path already does.
+        void refreshCurrentTail(next)
         void refreshAttention(next)
       }
     } catch (reason) {
@@ -1071,8 +1082,8 @@ export function WorkThreadConversation({
             <ModelPicker compact models={models} value={targetModelKey} onChange={(value) => {
               modelSelectionTouchedRef.current = true
               setTargetModelKey(value)
-            }} disabled={!interactionEnabled || working || replyPending || sending || modelsLoading || !targetAgentID} loading={modelsLoading} placeholder={modelBootstrapBlocked ? (modelError ? "Model unavailable" : "Loading models…") : deferModelFallback ? "Harness default" : undefined} unavailableHint={modelError || undefined} />
-            {modelError ? <small className="tdw-field-note" title={modelError}>Model catalog unavailable. Sending is paused until a model can be verified.</small> : null}
+            }} disabled={!interactionEnabled || working || replyPending || sending || modelsLoading || !targetAgentID || !modelCatalogSupported} loading={modelsLoading} placeholder={!modelCatalogSupported ? "Harness default" : modelBootstrapBlocked ? (modelError ? "Model unavailable" : "Loading models…") : deferModelFallback ? "Harness default" : undefined} unavailableHint={modelError || undefined} />
+            {modelError ? <small className="tdw-field-note" title={modelError}>{modelSelectionRequired ? "Model catalog unavailable. Sending is paused until a model can be verified." : "Model catalog unavailable. The harness default will be used."}</small> : null}
           </label>
         </div>
         <ConversationStatePill working={working || replyPending || sending || replySettling || modelBootstrapBlocked} attention={hasAttention} workingLabel={conversationStateLabel} startedAt={sending ? undefined : conversation.currentTurn?.startedAt} status={conversation.status} detail={conversation.error?.message || undefined} />

@@ -67,6 +67,20 @@ class FailingAcp extends EventEmitter {
   notify() {}
 }
 
+class SilentAcp extends EventEmitter {
+  async listSessions() {
+    return [{ sessionId: SESSION, cwd: process.cwd(), title: "Silent", updatedAt: new Date().toISOString() }]
+  }
+
+  async request(method) {
+    if (method === "session/load") return { configOptions: [] }
+    if (method === "session/prompt") return { stopReason: "end_turn" }
+    throw new Error(`Unexpected request: ${method}`)
+  }
+
+  notify() {}
+}
+
 test("a live ACP turn failure is recorded on the transcript, not only announced once", async () => {
   const service = new AcpService(new FailingAcp())
   const errors = []
@@ -80,6 +94,20 @@ test("a live ACP turn failure is recorded on the transcript, not only announced 
   const messages = await service.messages(SESSION)
   assert.deepEqual(messages.map((message) => message.info.role), ["user", "assistant"])
   assert.equal(messages[1].info.error?.message, "Internal error: provider rejected the request")
+})
+
+test("a configured ACP harness cannot settle Ready without an assistant response", async () => {
+  const service = new AcpService(new SilentAcp(), { requireAssistantResponse: true })
+  const errors = []
+  service.subscribe((event) => {
+    if (event.type === "session.error") errors.push(event.message)
+  })
+
+  await assert.rejects(service.promptAndWait(SESSION, "silent turn"), /without an assistant response/)
+  assert.deepEqual(errors, ["Harness completed the prompt without an assistant response"])
+  const messages = await service.messages(SESSION)
+  assert.equal(messages.at(-1).info.error?.message, "Harness completed the prompt without an assistant response")
+  assert.equal(service.status(SESSION).type, "idle")
 })
 
 

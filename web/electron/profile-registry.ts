@@ -4,7 +4,7 @@ import { baseUrl } from "../src/serverConfig.js"
 import type { BackendKind } from "../src/types.js"
 import type { DesktopProfile } from "./ipc-contract.js"
 
-const BACKENDS: readonly BackendKind[] = ["opencode", "omp", "pi", "claude", "codex"]
+const LEGACY_BACKENDS: readonly BackendKind[] = ["opencode", "omp", "pi", "claude", "codex"]
 const MAX_PROFILE_COUNT = 100
 const MAX_PROFILE_ID_LENGTH = 128
 const MAX_HOST_LENGTH = 2048
@@ -18,8 +18,12 @@ export class DesktopProfileError extends Error {
   }
 }
 
-function isBackend(value: unknown): value is BackendKind {
-  return typeof value === "string" && BACKENDS.includes(value as BackendKind)
+function validatedBackend(value: unknown, agentId: string | undefined): BackendKind {
+  if (typeof value !== "string") throw new DesktopProfileError("Profile backend is invalid")
+  const backend = value.trim()
+  if (LEGACY_BACKENDS.includes(backend as BackendKind)) return backend
+  if (agentId && backend === agentId && /^[A-Za-z0-9._-]+$/.test(backend)) return backend
+  throw new DesktopProfileError("Profile backend is invalid")
 }
 
 function hasControlCharacters(value: string): boolean {
@@ -69,7 +73,8 @@ export function validateDesktopProfile(value: unknown): DesktopProfile {
   if (typeof candidate.id !== "string") throw new DesktopProfileError("Profile ID is invalid")
   const id = candidate.id.trim()
   if (!id || id.length > MAX_PROFILE_ID_LENGTH || hasControlCharacters(id)) throw new DesktopProfileError("Profile ID is invalid")
-  if (!isBackend(candidate.backend)) throw new DesktopProfileError("Profile backend is invalid")
+  const agentId = candidate.agentId === undefined ? undefined : validateAgentID(candidate.agentId)
+  const backend = validatedBackend(candidate.backend, agentId)
   const host = validateHost(candidate.host)
   const port = candidate.port
   if (typeof port !== "number" || !Number.isInteger(port) || port < 1 || port > 65535) throw new DesktopProfileError("Profile port is invalid")
@@ -84,10 +89,9 @@ export function validateDesktopProfile(value: unknown): DesktopProfile {
   // scoped by. Dropping it here left main holding a machine-root target for every profile, so the
   // desktop app sent all of them to the daemon's primary agent and each server showed that one
   // agent's sessions. The renderer already carries the field; main has to keep it to route at all.
-  const agentId = candidate.agentId === undefined ? undefined : validateAgentID(candidate.agentId)
   const profile = {
     id,
-    backend: candidate.backend,
+    backend,
     host,
     port,
     username: candidate.username,

@@ -190,7 +190,8 @@ async function main() {
       hiddenSessionIDs: daemon.hostEntry(primaryProfile.id).modelCatalog.hiddenSessionIDs,
       reloadOnHistoryRefresh: primaryProfile.reloadOnHistoryRefresh,
       replaySettleMs: primaryProfile.replaySettleMs,
-      promptSettleMs: primaryProfile.promptSettleMs
+      promptSettleMs: primaryProfile.promptSettleMs,
+      requireAssistantResponse: primaryProfile.requireAssistantResponse
     }
   })
   // Authorization still belongs entirely to the underlying harness. This outer server adds only a

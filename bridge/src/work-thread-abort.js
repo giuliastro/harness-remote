@@ -1,3 +1,5 @@
+import { openCodeApiPath } from "./opencode-compat.js"
+
 function basicAuthorization(username, password) {
   if (!username && !password) return undefined
   return `Basic ${Buffer.from(`${username ?? ""}:${password ?? ""}`).toString("base64")}`
@@ -32,7 +34,9 @@ export async function abortWorkThreadRun(task, taskRunController) {
     const host = entry.host.readinessHost ?? entry.host.host ?? "127.0.0.1"
     const authorization = basicAuthorization(entry.host.username, entry.host.password)
     const directory = task.workspace?.path ?? run.directory ?? ""
-    const response = await launcher.fetchImpl(`http://${httpHost(host)}:${entry.host.port}/session/${encodeURIComponent(sessionID)}/abort?directory=${encodeURIComponent(directory)}`, {
+    const pathname = `/session/${encodeURIComponent(sessionID)}/abort`
+    const query = `?directory=${encodeURIComponent(directory)}`
+    const response = await launcher.fetchImpl(`http://${httpHost(host)}:${entry.host.port}${openCodeApiPath(entry.host, pathname, query)}`, {
       method: "POST",
       headers: { "Content-Type": "application/json", ...(authorization ? { Authorization: authorization } : {}) },
       body: "{}"

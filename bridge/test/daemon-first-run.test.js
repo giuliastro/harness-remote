@@ -63,6 +63,18 @@ test("an ACP adapter already on PATH is preferred over fetching one", async () =
     assert.equal(fetched.args.at(-1), profile.adapterCommand)
   }
 
+  const openCode2 = harnessProfile("opencode2")
+  assert.deepEqual(resolveAcpLaunch(openCode2, { find: () => null }), {
+    command: process.platform === "win32" ? "npx.cmd" : "npx",
+    args: ["--yes", "--package=@opencode/cli", "opencode", "acp"],
+    source: "npx"
+  })
+  assert.deepEqual(resolveAcpLaunch(openCode2, { find: (name) => name === "opencode2" ? "/usr/bin/opencode2" : null }), {
+    command: "/usr/bin/opencode2",
+    args: ["acp"],
+    source: "path"
+  })
+
   // OMP speaks ACP itself, so there is no adapter to look for and nothing to prefer.
   assert.deepEqual(resolveAcpLaunch(harnessProfile("omp"), { find: () => "/never/used" }), {
     command: "omp",

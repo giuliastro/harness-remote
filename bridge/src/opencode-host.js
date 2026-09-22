@@ -89,31 +89,64 @@ function httpHost(host) {
   return host.includes(":") && !host.startsWith("[") ? `[${host}]` : host
 }
 
-export async function waitForOpenCodeHealth({ host, port, username, password, timeoutMs = DEFAULT_START_TIMEOUT_MS, fetchImpl = fetch }) {
+export async function waitForOpenCodeHealth({
+  host,
+  port,
+  username,
+  password,
+  fallbackUsername = "opencode",
+  timeoutMs = DEFAULT_START_TIMEOUT_MS,
+  fetchImpl = fetch
+}) {
   const deadline = Date.now() + timeoutMs
-  const authorization = Buffer.from(`${username}:${password}`).toString("base64")
-  const url = `http://${httpHost(host)}:${port}/global/health`
+  const usernames = [...new Set([username, fallbackUsername]
+    .filter((candidate) => typeof candidate === "string" && candidate.length > 0))]
+  if (!usernames.length) usernames.push("")
+  const endpoints = [
+    { path: "/global/health", apiBasePath: "" },
+    { path: "/api/info", apiBasePath: "/api" }
+  ]
   let lastError
 
   while (Date.now() < deadline) {
     const remaining = Math.max(1, deadline - Date.now())
-    const controller = new AbortController()
-    const timer = setTimeout(() => controller.abort(), Math.min(READINESS_ATTEMPT_MS, remaining))
-    try {
-      const response = await fetchImpl(url, {
-        headers: { Authorization: `Basic ${authorization}` },
-        signal: controller.signal
-      })
-      if (response.status === 200) return
-      if (response.status === 401) {
-        throw new OpenCodeCredentialError(`OpenCode health check rejected the generated credentials on ${host}:${port}`)
+    let allCandidatesRejected = true
+    for (const candidateUsername of usernames) {
+      for (const endpoint of endpoints) {
+        const controller = new AbortController()
+        const timer = setTimeout(() => controller.abort(), Math.min(READINESS_ATTEMPT_MS, remaining))
+        try {
+          const authorization = Buffer.from(`${candidateUsername}:${password}`).toString("base64")
+          const response = await fetchImpl(`http://${httpHost(host)}:${port}${endpoint.path}`, {
+            headers: { Authorization: `Basic ${authorization}` },
+            signal: controller.signal
+          })
+          if (response.status === 200) {
+            const contentType = response.headers?.get?.("content-type") ?? ""
+            // OpenCode v2 serves the web UI at /global/health but exposes its JSON readiness
+            // endpoint at /api/info. A successful HTML response is not readiness.
+            if (endpoint.apiBasePath || !contentType || /json/i.test(contentType)) {
+              return { username: candidateUsername, apiBasePath: endpoint.apiBasePath }
+            }
+            continue
+          }
+          if (response.status === 401) {
+            // The remaining endpoints cannot become useful with this username either.
+            break
+          }
+          allCandidatesRejected = false
+          lastError = new Error(`OpenCode health check returned HTTP ${response.status}`)
+        } catch (error) {
+          allCandidatesRejected = false
+          lastError = error
+        } finally {
+          clearTimeout(timer)
+        }
       }
-      lastError = new Error(`OpenCode health check returned HTTP ${response.status}`)
-    } catch (error) {
-      if (error instanceof OpenCodeCredentialError) throw error
-      lastError = error
-    } finally {
-      clearTimeout(timer)
+    }
+
+    if (allCandidatesRejected) {
+      throw new OpenCodeCredentialError(`OpenCode health check rejected the generated credentials on ${host}:${port}`)
     }
 
     if (Date.now() < deadline) await sleep(Math.min(READINESS_RETRY_MS, Math.max(1, deadline - Date.now())))
@@ -177,6 +210,7 @@ export class ManagedOpenCodeHost extends EventEmitter {
     this.port = port
     this.username = username
     this.password = password
+    this.apiBasePath = ""
     this.environment = environment
     this.spawnProcess = spawnProcess
     this.platform = platform
@@ -245,7 +279,10 @@ export class ManagedOpenCodeHost extends EventEmitter {
       env: {
         ...this.environment,
         OPENCODE_SERVER_USERNAME: this.username,
-        OPENCODE_SERVER_PASSWORD: this.password
+        OPENCODE_SERVER_PASSWORD: this.password,
+        // OpenCode v2 prefers OPENCODE_PASSWORD over the legacy server-specific name. Set both so
+        // a pre-existing shell value cannot make the managed child reject its generated password.
+        OPENCODE_PASSWORD: this.password
       }
     })
     this.child = child
@@ -262,7 +299,7 @@ export class ManagedOpenCodeHost extends EventEmitter {
     const timeout = startTimeout(this.readinessHost, this.port, this.startTimeoutMs)
 
     try {
-      await Promise.race([
+      const readiness = await Promise.race([
         this.waitUntilReady({
           host: this.readinessHost,
           port: this.port,
@@ -274,6 +311,11 @@ export class ManagedOpenCodeHost extends EventEmitter {
         timeout.promise
       ])
       timeout.cancel()
+      // OpenCode v2 authenticates its native server as `opencode` even when the legacy
+      // OPENCODE_SERVER_USERNAME variable is ignored. Keep the username that actually passed
+      // readiness for every subsequent managed HTTP request.
+      if (readiness?.username !== undefined) this.username = readiness.username
+      if (readiness?.apiBasePath !== undefined) this.apiBasePath = readiness.apiBasePath
       this.emit("available", { pid: this.processID, host: this.host, port: this.port })
     } catch (error) {
       timeout.cancel()

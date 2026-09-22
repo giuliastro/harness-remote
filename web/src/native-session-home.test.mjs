@@ -1,7 +1,7 @@
 import assert from "node:assert/strict"
 import { readFileSync } from "node:fs"
 import { appendCursorPage, needsOpenCodeRailStream, refreshCursorPage, sessionTreeRows } from "./components/native-session-home.tsx"
-import { reconcileStableSessionRecords } from "./components/native-session-home-base.tsx"
+import { nativeSessionAgentChoices, reconcileStableSessionRecords } from "./components/native-session-home-base.tsx"
 import { mergedAttentionSessionCount } from "./components/native-session-home-attention.tsx"
 import { canCreateNativeSession } from "./native-session-create.ts"
 import { classifyNativeSessionAttention, sessionNeedsAttention } from "./native-session-attention.ts"
@@ -27,6 +27,33 @@ function item(id, parentID) {
     }
   }
 }
+
+const providerSnapshot = {
+  machine: { id: "daemon-1", name: "Machine" },
+  agents: [
+    ["opencode", "OpenCode"], ["opencode2", "OpenCode 2"], ["copilot", "GitHub Copilot CLI"],
+    ["mimo", "MiMo Code"], ["codex", "Codex CLI"], ["claude", "Claude Code"], ["omp", "Oh My Pi"], ["pi", "PI"]
+  ].map(([id, label]) => ({
+    id, label, backend: id, transport: id === "opencode" ? "http" : "acp",
+    managed: true, state: "available", capabilities: { sessions: true, prompt: true }
+  }))
+}
+const providerSource = [{ machine: { id: "saved-1", name: "Machine", config: {} }, snapshot: providerSnapshot, state: "online" }]
+const zeroSessionChoices = nativeSessionAgentChoices(providerSource, "", [])
+assert.deepEqual(
+  Object.fromEntries(zeroSessionChoices.map((choice) => [choice.id, choice.label])),
+  Object.fromEntries(providerSnapshot.agents.map((agent) => [agent.id, agent.label])),
+  "the harness filter must preserve machine-advertised provider ids and labels even before the first Session"
+)
+const countedChoices = nativeSessionAgentChoices(providerSource, "", [
+  { machine: providerSource[0].machine, machineID: "daemon-1", record: { agentId: "opencode", agentLabel: "OpenCode" } },
+  { machine: providerSource[0].machine, machineID: "daemon-1", record: { agentId: "opencode2", agentLabel: "OpenCode 2" } },
+  { machine: providerSource[0].machine, machineID: "daemon-1", record: { agentId: "opencode2", agentLabel: "OpenCode 2" } }
+])
+assert.equal(countedChoices.find((choice) => choice.id === "opencode")?.count, 1)
+assert.equal(countedChoices.find((choice) => choice.id === "opencode2")?.count, 2)
+assert.equal(countedChoices.find((choice) => choice.id === "opencode")?.label, "OpenCode")
+assert.equal(countedChoices.find((choice) => choice.id === "opencode2")?.label, "OpenCode 2")
 
 const rows = sessionTreeRows([
   item("child-2", "root"),

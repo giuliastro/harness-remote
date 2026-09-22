@@ -30,6 +30,7 @@ const COMMON_CAPABILITIES = {
 export const HARNESS_PROFILES = {
   omp: defineAcpProvider({
     id: "omp",
+    modelSelection: "optional",
     label: "Oh My Pi",
     command: "omp",
     detectCommands: ["omp"],
@@ -79,6 +80,7 @@ export const HARNESS_PROFILES = {
   }),
   pi: defineAcpProvider({
     id: "pi",
+    modelSelection: "optional",
     label: "PI",
     // @automatalabs/pi-acp embeds PI through its published SDK and runs on Node. Version 0.5.0
     // advertises PI's credential- and provider-filter-aware model catalog directly over ACP, so
@@ -128,6 +130,7 @@ export const HARNESS_PROFILES = {
   }),
   claude: defineAcpProvider({
     id: "claude",
+    modelSelection: "optional",
     label: "Claude Code",
     // Uses the official ACP adapter for the Claude Agent SDK. The adapter speaks ACP JSON-RPC
     // over stdio and wraps @anthropic-ai/claude-agent-sdk under the hood. The user must have
@@ -173,6 +176,10 @@ export const HARNESS_PROFILES = {
   }),
   copilot: defineAcpProvider({
     id: "copilot",
+    // The current GitHub Copilot CLI ACP server exposes `mode` and `allow_all`, but no model
+    // config option. Do not ask the daemon to build a catalog that the server cannot provide;
+    // the Copilot CLI remains the owner of its configured model.
+    modelSelection: "harness-default",
     label: "GitHub Copilot CLI",
     command: "copilot",
     detectCommands: ["copilot"],
@@ -203,8 +210,93 @@ export const HARNESS_PROFILES = {
       sessionDelete: false
     }
   }),
+  opencode2: defineAcpProvider({
+    id: "opencode2",
+    label: "OpenCode 2",
+    // Official OpenCode 2 still publishes the executable name `opencode`, which collides with
+    // the existing OpenCode installation on machines that want both generations. Prefer an
+    // optional `opencode2` alias when present; otherwise explicit selection launches the official
+    // v2 npm package without replacing the user's current `opencode` binary.
+    command: process.platform === "win32" ? "npx.cmd" : "npx",
+    detectCommands: ["opencode2"],
+    launchPriority: 60,
+    args: ["--yes", "--package=@opencode/cli", "opencode", "acp"],
+    adapterCommand: "opencode2",
+    adapterArgs: ["acp"],
+    allowPackageFallback: true,
+    permissionMode: "allow",
+    lifecycleContract: COMMON_ACP_LIFECYCLE_CONTRACT,
+    modelVariantConfigIDs: ["effort"],
+    sessionContract: {
+      authority: "native-harness",
+      discovery: "native-list",
+      transcript: "session-load",
+      externalWriterObservation: "unverified-session-load",
+      continuation: "session-load",
+      writerOwnership: "adapter-defined",
+      stop: "owned-session-native-cancel"
+    },
+    capabilities: {
+      ...COMMON_CAPABILITIES,
+      models: true,
+      todos: false,
+      commands: true,
+      permissions: true,
+      actions: false,
+      sessionRename: false,
+      sessionDelete: false
+    }
+  }),
+  mimo: defineAcpProvider({
+    id: "mimo",
+    modelSelection: "optional",
+    label: "MiMo Code",
+    command: "mimo",
+    detectCommands: ["mimo"],
+    launchPriority: 70,
+    args: ["acp"],
+    permissionMode: "allow",
+    // Current MiMo ACP advertises `opencode-login` but its authenticate RPC throws
+    // "Authentication not implemented". It relies on credentials configured in the CLI itself.
+    authenticate: false,
+    // MiMo reads its inline configuration from MIMOCODE_CONFIG_CONTENT. Do not force
+    // mimo/mimo-auto when no configuration was supplied: that upstream free service is no longer
+    // available and turns every prompt into a silent ACP success with no assistant message.
+    ...(process.env.HARNESS_REMOTE_MIMO_CONFIG_CONTENT
+      ? { environment: { MIMOCODE_CONFIG_CONTENT: process.env.HARNESS_REMOTE_MIMO_CONFIG_CONTENT } }
+      : {}),
+    requireAssistantResponse: true,
+    // MiMo's ACP server restricts session/new to the process working tree. A machine daemon can
+    // expose several configured projects, so the generic runtime starts both ACP clients from
+    // their common ancestor instead of making the first project the only usable root.
+    workingDirectory: "common-root",
+    lifecycleContract: COMMON_ACP_LIFECYCLE_CONTRACT,
+    // MiMo Code is OpenCode-derived. Model discovery accepts either the current configOptions
+    // surface or the legacy ACP models state used by earlier MiMo builds.
+    modelVariantConfigIDs: [],
+    sessionContract: {
+      authority: "native-harness",
+      discovery: "native-list",
+      transcript: "session-load",
+      externalWriterObservation: "unverified-session-load",
+      continuation: "session-load",
+      writerOwnership: "adapter-defined",
+      stop: "owned-session-native-cancel"
+    },
+    capabilities: {
+      ...COMMON_CAPABILITIES,
+      models: true,
+      todos: false,
+      commands: false,
+      permissions: true,
+      actions: false,
+      sessionRename: false,
+      sessionDelete: false
+    }
+  }),
   codex: defineAcpProvider({
     id: "codex",
+    modelSelection: "optional",
     label: "Codex CLI",
     // Uses the official ACP adapter for the OpenAI Codex CLI. The adapter speaks ACP JSON-RPC
     // over stdio and embeds @openai/codex, so no separate Codex installation is needed. The
@@ -284,6 +376,6 @@ export function listAcpProviderProfiles() {
 export function resolveAcpLaunch(profile, { find = findExecutable } = {}) {
   if (!profile.adapterCommand) return { command: profile.command, args: [...profile.args], source: "harness" }
   const installed = find(profile.adapterCommand)
-  if (installed) return { command: installed, args: [], source: "path" }
+  if (installed) return { command: installed, args: [...(profile.adapterArgs ?? [])], source: "path" }
   return { command: profile.command, args: [...profile.args], source: "npx" }
 }

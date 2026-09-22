@@ -41,6 +41,31 @@ type RecordWithMachine = {
   project?: MachineProject
 }
 
+export function nativeSessionAgentChoices(
+  sources: Source[],
+  machineFilter: string,
+  machineScopedRecords: RecordWithMachine[]
+): Array<{ id: string; label: string; count: number }> {
+  const choices = new Map<string, { id: string; label: string; count: number }>()
+  for (const { machine, snapshot } of sources) {
+    if (machineFilter && machine.id !== machineFilter) continue
+    for (const agent of snapshot?.agents || []) {
+      choices.set(agent.id, { id: agent.id, label: agent.label || agent.id, count: 0 })
+    }
+  }
+  for (const item of machineScopedRecords) {
+    const existing = choices.get(item.record.agentId)
+    if (existing) existing.count += 1
+    else choices.set(item.record.agentId, {
+      id: item.record.agentId,
+      label: item.record.agentLabel,
+      count: 1
+    })
+  }
+  return [...choices.values()].sort((left, right) => left.label.localeCompare(right.label))
+}
+
+
 type ProjectGroup = {
   key: string
   machine: WorkspaceMachine
@@ -683,19 +708,10 @@ export function NativeSessionHome({
     [machineFilter, records]
   )
 
-  const agentChoices = useMemo(() => {
-    const choices = new Map<string, { id: string; label: string; count: number }>()
-    for (const item of machineScopedRecords) {
-      const existing = choices.get(item.record.agentId)
-      if (existing) existing.count += 1
-      else choices.set(item.record.agentId, {
-        id: item.record.agentId,
-        label: item.record.agentLabel,
-        count: 1
-      })
-    }
-    return [...choices.values()].sort((left, right) => left.label.localeCompare(right.label))
-  }, [machineScopedRecords])
+  const agentChoices = useMemo(
+    () => nativeSessionAgentChoices(sources, machineFilter, machineScopedRecords),
+    [machineFilter, machineScopedRecords, sources]
+  )
 
   useEffect(() => {
     if (agentFilter && !agentChoices.some((choice) => choice.id === agentFilter)) setAgentFilter("")

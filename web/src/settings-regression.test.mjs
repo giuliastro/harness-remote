@@ -64,6 +64,11 @@ assert.match(observer, /const NATIVE_SESSION_MODEL_SCOPE: AgentModelScope = \{\}
 assert.match(observer, /deferModelFallback/)
 assert.match(taskClient, /export function modelCatalogConfig\(/)
 
+assert.match(home, /for \(const \{ machine, snapshot \} of sources\)/, 'the harness filter must include machine-advertised providers before they have Session history')
+assert.match(home, /for \(const agent of snapshot\?\.agents \|\| \[\]\)/, 'available harnesses must seed the filter choices')
+assert.doesNotMatch(taskClient, /AGENT_BACKENDS/, 'model routing must not use a client-side provider allowlist')
+assert.match(taskClient, /return \{ \.\.\.config, agentId, backend: agentId \}/, 'model routing must preserve dynamic provider ids')
+
 // Routing remains agent-scoped below the machine endpoint. Browser and desktop transports share the
 // same validated routing hint and desktop SSE authorization still comes from the approved config.
 assert.match(serverConfig, /export function routingHeaders\(/)

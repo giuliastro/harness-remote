@@ -60,6 +60,12 @@ test("provider registry rejects duplicate ids", () => {
   )
 })
 
+test("provider descriptor carries an explicit authentication policy", () => {
+  assert.equal(exampleProvider().authenticate, true)
+  assert.equal(exampleProvider({ authenticate: false }).authenticate, false)
+  assert.throws(() => exampleProvider({ authenticate: "no" }), /authenticate must be a boolean/)
+})
+
 test("provider descriptor requires explicit capabilities and Session semantics", () => {
   assert.throws(() => defineAcpProvider({
     id: "missing-session",
@@ -103,11 +109,11 @@ test("generic ACP capability contract consumes provider-declared Session semanti
 
 test("existing ACP harnesses are exposed through the same provider registry", () => {
   const providers = listAcpProviderProfiles()
-  assert.deepEqual(providers.map((provider) => provider.id), ["omp", "pi", "claude", "copilot", "codex"])
-  assert.deepEqual(providers.map((provider) => provider.detectCommands), [["omp"], ["pi"], ["claude"], ["copilot"], ["codex"]])
+  assert.deepEqual(providers.map((provider) => provider.id), ["omp", "pi", "claude", "copilot", "opencode2", "mimo", "codex"])
+  assert.deepEqual(providers.map((provider) => provider.detectCommands), [["omp"], ["pi"], ["claude"], ["copilot"], ["opencode2"], ["mimo"], ["codex"]])
   assert.deepEqual(
     providers.slice().sort((left, right) => left.launchPriority - right.launchPriority).map((provider) => provider.id),
-    ["codex", "claude", "omp", "pi", "copilot"]
+    ["codex", "claude", "omp", "pi", "copilot", "opencode2", "mimo"]
   )
   for (const provider of providers) {
     assert.ok(provider.sessionContract)

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict"
 import path from "node:path"
 import test from "node:test"
-import { bridgeEnvironment, buildBridgeArgs, buildDaemonArgs, canListenForBind, createManagedShutdown, detectBackends, formatStartupSummary, lanAddresses, resolveBackend, resolveLaunchPlan, startManagedOpenCode } from "../src/launcher.js"
+import { bridgeEnvironment, buildBridgeArgs, buildDaemonArgs, canListenForBind, createManagedShutdown, detectBackends, equivalentOpenCodeExecutables, formatStartupSummary, lanAddresses, resolveBackend, resolveLaunchPlan, startManagedOpenCode } from "../src/launcher.js"
 
 test("detects executable agent files on PATH without running them", () => {
   const pathValue = ["/bin", "/tools"].join(path.delimiter)
@@ -29,6 +29,27 @@ test("detects GitHub Copilot from provider metadata without changing existing pr
   )
 })
 
+test("detects OpenCode 2 and MiMo as ACP providers without changing established primaries", () => {
+  const pathValue = ["/bin", "/tools"].join(path.delimiter)
+  const existing = new Set([
+    path.join("/tools", "opencode2"),
+    path.join("/tools", "mimo"),
+    path.join("/tools", "copilot")
+  ])
+  assert.deepEqual(
+    detectBackends({ pathValue, platform: "linux", exists: (candidate) => existing.has(candidate), access: () => {} }),
+    ["copilot", "opencode2", "mimo"]
+  )
+  assert.deepEqual(
+    resolveLaunchPlan([], ["copilot", "opencode2", "mimo"]),
+    { mode: "daemon", backend: "copilot", detected: ["copilot", "opencode2", "mimo"], openCode: false }
+  )
+  assert.deepEqual(
+    resolveLaunchPlan(["--backend", "opencode2"], ["copilot", "opencode2", "mimo"]),
+    { mode: "daemon", backend: "opencode2", detected: ["copilot", "opencode2", "mimo"], openCode: false }
+  )
+})
+
 test("ignores non-executable PATH entries on Unix", () => {
   const candidate = path.join("/tools", "claude")
   assert.deepEqual(detectBackends({ pathValue: "/tools", platform: "linux", exists: (value) => value === candidate, access: () => { throw new Error("not executable") } }), [])
@@ -38,6 +59,32 @@ test("detects OpenCode as a managed direct-HTTP backend", () => {
   const candidate = path.join("/tools", "opencode")
   assert.deepEqual(detectBackends({ pathValue: "/tools", platform: "linux", exists: (value) => value === candidate, access: () => {} }), ["opencode"])
   assert.equal(resolveBackend([], ["opencode"]), "opencode")
+})
+
+test("does not register OpenCode 2 when its executable is only an OpenCode alias", () => {
+  const opencode = path.join("/tools", "opencode")
+  const opencode2 = path.join("/tools", "opencode2")
+  const existing = new Set([opencode, opencode2])
+  const alias = '#!/bin/sh\nexec "$(dirname "$0")/opencode" "$@"\n'
+
+  assert.equal(
+    equivalentOpenCodeExecutables(opencode, opencode2, {
+      realpathSync: (value) => value,
+      readFileSync: (value) => value === opencode2 ? alias : ""
+    }),
+    true
+  )
+  assert.deepEqual(
+    detectBackends({
+      pathValue: "/tools",
+      platform: "linux",
+      exists: (value) => existing.has(value),
+      access: () => {},
+      realpathSync: (value) => value,
+      readFileSync: (value) => value === opencode2 ? alias : ""
+    }),
+    ["opencode"]
+  )
 })
 
 test("delegates OpenCode startup to the managed host", async () => {

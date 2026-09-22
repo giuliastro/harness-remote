@@ -13,7 +13,9 @@ import {
 import type { NativeSessionSurfaceTarget } from "../native-session-discovery"
 import type { NativeSessionRouteMachine } from "../native-session-routing"
 import { taskClient, type AgentModelScope } from "../taskClient"
-import type { BackendKind, MachineAgentHost, ModelOption, ModelSelection, ServerConfig } from "../types"
+import { backendForAgent } from "../serverConfig"
+import { providerRequiresExplicitModel, providerUsesModelCatalog } from "../provider-model-selection"
+import type { MachineAgentHost, ModelOption, ModelSelection, ServerConfig } from "../types"
 import { ModelPicker, modelOptionKey } from "./model-picker"
 
 const ROUTE_MODEL_SCOPE: AgentModelScope = {}
@@ -27,16 +29,10 @@ type Props = {
   onConnectionIssue?: () => void
 }
 
-function supportedBackend(value: string | undefined, fallback: BackendKind): BackendKind {
-  return value === "opencode" || value === "omp" || value === "pi" || value === "claude" || value === "codex"
-    ? value
-    : fallback
-}
-
 function configForAgent(base: ServerConfig, agent: MachineAgentHost): ServerConfig {
   return {
     ...base,
-    backend: supportedBackend(agent.backend, base.backend),
+    backend: backendForAgent(agent.backend, agent.id, base.backend),
     agentId: agent.id
   }
 }
@@ -107,7 +103,8 @@ export function CrossMachineContinuePanel({
   const machine = availableRoutes.find((candidate) => candidate.machineID === machineID)
   const agent = machine?.agents.find((candidate) => candidate.id === agentID)
   const selectedModel = models.find((candidate) => modelKey(candidate) === modelKeyValue)
-  const modelRequired = agent?.capabilities?.models === true
+  const modelCatalogSupported = providerUsesModelCatalog(agent)
+  const modelRequired = providerRequiresExplicitModel(agent)
   const modelReady = !modelRequired || (!modelsLoading && Boolean(selectedModel))
   const targetProject = projectRoute?.targetProjects.find((candidate) => candidate.id === projectID)
   const blocked = plan?.disposition === "blocked"
@@ -183,7 +180,7 @@ export function CrossMachineContinuePanel({
       setAgentID(nextAgent.id)
       return
     }
-    if (nextAgent.capabilities?.models !== true) {
+    if (!providerUsesModelCatalog(nextAgent)) {
       setModelsLoading(false)
       return
     }
@@ -327,9 +324,9 @@ export function CrossMachineContinuePanel({
                 models={models}
                 value={modelKeyValue}
                 onChange={setModelKeyValue}
-                disabled={sending || modelsLoading || !agent || agent.capabilities?.models !== true}
+                disabled={sending || modelsLoading || !agent || !modelCatalogSupported}
                 loading={modelsLoading}
-                placeholder={agent?.capabilities?.models === true ? "Select model" : "Harness default"}
+                placeholder={modelCatalogSupported ? "Select model" : "Harness default"}
                 unavailableHint={modelRequired && !modelsLoading && !models.length ? "No verified models available" : undefined}
               />
             </label>

@@ -3,6 +3,7 @@ import {
   discoverAgentNativeSessionPage,
   discoverAgentNativeSessions,
   discoverMachineNativeSessions,
+  isHarnessRemoteInternalTestSession,
   NativeSessionDiscoveryTimeoutError,
   nativeSessionConfig,
   nativeSessionSurfaceTarget
@@ -32,6 +33,40 @@ assert.deepEqual(nativeSessionConfig(base, codex), {
   backend: 'codex',
   agentId: 'codex'
 })
+
+const dynamicProvider = { ...codex, id: 'mimo', label: 'MiMo Code', backend: 'mimo' }
+assert.deepEqual(nativeSessionConfig(base, dynamicProvider), {
+  ...base,
+  backend: 'mimo',
+  agentId: 'mimo'
+}, 'machine-advertised provider ids must not fall back to the saved OpenCode backend')
+
+assert.equal(isHarnessRemoteInternalTestSession({
+  id: 'smoke-copilot',
+  directory: '/tmp/harness-copilot-smoke-OxM9I0'
+}), true)
+assert.equal(isHarnessRemoteInternalTestSession({
+  id: 'smoke-opencode2',
+  directory: 'C:\\Temp\\harness-opencode2-smoke-AbC123'
+}), true)
+assert.equal(isHarnessRemoteInternalTestSession({
+  id: 'stable-smoke-copilot',
+  directory: '/home/test/.harness-remote/smoke-workspaces/copilot'
+}), true)
+assert.equal(isHarnessRemoteInternalTestSession({
+  id: 'stable-smoke-opencode2',
+  directory: 'C:\\Users\\test\\.harness-remote\\smoke-workspaces\\opencode2'
+}), true)
+assert.equal(isHarnessRemoteInternalTestSession({
+  id: 'release-gate',
+  title: 'Harness Remote release-gate discovery (copilot)',
+  directory: '/repo'
+}), true)
+assert.equal(isHarnessRemoteInternalTestSession({
+  id: 'normal',
+  title: 'Fix smoke tests',
+  directory: '/repo/harness-smoke-tools'
+}), false)
 
 const calls = []
 const client = {
@@ -184,6 +219,18 @@ assert.deepEqual(fallbackCalls, [
   ['stable', 'pi'],
   ['status', 'pi']
 ])
+
+const filteredSmokeSessions = await discoverAgentNativeSessions(base, codex, {
+  async listGlobalSessions() {
+    return [
+      { id: 'real-session', title: 'Real work', directory: '/repo', time: { created: 1, updated: 3 } },
+      { id: 'test-session', title: 'Temporary', directory: '/tmp/harness-copilot-smoke-DeadBeef', time: { created: 1, updated: 2 } }
+    ]
+  },
+  async listSessions() { return [] },
+  async listStatuses() { return {} }
+})
+assert.deepEqual(filteredSmokeSessions.map((entry) => entry.session.id), ['real-session'])
 
 let disabledReads = 0
 const disabled = { ...codex, id: 'disabled', capabilities: { sessions: false } }

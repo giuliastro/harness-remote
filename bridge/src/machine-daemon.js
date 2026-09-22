@@ -4,6 +4,7 @@ import { createCrossMachineHandoffServer } from "./cross-machine-handoff-server.
 import { createCrossMachineTargetRuntime } from "./cross-machine-target-runtime.js"
 import { MachineRegistry, trackAgentHostLifecycle } from "./machine-registry.js"
 import { trackManagedHostLifecycle } from "./opencode-host.js"
+import { openCodeApiBody, openCodeApiModelBody, openCodeApiPath } from "./opencode-compat.js"
 import { discoverProjects } from "./project-catalog.js"
 import { createBridgeServer } from "./server.js"
 import { createSessionClaimServer } from "./session-claim-server.js"
@@ -51,6 +52,26 @@ function acpModelVariant(model) {
   return model?.variant && model?.variantConfigId
     ? { configId: model.variantConfigId, value: model.variant }
     : undefined
+}
+
+async function switchManagedOpenCodeModel({ host, sessionID, body, failureCode, failureLabel }) {
+  const pathname = `/session/${encodeURIComponent(sessionID)}/prompt`
+  const modelBody = openCodeApiModelBody(host, pathname, body)
+  if (!modelBody) return
+  const url = `http://${host.readinessHost ?? host.host ?? "127.0.0.1"}:${host.port}${openCodeApiPath(host, `/session/${encodeURIComponent(sessionID)}/model`)}`
+  const headers = { Accept: "application/json", "Content-Type": "application/json" }
+  const authorization = internalAuthorization(host)
+  if (authorization) headers.Authorization = authorization
+  let response
+  try {
+    response = await fetch(url, { method: "POST", headers, body: JSON.stringify(modelBody) })
+  } catch {
+    throw daemonError(failureCode, `${failureLabel} model selection delivery is uncertain`, { ambiguous: true })
+  }
+  if (response.ok) return
+  let detail = ""
+  try { detail = await response.text() } catch {}
+  throw daemonError(failureCode, detail || `${failureLabel} model selection returned HTTP ${response.status}`)
 }
 
 /*
@@ -301,30 +322,40 @@ export function createMachineDaemonServer({
       throw daemonError("agent_unavailable", error instanceof Error ? error.message : `Agent ${agentID} is unavailable`)
     }
     const query = directory ? `?directory=${encodeURIComponent(directory)}` : ""
-    const url = `http://${host.readinessHost ?? host.host ?? "127.0.0.1"}:${host.port}/session/${encodeURIComponent(sessionID)}/prompt_async${query}`
+    const pathname = `/session/${encodeURIComponent(sessionID)}/prompt_async`
+    const url = `http://${host.readinessHost ?? host.host ?? "127.0.0.1"}:${host.port}${openCodeApiPath(host, pathname, query)}`
     const headers = { Accept: "application/json", "Content-Type": "application/json" }
     const authorization = internalAuthorization(host)
     if (authorization) headers.Authorization = authorization
+    const body = {
+      parts: [
+        { type: "text", text },
+        ...attachments.map((attachment) => ({
+          type: "file",
+          mime: attachment.mime,
+          filename: attachment.filename,
+          url: attachment.url
+        }))
+      ],
+      model: resolvedModel ? { providerID: resolvedModel.providerID, modelID: resolvedModel.modelID } : undefined,
+      variant: resolvedModel?.variant || undefined
+    }
     let response
     try {
+      await switchManagedOpenCodeModel({
+        host,
+        sessionID,
+        body,
+        failureCode: "session_prompt_rejected",
+        failureLabel: "OpenCode prompt"
+      })
       response = await fetch(url, {
         method: "POST",
         headers,
-        body: JSON.stringify({
-          parts: [
-            { type: "text", text },
-            ...attachments.map((attachment) => ({
-              type: "file",
-              mime: attachment.mime,
-              filename: attachment.filename,
-              url: attachment.url
-            }))
-          ],
-          model: resolvedModel ? { providerID: resolvedModel.providerID, modelID: resolvedModel.modelID } : undefined,
-          variant: resolvedModel?.variant || undefined
-        })
+        body: JSON.stringify(openCodeApiBody(host, pathname, body))
       })
-    } catch {
+    } catch (error) {
+      if (error?.code === "session_prompt_rejected") throw error
       throw daemonError("session_prompt_uncertain", `OpenCode prompt delivery for Session ${sessionID} is uncertain`, { ambiguous: true })
     }
     if (!response.ok) {
@@ -356,23 +387,33 @@ export function createMachineDaemonServer({
       throw daemonError("agent_unavailable", error instanceof Error ? error.message : `Agent ${agentID} is unavailable`)
     }
     const query = directory ? `?directory=${encodeURIComponent(directory)}` : ""
-    const url = `http://${host.readinessHost ?? host.host ?? "127.0.0.1"}:${host.port}/session/${encodeURIComponent(sessionID)}/command${query}`
+    const pathname = `/session/${encodeURIComponent(sessionID)}/command`
+    const url = `http://${host.readinessHost ?? host.host ?? "127.0.0.1"}:${host.port}${openCodeApiPath(host, pathname, query)}`
     const headers = { Accept: "application/json", "Content-Type": "application/json" }
     const authorization = internalAuthorization(host)
     if (authorization) headers.Authorization = authorization
+    const body = {
+      command,
+      arguments: argumentsText,
+      model: resolvedModel ? `${resolvedModel.providerID}/${resolvedModel.modelID}` : undefined,
+      variant: resolvedModel?.variant || undefined
+    }
     let response
     try {
+      await switchManagedOpenCodeModel({
+        host,
+        sessionID,
+        body,
+        failureCode: "session_command_rejected",
+        failureLabel: "OpenCode command"
+      })
       response = await fetch(url, {
         method: "POST",
         headers,
-        body: JSON.stringify({
-          command,
-          arguments: argumentsText,
-          model: resolvedModel ? `${resolvedModel.providerID}/${resolvedModel.modelID}` : undefined,
-          variant: resolvedModel?.variant || undefined
-        })
+        body: JSON.stringify(openCodeApiBody(host, pathname, body))
       })
-    } catch {
+    } catch (error) {
+      if (error?.code === "session_command_rejected") throw error
       throw daemonError("session_command_uncertain", `Command delivery for Session ${sessionID} is uncertain`, { ambiguous: true })
     }
     if (!response.ok) {
@@ -405,7 +446,7 @@ export function createMachineDaemonServer({
       throw daemonError("agent_unavailable", error instanceof Error ? error.message : `Agent ${agentID} is unavailable`)
     }
     const query = directory ? `?directory=${encodeURIComponent(directory)}` : ""
-    const url = `http://${host.readinessHost ?? host.host ?? "127.0.0.1"}:${host.port}/session/${encodeURIComponent(sessionID)}/abort${query}`
+    const url = `http://${host.readinessHost ?? host.host ?? "127.0.0.1"}:${host.port}${openCodeApiPath(host, `/session/${encodeURIComponent(sessionID)}/abort`, query)}`
     const headers = { Accept: "application/json", "Content-Type": "application/json" }
     const authorization = internalAuthorization(host)
     if (authorization) headers.Authorization = authorization
@@ -445,7 +486,7 @@ export function createMachineDaemonServer({
       throw daemonError("agent_unavailable", error instanceof Error ? error.message : `Agent ${targetAgentID} is unavailable`)
     }
     const query = directory ? `?directory=${encodeURIComponent(directory)}` : ""
-    const url = `http://${host.readinessHost ?? host.host ?? "127.0.0.1"}:${host.port}/session${query}`
+    const url = `http://${host.readinessHost ?? host.host ?? "127.0.0.1"}:${host.port}${openCodeApiPath(host, "/session", query)}`
     const headers = { Accept: "application/json" }
     const authorization = internalAuthorization(host)
     if (authorization) headers.Authorization = authorization
@@ -466,11 +507,17 @@ export function createMachineDaemonServer({
     } catch {
       throw daemonError("agent_unavailable", `Listing ${targetAgentID} Sessions returned an unreadable response`)
     }
-    const sessions = Array.isArray(payload) ? payload : Array.isArray(payload?.sessions) ? payload.sessions : []
+    const sessions = Array.isArray(payload)
+      ? payload
+      : Array.isArray(payload?.sessions)
+        ? payload.sessions
+        : Array.isArray(payload?.data)
+          ? payload.data
+          : []
     return sessions
       .map((session) => ({
         id: session?.id || session?.sessionId,
-        directory: session?.directory || session?.cwd || directory
+        directory: session?.directory || session?.cwd || session?.location?.directory || directory
       }))
       .filter((session) => session.id && (!directory || session.directory === directory))
   }
@@ -560,13 +607,17 @@ export function createMachineDaemonServer({
         throw daemonError("agent_unavailable", error instanceof Error ? error.message : `Agent ${targetAgentID} is unavailable`)
       }
       const query = `?directory=${encodeURIComponent(directory)}`
-      const url = `http://${host.readinessHost ?? host.host ?? "127.0.0.1"}:${host.port}/session${query}`
+      const url = `http://${host.readinessHost ?? host.host ?? "127.0.0.1"}:${host.port}${openCodeApiPath(host, "/session", query)}`
       const headers = { Accept: "application/json", "Content-Type": "application/json" }
       const authorization = internalAuthorization(host)
       if (authorization) headers.Authorization = authorization
       let response
       try {
-        response = await fetch(url, { method: "POST", headers, body: "{}" })
+        response = await fetch(url, {
+          method: "POST",
+          headers,
+          body: JSON.stringify(openCodeApiBody(host, "/session", {}, directory))
+        })
       } catch {
         throw daemonError("handoff_uncertain", `Creating ${targetAgentID} Session is uncertain`, {
           ambiguous: true,

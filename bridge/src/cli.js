@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import path from "node:path"
 import { AcpClient } from "./acp-client.js"
+import { resolveAcpProviderWorkingDirectory } from "./acp-provider-runtime.js"
 import { parseConfig, usage } from "./config.js"
 import { harnessProfile } from "./harness-profiles.js"
 import { loadMachineIdentity, MachineRegistry, trackAgentHostLifecycle } from "./machine-registry.js"
@@ -21,6 +22,7 @@ if (config?.help) {
 
 if (config) {
   const profile = harnessProfile(config.backend)
+  const workingDirectory = resolveAcpProviderWorkingDirectory(profile, { config })
   const machineIdentity = await loadMachineIdentity(config.stateDirectory)
   const machineRegistry = new MachineRegistry(machineIdentity)
   machineRegistry.registerHost({
@@ -33,7 +35,7 @@ if (config) {
   })
 
   const acp = trackAgentHostLifecycle(
-    new AcpClient({ command: config.acpCommand, args: config.acpArgs, permissionMode: profile.permissionMode, preferredAuthMethod: profile.authMethod }),
+    new AcpClient({ command: config.acpCommand, args: config.acpArgs, permissionMode: profile.permissionMode, preferredAuthMethod: profile.authMethod, authenticate: profile.authenticate, environment: profile.environment, ...(workingDirectory ? { cwd: workingDirectory } : {}) }),
     machineRegistry,
     profile.id
   )
@@ -47,7 +49,8 @@ if (config) {
       preserveListedTimestamps: profile.preserveListedTimestamps,
       reloadOnHistoryRefresh: profile.reloadOnHistoryRefresh,
       replaySettleMs: profile.replaySettleMs,
-      promptSettleMs: profile.promptSettleMs
+      promptSettleMs: profile.promptSettleMs,
+      requireAssistantResponse: profile.requireAssistantResponse
     }
   })
   let shuttingDown = false

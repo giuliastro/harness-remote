@@ -1,0 +1,209 @@
+name: Real authenticated harness gate
+
+"on":
+  workflow_dispatch: {}
+  pull_request:
+    types: [labeled, synchronize, reopened]
+
+permissions:
+  contents: read
+  copilot-requests: write
+
+concurrency:
+  group: real-harness-auth-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  real-harness:
+    name: Real inference across all harnesses
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (
+        github.event.pull_request.head.repo.full_name == github.repository &&
+        contains(github.event.pull_request.labels.*.name, 'real-harness')
+      )
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+
+    env:
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      MIMO_API_KEY: ${{ secrets.MIMO_API_KEY }}
+      COPILOT_GITHUB_TOKEN: ${{ secrets.COPILOT_GITHUB_TOKEN }}
+      GITHUB_TOKEN: ${{ github.token }}
+      NO_BROWSER: "1"
+      OPENCODE_DISABLE_AUTOUPDATE: "true"
+      OPENCODE_CONFIG_CONTENT: >-
+        {"enabled_providers":["openai"],"provider":{"openai":{"options":{"apiKey":"{env:OPENAI_API_KEY}"}}}}
+      HARNESS_REMOTE_MIMO_CONFIG_CONTENT: >-
+        {"model":"mimo/mimo-v2.5-pro","provider":{"mimo":{"name":"MiMo","npm":"@ai-sdk/openai-compatible","only_configured_models":true,"models":{"mimo-v2.5-pro":{"name":"mimo-v2.5-pro"},"mimo-v2.5":{"name":"mimo-v2.5"}},"options":{"baseURL":"https://api.xiaomimimo.com/v1","apiKey":"{env:MIMO_API_KEY}"}}}}
+      HR_URL: http://127.0.0.1:4097
+      HR_USER: harness
+      HR_PASS: ci-real-auth-pass
+      HR_CYCLES: "1"
+      HR_TURN_BUDGET_MS: "180000"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Setup Bun for OMP
+        uses: oven-sh/setup-bun@v2
+
+      - name: Verify required non-interactive credentials
+        run: npm --prefix bridge run ci:real-auth-preflight
+
+      - name: Install pinned real harness CLIs
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm install --global \
+            opencode-ai@1.18.31 \
+            @openai/codex@0.154.0 \
+            @anthropic-ai/claude-code@2.1.278 \
+            @github/copilot@1.0.86 \
+            @mimo-ai/cli@0.1.14 \
+            @earendil-works/pi-coding-agent@0.86.0
+          bun add --global @oh-my-pi/pi-coding-agent@18.0.7
+
+          mkdir -p "$HOME/.local/bin"
+          cat > "$HOME/.local/bin/opencode2" <<'EOF'
+          #!/usr/bin/env bash
+          exec npx --yes --package=@opencode/cli@2.0.3 opencode "$@"
+          EOF
+          chmod +x "$HOME/.local/bin/opencode2"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          echo "$HOME/.bun/bin" >> "$GITHUB_PATH"
+
+      - name: Seed ephemeral PI stored credentials
+        shell: bash
+        run: |
+          set -euo pipefail
+          install -d -m 700 "$HOME/.pi/agent"
+          node <<'NODE'
+          const fs = require("node:fs")
+          const path = require("node:path")
+          const target = path.join(process.env.HOME, ".pi", "agent", "auth.json")
+          const auth = {
+            openai: { type: "api_key", key: process.env.OPENAI_API_KEY },
+            anthropic: { type: "api_key", key: process.env.ANTHROPIC_API_KEY }
+          }
+          fs.writeFileSync(target, JSON.stringify(auth), { mode: 0o600 })
+          fs.chmodSync(target, 0o600)
+          NODE
+
+      - name: Verify all eight harness executables
+        shell: bash
+        run: |
+          set -euo pipefail
+          for command in opencode codex claude omp pi copilot opencode2 mimo; do
+            if ! command -v "$command" >/dev/null 2>&1; then
+              echo "Missing real harness executable: $command" >&2
+              exit 1
+            fi
+            echo "ok  $command installed"
+          done
+          opencode --version
+          codex --version
+          claude --version
+          omp --version
+          pi --version
+          copilot --version
+          opencode2 --version
+          mimo --version
+
+      - name: Prepare isolated real-harness workspaces
+        shell: bash
+        run: |
+          set -euo pipefail
+          HR_DIR_A="$RUNNER_TEMP/harness-real-a"
+          HR_DIR_B="$RUNNER_TEMP/harness-real-b"
+          for dir in "$HR_DIR_A" "$HR_DIR_B"; do
+            mkdir -p "$dir"
+            git -C "$dir" init -q
+            git -C "$dir" config user.email "harness-remote-ci@example.invalid"
+            git -C "$dir" config user.name "Harness Remote CI"
+            printf 'Harness Remote real authenticated gate.\n' > "$dir/README.md"
+            git -C "$dir" add README.md
+            git -C "$dir" commit -qm "seed"
+          done
+          echo "HR_DIR_A=$HR_DIR_A" >> "$GITHUB_ENV"
+          echo "HR_DIR_B=$HR_DIR_B" >> "$GITHUB_ENV"
+
+      - name: Real Copilot ACP create Stop reopen smoke
+        run: npm --prefix bridge run smoke:copilot
+
+      - name: Real OpenCode 2 ACP create Stop reopen smoke
+        run: npm --prefix bridge run smoke:opencode2
+
+      - name: Real MiMo ACP create Stop reopen smoke
+        run: npm --prefix bridge run smoke:mimo
+
+      - name: Start eight-harness machine daemon
+        shell: bash
+        run: |
+          set -euo pipefail
+          node bridge/src/daemon-cli.js \
+            --backend codex \
+            --host 127.0.0.1 \
+            --port 4097 \
+            --username "$HR_USER" \
+            --password "$HR_PASS" \
+            --root "$HR_DIR_A" \
+            --root "$HR_DIR_B" \
+            --opencode-port 4096 \
+            > "$RUNNER_TEMP/harness-real-daemon.log" 2>&1 &
+          echo "$!" > "$RUNNER_TEMP/harness-real-daemon.pid"
+
+          ready=0
+          for attempt in $(seq 1 90); do
+            if curl --silent --fail --user "$HR_USER:$HR_PASS" "$HR_URL/v1/diagnostics" >/dev/null; then
+              ready=1
+              break
+            fi
+            sleep 2
+          done
+          if [ "$ready" -ne 1 ]; then
+            echo "Harness daemon did not become ready." >&2
+            tail -n 200 "$RUNNER_TEMP/harness-real-daemon.log" >&2 || true
+            exit 1
+          fi
+
+      - name: Run strict real-inference release gate
+        working-directory: bridge
+        run: |
+          npm run gate:real-harness -- \
+            --harnesses opencode,codex,claude,omp,pi,copilot,opencode2,mimo \
+            --report artifacts/real-harness-authenticated.json
+
+      - name: Show daemon diagnostics on failure
+        if: failure()
+        shell: bash
+        run: |
+          if [ -f "$RUNNER_TEMP/harness-real-daemon.log" ]; then
+            tail -n 300 "$RUNNER_TEMP/harness-real-daemon.log"
+          fi
+
+      - name: Stop machine daemon
+        if: always()
+        shell: bash
+        run: |
+          if [ -f "$RUNNER_TEMP/harness-real-daemon.pid" ]; then
+            kill "$(cat "$RUNNER_TEMP/harness-real-daemon.pid")" 2>/dev/null || true
+          fi
+
+      - name: Upload credential-free release evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: real-harness-auth-${{ github.event.pull_request.head.sha || github.sha }}
+          path: bridge/artifacts/real-harness-authenticated.json
+          if-no-files-found: warn
+          retention-days: 14

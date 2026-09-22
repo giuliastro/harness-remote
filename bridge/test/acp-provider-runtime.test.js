@@ -1,7 +1,7 @@
 import assert from "node:assert/strict"
 import path from "node:path"
 import test from "node:test"
-import { createAcpProviderRuntime, resolveAcpProviderIDs, resolveAcpProviderLaunch } from "../src/acp-provider-runtime.js"
+import { createAcpProviderRuntime, resolveAcpProviderIDs, resolveAcpProviderLaunch, resolveAcpProviderWorkingDirectory } from "../src/acp-provider-runtime.js"
 import { defineAcpProvider } from "../src/acp-provider-kit.js"
 
 function provider(overrides = {}) {
@@ -49,6 +49,21 @@ test("provider runtime membership keeps detected ACP providers and selected prim
     ["claude", "codex"]
   )
   assert.deepEqual(resolveAcpProviderIDs([], "codex"), ["codex"])
+})
+
+test("provider working directory covers all configured roots", () => {
+  assert.equal(resolveAcpProviderWorkingDirectory(provider({ workingDirectory: "common-root" }), {
+    config: { roots: ["/work/a/project", "/work/b/project"] },
+    cwd: "/fallback"
+  }), path.resolve("/work"))
+  assert.equal(resolveAcpProviderWorkingDirectory(provider({ workingDirectory: "common-root" }), {
+    config: { roots: [] },
+    cwd: "/fallback"
+  }), path.resolve("/fallback"))
+  assert.equal(resolveAcpProviderWorkingDirectory(provider(), {
+    config: { roots: ["/work/project"] },
+    cwd: "/fallback"
+  }), undefined)
 })
 
 test("provider launch preserves an explicit primary ACP command and delegates managed providers", () => {
@@ -118,7 +133,8 @@ test("provider runtime builds separate user and model ACP clients and a complete
       command: "/tools/example-acp",
       args: ["serve", "--stdio"],
       permissionMode: "allow",
-      preferredAuthMethod: "example-auth"
+      preferredAuthMethod: "example-auth",
+      authenticate: true
     })
   }
 
@@ -145,6 +161,34 @@ test("provider runtime builds separate user and model ACP clients and a complete
   assert.equal(registration.serviceOptions.promptSettleMs, 250)
   assert.equal(registration.contract.protocol, "acp")
   assert.equal(registration.contract.sessions.transcript, "session-load")
+})
+
+test("provider runtime starts a scoped provider from the common configured root", async () => {
+  const clients = []
+  class FakeClient {
+    constructor(options) {
+      this.options = options
+      clients.push(this)
+    }
+  }
+  class FakeCatalog {
+    constructor(options) {
+      this.options = options
+      this.hiddenSessionIDs = new Set()
+    }
+    async preloadState() {}
+  }
+
+  await createAcpProviderRuntime({
+    provider: provider({ workingDirectory: "common-root" }),
+    launch: { command: "example-acp", args: ["serve"] },
+    config: { roots: ["/work/a", "/work/b"], stateDirectory: "/state" },
+    Client: FakeClient,
+    ModelCatalog: FakeCatalog,
+    cwd: "/fallback"
+  })
+
+  assert.deepEqual(clients.map((client) => client.options.cwd), [path.resolve("/work"), path.resolve("/work")])
 })
 
 test("provider runtime falls back to cwd when no project root is configured", async () => {

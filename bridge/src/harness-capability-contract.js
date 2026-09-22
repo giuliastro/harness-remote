@@ -40,6 +40,7 @@ export function acpHarnessCapabilityContract(profile) {
     },
     models: {
       source: "acp-config-options",
+      selection: profile?.modelSelection ?? (profile?.capabilities?.models === true ? "required" : "harness-default"),
       // The release candidate deliberately keeps the last real-machine-validated ownership model:
       // one daemon-owned technical catalog Session per harness adapter lifetime. Project-scoped ACP
       // discovery was audited in isolation but regressed PI, Codex and Claude on Windows, so it is
@@ -76,6 +77,7 @@ export function openCodeCapabilityContract() {
     },
     models: {
       source: "runtime-provider-api",
+      selection: "optional",
       cacheScope: "machine",
       variants: "provider-advertised",
       variantConfigIDs: []
