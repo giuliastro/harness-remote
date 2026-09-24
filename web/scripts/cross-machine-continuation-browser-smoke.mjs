@@ -1,6 +1,7 @@
 import assert from "node:assert/strict"
 import http from "node:http"
 import { spawn } from "node:child_process"
+import path from "node:path"
 import { chromium } from "playwright"
 
 const PREVIEW_PORT = 4186
@@ -325,8 +326,8 @@ function startTargetDaemon() {
 }
 
 function startPreview() {
-  const command = process.platform === "win32" ? "npm.cmd" : "npm"
-  return spawn(command, ["run", "preview", "--", "--host", "127.0.0.1", "--port", String(PREVIEW_PORT), "--strictPort"], {
+  const vite = path.resolve("node_modules", "vite", "bin", "vite.js")
+  return spawn(process.execPath, [vite, "preview", "--host", "127.0.0.1", "--port", String(PREVIEW_PORT), "--strictPort"], {
     stdio: ["ignore", "pipe", "pipe"],
     detached: process.platform !== "win32"
   })
@@ -393,7 +394,7 @@ try {
   preview = startPreview()
   await ready(APP_ORIGIN)
   browser = await chromium.launch({ headless: true })
-  const context = await browser.newContext({ viewport: { width: 1280, height: 800 }, deviceScaleFactor: 1 })
+  const context = await browser.newContext({ viewport: { width: 1280, height: 800 }, deviceScaleFactor: 1, locale: "en-US" })
   const page = await context.newPage()
   const pageErrors = []
   page.on("pageerror", (error) => pageErrors.push(error.message))
