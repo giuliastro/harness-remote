@@ -50,6 +50,8 @@ if (config) {
       reloadOnHistoryRefresh: profile.reloadOnHistoryRefresh,
       replaySettleMs: profile.replaySettleMs,
       promptSettleMs: profile.promptSettleMs,
+      modelVariantConfigIDs: profile.modelVariantConfigIDs,
+      excludedModelValuePrefixes: profile.excludedModelValuePrefixes,
       requireAssistantResponse: profile.requireAssistantResponse
     }
   })

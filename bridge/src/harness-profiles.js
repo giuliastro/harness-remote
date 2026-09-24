@@ -270,6 +270,10 @@ export const HARNESS_PROFILES = {
     // expose several configured projects, so the generic runtime starts both ACP clients from
     // their common ancestor instead of making the first project the only usable root.
     workingDirectory: "common-root",
+    // MiMo 0.1.14 still advertises the retired hosted mimo-auto family even though selecting it
+    // completes every prompt without an assistant response. Keep that upstream catalog defect out
+    // of every generic consumer (picker, validation, smoke and direct Session model switching).
+    excludedModelValuePrefixes: ["mimo/mimo-auto"],
     lifecycleContract: COMMON_ACP_LIFECYCLE_CONTRACT,
     // MiMo Code is OpenCode-derived. Model discovery accepts either the current configOptions
     // surface or the legacy ACP models state used by earlier MiMo builds.

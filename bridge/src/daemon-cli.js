@@ -191,6 +191,8 @@ async function main() {
       reloadOnHistoryRefresh: primaryProfile.reloadOnHistoryRefresh,
       replaySettleMs: primaryProfile.replaySettleMs,
       promptSettleMs: primaryProfile.promptSettleMs,
+      modelVariantConfigIDs: primaryProfile.modelVariantConfigIDs,
+      excludedModelValuePrefixes: primaryProfile.excludedModelValuePrefixes,
       requireAssistantResponse: primaryProfile.requireAssistantResponse
     }
   })

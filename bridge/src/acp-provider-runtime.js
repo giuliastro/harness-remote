@@ -83,7 +83,8 @@ export async function createAcpProviderRuntime({
     agentID: provider.id,
     directory: config.roots?.[0] ?? cwd,
     stateDirectory: config.stateDirectory,
-    variantConfigIDs: provider.modelVariantConfigIDs
+    variantConfigIDs: provider.modelVariantConfigIDs,
+    excludedModelValuePrefixes: provider.excludedModelValuePrefixes
   })
 
   // Persisted technical Session ids must be hidden before the machine server can list Sessions.
@@ -117,7 +118,9 @@ export async function createAcpProviderRuntime({
         reloadOnHistoryRefresh: provider.reloadOnHistoryRefresh,
         replaySettleMs: provider.replaySettleMs,
         promptSettleMs: provider.promptSettleMs,
-        requireAssistantResponse: provider.requireAssistantResponse
+        modelVariantConfigIDs: provider.modelVariantConfigIDs,
+        requireAssistantResponse: provider.requireAssistantResponse,
+        excludedModelValuePrefixes: provider.excludedModelValuePrefixes
       }
     }
   }

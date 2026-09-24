@@ -69,6 +69,21 @@ test("Claude catalog preserves the 1M suffix when it distinguishes two advertise
   assert.equal(models.at(-1).isDefault, true)
 })
 
+test("ACP catalog excludes provider-declared retired model families", () => {
+  const models = modelsFromConfigOptions([{
+    id: "model",
+    currentValue: "openai/working",
+    options: [
+      { value: "mimo/mimo-auto", name: "MiMo Auto" },
+      { value: "mimo/mimo-auto/high", name: "MiMo Auto High" },
+      { value: "openai/working", name: "Working" }
+    ]
+  }], "mimo", ["mimo/mimo-auto"])
+
+  assert.deepEqual(models.map((model) => `${model.providerID}/${model.modelID}`), ["openai/working"])
+  assert.equal(models[0].isDefault, true)
+})
+
 test("ACP model discovery keeps one warm catalog per adapter lifetime and explicit refresh uses a fresh technical session", async () => {
   const stateDirectory = await mkdtemp(path.join(tmpdir(), "harness-model-catalog-"))
   try {

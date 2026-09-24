@@ -66,6 +66,22 @@ test("provider descriptor carries an explicit authentication policy", () => {
   assert.throws(() => exampleProvider({ authenticate: "no" }), /authenticate must be a boolean/)
 })
 
+test("provider descriptor carries validated model exclusions into generic runtimes", () => {
+  assert.deepEqual(exampleProvider().excludedModelValuePrefixes, [])
+  assert.deepEqual(
+    exampleProvider({ excludedModelValuePrefixes: ["retired/model"] }).excludedModelValuePrefixes,
+    ["retired/model"]
+  )
+  assert.throws(
+    () => exampleProvider({ excludedModelValuePrefixes: [42] }),
+    /excludedModelValuePrefixes must be an array of strings/
+  )
+  assert.throws(
+    () => exampleProvider({ excludedModelValuePrefixes: [""] }),
+    /excluded model value prefix must be a non-empty string/
+  )
+})
+
 test("provider descriptor requires explicit capabilities and Session semantics", () => {
   assert.throws(() => defineAcpProvider({
     id: "missing-session",

@@ -1,6 +1,7 @@
 import assert from "node:assert/strict"
 import http from "node:http"
 import { spawn } from "node:child_process"
+import path from "node:path"
 import { chromium } from "playwright"
 
 const PREVIEW_PORT = 4191
@@ -280,8 +281,8 @@ function startFakeDaemon() {
 }
 
 function startPreview() {
-  const command = process.platform === "win32" ? "npm.cmd" : "npm"
-  return spawn(command, ["run", "preview", "--", "--host", "127.0.0.1", "--port", String(PREVIEW_PORT), "--strictPort"], {
+  const vite = path.resolve("node_modules", "vite", "bin", "vite.js")
+  return spawn(process.execPath, [vite, "preview", "--host", "127.0.0.1", "--port", String(PREVIEW_PORT), "--strictPort"], {
     stdio: ["ignore", "pipe", "pipe"],
     detached: process.platform !== "win32"
   })
@@ -319,7 +320,12 @@ async function seed(page) {
 
 async function loadHome(page) {
   await page.goto(APP_ORIGIN, { waitUntil: "domcontentloaded" })
-  await page.locator('.hr-native-workspace[aria-label="Sessions"]').waitFor({ state: "visible", timeout: 15_000 })
+  try {
+    await page.locator('.hr-native-workspace[aria-label="Sessions"]').waitFor({ state: "visible", timeout: 15_000 })
+  } catch (error) {
+    const body = (await page.locator("body").innerText().catch(() => "")).trim().slice(0, 1_000)
+    throw new Error(`Session workspace did not render${body ? `; page text: ${body}` : "; page body was empty"}`, { cause: error })
+  }
   await page.getByRole("button", { name: "New Session" }).waitFor({ state: "visible", timeout: 15_000 })
 }
 
@@ -386,7 +392,9 @@ try {
   preview = startPreview()
   await ready(APP_ORIGIN)
   browser = await chromium.launch({ headless: true })
-  const context = await browser.newContext({ viewport: { width: 1366, height: 768 }, deviceScaleFactor: 1 })
+  // The smoke asserts stable English accessibility names. Pin the browser locale so a developer's
+  // OS language (for example Italian on Windows) cannot turn a healthy UI into a selector failure.
+  const context = await browser.newContext({ viewport: { width: 1366, height: 768 }, deviceScaleFactor: 1, locale: "en-US" })
   const page = await context.newPage()
   const pageErrors = []
   page.on("pageerror", (error) => pageErrors.push(error.message))

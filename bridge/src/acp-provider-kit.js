@@ -38,6 +38,13 @@ export function defineAcpProvider(definition) {
   const command = requireNonEmptyString(definition.command, "command")
   const args = stringArray(definition.args ?? [], "args")
   const detectCommands = stringArray(definition.detectCommands ?? [], "detectCommands")
+  const excludedModelValuePrefixes = stringArray(
+    definition.excludedModelValuePrefixes ?? [],
+    "excludedModelValuePrefixes"
+  )
+  for (const prefix of excludedModelValuePrefixes) {
+    requireNonEmptyString(prefix, `'${id}' excluded model value prefix`)
+  }
   const launchPriority = definition.launchPriority ?? 100
   if (definition.workingDirectory !== undefined && definition.workingDirectory !== "common-root") {
     throw new Error(`ACP provider '${id}' workingDirectory must be 'common-root'`)
@@ -86,6 +93,7 @@ export function defineAcpProvider(definition) {
     command,
     args,
     detectCommands,
+    excludedModelValuePrefixes,
     launchPriority,
     authenticate: definition.authenticate !== false,
     ...(definition.environment ? { environment: { ...definition.environment } } : {}),

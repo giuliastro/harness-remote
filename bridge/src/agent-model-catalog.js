@@ -70,6 +70,11 @@ function dedupeModels(models) {
   })
 }
 
+export function modelValueIsExcluded(value, prefixes = []) {
+  if (typeof value !== "string") return false
+  return prefixes.some((prefix) => value === prefix || value.startsWith(`${prefix}/`))
+}
+
 export function selectableAcpModelValue(value, option, providerID) {
   if (providerID !== "claude" || !/^claude-[a-z0-9._-]+\[1m\]$/i.test(value)) return value
   const bare = value.replace(/\[1m\]$/i, "")
@@ -100,10 +105,11 @@ function modelFromConfigCandidate(candidate, option, fallbackProviderID) {
   }
 }
 
-export function modelsFromConfigOptions(configOptions, fallbackProviderID) {
+export function modelsFromConfigOptions(configOptions, fallbackProviderID, excludedValuePrefixes = []) {
   const option = configOptions?.find((item) => item?.id === "model")
   if (!option || !Array.isArray(option.options)) return []
   return dedupeModels(option.options.flatMap((candidate) => {
+    if (modelValueIsExcluded(candidate?.value, excludedValuePrefixes)) return []
     const model = modelFromConfigCandidate(candidate, option, fallbackProviderID)
     return model ? [model] : []
   }))
@@ -222,13 +228,22 @@ class CachedCatalog {
 }
 
 export class AcpAgentModelCatalog extends CachedCatalog {
-  constructor({ agent, agentID, directory, stateDirectory, timeoutMs = ACP_MODEL_CATALOG_TIMEOUT_MS, variantConfigIDs = [] }) {
+  constructor({
+    agent,
+    agentID,
+    directory,
+    stateDirectory,
+    timeoutMs = ACP_MODEL_CATALOG_TIMEOUT_MS,
+    variantConfigIDs = [],
+    excludedModelValuePrefixes = []
+  }) {
     super()
     this.agent = agent
     this.agentID = agentID
     this.directory = directory
     this.timeoutMs = timeoutMs
     this.variantConfigIDs = [...new Set(variantConfigIDs.filter((value) => typeof value === "string" && value))]
+    this.excludedModelValuePrefixes = [...new Set(excludedModelValuePrefixes)]
     this.stateFile = path.join(stateDirectory, `model-catalog-${agentID}.json`)
     this.sessionID = undefined
     this.stateLoaded = false
@@ -311,14 +326,17 @@ export class AcpAgentModelCatalog extends CachedCatalog {
   }
 
   async #probeVariants(configOptions, catalogDeadline) {
-    const baseModels = modelsFromConfigOptions(configOptions, this.agentID)
+    const baseModels = modelsFromConfigOptions(configOptions, this.agentID, this.excludedModelValuePrefixes)
     const modelOption = configOptions?.find((item) => item?.id === "model")
     if (!baseModels.length || !this.variantConfigIDs.length || !this.sessionID || !modelOption || !Array.isArray(modelOption.options)) {
       this.variantProbe = { total: 0, completed: 0, incomplete: false, lastError: null }
       return baseModels
     }
 
-    const candidates = modelOption.options.filter((candidate) => modelFromConfigCandidate(candidate, modelOption, this.agentID))
+    const candidates = modelOption.options.filter((candidate) =>
+      !modelValueIsExcluded(candidate?.value, this.excludedModelValuePrefixes)
+      && modelFromConfigCandidate(candidate, modelOption, this.agentID)
+    )
     const originalModel = modelOption.currentValue
     const ordered = [...candidates].sort((left, right) => {
       if (left?.value === originalModel) return -1
@@ -385,7 +403,7 @@ export class AcpAgentModelCatalog extends CachedCatalog {
     this.variantProbe = { total: 0, completed: 0, incomplete: false, lastError: null }
     try {
       const options = await this.#refreshOptions(deadline)
-      const baseModels = modelsFromConfigOptions(options, this.agentID)
+      const baseModels = modelsFromConfigOptions(options, this.agentID, this.excludedModelValuePrefixes)
       if (!baseModels.length) throw new Error(`Agent ${this.agentID} did not advertise any models`)
       this.phase = "probing-variants"
       // Base membership is the required result. Variant enrichment is bounded and may stop early;

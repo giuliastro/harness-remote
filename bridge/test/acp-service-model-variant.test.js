@@ -80,6 +80,21 @@ test("setModel translates the stable bare Claude id to the current adapter's dec
   assert.deepEqual(configCalls(acp), ["model=claude-fable-5-1[1m]"])
 })
 
+test("provider model exclusions hide and reject retired model families", async () => {
+  const acp = new RecordingAcp({
+    models: ["mimo/mimo-auto", "mimo/mimo-auto/high", "openai/working"],
+    currentModel: "openai/working"
+  })
+  const service = new AcpService(acp, { excludedModelValuePrefixes: ["mimo/mimo-auto"] })
+
+  assert.deepEqual((await service.models("s1")).map((model) => model.value), ["openai/working"])
+  await assert.rejects(
+    service.setModel("s1", "mimo/mimo-auto/high"),
+    (error) => error?.code === "model_unavailable"
+  )
+  assert.deepEqual(configCalls(acp), [])
+})
+
 test("a prompt queued behind a running turn defers both model and variant to dequeue", async () => {
   const acp = new RecordingAcp({ holdPrompt: true })
   const service = new AcpService(acp, {})

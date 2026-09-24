@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto"
 import { mkdir, readFile, rename, unlink, writeFile } from "node:fs/promises"
 import path from "node:path"
-import { selectableAcpModelValue } from "./agent-model-catalog.js"
+import { modelValueIsExcluded, selectableAcpModelValue } from "./agent-model-catalog.js"
 import { TranscriptCache } from "./transcript-cache.js"
 import {
   listExtensionActions,
@@ -469,6 +469,7 @@ export class AcpService {
   #nativeRenameCommand
   #journalPageWhileOwned
   #modelVariantConfigIDs
+  #excludedModelValuePrefixes
   #requireAssistantResponse
   constructor(acp, {
     snapshotDirectory,
@@ -501,6 +502,7 @@ export class AcpService {
      * id the running adapter actually advertised.
      */
     modelVariantConfigIDs = [],
+    excludedModelValuePrefixes = [],
     requireAssistantResponse = false,
     actionProviders = []
   } = {}) {
@@ -515,6 +517,7 @@ export class AcpService {
     this.#nativeRenameCommand = nativeRenameCommand
     this.#journalPageWhileOwned = journalPageWhileOwned
     this.#modelVariantConfigIDs = modelVariantConfigIDs
+    this.#excludedModelValuePrefixes = [...excludedModelValuePrefixes]
     this.#requireAssistantResponse = requireAssistantResponse === true
     this.#actionProviders = actionProviders
     acp.on("notification", (notification) => this.#handleNotification(notification))
@@ -1004,7 +1007,9 @@ export class AcpService {
   async models(sessionID) {
     await this.#loadForConfigOptions(sessionID)
     const option = this.#configOptions.get(sessionID)?.find((item) => item.id === "model")
-    return option?.options?.map((candidate) => ({ ...candidate, currentValue: candidate.value === option.currentValue })) ?? []
+    return option?.options
+      ?.filter((candidate) => !modelValueIsExcluded(candidate?.value, this.#excludedModelValuePrefixes))
+      .map((candidate) => ({ ...candidate, currentValue: candidate.value === option.currentValue })) ?? []
   }
 
   async actions(sessionID) {
@@ -1148,6 +1153,11 @@ export class AcpService {
    * against a Session whose options have not been loaded yet.
    */
   async setModel(sessionID, model, variant) {
+    if (modelValueIsExcluded(model, this.#excludedModelValuePrefixes)) {
+      const error = new Error(`Harness model is unavailable: ${model}`)
+      error.code = "model_unavailable"
+      throw error
+    }
     await this.#loadForConfigOptions(sessionID)
     const option = this.#configOptions.get(sessionID)?.find((item) => item.id === "model")
     // The app addresses models as `provider/model` because that is what OpenCode's API does, but a
@@ -1161,6 +1171,11 @@ export class AcpService {
       ?? option?.options?.find((candidate) => candidate.value === modelID)?.value
       ?? option?.options?.find((candidate) => selectableAcpModelValue(candidate.value, option, providerID) === modelID)?.value
     if (!value) throw new Error(`Harness model is not available: ${model}`)
+    if (modelValueIsExcluded(value, this.#excludedModelValuePrefixes)) {
+      const error = new Error(`Harness model is unavailable: ${model}`)
+      error.code = "model_unavailable"
+      throw error
+    }
     // Continuing on the model the Session already holds is not a model change. Sending it anyway
     // made every prompt mutate the Session's configuration, which a harness is entitled to journal
     // and to announce - so simply carrying on read as though the user had switched models.
