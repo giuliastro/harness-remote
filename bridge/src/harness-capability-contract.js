@@ -14,7 +14,12 @@ function uniqueStrings(values = []) {
  * ownership of the Session.
  */
 function acpSessionContract(profile) {
-  if (profile?.sessionContract) return { ...profile.sessionContract }
+  if (profile?.sessionContract) {
+    return {
+      ...profile.sessionContract,
+      listScope: profile.sessionListScope ?? "global"
+    }
+  }
   return {
     authority: "native-harness",
     discovery: "native-list",
@@ -22,7 +27,8 @@ function acpSessionContract(profile) {
     externalWriterObservation: "unverified",
     continuation: "session-load",
     writerOwnership: "adapter-defined",
-    stop: "owned-session-native-cancel"
+    stop: "owned-session-native-cancel",
+    listScope: profile?.sessionListScope ?? "global"
   }
 }
 

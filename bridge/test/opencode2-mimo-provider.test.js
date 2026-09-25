@@ -49,6 +49,9 @@ test("MiMo provider exposes runtime ACP models while keeping unverified surfaces
   )
   assert.equal(provider.requireAssistantResponse, true)
   assert.deepEqual(provider.excludedModelValuePrefixes, ["mimo/mimo-auto"])
+  assert.equal(provider.sessionListScope, "project")
+  assert.equal(contract.sessions.listScope, "project")
+  assert.deepEqual(provider.catalogSessionCleanup, { command: "mimo", args: ["session", "delete"] })
 
   assert.equal(provider.capabilities.sessions, true)
   assert.equal(provider.capabilities.prompt, true)

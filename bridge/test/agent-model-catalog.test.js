@@ -129,6 +129,33 @@ test("concurrent ACP model picker opens join one technical catalog operation", a
   }
 })
 
+test("ACP catalog can remove provider-owned technical Sessions after model inspection", async () => {
+  const stateDirectory = await mkdtemp(path.join(tmpdir(), "harness-model-cleanup-"))
+  try {
+    const first = new AcpAgentModelCatalog({ agent: new FakeAcp("old"), agentID: "mimo", directory: "/repo", stateDirectory })
+    await first.list({ allowStale: false })
+
+    const removed = []
+    const catalog = new AcpAgentModelCatalog({
+      agent: new FakeAcp("fresh"),
+      agentID: "mimo",
+      directory: "/repo",
+      stateDirectory,
+      cleanupSession: async ({ sessionID, directory }) => removed.push([sessionID, directory])
+    })
+    await catalog.preloadState()
+    const result = await catalog.list({ allowStale: false })
+
+    assert.equal(result.models.length, 2)
+    assert.deepEqual(removed, [["old-session-1", "/repo"], ["fresh-session-1", "/repo"]])
+    assert.deepEqual([...catalog.hiddenSessionIDs], [])
+    assert.equal(catalog.diagnostics().technicalSessionPersisted, false)
+    assert.equal(catalog.diagnostics().cleanupError, null)
+  } finally {
+    await rm(stateDirectory, { recursive: true, force: true })
+  }
+})
+
 test("ACP variants are emitted only from model-specific config options advertised at runtime", async () => {
   const stateDirectory = await mkdtemp(path.join(tmpdir(), "harness-model-variants-"))
   try {

@@ -66,6 +66,26 @@ test("provider descriptor carries an explicit authentication policy", () => {
   assert.throws(() => exampleProvider({ authenticate: "no" }), /authenticate must be a boolean/)
 })
 
+test("provider descriptor declares whether its native Session list is global or project-scoped", () => {
+  assert.equal(exampleProvider().sessionListScope, "global")
+  assert.equal(exampleProvider({ sessionListScope: "project" }).sessionListScope, "project")
+  assert.throws(
+    () => exampleProvider({ sessionListScope: "machine-ish" }),
+    /sessionListScope must be global or project/
+  )
+})
+
+test("provider descriptor validates optional native catalog Session cleanup", () => {
+  assert.deepEqual(
+    exampleProvider({ catalogSessionCleanup: { command: "example", args: ["session", "delete"] } }).catalogSessionCleanup,
+    { command: "example", args: ["session", "delete"] }
+  )
+  assert.throws(
+    () => exampleProvider({ catalogSessionCleanup: { command: "", args: [] } }),
+    /catalogSessionCleanup.command must be a non-empty string/
+  )
+})
+
 test("provider descriptor carries validated model exclusions into generic runtimes", () => {
   assert.deepEqual(exampleProvider().excludedModelValuePrefixes, [])
   assert.deepEqual(
@@ -120,6 +140,7 @@ test("generic ACP capability contract consumes provider-declared Session semanti
   assert.equal(contract.sessions.continuation, "provider-resume")
   assert.equal(contract.sessions.writerOwnership, "provider-lock")
   assert.equal(contract.sessions.stop, "provider-cancel")
+  assert.equal(contract.sessions.listScope, "global")
   assert.deepEqual(contract.models.variantConfigIDs, ["reasoning"])
 })
 

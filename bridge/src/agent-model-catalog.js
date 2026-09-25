@@ -235,7 +235,8 @@ export class AcpAgentModelCatalog extends CachedCatalog {
     stateDirectory,
     timeoutMs = ACP_MODEL_CATALOG_TIMEOUT_MS,
     variantConfigIDs = [],
-    excludedModelValuePrefixes = []
+    excludedModelValuePrefixes = [],
+    cleanupSession
   }) {
     super()
     this.agent = agent
@@ -244,12 +245,14 @@ export class AcpAgentModelCatalog extends CachedCatalog {
     this.timeoutMs = timeoutMs
     this.variantConfigIDs = [...new Set(variantConfigIDs.filter((value) => typeof value === "string" && value))]
     this.excludedModelValuePrefixes = [...new Set(excludedModelValuePrefixes)]
+    this.cleanupSession = typeof cleanupSession === "function" ? cleanupSession : undefined
     this.stateFile = path.join(stateDirectory, `model-catalog-${agentID}.json`)
     this.sessionID = undefined
     this.stateLoaded = false
     this.hiddenSessionIDs = new Set()
     this.phase = "idle"
     this.variantProbe = { total: 0, completed: 0, incomplete: false, lastError: null }
+    this.cleanupError = null
     this.onAgentExit = (error) => {
       this.lastError = error instanceof Error ? error.message : String(error ?? "adapter exited")
       this.sessionID = undefined
@@ -414,6 +417,32 @@ export class AcpAgentModelCatalog extends CachedCatalog {
     } catch (error) {
       this.phase = "error"
       throw error
+    } finally {
+      await this.#cleanupTechnicalSessions()
+    }
+  }
+
+  async #cleanupTechnicalSessions() {
+    if (!this.cleanupSession || !this.hiddenSessionIDs.size) return
+    const sessionIDs = [...this.hiddenSessionIDs]
+    for (const sessionID of sessionIDs) {
+      try {
+        await this.cleanupSession({ sessionID, directory: this.directory })
+        this.hiddenSessionIDs.delete(sessionID)
+        if (this.sessionID === sessionID) this.sessionID = undefined
+        this.cleanupError = null
+      } catch (error) {
+        // Catalog data is already available. Cleanup is hygiene, not a reason to break the picker;
+        // retain the id so the technical Session remains hidden and a later refresh can retry.
+        this.cleanupError = error instanceof Error ? error.message : String(error)
+      }
+    }
+    try {
+      await this.#saveState()
+    } catch (error) {
+      // Cleanup persistence is best-effort for the same reason deletion is: a valid catalog must
+      // not turn into a model-picker failure after discovery has already succeeded.
+      this.cleanupError = error instanceof Error ? error.message : String(error)
     }
   }
 
@@ -448,6 +477,7 @@ export class AcpAgentModelCatalog extends CachedCatalog {
       variantProbe: { ...this.variantProbe },
       adapterProcess: this.agent.diagnostics?.() ?? { processID: this.agent.processID },
       technicalSessionPersisted: Boolean(this.sessionID),
+      cleanupError: this.cleanupError,
       variantConfigIDs: this.variantConfigIDs
     }
   }
