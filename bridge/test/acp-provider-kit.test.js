@@ -102,6 +102,19 @@ test("provider descriptor carries validated model exclusions into generic runtim
   )
 })
 
+test("provider descriptor carries declarative inline variants and provider ordering", () => {
+  const provider = exampleProvider({
+    inlineModelVariantValues: ["low", "high"],
+    modelProviderOrder: ["native", "connected"]
+  })
+  assert.deepEqual(provider.inlineModelVariantValues, ["low", "high"])
+  assert.deepEqual(provider.modelProviderOrder, ["native", "connected"])
+  assert.throws(
+    () => exampleProvider({ inlineModelVariantValues: [false] }),
+    /inlineModelVariantValues must be an array of strings/
+  )
+})
+
 test("provider descriptor requires explicit capabilities and Session semantics", () => {
   assert.throws(() => defineAcpProvider({
     id: "missing-session",

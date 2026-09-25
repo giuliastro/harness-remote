@@ -117,6 +117,8 @@ export async function createAcpProviderRuntime({
     stateDirectory: config.stateDirectory,
     variantConfigIDs: provider.modelVariantConfigIDs,
     excludedModelValuePrefixes: provider.excludedModelValuePrefixes,
+    inlineModelVariantValues: provider.inlineModelVariantValues,
+    modelProviderOrder: provider.modelProviderOrder,
     ...(provider.catalogSessionCleanup ? {
       cleanupSession: (session) => cleanupCatalogSession(provider.catalogSessionCleanup, session)
     } : {})
@@ -155,7 +157,9 @@ export async function createAcpProviderRuntime({
         promptSettleMs: provider.promptSettleMs,
         modelVariantConfigIDs: provider.modelVariantConfigIDs,
         requireAssistantResponse: provider.requireAssistantResponse,
-        excludedModelValuePrefixes: provider.excludedModelValuePrefixes
+        excludedModelValuePrefixes: provider.excludedModelValuePrefixes,
+        inlineModelVariantValues: provider.inlineModelVariantValues,
+        modelProviderOrder: provider.modelProviderOrder
       }
     }
   }

@@ -45,6 +45,8 @@ export function defineAcpProvider(definition) {
   for (const prefix of excludedModelValuePrefixes) {
     requireNonEmptyString(prefix, `'${id}' excluded model value prefix`)
   }
+  const inlineModelVariantValues = stringArray(definition.inlineModelVariantValues ?? [], "inlineModelVariantValues")
+  const modelProviderOrder = stringArray(definition.modelProviderOrder ?? [], "modelProviderOrder")
   const launchPriority = definition.launchPriority ?? 100
   const sessionListScope = definition.sessionListScope ?? "global"
   if (!["global", "project"].includes(sessionListScope)) {
@@ -105,6 +107,8 @@ export function defineAcpProvider(definition) {
     args,
     detectCommands,
     excludedModelValuePrefixes,
+    inlineModelVariantValues,
+    modelProviderOrder,
     sessionListScope,
     launchPriority,
     authenticate: definition.authenticate !== false,

@@ -34,6 +34,8 @@ function acpSessionContract(profile) {
 
 export function acpHarnessCapabilityContract(profile) {
   const variantConfigIDs = uniqueStrings(profile?.modelVariantConfigIDs)
+  const inlineVariantValues = uniqueStrings(profile?.inlineModelVariantValues)
+  const providerOrder = uniqueStrings(profile?.modelProviderOrder)
   return {
     version: 2,
     protocol: "acp",
@@ -52,8 +54,14 @@ export function acpHarnessCapabilityContract(profile) {
       // discovery was audited in isolation but regressed PI, Codex and Claude on Windows, so it is
       // not part of the promotion candidate until it has its own real-harness proof.
       cacheScope: "machine",
-      variants: variantConfigIDs.length ? "runtime-advertised-config-options" : "runtime-advertised-only",
-      variantConfigIDs
+      variants: variantConfigIDs.length
+        ? "runtime-advertised-config-options"
+        : inlineVariantValues.length
+          ? "runtime-advertised-inline-values"
+          : "runtime-advertised-only",
+      variantConfigIDs,
+      inlineVariantValues,
+      providerOrder
     },
     sessions: acpSessionContract(profile),
     lifecycle: profile?.lifecycleContract

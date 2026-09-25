@@ -127,6 +127,8 @@ export type ModelOption = ModelSelection & {
   isFree?: boolean
   inputCost?: number
   outputCost?: number
+  /** Harness-declared provider ordering; lower values appear first. */
+  sortPriority?: number
 }
 
 export type Session = {

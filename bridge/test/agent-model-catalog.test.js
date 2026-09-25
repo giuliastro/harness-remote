@@ -84,6 +84,34 @@ test("ACP catalog excludes provider-declared retired model families", () => {
   assert.equal(models[0].isDefault, true)
 })
 
+test("ACP catalog groups inline reasoning values under their real base models", () => {
+  const models = modelsFromConfigOptions([{
+    id: "model",
+    currentValue: "openai/gpt/low",
+    options: [
+      { value: "openai/gpt", name: "GPT" },
+      { value: "openai/gpt/low", name: "GPT (low)" },
+      { value: "openai/gpt/high", name: "GPT (high)" },
+      { value: "xiaomi/mimo", name: "MiMo" },
+      { value: "xiaomi/mimo/high", name: "MiMo (high)" }
+    ]
+  }], "mimo", [], {
+    inlineVariantValues: ["low", "high"],
+    providerOrder: ["xiaomi", "openai"]
+  })
+
+  assert.deepEqual(models.map((model) => [model.providerID, model.modelID, model.variant]), [
+    ["xiaomi", "mimo", undefined],
+    ["xiaomi", "mimo", "high"],
+    ["openai", "gpt", undefined],
+    ["openai", "gpt", "low"],
+    ["openai", "gpt", "high"]
+  ])
+  assert.equal(models.filter((model) => !model.variant).length, 2)
+  assert.equal(models.find((model) => model.variant === "low")?.variantValue, "openai/gpt/low")
+  assert.equal(models.find((model) => model.variant === "low")?.isDefault, true)
+})
+
 test("ACP model discovery keeps one warm catalog per adapter lifetime and explicit refresh uses a fresh technical session", async () => {
   const stateDirectory = await mkdtemp(path.join(tmpdir(), "harness-model-catalog-"))
   try {

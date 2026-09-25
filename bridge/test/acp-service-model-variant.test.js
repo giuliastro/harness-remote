@@ -95,6 +95,26 @@ test("provider model exclusions hide and reject retired model families", async (
   assert.deepEqual(configCalls(acp), [])
 })
 
+test("inline model variants stay grouped and switch through the model option's wire value", async () => {
+  const acp = new RecordingAcp({
+    models: ["openai/gpt", "openai/gpt/low", "xiaomi/mimo", "xiaomi/mimo/high"],
+    currentModel: "openai/gpt/low"
+  })
+  const service = new AcpService(acp, {
+    inlineModelVariantValues: ["low", "high"],
+    modelProviderOrder: ["xiaomi", "openai"]
+  })
+
+  assert.deepEqual((await service.models("s1")).map((model) => [model.value, model.variant]), [
+    ["xiaomi/mimo", undefined],
+    ["xiaomi/mimo", "high"],
+    ["openai/gpt", undefined],
+    ["openai/gpt", "low"]
+  ])
+  await service.setModel("s1", "xiaomi/mimo", { configId: "model", value: "high" })
+  assert.deepEqual(configCalls(acp), ["model=xiaomi/mimo", "model=xiaomi/mimo/high"])
+})
+
 test("a prompt queued behind a running turn defers both model and variant to dequeue", async () => {
   const acp = new RecordingAcp({ holdPrompt: true })
   const service = new AcpService(acp, {})

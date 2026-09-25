@@ -75,6 +75,69 @@ export function modelValueIsExcluded(value, prefixes = []) {
   return prefixes.some((prefix) => value === prefix || value.startsWith(`${prefix}/`))
 }
 
+export function splitInlineAcpModelVariant(value, option, variantValues = []) {
+  if (typeof value !== "string" || !variantValues.length) return undefined
+  const boundary = value.lastIndexOf("/")
+  if (boundary <= 0) return undefined
+  const variant = value.slice(boundary + 1)
+  const modelValue = value.slice(0, boundary)
+  if (!variantValues.includes(variant)) return undefined
+  if (!option?.options?.some((candidate) => candidate?.value === modelValue)) return undefined
+  return { modelValue, variant, variantValue: value }
+}
+
+/**
+ * Some adapters flatten one model and its reasoning choices into sibling values such as
+ * `provider/model`, `provider/model/low`, `provider/model/high`. ACP still describes one `model`
+ * option, so normalize that shape before any UI or validator mistakes the choices for models.
+ */
+export function normalizedAcpModelCandidates(
+  option,
+  excludedValuePrefixes = [],
+  inlineVariantValues = [],
+  providerOrder = []
+) {
+  if (!option || !Array.isArray(option.options)) return []
+  const groups = new Map()
+  for (const candidate of option.options) {
+    if (typeof candidate?.value !== "string" || !candidate.value || candidate.disabled === true) continue
+    if (modelValueIsExcluded(candidate.value, excludedValuePrefixes)) continue
+    const inline = splitInlineAcpModelVariant(candidate.value, option, inlineVariantValues)
+    const modelValue = inline?.modelValue ?? candidate.value
+    const group = groups.get(modelValue) ?? { base: undefined, variants: [], index: groups.size }
+    if (inline) group.variants.push({ candidate, ...inline })
+    else group.base = candidate
+    groups.set(modelValue, group)
+  }
+  const rank = (modelValue) => {
+    const providerID = modelValue.slice(0, modelValue.indexOf("/"))
+    const index = providerOrder.indexOf(providerID)
+    return index < 0 ? undefined : index
+  }
+  return [...groups.entries()]
+    .filter(([, group]) => group.base)
+    .sort(([left, a], [right, b]) =>
+      (rank(left) ?? Number.MAX_SAFE_INTEGER) - (rank(right) ?? Number.MAX_SAFE_INTEGER) || a.index - b.index
+    )
+    .flatMap(([modelValue, group]) => {
+      const priority = rank(modelValue)
+      const base = {
+        ...group.base,
+        currentValue: option.currentValue === modelValue,
+        ...(Number.isFinite(priority) ? { sortPriority: priority } : {})
+      }
+      return [base, ...group.variants.map(({ candidate, variant, variantValue }) => ({
+        ...candidate,
+        value: modelValue,
+        name: group.base.name ?? modelValue,
+        variant,
+        variantValue,
+        currentValue: option.currentValue === variantValue,
+        ...(Number.isFinite(priority) ? { sortPriority: priority } : {})
+      }))]
+    })
+}
+
 export function selectableAcpModelValue(value, option, providerID) {
   if (providerID !== "claude" || !/^claude-[a-z0-9._-]+\[1m\]$/i.test(value)) return value
   const bare = value.replace(/\[1m\]$/i, "")
@@ -101,15 +164,31 @@ function modelFromConfigCandidate(candidate, option, fallbackProviderID) {
     description: candidate.description || undefined,
     status: typeof candidate.status === "string" ? candidate.status : undefined,
     isFree: typeof candidate.free === "boolean" ? candidate.free : typeof candidate.isFree === "boolean" ? candidate.isFree : undefined,
-    isDefault: selectableValue === selectableAcpModelValue(option.currentValue, option, fallbackProviderID)
+    isDefault: candidate.currentValue === true
+      || selectableValue === selectableAcpModelValue(option.currentValue, option, fallbackProviderID),
+    ...(candidate.variant ? {
+      variant: candidate.variant,
+      variantConfigId: "model",
+      variantValue: candidate.variantValue
+    } : {}),
+    ...(Number.isFinite(candidate.sortPriority) ? { sortPriority: candidate.sortPriority } : {})
   }
 }
 
-export function modelsFromConfigOptions(configOptions, fallbackProviderID, excludedValuePrefixes = []) {
+export function modelsFromConfigOptions(
+  configOptions,
+  fallbackProviderID,
+  excludedValuePrefixes = [],
+  { inlineVariantValues = [], providerOrder = [] } = {}
+) {
   const option = configOptions?.find((item) => item?.id === "model")
   if (!option || !Array.isArray(option.options)) return []
-  return dedupeModels(option.options.flatMap((candidate) => {
-    if (modelValueIsExcluded(candidate?.value, excludedValuePrefixes)) return []
+  return dedupeModels(normalizedAcpModelCandidates(
+    option,
+    excludedValuePrefixes,
+    inlineVariantValues,
+    providerOrder
+  ).flatMap((candidate) => {
     const model = modelFromConfigCandidate(candidate, option, fallbackProviderID)
     return model ? [model] : []
   }))
@@ -236,6 +315,8 @@ export class AcpAgentModelCatalog extends CachedCatalog {
     timeoutMs = ACP_MODEL_CATALOG_TIMEOUT_MS,
     variantConfigIDs = [],
     excludedModelValuePrefixes = [],
+    inlineModelVariantValues = [],
+    modelProviderOrder = [],
     cleanupSession
   }) {
     super()
@@ -245,6 +326,8 @@ export class AcpAgentModelCatalog extends CachedCatalog {
     this.timeoutMs = timeoutMs
     this.variantConfigIDs = [...new Set(variantConfigIDs.filter((value) => typeof value === "string" && value))]
     this.excludedModelValuePrefixes = [...new Set(excludedModelValuePrefixes)]
+    this.inlineModelVariantValues = [...new Set(inlineModelVariantValues)]
+    this.modelProviderOrder = [...new Set(modelProviderOrder)]
     this.cleanupSession = typeof cleanupSession === "function" ? cleanupSession : undefined
     this.stateFile = path.join(stateDirectory, `model-catalog-${agentID}.json`)
     this.sessionID = undefined
@@ -329,7 +412,10 @@ export class AcpAgentModelCatalog extends CachedCatalog {
   }
 
   async #probeVariants(configOptions, catalogDeadline) {
-    const baseModels = modelsFromConfigOptions(configOptions, this.agentID, this.excludedModelValuePrefixes)
+    const baseModels = modelsFromConfigOptions(configOptions, this.agentID, this.excludedModelValuePrefixes, {
+      inlineVariantValues: this.inlineModelVariantValues,
+      providerOrder: this.modelProviderOrder
+    })
     const modelOption = configOptions?.find((item) => item?.id === "model")
     if (!baseModels.length || !this.variantConfigIDs.length || !this.sessionID || !modelOption || !Array.isArray(modelOption.options)) {
       this.variantProbe = { total: 0, completed: 0, incomplete: false, lastError: null }
@@ -406,7 +492,10 @@ export class AcpAgentModelCatalog extends CachedCatalog {
     this.variantProbe = { total: 0, completed: 0, incomplete: false, lastError: null }
     try {
       const options = await this.#refreshOptions(deadline)
-      const baseModels = modelsFromConfigOptions(options, this.agentID, this.excludedModelValuePrefixes)
+      const baseModels = modelsFromConfigOptions(options, this.agentID, this.excludedModelValuePrefixes, {
+        inlineVariantValues: this.inlineModelVariantValues,
+        providerOrder: this.modelProviderOrder
+      })
       if (!baseModels.length) throw new Error(`Agent ${this.agentID} did not advertise any models`)
       this.phase = "probing-variants"
       // Base membership is the required result. Variant enrichment is bounded and may stop early;

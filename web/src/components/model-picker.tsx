@@ -25,6 +25,7 @@ export type ModelGroup = {
   base: ModelOption
   variants: ModelOption[]
   options: ModelOption[]
+  sortPriority?: number
 }
 const MAX_VISIBLE_MODEL_GROUPS = 100
 
@@ -71,9 +72,12 @@ export function groupModels(models: ModelOption[]): ModelGroup[] {
       description: base.description,
       base,
       variants,
-      options
+      options,
+      sortPriority: base.sortPriority
     }
   }).sort((left, right) => {
+    const priority = (left.sortPriority ?? Number.MAX_SAFE_INTEGER) - (right.sortPriority ?? Number.MAX_SAFE_INTEGER)
+    if (priority) return priority
     const leftDefault = left.options.some((option) => option.isDefault) ? 0 : 1
     const rightDefault = right.options.some((option) => option.isDefault) ? 0 : 1
     if (leftDefault !== rightDefault) return leftDefault - rightDefault

@@ -1776,6 +1776,76 @@ test("keeps provider/model values untouched for the harnesses that use them", as
   }
 })
 
+class InlineVariantModelAcp extends EventEmitter {
+  agentInfo = { version: "0.1.15" }
+  models = []
+
+  async start() {}
+
+  async listSessions() {
+    return [{ sessionId: "session-1", cwd: process.cwd(), updatedAt: "2026-09-25T00:00:00.000Z" }]
+  }
+
+  async request(method, params) {
+    if (method === "session/load" || method === "session/new") {
+      return {
+        sessionId: "session-1",
+        configOptions: [{
+          id: "model",
+          currentValue: "openai/gpt-6-sol/high",
+          options: [
+            { value: "openai/gpt-6-sol", name: "OpenAI/GPT-6 Sol" },
+            { value: "openai/gpt-6-sol/low", name: "OpenAI/GPT-6 Sol (low)" },
+            { value: "openai/gpt-6-sol/high", name: "OpenAI/GPT-6 Sol (high)" },
+            { value: "xiaomi/mimo-v2.6-pro", name: "Xiaomi/MiMo-V2.6-Pro" },
+            { value: "xiaomi/mimo-v2.6-pro/low", name: "Xiaomi/MiMo-V2.6-Pro (low)" },
+            { value: "xiaomi/mimo-v2.6-pro/high", name: "Xiaomi/MiMo-V2.6-Pro (high)" },
+            { value: "mimo/mimo-auto", name: "Automatic" }
+          ]
+        }]
+      }
+    }
+    if (method === "session/set_config_option") {
+      this.models.push(params.value)
+      return {}
+    }
+    if (method === "session/prompt") return { stopReason: "end_turn" }
+    return {}
+  }
+
+  notify() {}
+}
+
+test("groups MiMo inline reasoning levels under Xiaomi-first model entries and sends exact ACP values", async () => {
+  const acp = new InlineVariantModelAcp()
+  const bridge = await startServer({ acp, backend: "mimo" })
+  try {
+    const listed = await fetch(`${bridge.baseURL}/config/providers?sessionID=session-1`, { headers: authHeaders() })
+    const body = await listed.json()
+    assert.deepEqual(body.providers.map((provider) => provider.id), ["xiaomi", "openai"])
+    assert.deepEqual(body.providers.map((provider) => provider.sortPriority), [0, 1])
+    assert.deepEqual(Object.keys(body.providers[0].models), ["mimo-v2.6-pro"])
+    assert.deepEqual(Object.keys(body.providers[0].models["mimo-v2.6-pro"].variants), ["low", "high"])
+    assert.deepEqual(Object.keys(body.providers[1].models), ["gpt-6-sol"])
+    assert.equal(body.providers.some((provider) => provider.models["mimo-auto"]), false)
+    assert.equal(body.default.openai, "gpt-6-sol")
+
+    const prompted = await fetch(`${bridge.baseURL}/session/session-1/prompt_async`, {
+      method: "POST",
+      headers: jsonHeaders(),
+      body: JSON.stringify({
+        parts: [{ type: "text", text: "hello" }],
+        model: { providerID: "xiaomi", modelID: "mimo-v2.6-pro", variant: "high" }
+      })
+    })
+    assert.equal(prompted.status, 200)
+    await new Promise((resolve) => setImmediate(resolve))
+    assert.deepEqual(acp.models, ["xiaomi/mimo-v2.6-pro", "xiaomi/mimo-v2.6-pro/high"])
+  } finally {
+    await bridge.close()
+  }
+})
+
 /** Advertises a skill command alongside the extension ones, as OMP does. */
 class SkillCommandAcp extends ExtensionActionAcp {
   async request(method, params) {

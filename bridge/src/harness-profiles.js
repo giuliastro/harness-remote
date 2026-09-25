@@ -278,6 +278,12 @@ export const HARNESS_PROFILES = {
     // completes every prompt without an assistant response. Keep that upstream catalog defect out
     // of every generic consumer (picker, validation, smoke and direct Session model switching).
     excludedModelValuePrefixes: ["mimo/mimo-auto"],
+    // MiMo flattens reasoning into the model option itself (`provider/model/high`) instead of
+    // advertising a separate ACP config option. Reconstruct one model family with real variants.
+    inlineModelVariantValues: ["none", "low", "medium", "high", "xhigh"],
+    // Match MiMo's native picker: its own Xiaomi models are the primary family, followed by models
+    // exposed through the user's connected OpenAI account.
+    modelProviderOrder: ["xiaomi", "openai"],
     lifecycleContract: COMMON_ACP_LIFECYCLE_CONTRACT,
     // MiMo Code is OpenCode-derived. Model discovery accepts either the current configOptions
     // surface or the legacy ACP models state used by earlier MiMo builds.
