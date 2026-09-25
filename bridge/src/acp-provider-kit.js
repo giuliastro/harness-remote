@@ -38,7 +38,20 @@ export function defineAcpProvider(definition) {
   const command = requireNonEmptyString(definition.command, "command")
   const args = stringArray(definition.args ?? [], "args")
   const detectCommands = stringArray(definition.detectCommands ?? [], "detectCommands")
+  const excludedModelValuePrefixes = stringArray(
+    definition.excludedModelValuePrefixes ?? [],
+    "excludedModelValuePrefixes"
+  )
+  for (const prefix of excludedModelValuePrefixes) {
+    requireNonEmptyString(prefix, `'${id}' excluded model value prefix`)
+  }
+  const inlineModelVariantValues = stringArray(definition.inlineModelVariantValues ?? [], "inlineModelVariantValues")
+  const modelProviderOrder = stringArray(definition.modelProviderOrder ?? [], "modelProviderOrder")
   const launchPriority = definition.launchPriority ?? 100
+  const sessionListScope = definition.sessionListScope ?? "global"
+  if (!["global", "project"].includes(sessionListScope)) {
+    throw new Error(`ACP provider '${id}' sessionListScope must be global or project`)
+  }
   if (definition.workingDirectory !== undefined && definition.workingDirectory !== "common-root") {
     throw new Error(`ACP provider '${id}' workingDirectory must be 'common-root'`)
   }
@@ -53,6 +66,13 @@ export function defineAcpProvider(definition) {
       requireNonEmptyString(name, `'${id}' environment key`)
       if (typeof value !== "string") throw new Error(`ACP provider '${id}' environment values must be strings`)
     }
+  }
+  if (definition.catalogSessionCleanup !== undefined) {
+    if (!definition.catalogSessionCleanup || typeof definition.catalogSessionCleanup !== "object" || Array.isArray(definition.catalogSessionCleanup)) {
+      throw new Error(`ACP provider '${id}' catalogSessionCleanup must be an object`)
+    }
+    requireNonEmptyString(definition.catalogSessionCleanup.command, `'${id}' catalogSessionCleanup.command`)
+    stringArray(definition.catalogSessionCleanup.args ?? [], `'${id}' catalogSessionCleanup.args`)
   }
   if (!Number.isFinite(launchPriority)) throw new Error(`ACP provider '${id}' launchPriority must be a finite number`)
   if (!definition.capabilities || typeof definition.capabilities !== "object") {
@@ -86,9 +106,19 @@ export function defineAcpProvider(definition) {
     command,
     args,
     detectCommands,
+    excludedModelValuePrefixes,
+    inlineModelVariantValues,
+    modelProviderOrder,
+    sessionListScope,
     launchPriority,
     authenticate: definition.authenticate !== false,
     ...(definition.environment ? { environment: { ...definition.environment } } : {}),
+    ...(definition.catalogSessionCleanup ? {
+      catalogSessionCleanup: {
+        command: definition.catalogSessionCleanup.command,
+        args: [...(definition.catalogSessionCleanup.args ?? [])]
+      }
+    } : {}),
     capabilities: { ...definition.capabilities },
     modelSelection,
     modelVariantConfigIDs: stringArray(definition.modelVariantConfigIDs ?? [], "modelVariantConfigIDs"),

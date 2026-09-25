@@ -69,6 +69,49 @@ test("Claude catalog preserves the 1M suffix when it distinguishes two advertise
   assert.equal(models.at(-1).isDefault, true)
 })
 
+test("ACP catalog excludes provider-declared retired model families", () => {
+  const models = modelsFromConfigOptions([{
+    id: "model",
+    currentValue: "openai/working",
+    options: [
+      { value: "mimo/mimo-auto", name: "MiMo Auto" },
+      { value: "mimo/mimo-auto/high", name: "MiMo Auto High" },
+      { value: "openai/working", name: "Working" }
+    ]
+  }], "mimo", ["mimo/mimo-auto"])
+
+  assert.deepEqual(models.map((model) => `${model.providerID}/${model.modelID}`), ["openai/working"])
+  assert.equal(models[0].isDefault, true)
+})
+
+test("ACP catalog groups inline reasoning values under their real base models", () => {
+  const models = modelsFromConfigOptions([{
+    id: "model",
+    currentValue: "openai/gpt/low",
+    options: [
+      { value: "openai/gpt", name: "GPT" },
+      { value: "openai/gpt/low", name: "GPT (low)" },
+      { value: "openai/gpt/high", name: "GPT (high)" },
+      { value: "xiaomi/mimo", name: "MiMo" },
+      { value: "xiaomi/mimo/high", name: "MiMo (high)" }
+    ]
+  }], "mimo", [], {
+    inlineVariantValues: ["low", "high"],
+    providerOrder: ["xiaomi", "openai"]
+  })
+
+  assert.deepEqual(models.map((model) => [model.providerID, model.modelID, model.variant]), [
+    ["xiaomi", "mimo", undefined],
+    ["xiaomi", "mimo", "high"],
+    ["openai", "gpt", undefined],
+    ["openai", "gpt", "low"],
+    ["openai", "gpt", "high"]
+  ])
+  assert.equal(models.filter((model) => !model.variant).length, 2)
+  assert.equal(models.find((model) => model.variant === "low")?.variantValue, "openai/gpt/low")
+  assert.equal(models.find((model) => model.variant === "low")?.isDefault, true)
+})
+
 test("ACP model discovery keeps one warm catalog per adapter lifetime and explicit refresh uses a fresh technical session", async () => {
   const stateDirectory = await mkdtemp(path.join(tmpdir(), "harness-model-catalog-"))
   try {
@@ -109,6 +152,33 @@ test("concurrent ACP model picker opens join one technical catalog operation", a
     assert.equal(agent.loadCalls, 0)
     assert.equal(results.every((result) => result.models.length === 2), true)
     assert.equal(catalog.diagnostics().inFlight, false)
+  } finally {
+    await rm(stateDirectory, { recursive: true, force: true })
+  }
+})
+
+test("ACP catalog can remove provider-owned technical Sessions after model inspection", async () => {
+  const stateDirectory = await mkdtemp(path.join(tmpdir(), "harness-model-cleanup-"))
+  try {
+    const first = new AcpAgentModelCatalog({ agent: new FakeAcp("old"), agentID: "mimo", directory: "/repo", stateDirectory })
+    await first.list({ allowStale: false })
+
+    const removed = []
+    const catalog = new AcpAgentModelCatalog({
+      agent: new FakeAcp("fresh"),
+      agentID: "mimo",
+      directory: "/repo",
+      stateDirectory,
+      cleanupSession: async ({ sessionID, directory }) => removed.push([sessionID, directory])
+    })
+    await catalog.preloadState()
+    const result = await catalog.list({ allowStale: false })
+
+    assert.equal(result.models.length, 2)
+    assert.deepEqual(removed, [["old-session-1", "/repo"], ["fresh-session-1", "/repo"]])
+    assert.deepEqual([...catalog.hiddenSessionIDs], [])
+    assert.equal(catalog.diagnostics().technicalSessionPersisted, false)
+    assert.equal(catalog.diagnostics().cleanupError, null)
   } finally {
     await rm(stateDirectory, { recursive: true, force: true })
   }

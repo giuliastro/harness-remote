@@ -234,7 +234,7 @@ export class TaskLauncher {
     await entry.host.request("session/set_config_option", {
       sessionId: sessionID,
       configId: resolvedModel.variantConfigId,
-      value: resolvedModel.variant
+      value: resolvedModel.variantValue ?? resolvedModel.variant
     })
   }
 

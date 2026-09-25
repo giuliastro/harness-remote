@@ -163,12 +163,25 @@ function providersResponse(models, fallbackProviderID) {
     const providerID = flat ? fallbackProviderID : value.slice(0, separator)
     const modelID = flat ? value : value.slice(separator + 1)
     if (!providerID || !modelID) continue
-    const provider = providers.get(providerID) ?? { id: providerID, name: providerID, models: {} }
+    const provider = providers.get(providerID) ?? {
+      id: providerID,
+      name: providerID,
+      models: {},
+      ...(Number.isFinite(option.sortPriority) ? { sortPriority: option.sortPriority } : {})
+    }
+    const existing = provider.models[modelID]
     provider.models[modelID] = {
+      ...existing,
       id: modelID,
       name: option.name ?? modelID,
       description: option.description || undefined,
-      status: "active"
+      status: "active",
+      ...((existing?.variants || option.variant) ? {
+        variants: {
+          ...(existing?.variants ?? {}),
+          ...(option.variant ? { [option.variant]: {} } : {})
+        }
+      } : {})
     }
     providers.set(providerID, provider)
     if (option.currentValue) defaults[providerID] = modelID
@@ -186,7 +199,10 @@ export function createBridgeServer({ config, acp, serviceOptions, machineRegistr
     preferListedTitles: profile.preferListedTitles,
     nativeRenameCommand: profile.nativeRenameCommand,
     journalPageWhileOwned: profile.journalPageWhileOwned !== false,
-    modelVariantConfigIDs: profile.modelVariantConfigIDs ?? []
+    modelVariantConfigIDs: profile.modelVariantConfigIDs ?? [],
+    excludedModelValuePrefixes: profile.excludedModelValuePrefixes ?? [],
+    inlineModelVariantValues: profile.inlineModelVariantValues ?? [],
+    modelProviderOrder: profile.modelProviderOrder ?? []
   })
   const hiddenSessionIDs = serviceOptions?.hiddenSessionIDs
   const liveSessionActivity = new Map()
@@ -460,7 +476,10 @@ export function createBridgeServer({ config, acp, serviceOptions, machineRegistr
           const text = body.parts?.find((part) => part.type === "text")?.text ?? ""
           const attachments = parseAttachments(body.parts)
           if (!text && !attachments.length) throw new Error("A text prompt is required")
-          await service.prompt(sessionID, text, modelWireName(body.model), attachments)
+          const variant = typeof body.model?.variant === "string" && body.model.variant
+            ? { configId: "model", value: body.model.variant }
+            : undefined
+          await service.prompt(sessionID, text, modelWireName(body.model), attachments, variant)
           writeJSON(response, 200, true)
           return
         }
@@ -469,7 +488,10 @@ export function createBridgeServer({ config, acp, serviceOptions, machineRegistr
           if (typeof body.command !== "string" || !body.command) throw new Error("A command name is required")
           const argumentsText = typeof body.arguments === "string" ? body.arguments.trim() : ""
           const text = argumentsText ? `/${body.command} ${argumentsText}` : `/${body.command}`
-          await service.prompt(sessionID, text, modelWireName(body.model))
+          const variant = typeof body.model?.variant === "string" && body.model.variant
+            ? { configId: "model", value: body.model.variant }
+            : undefined
+          await service.prompt(sessionID, text, modelWireName(body.model), [], variant)
           writeJSON(response, 200, true)
           return
         }

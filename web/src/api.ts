@@ -132,6 +132,7 @@ type ConfigProvidersResponse = {
   providers: Array<{
     id: string
     name: string
+    sortPriority?: number
     models: Record<string, {
       id?: string
       name?: string
@@ -360,7 +361,8 @@ export const api = {
           outputLimit: model.limit?.output,
           tools: Boolean(model.capabilities?.toolcall || model.capabilities?.tools),
           attachments: Boolean(model.capabilities?.attachment),
-          isDefault: defaultModel === modelID
+          isDefault: defaultModel === modelID,
+          ...(Number.isFinite(provider.sortPriority) ? { sortPriority: provider.sortPriority } : {})
         }
         const variantIDs = Object.keys(model.variants ?? {})
         return [base, ...variantIDs.map((variant) => ({ ...base, variant, isDefault: false }))]

@@ -14,7 +14,12 @@ function uniqueStrings(values = []) {
  * ownership of the Session.
  */
 function acpSessionContract(profile) {
-  if (profile?.sessionContract) return { ...profile.sessionContract }
+  if (profile?.sessionContract) {
+    return {
+      ...profile.sessionContract,
+      listScope: profile.sessionListScope ?? "global"
+    }
+  }
   return {
     authority: "native-harness",
     discovery: "native-list",
@@ -22,12 +27,15 @@ function acpSessionContract(profile) {
     externalWriterObservation: "unverified",
     continuation: "session-load",
     writerOwnership: "adapter-defined",
-    stop: "owned-session-native-cancel"
+    stop: "owned-session-native-cancel",
+    listScope: profile?.sessionListScope ?? "global"
   }
 }
 
 export function acpHarnessCapabilityContract(profile) {
   const variantConfigIDs = uniqueStrings(profile?.modelVariantConfigIDs)
+  const inlineVariantValues = uniqueStrings(profile?.inlineModelVariantValues)
+  const providerOrder = uniqueStrings(profile?.modelProviderOrder)
   return {
     version: 2,
     protocol: "acp",
@@ -46,8 +54,14 @@ export function acpHarnessCapabilityContract(profile) {
       // discovery was audited in isolation but regressed PI, Codex and Claude on Windows, so it is
       // not part of the promotion candidate until it has its own real-harness proof.
       cacheScope: "machine",
-      variants: variantConfigIDs.length ? "runtime-advertised-config-options" : "runtime-advertised-only",
-      variantConfigIDs
+      variants: variantConfigIDs.length
+        ? "runtime-advertised-config-options"
+        : inlineVariantValues.length
+          ? "runtime-advertised-inline-values"
+          : "runtime-advertised-only",
+      variantConfigIDs,
+      inlineVariantValues,
+      providerOrder
     },
     sessions: acpSessionContract(profile),
     lifecycle: profile?.lifecycleContract

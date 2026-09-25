@@ -1,8 +1,10 @@
 import path from "node:path"
+import { spawn } from "node:child_process"
 import { AcpClient } from "./acp-client.js"
 import { AcpAgentModelCatalog } from "./agent-model-catalog.js"
 import { acpHarnessCapabilityContract } from "./harness-capability-contract.js"
 import { resolveAcpLaunch } from "./harness-profiles.js"
+import { ProjectScopedAcpClient } from "./project-scoped-acp-client.js"
 
 /**
  * Return the ordered ACP provider ids a machine daemon should expose.
@@ -33,6 +35,28 @@ function commonDirectory(directories) {
     }
   }
   return common
+}
+
+function cleanupCatalogSession(policy, { sessionID, directory }) {
+  if (!policy) return undefined
+  if (!/^[A-Za-z0-9._:-]+$/.test(sessionID)) throw new Error("Refusing to clean an invalid technical Session id")
+  return new Promise((resolve, reject) => {
+    const command = process.platform === "win32" ? process.env.ComSpec ?? "cmd.exe" : policy.command
+    const args = command === policy.command
+      ? [...policy.args, sessionID]
+      : ["/d", "/s", "/c", policy.command, ...policy.args, sessionID]
+    const child = spawn(command, args, {
+      cwd: directory,
+      windowsHide: true,
+      stdio: ["ignore", "ignore", "pipe"]
+    })
+    let stderr = ""
+    child.stderr.on("data", (chunk) => { stderr = `${stderr}${chunk}`.slice(-1000) })
+    child.once("error", reject)
+    child.once("exit", (code) => code === 0
+      ? resolve()
+      : reject(new Error(stderr.trim() || `Catalog Session cleanup exited with code ${code}`)))
+  })
 }
 
 /** Resolve the process directory required by providers that scope ACP to one filesystem tree. */
@@ -68,7 +92,7 @@ export async function createAcpProviderRuntime({
   cwd = process.cwd()
 }) {
   const workingDirectory = resolveAcpProviderWorkingDirectory(provider, { config, cwd })
-  const clientOptions = {
+  const baseClientOptions = {
     command: launch.command,
     args: [...launch.args],
     permissionMode: provider.permissionMode,
@@ -77,13 +101,27 @@ export async function createAcpProviderRuntime({
     ...(provider.environment ? { environment: provider.environment } : {}),
     ...(workingDirectory ? { cwd: workingDirectory } : {})
   }
-  const agent = new Client(clientOptions)
+  const roots = (config.roots?.length ? config.roots : [cwd]).map((root) => path.resolve(root))
+  const createClient = (directory) => new Client({
+    ...baseClientOptions,
+    ...(directory ? { cwd: directory } : {})
+  })
+  const createRuntimeClient = () => provider.sessionListScope === "project"
+    ? new ProjectScopedAcpClient({ roots, createClient })
+    : new Client(baseClientOptions)
+  const agent = createRuntimeClient()
   const modelCatalog = new ModelCatalog({
-    agent: new Client(clientOptions),
+    agent: createRuntimeClient(),
     agentID: provider.id,
     directory: config.roots?.[0] ?? cwd,
     stateDirectory: config.stateDirectory,
-    variantConfigIDs: provider.modelVariantConfigIDs
+    variantConfigIDs: provider.modelVariantConfigIDs,
+    excludedModelValuePrefixes: provider.excludedModelValuePrefixes,
+    inlineModelVariantValues: provider.inlineModelVariantValues,
+    modelProviderOrder: provider.modelProviderOrder,
+    ...(provider.catalogSessionCleanup ? {
+      cleanupSession: (session) => cleanupCatalogSession(provider.catalogSessionCleanup, session)
+    } : {})
   })
 
   // Persisted technical Session ids must be hidden before the machine server can list Sessions.
@@ -117,7 +155,11 @@ export async function createAcpProviderRuntime({
         reloadOnHistoryRefresh: provider.reloadOnHistoryRefresh,
         replaySettleMs: provider.replaySettleMs,
         promptSettleMs: provider.promptSettleMs,
-        requireAssistantResponse: provider.requireAssistantResponse
+        modelVariantConfigIDs: provider.modelVariantConfigIDs,
+        requireAssistantResponse: provider.requireAssistantResponse,
+        excludedModelValuePrefixes: provider.excludedModelValuePrefixes,
+        inlineModelVariantValues: provider.inlineModelVariantValues,
+        modelProviderOrder: provider.modelProviderOrder
       }
     }
   }
