@@ -587,11 +587,16 @@ function NativeSessionsWorkspace({
         : { machine, snapshot: null, state: "loading", consecutiveFailures: 0 }
     })))
 
+    // Each machine settles (and is applied to `runtimes`) independently, as soon as its own probe
+    // finishes, instead of all at once after every machine answers. A single unreachable machine
+    // used to hold the whole array back in `Promise.all` until its own ~12s+retry timeout expired,
+    // freezing "Connecting to your machines..." for every already-online machine too.
     void Promise.all(machines.map(async (machine): Promise<NativeMachineRuntime> => {
+      let result: NativeMachineRuntime
       try {
         const snapshot = await discoverMachineWithRetry(machine.config)
         if (snapshot) migrateNativeSessionMachineStorage(machine.id, snapshot.machine.id)
-        return snapshot
+        result = snapshot
           ? { machine, snapshot, state: "online", consecutiveFailures: 0 }
           : { machine, snapshot: null, state: "offline", error: "This endpoint is not a Harness machine daemon.", consecutiveFailures: MACHINE_OFFLINE_FAILURE_THRESHOLD }
       } catch (reason) {
@@ -599,28 +604,17 @@ function NativeSessionsWorkspace({
         const previous = previousRuntimes.get(machine.id)
         const sameEndpoint = Boolean(previous && sameMachineConnection(previous.machine.config, machine.config))
         const consecutiveFailures = (previous?.consecutiveFailures || 0) + 1
-        if (sameEndpoint && previous?.snapshot && consecutiveFailures < MACHINE_OFFLINE_FAILURE_THRESHOLD) {
-          return {
-            ...previous,
-            machine,
-            state: "online",
-            error,
-            consecutiveFailures
-          }
-        }
-        return {
-          machine,
-          snapshot: null,
-          state: "offline",
-          error,
-          consecutiveFailures
-        }
+        result = sameEndpoint && previous?.snapshot && consecutiveFailures < MACHINE_OFFLINE_FAILURE_THRESHOLD
+          ? { ...previous, machine, state: "online", error, consecutiveFailures }
+          : { machine, snapshot: null, state: "offline", error, consecutiveFailures }
       }
-    })).then((next) => {
       if (!cancelled && refreshGeneration.current === generation) {
-        setRuntimes((current) => reuseList(current, next))
+        setRuntimes((current) => reuseList(current, current.map((runtime) =>
+          runtime.machine.id === machine.id ? result : runtime
+        )))
       }
-    }).finally(() => {
+      return result
+    })).finally(() => {
       if (!cancelled && refreshGeneration.current === generation) {
         setLoaded(true)
         setMachineRefreshPending(false)
@@ -699,7 +693,6 @@ function NativeSessionsWorkspace({
   }, [loaded, reconnectingCount, reconnectingStreamCount, hasReachableMachine, streamTargets, liveMachines])
 
   const onlineCount = runtimes.filter((runtime) => runtime.state === "online").length
-  const loadingCount = runtimes.filter((runtime) => runtime.state === "loading").length
   const offlineCount = runtimes.filter((runtime) => runtime.state === "offline").length
   const selectedRuntime = selected
     ? runtimes.find((runtime) => runtime.snapshot?.machine.id === selected.machineID || runtime.machine.id === selected.machineID)
@@ -832,8 +825,13 @@ function NativeSessionsWorkspace({
       : { relation: "Continues in", ref: link.target }
   }
 
+  // Block on "machines" only while nothing has answered at all. Once at least one machine has
+  // settled (online or offline), a still-probing sibling no longer holds up the rest of the app -
+  // it folds into onlineCount/offlineCount whenever it finishes, same as an explicit refresh
+  // already handles a straggler.
+  const anyMachineSettled = onlineCount > 0 || offlineCount > 0
   const startupPhase: "machines" | "sessions" | "ready" =
-    !loaded || loadingCount > 0 ? "machines" : !sessionsDiscovered ? "sessions" : "ready"
+    !loaded && !anyMachineSettled ? "machines" : !sessionsDiscovered ? "sessions" : "ready"
   const workspaceRefreshing = machineRefreshPending || sessionRefreshPending
   // Keep one feedback point near the action that began the explicit refresh. Background probes do
   // not set either flag, so an unreachable saved machine cannot leave a permanent global spinner.
