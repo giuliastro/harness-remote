@@ -5,8 +5,22 @@ import {
   discoverMachineNativeSessions,
   NativeSessionDiscoveryTimeoutError,
   nativeSessionConfig,
+  selectReadyNativeSessionSources,
   nativeSessionSurfaceTarget
 } from './native-session-discovery.ts'
+
+const onlineMachine = { machine: { id: 'reachable' }, state: 'online' }
+const probingMachine = { machine: { id: 'unreachable' }, state: 'loading' }
+const earlyDiscovery = selectReadyNativeSessionSources([onlineMachine, probingMachine])
+assert.equal(earlyDiscovery.ready, true, 'one settled machine must let native Session discovery proceed')
+assert.deepEqual(earlyDiscovery.sources, [onlineMachine], 'discovery must include the online machine without waiting for its loading sibling')
+
+const completedDiscovery = selectReadyNativeSessionSources([
+  onlineMachine,
+  { ...probingMachine, state: 'offline' }
+])
+assert.deepEqual(completedDiscovery.sources.map(({ machine }) => machine.id), ['reachable', 'unreachable'], 'a later-settled machine joins the next discovery pass')
+assert.equal(selectReadyNativeSessionSources([probingMachine]).ready, false, 'discovery still waits when every configured machine is probing')
 
 const base = {
   backend: 'opencode',

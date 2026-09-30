@@ -4,6 +4,7 @@ import { canCreateNativeSession, createNativeSessionTarget } from "../native-ses
 import {
   discoverAgentNativeSessionPage,
   nativeSessionSurfaceTarget,
+  selectReadyNativeSessionSources,
   type NativeSessionRecord,
   type NativeSessionSurfaceTarget
 } from "../native-session-discovery"
@@ -451,7 +452,7 @@ export function NativeSessionHome({
   onRefreshCompleteRef.current = onRefreshComplete
   const [presentationOverrides, setPresentationOverrides] = useState<Record<string, SessionPresentationState>>({})
 
-  const discoveryReady = sources.every(({ state }) => state !== "loading")
+  const { ready: discoveryReady, sources: readySources } = selectReadyNativeSessionSources(sources)
   const machineSignature = sources.map(({ machine, snapshot, state }) =>
     [
       machine.id,
@@ -528,7 +529,7 @@ export function NativeSessionHome({
     setDiscoveryError(null)
     setOlderSessionError(null)
     const authoritativeRefresh = authoritativeRefreshToken !== authoritativeRefreshApplied.current
-    void Promise.all(sources.map(async ({ machine, snapshot }) => {
+    void Promise.all(readySources.map(async ({ machine, snapshot }) => {
       if (!snapshot) return { machine, snapshot, projects: [] as MachineProject[], pages: [] }
       const [pages, projects] = await Promise.all([
         Promise.all(snapshot.agents.map(async (agent) => ({
@@ -540,11 +541,22 @@ export function NativeSessionHome({
       return { machine, snapshot, projects, pages }
     })).then((results) => {
       if (cancelled) return
-      setProjectsByMachine(Object.fromEntries(results.map((result) => [result.machine.id, result.projects])))
+      const loadingMachineIDs = new Set(sources.filter(({ state }) => state === "loading").map(({ machine }) => machine.id))
+      setProjectsByMachine((current) => Object.fromEntries([
+        ...Object.entries(current).filter(([machineID]) => loadingMachineIDs.has(machineID)),
+        ...results.map((result) => [result.machine.id, result.projects])
+      ]))
       if (pageCacheSignature.current !== machineSignature) pageCache.current.clear()
       pageCacheSignature.current = machineSignature
       const activeScopes = new Set<string>()
       const authoritativeScopes = new Set<string>()
+      // Keep previously loaded rows for a source whose next connection probe has not settled yet.
+      for (const source of sources) {
+        if (source.state !== "loading" || !source.snapshot) continue
+        for (const agent of source.snapshot.agents) {
+          activeScopes.add(pageScopeKey(source.machine.id, agent.id))
+        }
+      }
       for (const result of results) {
         if (!result.snapshot) continue
         for (const { agent, page } of result.pages) {
