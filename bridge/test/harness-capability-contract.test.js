@@ -31,6 +31,10 @@ test("ACP capability contract preserves runtime-specific model controls without 
   assert.equal(acpHarnessCapabilityContract(harnessProfile("copilot")).models.selection, "harness-default")
   assert.deepEqual(acpHarnessCapabilityContract(harnessProfile("copilot")).models.variantConfigIDs, [])
   assert.equal(acpHarnessCapabilityContract(harnessProfile("mimo")).models.selection, "optional")
+  const mimo = acpHarnessCapabilityContract(harnessProfile("mimo"))
+  assert.equal(mimo.models.variants, "runtime-advertised-inline-values")
+  assert.deepEqual(mimo.models.inlineVariantValues, ["none", "low", "medium", "high", "xhigh"])
+  assert.deepEqual(mimo.models.providerOrder, ["xiaomi", "openai"])
 })
 
 test("Session-first contract separates discovery, transcript reads and writer acquisition per ACP harness", () => {

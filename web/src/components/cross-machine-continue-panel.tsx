@@ -87,6 +87,7 @@ export function CrossMachineContinuePanel({
   const [agentID, setAgentID] = useState("")
   const [models, setModels] = useState<ModelOption[]>([])
   const [modelKeyValue, setModelKeyValue] = useState("")
+  const [loadedModelRouteKey, setLoadedModelRouteKey] = useState("")
   const [projectsLoading, setProjectsLoading] = useState(false)
   const [modelsLoading, setModelsLoading] = useState(false)
   const [planLoading, setPlanLoading] = useState(false)
@@ -102,10 +103,27 @@ export function CrossMachineContinuePanel({
 
   const machine = availableRoutes.find((candidate) => candidate.machineID === machineID)
   const agent = machine?.agents.find((candidate) => candidate.id === agentID)
+  const effectiveAgent = agent || machine?.agents[0]
+  // Route snapshots are refreshed frequently and therefore receive new object identities even when
+  // their transport and provider contract did not change. Key model discovery by those actual
+  // inputs so a harmless machine refresh cannot clear an already loaded picker underneath a click.
+  const modelRouteKey = machine && effectiveAgent
+    ? JSON.stringify({
+        machineID: machine.machineID,
+        config: machine.config,
+        agent: {
+          id: effectiveAgent.id,
+          backend: effectiveAgent.backend,
+          models: effectiveAgent.capabilities?.models,
+          contract: effectiveAgent.contract?.models
+        }
+      })
+    : ""
   const selectedModel = models.find((candidate) => modelKey(candidate) === modelKeyValue)
   const modelCatalogSupported = providerUsesModelCatalog(agent)
   const modelRequired = providerRequiresExplicitModel(agent)
-  const modelReady = !modelRequired || (!modelsLoading && Boolean(selectedModel))
+  const modelCatalogCurrent = Boolean(modelRouteKey && loadedModelRouteKey === modelRouteKey)
+  const modelReady = !modelRequired || (!modelsLoading && modelCatalogCurrent && Boolean(selectedModel))
   const targetProject = projectRoute?.targetProjects.find((candidate) => candidate.id === projectID)
   const blocked = plan?.disposition === "blocked"
   const confirmationRequired = plan?.disposition === "confirm"
@@ -165,6 +183,7 @@ export function CrossMachineContinuePanel({
     const generation = ++modelGeneration.current
     setModels([])
     setModelKeyValue("")
+    setLoadedModelRouteKey("")
     setPlan(null)
     setConfirmed(false)
     if (!open || !machine) {
@@ -192,6 +211,7 @@ export function CrossMachineContinuePanel({
         setModels(catalog.models)
         const fallback = catalog.models.find((candidate) => candidate.isDefault) || catalog.models[0]
         setModelKeyValue(fallback ? modelKey(fallback) : "")
+        setLoadedModelRouteKey(modelRouteKey)
       })
       .catch((reason) => {
         if (modelGeneration.current !== generation) return
@@ -201,7 +221,7 @@ export function CrossMachineContinuePanel({
       .finally(() => {
         if (modelGeneration.current === generation) setModelsLoading(false)
       })
-  }, [open, machineID, machine, agentID, onConnectionIssue])
+  }, [open, machineID, modelRouteKey, agentID, onConnectionIssue])
 
   useEffect(() => {
     const generation = ++planGeneration.current
@@ -324,7 +344,7 @@ export function CrossMachineContinuePanel({
                 models={models}
                 value={modelKeyValue}
                 onChange={setModelKeyValue}
-                disabled={sending || modelsLoading || !agent || !modelCatalogSupported}
+                disabled={sending || modelsLoading || !agent || !modelCatalogSupported || !modelCatalogCurrent}
                 loading={modelsLoading}
                 placeholder={modelCatalogSupported ? "Select model" : "Harness default"}
                 unavailableHint={modelRequired && !modelsLoading && !models.length ? "No verified models available" : undefined}

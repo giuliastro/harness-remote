@@ -1,7 +1,12 @@
 import { randomUUID } from "node:crypto"
 import { mkdir, readFile, rename, unlink, writeFile } from "node:fs/promises"
 import path from "node:path"
-import { selectableAcpModelValue } from "./agent-model-catalog.js"
+import {
+  modelValueIsExcluded,
+  normalizedAcpModelCandidates,
+  selectableAcpModelValue,
+  splitInlineAcpModelVariant
+} from "./agent-model-catalog.js"
 import { TranscriptCache } from "./transcript-cache.js"
 import {
   listExtensionActions,
@@ -469,6 +474,9 @@ export class AcpService {
   #nativeRenameCommand
   #journalPageWhileOwned
   #modelVariantConfigIDs
+  #excludedModelValuePrefixes
+  #inlineModelVariantValues
+  #modelProviderOrder
   #requireAssistantResponse
   constructor(acp, {
     snapshotDirectory,
@@ -501,6 +509,9 @@ export class AcpService {
      * id the running adapter actually advertised.
      */
     modelVariantConfigIDs = [],
+    excludedModelValuePrefixes = [],
+    inlineModelVariantValues = [],
+    modelProviderOrder = [],
     requireAssistantResponse = false,
     actionProviders = []
   } = {}) {
@@ -515,6 +526,9 @@ export class AcpService {
     this.#nativeRenameCommand = nativeRenameCommand
     this.#journalPageWhileOwned = journalPageWhileOwned
     this.#modelVariantConfigIDs = modelVariantConfigIDs
+    this.#excludedModelValuePrefixes = [...excludedModelValuePrefixes]
+    this.#inlineModelVariantValues = [...inlineModelVariantValues]
+    this.#modelProviderOrder = [...modelProviderOrder]
     this.#requireAssistantResponse = requireAssistantResponse === true
     this.#actionProviders = actionProviders
     acp.on("notification", (notification) => this.#handleNotification(notification))
@@ -968,16 +982,19 @@ export class AcpService {
     const options = this.#configOptions.get(sessionID)
     const current = options?.find((item) => item.id === "model")?.currentValue
     if (typeof current !== "string") return undefined
-    const separator = current.indexOf("/")
-    if (separator <= 0 || separator === current.length - 1) return undefined
+    const modelOption = options?.find((item) => item.id === "model")
+    const inline = splitInlineAcpModelVariant(current, modelOption, this.#inlineModelVariantValues)
+    const modelValue = inline?.modelValue ?? current
+    const separator = modelValue.indexOf("/")
+    if (separator <= 0 || separator === modelValue.length - 1) return undefined
     // The reasoning variant belongs to the selection: reporting the model without it would let the
     // app carry the next turn on with the variant silently dropped.
-    const variant = this.#modelVariantConfigIDs
+    const variant = inline?.variant ?? this.#modelVariantConfigIDs
       .map((configId) => options?.find((item) => item.id === configId)?.currentValue)
       .find((value) => typeof value === "string" && value)
     return {
-      providerID: current.slice(0, separator),
-      modelID: current.slice(separator + 1),
+      providerID: modelValue.slice(0, separator),
+      modelID: modelValue.slice(separator + 1),
       ...(variant ? { variant } : {})
     }
   }
@@ -1004,7 +1021,12 @@ export class AcpService {
   async models(sessionID) {
     await this.#loadForConfigOptions(sessionID)
     const option = this.#configOptions.get(sessionID)?.find((item) => item.id === "model")
-    return option?.options?.map((candidate) => ({ ...candidate, currentValue: candidate.value === option.currentValue })) ?? []
+    return normalizedAcpModelCandidates(
+      option,
+      this.#excludedModelValuePrefixes,
+      this.#inlineModelVariantValues,
+      this.#modelProviderOrder
+    )
   }
 
   async actions(sessionID) {
@@ -1148,6 +1170,11 @@ export class AcpService {
    * against a Session whose options have not been loaded yet.
    */
   async setModel(sessionID, model, variant) {
+    if (modelValueIsExcluded(model, this.#excludedModelValuePrefixes)) {
+      const error = new Error(`Harness model is unavailable: ${model}`)
+      error.code = "model_unavailable"
+      throw error
+    }
     await this.#loadForConfigOptions(sessionID)
     const option = this.#configOptions.get(sessionID)?.find((item) => item.id === "model")
     // The app addresses models as `provider/model` because that is what OpenCode's API does, but a
@@ -1161,11 +1188,40 @@ export class AcpService {
       ?? option?.options?.find((candidate) => candidate.value === modelID)?.value
       ?? option?.options?.find((candidate) => selectableAcpModelValue(candidate.value, option, providerID) === modelID)?.value
     if (!value) throw new Error(`Harness model is not available: ${model}`)
+    if (modelValueIsExcluded(value, this.#excludedModelValuePrefixes)) {
+      const error = new Error(`Harness model is unavailable: ${model}`)
+      error.code = "model_unavailable"
+      throw error
+    }
+    // Some ACP adapters flatten a model and its reasoning levels into values such as
+    // `provider/model/low`. In that shape the variant is part of the model option itself, so send
+    // the final advertised value once. Setting the base first would reset the variant and then
+    // immediately set it again; it also turns a repeated prompt on the same selection into writes.
+    const variantConfigId = typeof variant?.configId === "string" ? variant.configId : ""
+    const variantValue = typeof variant?.value === "string" ? variant.value : ""
+    const inlineVariantValue = variantConfigId === "model"
+      && this.#inlineModelVariantValues.includes(variantValue)
+      && option?.options?.some((candidate) => candidate?.value === `${value}/${variantValue}`)
+      ? `${value}/${variantValue}`
+      : undefined
+    if (inlineVariantValue && option.currentValue === inlineVariantValue) return
+    if (inlineVariantValue) {
+      const changed = await this.#acp.request("session/set_config_option", {
+        sessionId: sessionID,
+        configId: "model",
+        value: inlineVariantValue
+      })
+      this.#rememberSessionConfiguration(sessionID, changed)
+      const current = this.#configOptions.get(sessionID)?.find((item) => item.id === "model")
+      if (current) current.currentValue = inlineVariantValue
+      else option.currentValue = inlineVariantValue
+      return
+    }
     // Continuing on the model the Session already holds is not a model change. Sending it anyway
     // made every prompt mutate the Session's configuration, which a harness is entitled to journal
     // and to announce - so simply carrying on read as though the user had switched models.
     if (option?.currentValue === value) {
-      await this.#setModelVariant(sessionID, variant)
+      await this.#setModelVariant(sessionID, variant, value)
       return
     }
     const switchMethod = this.#modelSwitchMethods.get(sessionID) ?? "config_option"
@@ -1178,7 +1234,7 @@ export class AcpService {
     const current = this.#configOptions.get(sessionID)?.find((item) => item.id === "model")
     if (current) current.currentValue = value
     else option.currentValue = value
-    await this.#setModelVariant(sessionID, variant)
+    await this.#setModelVariant(sessionID, variant, value)
   }
 
   /**
@@ -1186,17 +1242,22 @@ export class AcpService {
    * current model. A harness that does not offer the control is not asked for it, so no reasoning
    * level is invented, and a level the current model does not support is refused rather than sent.
    */
-  async #setModelVariant(sessionID, variant) {
+  async #setModelVariant(sessionID, variant, modelValue) {
     const configId = typeof variant?.configId === "string" ? variant.configId : ""
-    const value = typeof variant?.value === "string" ? variant.value : ""
+    let value = typeof variant?.value === "string" ? variant.value : ""
     if (!configId || !value) return
     const option = this.#configOptions.get(sessionID)?.find((item) => item.id === configId)
+    if (configId === "model" && this.#inlineModelVariantValues.includes(value)) {
+      const inlineValue = `${modelValue}/${value}`
+      if (option?.options?.some((candidate) => candidate?.value === inlineValue)) value = inlineValue
+    }
     if (!option?.options?.some((candidate) => candidate?.value === value)) {
       const offered = (option?.options ?? []).map((candidate) => candidate?.value).filter(Boolean)
       const error = new Error(`Harness model variant is not available: ${configId}=${value}${offered.length ? ` (this model offers ${offered.join(", ")})` : ""}`)
       error.code = "model_variant_unavailable"
       throw error
     }
+    if (option.currentValue === value) return
     const changed = await this.#acp.request("session/set_config_option", { sessionId: sessionID, configId, value })
     if (Array.isArray(changed?.configOptions)) this.#rememberConfigOptions(sessionID, changed.configOptions)
     const current = this.#configOptions.get(sessionID)?.find((item) => item.id === configId)
@@ -1242,7 +1303,7 @@ export class AcpService {
   }
 
   /** Start a prompt through the session service and resolve only when that turn becomes idle. */
-  async promptAndWait(sessionID, text, model, attachments = []) {
+  async promptAndWait(sessionID, text, model, attachments = [], variant) {
     return new Promise((resolve, reject) => {
       let started = false
       let settled = false
@@ -1263,7 +1324,7 @@ export class AcpService {
         if (this.#isBusy(sessionID)) started = true
         else if (started) finish()
       })
-      void this.prompt(sessionID, text, model, attachments).catch(finish)
+      void this.prompt(sessionID, text, model, attachments, variant).catch(finish)
     })
   }
 

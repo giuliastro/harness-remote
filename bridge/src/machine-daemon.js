@@ -50,7 +50,7 @@ function acpPromptAttachments(attachments = []) {
 /** Only a variant the current harness catalog resolved from adapter-advertised options is applied. */
 function acpModelVariant(model) {
   return model?.variant && model?.variantConfigId
-    ? { configId: model.variantConfigId, value: model.variant }
+    ? { configId: model.variantConfigId, value: model.variantValue ?? model.variant }
     : undefined
 }
 

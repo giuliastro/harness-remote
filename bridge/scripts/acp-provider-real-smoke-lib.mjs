@@ -116,13 +116,29 @@ export async function runAcpProviderRealSmoke(providerID, {
       replaySettleMs: profile.replaySettleMs,
       promptSettleMs: profile.promptSettleMs,
       modelVariantConfigIDs: profile.modelVariantConfigIDs,
+      excludedModelValuePrefixes: profile.excludedModelValuePrefixes,
+      inlineModelVariantValues: profile.inlineModelVariantValues,
+      modelProviderOrder: profile.modelProviderOrder,
       requireAssistantResponse: profile.requireAssistantResponse
     })
     return { acp, service }
   }
 
+  async function checkSmokeModelSelection(service, sessionID, stage) {
+    if (!checkModels || !smokeModel) return
+    const models = await service.models(sessionID)
+    check(
+      models.some((model) => (model.value ?? model.name) === smokeModel
+        && model.currentValue
+        && (!smokeVariant || model.variant === smokeVariant.value)),
+      `selected model remains active ${stage} (${smokeModel}${smokeVariant ? ` · ${smokeVariant.value}` : ""})`
+    )
+  }
+
   let first
   let second
+  let smokeModel
+  let smokeVariant
   try {
     first = runtime()
     await first.acp.start()
@@ -153,6 +169,7 @@ export async function runAcpProviderRealSmoke(providerID, {
       check(models.length > 0, "runtime model catalog is available through ACP config options")
       console.log(`models: ${models.slice(0, 8).map((model) => model.value ?? model.name ?? "?").join(", ")}${models.length > 8 ? ", …" : ""}`)
       const requestedModel = argument("model")
+      const requestedVariant = argument("variant")
       const preferredSmokeModel = requestedModel
         ?? models.find((model) => (model.value ?? model.name) === "opencode/big-pickle")?.value
         ?? models.find((model) => (model.value ?? model.name) === "opencode/big-pickle")?.name
@@ -164,26 +181,42 @@ export async function runAcpProviderRealSmoke(providerID, {
         check(Boolean(preferredSmokeModel), "an alternate advertised model is available for switching")
       }
       if (preferredSmokeModel) {
-        await first.service.setModel(created.id, preferredSmokeModel)
+        const inlineVariant = requestedVariant && profile.inlineModelVariantValues?.includes(requestedVariant)
+        if (requestedVariant && !inlineVariant) {
+          throw new Error(`This smoke supports explicit inline variants only; ${requestedVariant} is not declared by ${providerID}`)
+        }
+        smokeModel = preferredSmokeModel
+        smokeVariant = inlineVariant ? { configId: "model", value: requestedVariant } : undefined
+        await first.service.setModel(
+          created.id,
+          smokeModel,
+          smokeVariant
+        )
         const switched = await first.service.models(created.id)
         check(
-          switched.some((model) => (model.value ?? model.name) === preferredSmokeModel && model.currentValue),
-          `runtime model switch is reflected by the Session (${preferredSmokeModel})`
+          switched.some((model) => (model.value ?? model.name) === preferredSmokeModel
+            && model.currentValue
+            && (!requestedVariant || model.variant === requestedVariant)),
+          `runtime model selection is reflected by the Session (${preferredSmokeModel}${requestedVariant ? ` · ${requestedVariant}` : ""})`
         )
-        console.log(`smoke model: ${preferredSmokeModel}`)
+        console.log(`smoke model: ${preferredSmokeModel}${requestedVariant ? ` · ${requestedVariant}` : ""}`)
       }
     }
 
-    await first.service.promptAndWait(created.id, `Reply with exactly ${responseMarker} and nothing else.`)
+    await first.service.promptAndWait(created.id, `Reply with exactly ${responseMarker} and nothing else.`, smokeModel, [], smokeVariant)
     let page = await first.service.messagePage(created.id, { limit: 200 })
     let answer = visibleText(page.messages)
     check(answer.includes(responseMarker), "prompt streams a complete assistant reply through AcpService")
+    await checkSmokeModelSelection(first.service, created.id, "after the first prompt")
     check(first.service.status(created.id).type === "idle", "Session returns to Ready after the prompt")
 
     const afterStopMarker = `${responseMarker}-AFTER-STOP`
     const cancellable = first.service.promptAndWait(
       created.id,
-      `Run the shell command node -e "setTimeout(()=>console.log('DONE'),20000)" and then reply ${responseMarker}-CANCEL-TOO-LATE.`
+      `Run the shell command node -e "setTimeout(()=>console.log('DONE'),20000)" and then reply ${responseMarker}-CANCEL-TOO-LATE.`,
+      smokeModel,
+      [],
+      smokeVariant
     ).catch((error) => error)
     await sleep(1_000)
     check(first.service.status(created.id).type === "busy", "Session enters Working before Stop")
@@ -192,10 +225,12 @@ export async function runAcpProviderRealSmoke(providerID, {
     check(first.service.status(created.id).type === "idle", "Stop returns the Session to Ready")
     await sleep(500)
 
-    await first.service.promptAndWait(created.id, `Reply with exactly ${afterStopMarker} and nothing else.`)
+    await first.service.promptAndWait(created.id, `Reply with exactly ${afterStopMarker} and nothing else.`, smokeModel, [], smokeVariant)
     page = await first.service.messagePage(created.id, { limit: 300 })
     answer = visibleText(page.messages)
     check(answer.includes(afterStopMarker), "same native Session accepts a new prompt after Stop")
+    if (!answer.includes(afterStopMarker)) console.log(`assistant text after Stop: ${answer.slice(-800) || "<empty>"}`)
+    await checkSmokeModelSelection(first.service, created.id, "after Stop and reuse")
 
     first.acp.close()
     first = null
@@ -211,10 +246,11 @@ export async function runAcpProviderRealSmoke(providerID, {
     check(answer.includes(afterStopMarker), "reopened native Session history contains the post-Stop reply before a new prompt")
 
     const reopenMarker = `${responseMarker}-REOPENED`
-    await second.service.promptAndWait(created.id, `Reply with exactly ${reopenMarker} and nothing else.`)
+    await second.service.promptAndWait(created.id, `Reply with exactly ${reopenMarker} and nothing else.`, smokeModel, [], smokeVariant)
     page = await second.service.messagePage(created.id, { limit: 400 })
     answer = visibleText(page.messages)
     check(answer.includes(reopenMarker), "reopened native Session continues successfully")
+    await checkSmokeModelSelection(second.service, created.id, "after reopening and continuing")
     check(second.service.status(created.id).type === "idle", "reopened Session settles back to Ready")
   } catch (error) {
     failures.push(error instanceof Error ? error.message : String(error))

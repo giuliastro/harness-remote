@@ -9,7 +9,7 @@ const scriptDir = dirname(fileURLToPath(import.meta.url))
 const rootDir = join(scriptDir, "..", "..")
 const webDir = join(rootDir, "web")
 const npmCommand = process.platform === "win32" ? "npm.cmd" : "npm"
-const vitePath = join(webDir, "node_modules", ".bin", process.platform === "win32" ? "vite.cmd" : "vite")
+const vitePath = join(webDir, "node_modules", "vite", "bin", "vite.js")
 
 function run(command, args, options = {}) {
   return new Promise((resolve, reject) => {
@@ -31,12 +31,13 @@ function run(command, args, options = {}) {
 }
 
 try {
-  await access(vitePath, constants.X_OK)
+  await access(vitePath, constants.F_OK)
 } catch {
   process.stdout.write("Preparing Harness Remote web UI dependencies in the npx cache...\n")
-  await run(npmCommand, ["ci"])
+  // Windows cannot execute npm.cmd directly through child_process.spawn on current Node builds.
+  // These arguments are fixed, so using the command shell here does not expose user input.
+  await run(npmCommand, ["ci"], { shell: process.platform === "win32" })
 }
 
 const passthrough = process.argv.slice(2)
-const args = ["run", "dev", "--", ...passthrough]
-await run(npmCommand, args)
+await run(process.execPath, [vitePath, "--host", ...passthrough])

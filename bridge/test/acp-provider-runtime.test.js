@@ -144,6 +144,7 @@ test("provider runtime builds separate user and model ACP clients and a complete
   assert.equal(runtime.modelCatalog.options.directory, "/work/project")
   assert.equal(runtime.modelCatalog.options.stateDirectory, "/state")
   assert.deepEqual(runtime.modelCatalog.options.variantConfigIDs, ["reasoning"])
+  assert.deepEqual(runtime.modelCatalog.options.excludedModelValuePrefixes, [])
 
   const registration = runtime.registration
   assert.equal(registration.id, "example")
@@ -159,6 +160,8 @@ test("provider runtime builds separate user and model ACP clients and a complete
   assert.equal(registration.serviceOptions.reloadOnHistoryRefresh, false)
   assert.equal(registration.serviceOptions.replaySettleMs, 125)
   assert.equal(registration.serviceOptions.promptSettleMs, 250)
+  assert.deepEqual(registration.serviceOptions.modelVariantConfigIDs, ["reasoning"])
+  assert.deepEqual(registration.serviceOptions.excludedModelValuePrefixes, [])
   assert.equal(registration.contract.protocol, "acp")
   assert.equal(registration.contract.sessions.transcript, "session-load")
 })

@@ -266,10 +266,24 @@ export const HARNESS_PROFILES = {
       ? { environment: { MIMOCODE_CONFIG_CONTENT: process.env.HARNESS_REMOTE_MIMO_CONFIG_CONTENT } }
       : {}),
     requireAssistantResponse: true,
-    // MiMo's ACP server restricts session/new to the process working tree. A machine daemon can
-    // expose several configured projects, so the generic runtime starts both ACP clients from
-    // their common ancestor instead of making the first project the only usable root.
-    workingDirectory: "common-root",
+    // MiMo 0.1.x resolves its native Session database from the process cwd. A common ancestor is
+    // not a global index: it selects a different project. The generic runtime therefore owns one
+    // ACP process per configured project root and federates their native indexes.
+    sessionListScope: "project",
+    // ACP has no portable Session deletion primitive. MiMo's native command does; remove the
+    // prompt-less catalog probe after its config options have been captured so `mimo session list`
+    // remains user-owned instead of accumulating Harness Remote implementation details.
+    catalogSessionCleanup: { command: "mimo", args: ["session", "delete"] },
+    // MiMo 0.1.14 still advertises the retired hosted mimo-auto family even though selecting it
+    // completes every prompt without an assistant response. Keep that upstream catalog defect out
+    // of every generic consumer (picker, validation, smoke and direct Session model switching).
+    excludedModelValuePrefixes: ["mimo/mimo-auto"],
+    // MiMo flattens reasoning into the model option itself (`provider/model/high`) instead of
+    // advertising a separate ACP config option. Reconstruct one model family with real variants.
+    inlineModelVariantValues: ["none", "low", "medium", "high", "xhigh"],
+    // Match MiMo's native picker: its own Xiaomi models are the primary family, followed by models
+    // exposed through the user's connected OpenAI account.
+    modelProviderOrder: ["xiaomi", "openai"],
     lifecycleContract: COMMON_ACP_LIFECYCLE_CONTRACT,
     // MiMo Code is OpenCode-derived. Model discovery accepts either the current configOptions
     // surface or the legacy ACP models state used by earlier MiMo builds.

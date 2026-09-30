@@ -37,11 +37,18 @@ export async function exerciseAcpProviderLifecycle(provider, {
   },
   launch = { command: "fixture-acp", args: [] }
 } = {}) {
+  const clients = []
+  class TrackedLifecycleClient extends LifecycleClient {
+    constructor(options) {
+      super(options)
+      clients.push(this)
+    }
+  }
   const runtime = await createAcpProviderRuntime({
     provider,
     launch,
     config,
-    Client: LifecycleClient,
+    Client: TrackedLifecycleClient,
     ModelCatalog: LifecycleCatalog,
     cwd: "/work/project"
   })
@@ -58,7 +65,9 @@ export async function exerciseAcpProviderLifecycle(provider, {
   await agent.start()
   states.push(daemon.registry.host(provider.id).state)
 
-  agent.failNext = true
+  // Project-scoped providers expose a multiplexing facade, so inject the failure into the real
+  // adapter instance instead of relying on test-only properties leaking through that facade.
+  clients[0].failNext = true
   let restartError
   try {
     await agent.start()
@@ -70,7 +79,7 @@ export async function exerciseAcpProviderLifecycle(provider, {
   return {
     states,
     restartError,
-    starts: agent.starts,
+    starts: clients.reduce((total, client) => total + client.starts, 0),
     contract: daemon.registry.host(provider.id).contract,
     runtime,
     daemon

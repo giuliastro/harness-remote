@@ -81,3 +81,13 @@ assert.deepEqual(
 )
 
 console.log('model picker grouping, ordering and filtering behavioral tests passed')
+
+const providerPriorityGroups = groupModels([
+  { providerID: 'openai', providerName: 'OpenAI', modelID: 'gpt', modelName: 'GPT', isDefault: true, sortPriority: 1 },
+  { providerID: 'xiaomi', providerName: 'Xiaomi', modelID: 'mimo', modelName: 'MiMo', sortPriority: 0 }
+])
+assert.deepEqual(
+  providerPriorityGroups.map((group) => group.providerID),
+  ['xiaomi', 'openai'],
+  'a harness-declared provider priority must outrank alphabetical and default-model sorting'
+)
