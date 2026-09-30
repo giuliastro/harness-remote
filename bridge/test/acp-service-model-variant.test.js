@@ -12,11 +12,12 @@ class RecordingAcp {
   #listeners = new Set()
   promptCapabilities = {}
   processID = 4242
-  constructor({ holdPrompt = false, models = ["openai/a", "openai/b"], currentModel = models[0] } = {}) {
+  constructor({ holdPrompt = false, models = ["openai/a", "openai/b"], currentModel = models[0], currentVariant = "off" } = {}) {
     this.holdPrompt = holdPrompt
     this.releasePrompt = undefined
     this.models = models
     this.currentModel = currentModel
+    this.currentVariant = currentVariant
   }
   on() { return this }
   off() { return this }
@@ -28,7 +29,7 @@ class RecordingAcp {
   #configOptions() {
     return [
       { id: "model", currentValue: this.currentModel, options: this.models.map((value) => ({ value })) },
-      { id: "thinking", currentValue: "off", options: [{ value: "off" }, { value: "high" }] }
+      { id: "thinking", currentValue: this.currentVariant, options: [{ value: "off" }, { value: "high" }] }
     ]
   }
   async request(method, params) {
@@ -64,6 +65,15 @@ test("setModel refuses a variant the running adapter never advertised", async ()
   )
   // The model still landed; only the invented variant was refused.
   assert.deepEqual(configCalls(acp), ["model=openai/b"])
+})
+
+test("setModel does not resend a separate variant the Session already holds", async () => {
+  const acp = new RecordingAcp({ currentModel: "openai/b", currentVariant: "high" })
+  const service = new AcpService(acp, {})
+
+  await service.setModel("s1", "openai/b", { configId: "thinking", value: "high" })
+
+  assert.deepEqual(configCalls(acp), [])
 })
 
 test("setModel with no variant leaves other config options untouched", async () => {
@@ -112,7 +122,41 @@ test("inline model variants stay grouped and switch through the model option's w
     ["openai/gpt", "low"]
   ])
   await service.setModel("s1", "xiaomi/mimo", { configId: "model", value: "high" })
-  assert.deepEqual(configCalls(acp), ["model=xiaomi/mimo", "model=xiaomi/mimo/high"])
+  assert.deepEqual(configCalls(acp), ["model=xiaomi/mimo/high"])
+})
+
+test("setModel does not rewrite an inline model variant the Session already holds", async () => {
+  const acp = new RecordingAcp({
+    models: ["openai/gpt", "openai/gpt/low", "openai/gpt/high"],
+    currentModel: "openai/gpt/low"
+  })
+  const service = new AcpService(acp, { inlineModelVariantValues: ["low", "high"] })
+
+  await service.setModel("s1", "openai/gpt", { configId: "model", value: "low" })
+
+  assert.deepEqual(configCalls(acp), [])
+})
+
+test("setModel switches an inline variant with one model option write", async () => {
+  const acp = new RecordingAcp({
+    models: ["openai/gpt", "openai/gpt/low", "openai/gpt/high"],
+    currentModel: "openai/gpt/low"
+  })
+  const service = new AcpService(acp, { inlineModelVariantValues: ["low", "high"] })
+
+  await service.setModel("s1", "openai/gpt", { configId: "model", value: "high" })
+
+  assert.deepEqual(configCalls(acp), ["model=openai/gpt/high"])
+})
+
+test("a prompt applies its selected inline variant before sending the turn", async () => {
+  const acp = new RecordingAcp({ models: ["openai/gpt", "openai/gpt/low", "openai/gpt/high"] })
+  const service = new AcpService(acp, { inlineModelVariantValues: ["low", "high"] })
+
+  await service.prompt("s1", "use the low variant", "openai/gpt", [], { configId: "model", value: "low" })
+  await new Promise((resolve) => setImmediate(resolve))
+
+  assert.deepEqual(configCalls(acp), ["model=openai/gpt/low"])
 })
 
 test("a prompt queued behind a running turn defers both model and variant to dequeue", async () => {

@@ -1840,7 +1840,19 @@ test("groups MiMo inline reasoning levels under Xiaomi-first model entries and s
     })
     assert.equal(prompted.status, 200)
     await new Promise((resolve) => setImmediate(resolve))
-    assert.deepEqual(acp.models, ["xiaomi/mimo-v2.6-pro", "xiaomi/mimo-v2.6-pro/high"])
+    assert.deepEqual(acp.models, ["xiaomi/mimo-v2.6-pro/high"], "an inline model and its variant must be selected with one advertised option value")
+
+    const repeated = await fetch(`${bridge.baseURL}/session/session-1/prompt_async`, {
+      method: "POST",
+      headers: jsonHeaders(),
+      body: JSON.stringify({
+        parts: [{ type: "text", text: "same model again" }],
+        model: { providerID: "xiaomi", modelID: "mimo-v2.6-pro", variant: "high" }
+      })
+    })
+    assert.equal(repeated.status, 200)
+    await new Promise((resolve) => setImmediate(resolve))
+    assert.deepEqual(acp.models, ["xiaomi/mimo-v2.6-pro/high"], "reusing the same inline selection must not rewrite ACP configuration")
   } finally {
     await bridge.close()
   }

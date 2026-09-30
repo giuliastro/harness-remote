@@ -1193,6 +1193,30 @@ export class AcpService {
       error.code = "model_unavailable"
       throw error
     }
+    // Some ACP adapters flatten a model and its reasoning levels into values such as
+    // `provider/model/low`. In that shape the variant is part of the model option itself, so send
+    // the final advertised value once. Setting the base first would reset the variant and then
+    // immediately set it again; it also turns a repeated prompt on the same selection into writes.
+    const variantConfigId = typeof variant?.configId === "string" ? variant.configId : ""
+    const variantValue = typeof variant?.value === "string" ? variant.value : ""
+    const inlineVariantValue = variantConfigId === "model"
+      && this.#inlineModelVariantValues.includes(variantValue)
+      && option?.options?.some((candidate) => candidate?.value === `${value}/${variantValue}`)
+      ? `${value}/${variantValue}`
+      : undefined
+    if (inlineVariantValue && option.currentValue === inlineVariantValue) return
+    if (inlineVariantValue) {
+      const changed = await this.#acp.request("session/set_config_option", {
+        sessionId: sessionID,
+        configId: "model",
+        value: inlineVariantValue
+      })
+      this.#rememberSessionConfiguration(sessionID, changed)
+      const current = this.#configOptions.get(sessionID)?.find((item) => item.id === "model")
+      if (current) current.currentValue = inlineVariantValue
+      else option.currentValue = inlineVariantValue
+      return
+    }
     // Continuing on the model the Session already holds is not a model change. Sending it anyway
     // made every prompt mutate the Session's configuration, which a harness is entitled to journal
     // and to announce - so simply carrying on read as though the user had switched models.
@@ -1233,6 +1257,7 @@ export class AcpService {
       error.code = "model_variant_unavailable"
       throw error
     }
+    if (option.currentValue === value) return
     const changed = await this.#acp.request("session/set_config_option", { sessionId: sessionID, configId, value })
     if (Array.isArray(changed?.configOptions)) this.#rememberConfigOptions(sessionID, changed.configOptions)
     const current = this.#configOptions.get(sessionID)?.find((item) => item.id === configId)
@@ -1278,7 +1303,7 @@ export class AcpService {
   }
 
   /** Start a prompt through the session service and resolve only when that turn becomes idle. */
-  async promptAndWait(sessionID, text, model, attachments = []) {
+  async promptAndWait(sessionID, text, model, attachments = [], variant) {
     return new Promise((resolve, reject) => {
       let started = false
       let settled = false
@@ -1299,7 +1324,7 @@ export class AcpService {
         if (this.#isBusy(sessionID)) started = true
         else if (started) finish()
       })
-      void this.prompt(sessionID, text, model, attachments).catch(finish)
+      void this.prompt(sessionID, text, model, attachments, variant).catch(finish)
     })
   }
 
