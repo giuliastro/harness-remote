@@ -1,5 +1,6 @@
 import { spawn } from "node:child_process"
 import { EventEmitter } from "node:events"
+import { withoutGatewayCredentials } from "./child-environment.js"
 
 // An adapter launched through `npx` downloads itself on first use, which takes far longer
 // than a warm start. Ten seconds failed on a cold PI adapter while npm was still fetching.
@@ -24,6 +25,7 @@ export class AcpClient extends EventEmitter {
   #command
   #args
   #spawn
+  #environment
   #permissionMode
   #preferredAuthMethod
   #child
@@ -37,13 +39,14 @@ export class AcpClient extends EventEmitter {
   #stderr = ""
   #stderrPartial = ""
 
-  constructor({ command = "omp", args = ["acp"], permissionMode = "deny", preferredAuthMethod, spawnProcess = spawn } = {}) {
+  constructor({ command = "omp", args = ["acp"], permissionMode = "deny", preferredAuthMethod, spawnProcess = spawn, environment = process.env } = {}) {
     super()
     this.#command = command
     this.#args = args
     this.#permissionMode = permissionMode
     this.#preferredAuthMethod = preferredAuthMethod
     this.#spawn = spawnProcess
+    this.#environment = environment
   }
 
   get agentInfo() {
@@ -126,7 +129,8 @@ export class AcpClient extends EventEmitter {
       : ["/d", "/s", "/c", this.#command, ...this.#args]
     const child = this.#spawn(windowsCommand, windowsArgs, {
       stdio: ["pipe", "pipe", "pipe"],
-      windowsHide: true
+      windowsHide: true,
+      env: withoutGatewayCredentials(this.#environment)
     })
     this.#child = child
     // Each attempt reports its own stderr. Carrying the buffer across restarts made every exit

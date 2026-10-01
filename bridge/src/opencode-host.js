@@ -1,5 +1,6 @@
 import { spawn, spawnSync } from "node:child_process"
 import { EventEmitter } from "node:events"
+import { withoutGatewayCredentials } from "./child-environment.js"
 
 const DEFAULT_START_TIMEOUT_MS = 15_000
 
@@ -243,7 +244,7 @@ export class ManagedOpenCodeHost extends EventEmitter {
       windowsHide: true,
       detached: this.isolatePosixProcessTree,
       env: {
-        ...this.environment,
+        ...withoutGatewayCredentials(this.environment),
         OPENCODE_SERVER_USERNAME: this.username,
         OPENCODE_SERVER_PASSWORD: this.password
       }
