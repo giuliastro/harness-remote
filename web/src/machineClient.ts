@@ -358,10 +358,6 @@ export async function listApprovalDecisions(config: ServerConfig, identity: Appr
   return approvalDecisionRecords(await response.json())
 }
 
-export function selectableMachineAgents(machine: MachineSnapshot): MachineSnapshot["agents"] {
-  return machine.agents.filter((agent) => agent.state === "available" || agent.state === "configured")
-}
-
 /**
  * The one place that turns a daemon host state into words a user reads.
  *
