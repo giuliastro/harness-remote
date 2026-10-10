@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto"
 import http from "node:http"
 import { authenticateDaemonRequest, writeJSON } from "./http-policy.js"
+import { runIdempotentMutation } from "./session-operation-ledger.js"
 
 const TARGET_HANDOFF_ROUTE = "/v1/session-handoff-target"
 const MAX_BODY_BYTES = 1_000_000
@@ -99,56 +100,6 @@ export function targetCreationLedgerIdentity(input) {
   }
 }
 
-async function runIdempotentCreation({ operationLedger, identity, mutationSignature, dispatch, reconcile }) {
-  const started = await operationLedger.begin({ ...identity, signature: mutationSignature })
-  if (started.duplicate) {
-    if (started.state === "uncertain" && typeof reconcile === "function") {
-      try {
-        const recovered = await reconcile(started.entry.result)
-        if (recovered) {
-          await operationLedger.accept({ ...identity, result: recovered })
-          return { status: "accepted", duplicate: true, result: recovered }
-        }
-      } catch {
-        // Read-only reconciliation failure must never replay a resource-creating operation.
-      }
-    }
-    return { status: started.state, duplicate: true, result: started.entry.result }
-  }
-
-  let dispatched = false
-  let checkpointedResult
-  const checkpoint = async (result) => {
-    await operationLedger.accept({ ...identity, result })
-    checkpointedResult = result
-  }
-
-  try {
-    const result = await dispatch({ checkpoint })
-    dispatched = true
-    const acceptedResult = result === undefined ? checkpointedResult : result
-    if (result !== undefined || checkpointedResult === undefined) {
-      await operationLedger.accept({ ...identity, result })
-    }
-    return { status: "accepted", duplicate: false, result: acceptedResult }
-  } catch (error) {
-    if (checkpointedResult !== undefined) {
-      return { status: "accepted", duplicate: false, result: checkpointedResult }
-    }
-    // Once dispatch has returned, the native resource may exist even if persisting `accepted`
-    // failed. Keep that operation uncertain so a retry can only reconcile; never delete the ledger
-    // entry and accidentally permit a second target Session.
-    const ambiguous = dispatched || error?.ambiguous === true
-    await operationLedger.fail({
-      ...identity,
-      ambiguous,
-      ...(error?.recovery !== undefined ? { result: error.recovery } : {})
-    })
-    if (ambiguous) return { status: "uncertain", duplicate: false }
-    throw error
-  }
-}
-
 /**
  * Authenticated target-daemon boundary for cross-machine continuation.
  *
@@ -189,10 +140,10 @@ export function createCrossMachineHandoffServer({
       if (!project) throw requestError(`Unknown project: ${input.projectId}`, "unknown_project")
 
       const identity = targetCreationLedgerIdentity(input)
-      const result = await runIdempotentCreation({
+      const result = await runIdempotentMutation({
         operationLedger,
         identity,
-        mutationSignature: signature(input),
+        signature: signature(input),
         reconcile: typeof reconcileTargetSession === "function"
           ? (recovery) => reconcileTargetSession({ ...input, project }, recovery)
           : undefined,

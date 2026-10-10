@@ -180,3 +180,62 @@ export class SessionOperationLedger {
     return entry ? structuredClone(entry) : undefined
   }
 }
+
+export async function runIdempotentMutation({
+  operationLedger,
+  identity,
+  signature,
+  dispatch,
+  reconcile
+}) {
+  const started = await operationLedger.begin({ ...identity, signature })
+  if (started.duplicate) {
+    if (started.state === "uncertain" && typeof reconcile === "function") {
+      try {
+        const recovered = await reconcile(started.entry.result)
+        if (recovered) {
+          await operationLedger.accept({ ...identity, result: recovered })
+          return { status: "accepted", duplicate: true, result: recovered }
+        }
+      } catch {
+        // Reconciliation is read-only. A temporary read failure must leave the original uncertain
+        // entry untouched rather than replaying a resource-creating mutation.
+      }
+    }
+    return { status: started.state, duplicate: true, result: started.entry.result }
+  }
+
+  let dispatched = false
+  let checkpointedResult
+  const checkpoint = async (result) => {
+    await operationLedger.accept({ ...identity, result })
+    checkpointedResult = result
+  }
+
+  try {
+    const result = await dispatch({ checkpoint })
+    dispatched = true
+    const acceptedResult = result === undefined ? checkpointedResult : result
+    if (result !== undefined || checkpointedResult === undefined) {
+      await operationLedger.accept({ ...identity, result })
+    }
+    return { status: "accepted", duplicate: false, result: acceptedResult }
+  } catch (error) {
+    if (checkpointedResult !== undefined) {
+      // Resource identity is already durable. Any later title/model/link enrichment failure cannot
+      // turn the creation back into "unknown"; retries must return this exact resource.
+      return { status: "accepted", duplicate: false, result: checkpointedResult }
+    }
+    const ambiguous = dispatched || error?.ambiguous === true
+    // Once dispatch has returned, the native resource may exist even if persisting `accepted`
+    // failed. Keep that operation uncertain so a retry can only reconcile; never delete the ledger
+    // entry and accidentally permit a second target Session.
+    await operationLedger.fail({
+      ...identity,
+      ambiguous,
+      ...(error?.recovery !== undefined ? { result: error.recovery } : {})
+    })
+    if (ambiguous) return { status: "uncertain", duplicate: false }
+    throw error
+  }
+}
