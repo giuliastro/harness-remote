@@ -1,6 +1,5 @@
-import { randomUUID } from "node:crypto"
-import { mkdir, readFile, rename, writeFile } from "node:fs/promises"
 import path from "node:path"
+import { JsonFileStore } from "./json-file-store.js"
 
 const VERSION = 1
 const MAX_OPERATIONS = 1024
@@ -29,30 +28,33 @@ export class SessionOperationLedger {
   #machineID
   #stateDirectory
   #path
+  #store
   #loaded = false
   #operations = new Map()
-  #mutation = Promise.resolve()
 
   constructor({ machineID, stateDirectory }) {
     this.#machineID = machineID
     this.#stateDirectory = stateDirectory
     this.#path = path.join(stateDirectory, "session-operations.json")
+    this.#store = new JsonFileStore({ filePath: this.#path, stateDirectory })
   }
 
   async #load() {
     if (this.#loaded) return
     this.#loaded = true
-    try {
-      const parsed = JSON.parse(await readFile(this.#path, "utf8"))
-      if (parsed?.version !== VERSION || parsed?.machineID !== this.#machineID || !Array.isArray(parsed.operations)) return
-      for (const entry of parsed.operations) {
-        if (!entry || typeof entry !== "object") continue
-        if (!["pending", "accepted", "uncertain"].includes(entry.state)) continue
-        if (![entry.agentID, entry.sessionID, entry.clientRequestId, entry.signature].every((value) => typeof value === "string" && value)) continue
-        this.#operations.set(operationKey(entry.agentID, entry.sessionID, entry.clientRequestId), entry)
+    const parsed = await this.#store.read({
+      onCorrupt: "error",
+      onError: () => {
+        throw ledgerError("operation_ledger_unreadable", "Native Session operation ledger is unreadable")
       }
-    } catch (error) {
-      if (error?.code !== "ENOENT") throw ledgerError("operation_ledger_unreadable", "Native Session operation ledger is unreadable")
+    })
+    if (!parsed) return
+    if (parsed.version !== VERSION || parsed.machineID !== this.#machineID || !Array.isArray(parsed.operations)) return
+    for (const entry of parsed.operations) {
+      if (!entry || typeof entry !== "object") continue
+      if (!["pending", "accepted", "uncertain"].includes(entry.state)) continue
+      if (![entry.agentID, entry.sessionID, entry.clientRequestId, entry.signature].every((value) => typeof value === "string" && value)) continue
+      this.#operations.set(operationKey(entry.agentID, entry.sessionID, entry.clientRequestId), entry)
     }
   }
 
@@ -103,21 +105,15 @@ export class SessionOperationLedger {
 
   async #persist() {
     this.#trim()
-    await mkdir(this.#stateDirectory, { recursive: true })
-    const payload = JSON.stringify({
+    await this.#store.write({
       version: VERSION,
       machineID: this.#machineID,
       operations: [...this.#operations.values()]
     })
-    const temporary = `${this.#path}.${process.pid}.${randomUUID()}.tmp`
-    await writeFile(temporary, payload, { mode: 0o600 })
-    await rename(temporary, this.#path)
   }
 
   #serial(operation) {
-    const next = this.#mutation.then(operation, operation)
-    this.#mutation = next.catch(() => undefined)
-    return next
+    return this.#store.serial(operation)
   }
 
   async begin({ agentID, sessionID, clientRequestId, signature }) {

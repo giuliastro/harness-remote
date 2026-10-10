@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from "node:crypto"
-import { mkdir, readFile, rename, writeFile } from "node:fs/promises"
 import path from "node:path"
+import { JsonFileStore } from "./json-file-store.js"
 import { buildPersistedTaskContext } from "./task-context.js"
 
 function machineFileName(machineID) {
@@ -42,6 +42,8 @@ function persistedError(error) {
 }
 
 export class TaskRunStore {
+  #store
+
   constructor({ machineID, stateDirectory, idFactory = randomUUID, clock = () => new Date().toISOString(), warn = (message) => process.stderr.write(`${message}\n`) }) {
     this.machineID = machineID
     this.stateDirectory = stateDirectory
@@ -51,35 +53,28 @@ export class TaskRunStore {
     this.warn = warn
     this.loaded = false
     this.tasks = []
+    this.#store = new JsonFileStore({
+      filePath: this.file,
+      stateDirectory,
+      warn: (_message, backup) => this.warn(`Task state was malformed and has been preserved at ${backup}`)
+    })
   }
 
   async load() {
     if (this.loaded) return
-    try {
-      const parsed = JSON.parse(await readFile(this.file, "utf8"))
-      const tasks = Array.isArray(parsed?.tasks) ? parsed.tasks : []
-      this.tasks = tasks.map(normalizeTaskHistory)
-    } catch (error) {
-      if (error?.code === "ENOENT") {
-        this.tasks = []
-      } else if (error instanceof SyntaxError) {
-        const backup = `${this.file}.corrupt-${Date.now()}`
-        await rename(this.file, backup)
-        this.tasks = []
-        this.warn(`Task state was malformed and has been preserved at ${backup}`)
-      } else {
-        throw error
-      }
-    }
+    const parsed = await this.#store.read()
+    const tasks = Array.isArray(parsed?.tasks) ? parsed.tasks : []
+    this.tasks = tasks.map(normalizeTaskHistory)
     this.loaded = true
   }
 
   async persist() {
     if (!this.loaded) throw new Error("Task store must load successfully before it can persist")
-    await mkdir(this.stateDirectory, { recursive: true })
-    const temporary = `${this.file}.${process.pid}.${Date.now()}.tmp`
-    await writeFile(temporary, `${JSON.stringify({ version: 1, machineId: this.machineID, tasks: this.tasks }, null, 2)}\n`, { mode: 0o600 })
-    await rename(temporary, this.file)
+    await this.#store.write({
+      version: 1,
+      machineId: this.machineID,
+      tasks: this.tasks
+    }, { pretty: true })
   }
 
   async list() {
