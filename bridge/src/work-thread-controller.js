@@ -1,5 +1,4 @@
 import { buildPersistedTaskContext } from "./task-context.js"
-import { abortWorkThreadRun } from "./work-thread-abort.js"
 import { WorkThreadCheckpointManager } from "./work-thread-checkpoints.js"
 
 const ACTIVE = new Set(["starting", "running"])
@@ -123,33 +122,7 @@ export class WorkThreadController {
   }
 
   async markCancelled(taskID) {
-    let task = await this.taskStore.get(taskID)
-    if (!task) throw new Error(`Unknown task: ${taskID}`)
-    if (!ACTIVE.has(task.status)) return task
-
-    // A product-level Stop must stop the real native session first. Persisting "cancelled" while the
-    // harness keeps editing files would be much worse than returning an error and leaving state honest.
-    await abortWorkThreadRun(task, this.taskRunController)
-    task = await this.taskStore.get(taskID) ?? task
-    if (!ACTIVE.has(task.status)) return task
-
-    return this.#mutate(taskID, (current) => {
-      const timestamp = this.clock()
-      const run = current.run ? { ...current.run, status: "cancelled", finishedAt: current.run.finishedAt || timestamp } : current.run
-      const runs = Array.isArray(current.runs)
-        ? current.runs.map((entry) => entry?.id === run?.id ? run : entry)
-        : run ? [run] : []
-      const updated = {
-        ...current,
-        status: "cancelled",
-        run,
-        runs,
-        error: null,
-        updatedAt: timestamp
-      }
-      updated.context = buildPersistedTaskContext(updated, (Number(current.context?.revision) || 0) + 1)
-      return updated
-    })
+    return this.taskRunController.cancel(taskID)
   }
 
   async createCheckpoint(taskID, { label, kind = "manual", runId = null } = {}) {

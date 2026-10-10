@@ -97,3 +97,69 @@ test("managed HTTP resume reconstructs connection details for the existing Sessi
   assert.equal(resumed.base, "http://127.0.0.1:4096")
   assert.match(resumed.authorization, /^Basic /)
 })
+
+test("TaskLauncher.abort returns false when session id is absent", async () => {
+  const launcher = new TaskLauncher()
+  assert.equal(await launcher.abort({ run: {} }), false)
+  assert.equal(await launcher.abort({}), false)
+})
+
+test("TaskLauncher.abort stops ACP session via acpService", async () => {
+  const aborted = []
+  const launcher = new TaskLauncher({
+    acpService: () => ({
+      async abort(sessionID) { aborted.push(sessionID) }
+    })
+  })
+  const res = await launcher.abort({
+    agentId: "codex",
+    run: { sessionId: "sess-acp", transport: "acp" }
+  })
+  assert.equal(res, true)
+  assert.deepEqual(aborted, ["sess-acp"])
+})
+
+test("TaskLauncher.abort stops managed HTTP session via fetchImpl", async () => {
+  const requests = []
+  const host = {
+    readinessHost: "127.0.0.1",
+    port: 4096,
+    username: "user",
+    password: "pass",
+    async start() {}
+  }
+  const daemon = {
+    hostEntry: () => ({ kind: "http", host })
+  }
+  const fetchImpl = async (url, opts) => {
+    requests.push({ url, opts })
+    return { ok: true, status: 200 }
+  }
+  const launcher = new TaskLauncher({ daemon, fetchImpl })
+  const res = await launcher.abort({
+    agentId: "opencode",
+    workspace: { path: "/repo" },
+    run: { sessionId: "sess-http", transport: "http" }
+  })
+  assert.equal(res, true)
+  assert.equal(requests.length, 1)
+  assert.equal(requests[0].url, "http://127.0.0.1:4096/session/sess-http/abort?directory=%2Frepo")
+  assert.equal(requests[0].opts.method, "POST")
+  assert.match(requests[0].opts.headers.Authorization, /^Basic /)
+})
+
+test("TaskLauncher.abort throws for unsupported transport", async () => {
+  const launcher = new TaskLauncher()
+  await assert.rejects(
+    () => launcher.abort({ agentId: "custom", run: { sessionId: "sess-unknown", transport: "unknown" } }),
+    /unsupported native session transport/
+  )
+})
+
+test("TaskLauncher.abort rejects an identified native session whose transport is missing", async () => {
+  const launcher = new TaskLauncher()
+  await assert.rejects(
+    () => launcher.abort({ id: "task-1", agentId: "codex", run: { sessionId: "sess-legacy" } }),
+    (error) => error.code === "native_abort_unconfirmed" && /native session transport is missing/.test(error.message)
+  )
+})

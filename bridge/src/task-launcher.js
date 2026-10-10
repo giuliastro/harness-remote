@@ -118,7 +118,7 @@ function sessionUnavailableError(error) {
 }
 
 function runAgentID(task, run = task?.run) {
-  return run?.agentId || task?.agentId
+  return run?.agentId || task?.agentId || ""
 }
 
 function runModel(task, run = task?.run) {
@@ -204,6 +204,13 @@ export class TaskLauncher {
       throw taskLaunchError("agent_unavailable", `Agent ${agentID} is unavailable`)
     }
     return entry
+  }
+  async #httpConnection(entry) {
+    await entry.host.start?.()
+    const host = entry.host.readinessHost ?? entry.host.host ?? "127.0.0.1"
+    const base = `http://${httpHost(host)}:${entry.host.port}`
+    const authorization = basicAuthorization(entry.host.username, entry.host.password)
+    return { base, authorization }
   }
 
   async #resolvedModel(agentID, model, directory) {
@@ -312,10 +319,7 @@ export class TaskLauncher {
     }
 
     if (entry.kind === "http") {
-      await entry.host.start?.()
-      const host = entry.host.readinessHost ?? entry.host.host ?? "127.0.0.1"
-      const base = `http://${httpHost(host)}:${entry.host.port}`
-      const authorization = basicAuthorization(entry.host.username, entry.host.password)
+      const { base, authorization } = await this.#httpConnection(entry)
       const response = await this.fetchImpl(`${base}/session?directory=${encodeURIComponent(task.workspace.path)}`, {
         method: "POST",
         headers: { "Content-Type": "application/json", ...(authorization ? { Authorization: authorization } : {}) },
@@ -378,10 +382,7 @@ export class TaskLauncher {
     }
 
     if (entry.kind === "http") {
-      await entry.host.start?.()
-      const host = entry.host.readinessHost ?? entry.host.host ?? "127.0.0.1"
-      const base = `http://${httpHost(host)}:${entry.host.port}`
-      const authorization = basicAuthorization(entry.host.username, entry.host.password)
+      const { base, authorization } = await this.#httpConnection(entry)
       return { sessionId: previousRun.sessionId, transport: "http", directory: task.workspace.path, base, authorization }
     }
 
@@ -445,10 +446,7 @@ export class TaskLauncher {
     if (!entry || entry.kind !== "http") return "unknown"
 
     try {
-      await entry.host.start?.()
-      const host = entry.host.readinessHost ?? entry.host.host ?? "127.0.0.1"
-      const base = `http://${httpHost(host)}:${entry.host.port}`
-      const authorization = basicAuthorization(entry.host.username, entry.host.password)
+      const { base, authorization } = await this.#httpConnection(entry)
       const response = await this.fetchImpl(`${base}/session/status?directory=${encodeURIComponent(task.workspace?.path ?? run.directory ?? "")}`, {
         headers: authorization ? { Authorization: authorization } : {}
       })
@@ -458,5 +456,38 @@ export class TaskLauncher {
     } catch {
       return "unknown"
     }
+  }
+
+  async abort(task) {
+    const run = task?.run
+    const sessionID = run?.sessionId || run?.sessionID
+    if (!sessionID) return false
+    const agentID = runAgentID(task, run)
+    if (!run?.transport) {
+      throw taskLaunchError("native_abort_unconfirmed", `Cannot stop ${agentID}: native session transport is missing`)
+    }
+
+    if (run.transport === "acp") {
+      const service = this.acpService?.(agentID)
+      if (!service) throw new Error(`Cannot stop ${agentID}: native ACP session service is unavailable`)
+      await service.abort(sessionID)
+      return true
+    }
+
+    if (run.transport === "http") {
+      const entry = this.daemon?.hostEntry?.(agentID)
+      if (!entry || entry.kind !== "http") throw new Error(`Cannot stop ${agentID}: managed HTTP harness is unavailable`)
+      const { base, authorization } = await this.#httpConnection(entry)
+      const directory = task.workspace?.path ?? run.directory ?? ""
+      const response = await this.fetchImpl(`${base}/session/${encodeURIComponent(sessionID)}/abort?directory=${encodeURIComponent(directory)}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...(authorization ? { Authorization: authorization } : {}) },
+        body: "{}"
+      })
+      if (!response.ok) throw new Error(`Stopping ${agentID} failed with HTTP ${response.status}`)
+      return true
+    }
+
+    throw new Error(`Cannot stop ${agentID}: unsupported native session transport`)
   }
 }

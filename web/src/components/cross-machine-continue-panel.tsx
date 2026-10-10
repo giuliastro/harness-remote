@@ -102,8 +102,9 @@ export function CrossMachineContinuePanel({
   const projectGeneration = useRef(0)
   const projectMachineID = useRef("")
   const modelGeneration = useRef(0)
+  const modelMachineAgentKey = useRef("")
   const planGeneration = useRef(0)
-
+  const planTargetKey = useRef("")
   const machine = availableRoutes.find((candidate) => candidate.machineID === machineID)
   const agent = machine?.agents.find((candidate) => candidate.id === agentID)
   const selectedModel = models.find((candidate) => modelKey(candidate) === modelKeyValue)
@@ -134,16 +135,20 @@ export function CrossMachineContinuePanel({
     const generation = ++projectGeneration.current
     const preserveProjectSelection = Boolean(open && machine && machineID && projectMachineID.current === machineID)
     projectMachineID.current = open && machine ? machineID : ""
-    setProjectRoute(null)
-    setProjectID((current) => preserveProjectSelection ? current : "")
-    setPlan(null)
-    setConfirmed(false)
-    setError(null)
+    if (!preserveProjectSelection) {
+      setProjectRoute(null)
+      setProjectID("")
+      setPlan(null)
+      setConfirmed(false)
+      setError(null)
+    }
     if (!open || !machine) {
       setProjectsLoading(false)
       return
     }
-    setProjectsLoading(true)
+    if (!preserveProjectSelection) {
+      setProjectsLoading(true)
+    }
     void loadCrossMachineProjectRoute({ source, targetMachine: machine })
       .then((route) => {
         if (projectGeneration.current !== generation) return
@@ -166,12 +171,13 @@ export function CrossMachineContinuePanel({
 
   useEffect(() => {
     const generation = ++modelGeneration.current
-    setModels([])
-    setModelKeyValue("")
-    setPlan(null)
-    setConfirmed(false)
     if (!open || !machine) {
+      modelMachineAgentKey.current = ""
       setAgentID("")
+      setModels([])
+      setModelKeyValue("")
+      setPlan(null)
+      setConfirmed(false)
       setModelsLoading(false)
       return
     }
@@ -184,17 +190,35 @@ export function CrossMachineContinuePanel({
       return
     }
     if (nextAgent.capabilities?.models !== true) {
+      modelMachineAgentKey.current = ""
+      setModels([])
+      setModelKeyValue("")
       setModelsLoading(false)
       return
     }
 
-    setModelsLoading(true)
+    const agentKey = `${machine.machineID}:${nextAgent.id}`
+    const preserveModelSelection = Boolean(modelMachineAgentKey.current === agentKey)
+    modelMachineAgentKey.current = agentKey
+    if (!preserveModelSelection) {
+      setModels([])
+      setModelKeyValue("")
+      setPlan(null)
+      setConfirmed(false)
+      setModelsLoading(true)
+    }
+
     void taskClient.listAgentModels(configForAgent(machine.config, nextAgent), nextAgent.id, ROUTE_MODEL_SCOPE)
       .then((catalog) => {
         if (modelGeneration.current !== generation) return
         setModels(catalog.models)
-        const fallback = catalog.models.find((candidate) => candidate.isDefault) || catalog.models[0]
-        setModelKeyValue(fallback ? modelKey(fallback) : "")
+        setModelKeyValue((current) => {
+          if (current && catalog.models.some((candidate) => modelKey(candidate) === current)) {
+            return current
+          }
+          const fallback = catalog.models.find((candidate) => candidate.isDefault) || catalog.models[0]
+          return fallback ? modelKey(fallback) : ""
+        })
       })
       .catch((reason) => {
         if (modelGeneration.current !== generation) return
@@ -208,13 +232,23 @@ export function CrossMachineContinuePanel({
 
   useEffect(() => {
     const generation = ++planGeneration.current
-    setPlan(null)
-    setConfirmed(false)
     if (!open || !machine || !agent || !projectID) {
+      planTargetKey.current = ""
+      setPlan(null)
+      setConfirmed(false)
       setPlanLoading(false)
       return
     }
-    setPlanLoading(true)
+
+    const targetKey = `${machine.machineID}:${agent.id}:${projectID}`
+    const preservePlan = Boolean(planTargetKey.current === targetKey)
+    planTargetKey.current = targetKey
+    if (!preservePlan) {
+      setPlan(null)
+      setConfirmed(false)
+      setPlanLoading(true)
+    }
+
     void planCrossMachineContinuation({
       source,
       targetMachine: machine,

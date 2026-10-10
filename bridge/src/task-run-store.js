@@ -3,6 +3,7 @@ import path from "node:path"
 import { JsonFileStore } from "./json-file-store.js"
 import { buildPersistedTaskContext } from "./task-context.js"
 
+const TERMINAL_STATUSES = new Set(["completed", "failed", "cancelled"])
 function machineFileName(machineID) {
   const digest = createHash("sha256").update(machineID).digest("hex").slice(0, 16)
   return `tasks-${digest}.json`
@@ -184,7 +185,7 @@ export class TaskRunStore {
     }
     if (status === "running" && task.status !== "starting") throw new Error("Task is not starting")
     if (status === "running" && !run?.sessionId) throw new Error("Running task requires a session id")
-    if ((status === "completed" || status === "failed") && task.status !== "starting" && task.status !== "running") {
+    if (TERMINAL_STATUSES.has(status) && task.status !== "starting" && task.status !== "running") {
       if (expectedRunId !== undefined) return structuredClone(task)
       throw new Error("Only active tasks can enter a terminal state")
     }
@@ -196,11 +197,11 @@ export class TaskRunStore {
       if (status === "failed") nextRun.error = nextError
       else if (Object.prototype.hasOwnProperty.call(nextRun, "error")) delete nextRun.error
     }
-    if ((status === "completed" || status === "failed") && nextRun && !nextRun.finishedAt) {
+    if (TERMINAL_STATUSES.has(status) && nextRun && !nextRun.finishedAt) {
       nextRun.finishedAt = this.clock()
     }
     const runs = updateRunHistory(task, nextRun)
-    const terminalTransition = (status === "completed" || status === "failed") && !task.run?.finishedAt
+    const terminalTransition = TERMINAL_STATUSES.has(status) && !task.run?.finishedAt
     const currentRevision = Number(task.context?.revision) || 0
     const nextRevision = terminalTransition ? currentRevision + 1 : currentRevision
     const updated = {
