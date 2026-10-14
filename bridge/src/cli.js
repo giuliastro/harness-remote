@@ -33,7 +33,7 @@ if (config) {
   })
 
   const acp = trackAgentHostLifecycle(
-    new AcpClient({ command: config.acpCommand, args: config.acpArgs, permissionMode: profile.permissionMode, preferredAuthMethod: profile.authMethod, authenticate: profile.authenticate, environment: profile.environment }),
+    new AcpClient({ command: config.acpCommand, args: config.acpArgs, permissionMode: profile.permissionMode, preferredAuthMethod: profile.authMethod }),
     machineRegistry,
     profile.id
   )

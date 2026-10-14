@@ -17,8 +17,7 @@ each harness.
 
 | Harness | Status | How it connects |
 |---|---|---|
-| [OpenCode 2](https://opencode.ai/v2/docs/) | integration validation in progress | native ACP through the `opencode2` bridge backend |
-| [OpenCode Legacy (v1)](https://opencode.ai/docs/) | supported | directly to the OpenCode v1 HTTP server |
+| [OpenCode](https://github.com/sst/opencode) | supported | directly to the OpenCode HTTP server |
 | [Oh My Pi (OMP)](https://omp.sh/) | supported | through the local bridge included in this repository |
 | [PI](https://pi.dev/) | supported | through the local ACP bridge and the [`@automatalabs/pi-acp`](https://www.npmjs.com/package/@automatalabs/pi-acp) adapter |
 | [Claude Code](https://code.claude.com/) | supported | through the local ACP bridge and the [`@agentclientprotocol/claude-agent-acp`](https://www.npmjs.com/package/@agentclientprotocol/claude-agent-acp) adapter |
@@ -214,9 +213,6 @@ published as an installable [PWA](#progressive-web-app-pwa).
 ## Harness Setup
 
 ### OpenCode Server Setup
-
-This section describes **OpenCode Legacy (v1)**. The official OpenCode 2
-integration uses ACP; see [OpenCode 2 validation](docs/OPENCODE2_VALIDATION.md).
 
 Start the OpenCode server with network access and Basic Auth.
 

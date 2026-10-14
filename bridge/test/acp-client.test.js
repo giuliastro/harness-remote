@@ -110,24 +110,6 @@ test("preserves ACP Session pagination and sends an opaque cursor unchanged", as
   client.close()
 })
 
-test("merges provider-scoped environment overrides into the ACP child process", async () => {
-  let spawnOptions
-  const client = new AcpClient({
-    environment: { HARNESS_TEST_MARKER: "provider" },
-    spawnProcess: (command, args, options) => {
-      spawnOptions = options
-      return new FakeChild((child, request) => respondToHandshake(child, request))
-    }
-  })
-
-  await client.start()
-  assert.equal(spawnOptions.env.HARNESS_TEST_MARKER, "provider")
-  const inherited = Object.entries(process.env).find(([, value]) => value !== undefined)
-  assert.ok(inherited, "the test process must expose at least one environment variable")
-  assert.equal(spawnOptions.env[inherited[0]], inherited[1])
-  client.close()
-})
-
 test("launches an ACP adapter with the configured command and arguments", async () => {
   const calls = []
   const client = new AcpClient({
@@ -158,21 +140,6 @@ test("accepts alternate or absent ACP authentication methods", async () => {
   })
   await unauthenticated.start()
   unauthenticated.close()
-})
-
-test("can skip authenticate when a provider advertises a non-implemented auth method", async () => {
-  let authenticateRequests = 0
-  const client = new AcpClient({
-    authenticate: false,
-    spawnProcess: fakeSpawn((child, request) => {
-      respondToHandshake(child, request, [{ id: "opencode-login" }])
-      if (request.method === "authenticate") authenticateRequests += 1
-    })
-  })
-
-  await client.start()
-  assert.equal(authenticateRequests, 0)
-  client.close()
 })
 
 test("prefers the profile's auth method over the first advertised one", async () => {

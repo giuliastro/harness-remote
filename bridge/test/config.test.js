@@ -57,18 +57,6 @@ test("selects Codex defaults for the ACP backend", () => {
   assert.match(parseConfig(["--backend", "codex"], {}).acpArgs[1], /@\d+\.\d+\.\d+$/, "the adapter version must stay pinned")
 })
 
-test("selects OpenCode 2 package fallback and MiMo native ACP defaults", () => {
-  const openCode2 = parseConfig(["--backend", "opencode2"], {}, { resolveLaunch: (profile) => ({ command: profile.command, args: profile.args }) })
-  assert.equal(openCode2.backend, "opencode2")
-  assert.equal(openCode2.acpCommand, process.platform === "win32" ? "npx.cmd" : "npx")
-  assert.deepEqual(openCode2.acpArgs, ["--yes", "--package=@opencode/cli@2.0.28", "opencode2", "acp"])
-
-  const mimo = parseConfig(["--backend", "mimo"], {})
-  assert.equal(mimo.backend, "mimo")
-  assert.equal(mimo.acpCommand, "mimo")
-  assert.deepEqual(mimo.acpArgs, ["acp"])
-})
-
 test("prefers generic environment names while retaining OMP aliases", () => {
   const generic = parseConfig([], {
     HARNESS_REMOTE_BACKEND: "pi",
@@ -127,4 +115,13 @@ test("accepts authenticated LAN configuration and repeated roots", () => {
 test("enables safe request diagnostics explicitly", () => {
   assert.equal(parseConfig(["--log-requests"], {}).logRequests, true)
   assert.equal(parseConfig([], { OMP_BRIDGE_LOG_REQUESTS: "1" }).logRequests, true)
+})
+
+
+test("OpenCode 2 resolves the pinned ACP fallback without enabling experimental backends", () => {
+  const options = { resolveLaunch: (profile) => ({ command: profile.command, args: profile.args }) }
+  const config = parseConfig(["--backend", "opencode2"], {}, options)
+  assert.equal(config.backend, "opencode2")
+  assert.deepEqual(config.acpArgs, ["--yes", "--package=@opencode/cli@2.0.28", "opencode2", "acp"])
+  for (const backend of ["copilot", "mimo"]) assert.throws(() => parseConfig(["--backend", backend], {}, options), /Unsupported backend/)
 })

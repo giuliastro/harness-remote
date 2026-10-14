@@ -14,15 +14,58 @@ function uniqueStrings(values = []) {
  * ownership of the Session.
  */
 function acpSessionContract(profile) {
-  if (profile?.sessionContract) return { ...profile.sessionContract }
-  return {
-    authority: "native-harness",
-    discovery: "native-list",
-    transcript: profile?.historyLoader ? "native-journal" : "session-load",
-    externalWriterObservation: "unverified",
-    continuation: "session-load",
-    writerOwnership: "adapter-defined",
-    stop: "owned-session-native-cancel"
+  switch (profile?.id) {
+    case "codex":
+      return {
+        authority: "native-harness",
+        discovery: "native-list",
+        transcript: "native-journal",
+        externalWriterObservation: "supported-via-journal",
+        continuation: "session-load",
+        writerOwnership: "single-writer",
+        stop: "owned-session-native-cancel"
+      }
+    case "pi":
+      return {
+        authority: "native-harness",
+        discovery: "native-list",
+        transcript: "native-journal-authoritative",
+        externalWriterObservation: "supported-via-journal",
+        continuation: "session-load",
+        writerOwnership: "claim-on-session-load",
+        stop: "owned-session-native-cancel"
+      }
+    case "omp":
+      return {
+        authority: "native-harness",
+        discovery: "native-list",
+        transcript: "native-journal",
+        externalWriterObservation: "unverified-via-journal",
+        continuation: "session-load",
+        writerOwnership: "adapter-defined",
+        stop: "owned-session-native-cancel"
+      }
+    case "opencode2":
+    case "claude":
+      return {
+        authority: "native-harness",
+        discovery: "native-list",
+        transcript: "session-load",
+        externalWriterObservation: "unverified-session-load",
+        continuation: "session-load",
+        writerOwnership: "adapter-defined",
+        stop: "owned-session-native-cancel"
+      }
+    default:
+      return {
+        authority: "native-harness",
+        discovery: "native-list",
+        transcript: profile?.historyLoader ? "native-journal" : "session-load",
+        externalWriterObservation: "unverified",
+        continuation: "session-load",
+        writerOwnership: "adapter-defined",
+        stop: "owned-session-native-cancel"
+      }
   }
 }
 
@@ -49,17 +92,15 @@ export function acpHarnessCapabilityContract(profile) {
       variantConfigIDs
     },
     sessions: acpSessionContract(profile),
-    lifecycle: profile?.lifecycleContract
-      ? { ...profile.lifecycleContract }
-      : {
-          // Retain the v1 lifecycle shape for compatibility while Session-first consumers migrate to
-          // the more precise `sessions` contract above.
-          sessionAuthority: "native-harness",
-          create: "native-session",
-          resume: "native-session-when-supported",
-          stop: "native-abort",
-          reconnect: "daemon-reconciliation"
-        }
+    lifecycle: {
+      // Retain the v1 lifecycle shape for compatibility while Session-first consumers migrate to
+      // the more precise `sessions` contract above.
+      sessionAuthority: "native-harness",
+      create: "native-session",
+      resume: "native-session-when-supported",
+      stop: "native-abort",
+      reconnect: "daemon-reconciliation"
+    }
   }
 }
 

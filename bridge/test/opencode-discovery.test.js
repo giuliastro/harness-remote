@@ -2,7 +2,8 @@ import assert from "node:assert/strict"
 import path from "node:path"
 import test from "node:test"
 import { discoverOpenCodeExecutables, openCodeGeneration, readOpenCodeVersion, assertLegacyOpenCode } from "../src/opencode-discovery.js"
-import { detectBackends, resolveLaunchPlan, findExecutable } from "../src/launcher.js"
+import { detectBackends, resolveLaunchPlan } from "../src/launcher.js"
+import { findExecutable } from "../src/executable-discovery.js"
 import { harnessProfile, resolveAcpLaunch } from "../src/harness-profiles.js"
 import { resolveManagedOpenCodeOptions } from "../src/daemon-cli.js"
 
@@ -98,4 +99,18 @@ test("a daemon with v2 only does not register a legacy HTTP host", () => {
   assert.equal(resolveManagedOpenCodeOptions(parsed, { detected: ["opencode", "opencode2"] }, { resolve: () => "/tools/opencode1" }).openCodeCommand, "/tools/opencode1")
   assert.equal(resolveManagedOpenCodeOptions({ ...parsed, openCode: false }, { detected: ["opencode"] }).openCode, false)
   assert.equal(resolveManagedOpenCodeOptions(parsed, { detected: ["opencode2"] }, { explicitCommand: true }).openCode, true)
+})
+
+
+test("installed experimental CLIs are excluded and established ACP preference is retained", () => {
+  const present = new Set(["copilot", "mimo", "omp", "codex", "opencode"])
+  const options = {
+    platform: "linux", pathValue: "/tools", access: () => {},
+    exists: (command) => present.has(path.basename(command)),
+    readVersion: () => "opencode v2.0.28"
+  }
+  const detected = detectBackends(options)
+  assert.deepEqual(detected, ["omp", "codex", "opencode2"])
+  assert.equal(resolveLaunchPlan([], detected).backend, "codex")
+  assert.equal(resolveLaunchPlan(["--backend", "opencode2"], detected).backend, "opencode2")
 })

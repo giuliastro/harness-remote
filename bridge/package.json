@@ -14,10 +14,7 @@
     "smoke:omp": "node scripts/omp-real-smoke.mjs",
     "soak:session": "node scripts/session-first-soak.mjs",
     "gate:real-harness": "node scripts/real-harness-release-gate.mjs",
-    "test": "node --test",
-    "smoke:copilot": "node scripts/copilot-real-smoke.mjs",
-    "smoke:opencode2": "node scripts/opencode2-real-smoke.mjs",
-    "smoke:mimo": "node scripts/mimo-real-smoke.mjs"
+    "test": "node --test"
   },
   "engines": {
     "node": ">=20"

@@ -4,10 +4,7 @@
   "type": "module",
   "bin": {
     "harness-remote": "bridge/src/launcher.js",
-    "harness-remote-daemon": "bridge/src/daemon-bin.js",
-    "harness-remote-copilot-smoke": "bridge/scripts/copilot-real-smoke.mjs",
-    "harness-remote-opencode2-smoke": "bridge/scripts/opencode2-real-smoke.mjs",
-    "harness-remote-mimo-smoke": "bridge/scripts/mimo-real-smoke.mjs"
+    "harness-remote-daemon": "bridge/src/daemon-bin.js"
   },
   "scripts": {
     "start": "node bridge/src/launcher.js",
@@ -46,14 +43,10 @@
   ],
   "files": [
     "bridge/src",
-    "bridge/scripts/copilot-real-smoke.mjs",
     "README.md",
     "LICENSE",
     "REFERENCE.md",
-    "docs/QUICK_START.md",
-    "bridge/scripts/acp-provider-real-smoke-lib.mjs",
-    "bridge/scripts/opencode2-real-smoke.mjs",
-    "bridge/scripts/mimo-real-smoke.mjs"
+    "docs/QUICK_START.md"
   ],
   "publishConfig": {
     "access": "public"

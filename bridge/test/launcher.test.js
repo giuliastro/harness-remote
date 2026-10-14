@@ -9,53 +9,12 @@ test("detects executable agent files on PATH without running them", () => {
   assert.deepEqual(detectBackends({ pathValue, platform: "linux", exists: (candidate) => existing.has(candidate), access: () => {} }), ["codex"])
 })
 
-test("detects GitHub Copilot from provider metadata without changing existing primary preference", () => {
-  const pathValue = ["/bin", "/tools"].join(path.delimiter)
-  const existing = new Set([
-    path.join("/tools", "copilot"),
-    path.join("/tools", "codex")
-  ])
-  assert.deepEqual(
-    detectBackends({ pathValue, platform: "linux", exists: (candidate) => existing.has(candidate), access: () => {} }),
-    ["copilot", "codex"]
-  )
-  assert.deepEqual(
-    resolveLaunchPlan([], ["copilot", "codex"]),
-    { mode: "daemon", backend: "codex", detected: ["copilot", "codex"], openCode: false }
-  )
-  assert.deepEqual(
-    resolveLaunchPlan([], ["copilot", "opencode"]),
-    { mode: "daemon", backend: "copilot", detected: ["copilot", "opencode"], openCode: true }
-  )
-})
-
-test("detects OpenCode 2 and MiMo as ACP providers without changing established primaries", () => {
-  const pathValue = ["/bin", "/tools"].join(path.delimiter)
-  const existing = new Set([
-    path.join("/tools", "opencode2"),
-    path.join("/tools", "mimo"),
-    path.join("/tools", "copilot")
-  ])
-  assert.deepEqual(
-    detectBackends({ pathValue, platform: "linux", exists: (candidate) => existing.has(candidate), access: () => {}, readVersion: () => "opencode v2.0.28" }),
-    ["copilot", "opencode2", "mimo"]
-  )
-  assert.deepEqual(
-    resolveLaunchPlan([], ["copilot", "opencode2", "mimo"]),
-    { mode: "daemon", backend: "copilot", detected: ["copilot", "opencode2", "mimo"], openCode: false }
-  )
-  assert.deepEqual(
-    resolveLaunchPlan(["--backend", "opencode2"], ["copilot", "opencode2", "mimo"]),
-    { mode: "daemon", backend: "opencode2", detected: ["copilot", "opencode2", "mimo"], openCode: false }
-  )
-})
-
 test("ignores non-executable PATH entries on Unix", () => {
   const candidate = path.join("/tools", "claude")
   assert.deepEqual(detectBackends({ pathValue: "/tools", platform: "linux", exists: (value) => value === candidate, access: () => { throw new Error("not executable") } }), [])
 })
 
-test("detects OpenCode as a managed direct-HTTP backend", () => {
+test("detects OpenCode Legacy as a managed direct-HTTP backend", () => {
   const candidate = path.join("/tools", "opencode")
   assert.deepEqual(detectBackends({ pathValue: "/tools", platform: "linux", exists: (value) => value === candidate, access: () => {}, readVersion: () => "1.19.0" }), ["opencode"])
   assert.equal(resolveBackend([], ["opencode"]), "opencode")

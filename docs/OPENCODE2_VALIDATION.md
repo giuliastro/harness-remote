@@ -6,9 +6,9 @@ names. V1 remains separately published as `opencode-ai` 1.19.0. See
 [v2 installation](https://opencode.ai/v2/docs/) and the
 [shared-command warning](https://opencode.ai/docs/).
 
-This integration includes the ACP Provider Kit / OpenCode 2 prototype from
-#533–#537. The legacy HTTP backend remains `opencode`; its display name
-is **OpenCode Legacy**. V2 remains `opencode2` and uses native ACP. Saved profiles,
+The legacy HTTP backend remains `opencode`; its display name is
+**OpenCode Legacy**. The experimental Provider Kit, Copilot and MiMo integrations
+are excluded from this OpenCode 2 integration. V2 remains `opencode2` and uses native ACP. Saved profiles,
 Session ids and storage keys are not migrated between generations.
 
 ## One-command local test
@@ -71,12 +71,12 @@ overwrite credentials or a global CLI. `HARNESS_REMOTE_OPENCODE2_TEST_DIR` and
   saved v1 profiles must still work. Do not update that CLI to v2.
 - Repeat discovery, model/variant selection, creation, prompt, Stop/continue and
   reload for Codex (`gpt-6-luna`), OMP (`openrouter/free`) and PI
-  (`qwen/qwen3.8-27b:free`) on their configured machines.
+  (`openrouter/free`, low) on their configured machines.
 - Claude Code real tests remain disabled until Giulio explicitly reauthorizes
   them. If an approved model is unavailable, request an alternative; never
   substitute another model automatically.
 
-## Validation status
+## Original OpenCode 2 validation history
 
 - Automated checks run by the agent after integration with main: 656 bridge tests passed; the full frontend
   `test:ci:full` suite, TypeScript/Vite and Electron builds passed. Desktop transport
@@ -93,10 +93,21 @@ overwrite credentials or a global CLI. `HARNESS_REMOTE_OPENCODE2_TEST_DIR` and
 - UI testing found and fixed lost model metadata and duplicate partial responses
   after native replay. V2's complete replay now owns transcript content; unchanged
   cached occurrences retain their known identity and timestamps.
-- Giulio confirmed the all-harness manual test environment works on 13 October
-  2026 and approved merging this integration. The environment uses the installed
-  OpenCode 2.0.11 and existing native sessions under `Software`.
+- On 13 October 2026 Giulio confirmed OpenCode 2 worked with the installed
+  2.0.11 CLI and existing native sessions under `Software`.
 - A separate Windows OpenCode Legacy regression has not been recorded, and Claude
   Code real prompt tests remain disabled. These are distinct from Giulio's local
   acceptance. Isolated agent-operated tests use v2.0.28 without replacing the
   installed CLI or desktop application.
+
+## Scope correction — 14 October 2026
+
+The cleanup removes the Provider Kit, Copilot and MiMo prototypes inadvertently
+included in #553. The previous ACP client, daemon registration, catalog and native
+history paths for OMP, PI, Claude and Codex are restored from the pre-merge main
+commit `df022b75`. OpenCode 2 generation detection, the pinned package fallback,
+v1 Legacy routing, model recovery, authoritative replay and frontend support remain.
+No subsequent experimental stabilization changes are part of this cleanup.
+
+The reduced tree passes 634 bridge tests, the full web `test:ci:full` suite and the
+production build. Fresh application UI checks are recorded in the cleanup PR.
