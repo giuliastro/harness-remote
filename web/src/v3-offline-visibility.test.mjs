@@ -41,8 +41,17 @@ test("the Session rail preserves each machine state and its real error", () => {
 
 test("a machine is not called offline before discovery resolves", () => {
   assert.match(workspace, /state: "loading"/)
-  assert.match(workspace, /loadingCount > 0/)
+  assert.match(workspace, /anyMachineSettled/)
   assert.match(workspace, /t\("sf\.connectingMachines"\)/)
+})
+
+test("one unreachable machine does not hold up an already-answered one", () => {
+  // Each machine's probe applies its own result to `runtimes` as soon as it resolves, instead of
+  // every machine waiting on a single batched `Promise.all(...).then(setRuntimes(all))` - so a
+  // saved machine that is down (and takes its own ~12s+retry to time out) no longer freezes
+  // "Connecting to your machines..." for a machine that already answered.
+  assert.match(workspace, /runtime\.machine\.id === machine\.id \? result : runtime/)
+  assert.match(workspace, /!loaded && !anyMachineSettled \? "machines"/)
 })
 
 test("an offline stream cannot cancel its own discovery probe forever", () => {

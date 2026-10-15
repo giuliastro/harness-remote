@@ -3,6 +3,18 @@ import { nativeSessionDisplayTitle } from "./native-session-title"
 import { liveSessionIndexStatus } from "./session-index-live-state"
 import type { BackendKind, MachineAgentHost, MessageEnvelope, ModelSelection, ServerConfig, Session, SessionStatus } from "./types"
 
+/**
+ * Choose machine sources whose own connection probe has settled. Session discovery can start as
+ * soon as any machine is usable; it must not wait for an unrelated saved machine to time out.
+ */
+export function selectReadyNativeSessionSources<T extends { state: string }>(sources: readonly T[]) {
+  const readySources = sources.filter(({ state }) => state !== "loading")
+  return {
+    ready: sources.length === 0 || readySources.length > 0,
+    sources: readySources
+  }
+}
+
 export type NativeSessionRecord = {
   key: string
   agentId: string
