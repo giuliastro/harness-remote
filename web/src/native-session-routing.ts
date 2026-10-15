@@ -33,6 +33,19 @@ export type NativeSessionRouteContinueInput = {
   confirmedProjectContinuity?: boolean
 }
 
+/**
+ * A route is a user action, not an inference from transient conversation metadata. Keep ordinary
+ * Sends on the Session that is open until the Harness selector has explicitly been changed.
+ */
+export function nativeSessionRouteChanged(
+  routing: { currentMachineID: string } | undefined,
+  routeSelectionTouched: boolean,
+  targetAgentID: string,
+  currentAgentID: string
+): boolean {
+  return Boolean(routing && routeSelectionTouched && targetAgentID && targetAgentID !== currentAgentID)
+}
+
 type PendingRouteContinue = {
   agentID: string
   createdAt: number

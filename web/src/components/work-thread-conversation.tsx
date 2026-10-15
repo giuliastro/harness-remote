@@ -7,7 +7,7 @@ import { conversationTurnSessionID, conversationTurns, type ConversationRuntime,
 import { mergeLatestMessagePage, prependOlderMessagePage } from "../message-pages"
 import { isMachineTransportFailure as isTransportFailure } from "../machine-request-error"
 import { provenCopilotAutoDefault, shouldClearDeferredCatalogDefault } from "../native-session-model"
-import type { NativeSessionRouteContinueInput, NativeSessionRouteMachine } from "../native-session-routing"
+import { nativeSessionRouteChanged, type NativeSessionRouteContinueInput, type NativeSessionRouteMachine } from "../native-session-routing"
 import type { SavedServerProfile } from "../serverProfiles"
 import { taskClient, type AgentModelScope } from "../taskClient"
 import { startTaskDeskSessionLiveRefresh } from "../taskdesk-session-live-refresh"
@@ -378,6 +378,7 @@ export function WorkThreadConversation({
   const draftRef = useRef(draft)
   draftRef.current = draft
   const targetAgentIDRef = useRef(targetAgentID)
+  const routeSelectionTouchedRef = useRef(false)
   const observedConversationModelKeyRef = useRef(initialModelKey)
   const modelSelectionTouchedRef = useRef(false)
   const sendInFlightRef = useRef(false)
@@ -419,7 +420,12 @@ export function WorkThreadConversation({
     { agentID: targetAgentID, backend: destinationAgent?.backend },
     !routing || targetMachineID === routing.currentMachineID
   )
-  const routeChanged = Boolean(routing && targetAgentID !== currentAgentID)
+  const routeChanged = nativeSessionRouteChanged(
+    routing,
+    routeSelectionTouchedRef.current,
+    targetAgentID,
+    currentAgentID
+  )
   const routeAgentLabel = agentLabel(destinationAgents, targetAgentID)
   const routingSignature = routing
     ? routing.machines.map((machine) => `${machine.machineID}:${machine.agents.map((agent) => `${agent.id}:${agent.backend}`).join(",")}`).join("|")
@@ -468,6 +474,7 @@ export function WorkThreadConversation({
     setReplyPending(false)
     setTargetMachineID(routing?.currentMachineID || "")
     setTargetAgentID(currentAgentID)
+    routeSelectionTouchedRef.current = false
     setTargetModelKey(currentConversationModelKey)
     observedConversationModelKeyRef.current = currentConversationModelKey
     modelSelectionTouchedRef.current = false
@@ -481,6 +488,7 @@ export function WorkThreadConversation({
     if (currentAgentID !== targetAgentIDRef.current && conversation.currentTurn?.id) {
       const nextModelKey = modelKey(conversation.currentTurn.model ?? lastModelForAgent(conversation, currentAgentID))
       setTargetAgentID(currentAgentID)
+      routeSelectionTouchedRef.current = false
       setTargetModelKey(nextModelKey)
       observedConversationModelKeyRef.current = nextModelKey
       modelSelectionTouchedRef.current = false
@@ -1082,6 +1090,7 @@ export function WorkThreadConversation({
             <select value={targetAgentID} disabled={!interactionEnabled || working || replyPending || sending || modelBootstrapBlocked || destinationAgents.length === 0} onChange={(event) => {
               modelGeneration.current += 1
               modelSelectionTouchedRef.current = false
+              routeSelectionTouchedRef.current = event.target.value !== currentAgentID
               setModels([])
               setModelError(null)
               setTargetModelKey("")
