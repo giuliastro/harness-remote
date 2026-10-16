@@ -92,7 +92,8 @@ test("provider runtime builds separate user and model ACP clients and a complete
   }
 
   const historyLoader = async () => []
-  const p = provider({ historyLoader })
+  let historyLaunch
+  const p = provider({ createHistoryLoader(launch) { historyLaunch = launch; return historyLoader } })
   const config = {
     backend: "primary",
     roots: ["/work/project"],
@@ -140,6 +141,7 @@ test("provider runtime builds separate user and model ACP clients and a complete
   assert.deepEqual(registration.bridgeConfig.acpArgs, ["serve", "--stdio"])
   assert.equal(registration.serviceOptions.snapshotDirectory, path.join("/state", "example"))
   assert.equal(registration.serviceOptions.historyLoader, historyLoader)
+  assert.deepEqual(historyLaunch, launch)
   assert.equal(registration.serviceOptions.hiddenSessionIDs, runtime.modelCatalog.hiddenSessionIDs)
   assert.equal(registration.serviceOptions.reloadOnHistoryRefresh, false)
   assert.equal(registration.serviceOptions.replaySettleMs, 125)

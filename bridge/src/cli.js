@@ -49,7 +49,7 @@ if (config) {
     serviceOptions: {
       ...providerRuntime?.registration.serviceOptions,
       snapshotDirectory: path.join(config.stateDirectory, profile.id),
-      historyLoader: profile.historyLoader,
+      historyLoader: providerRuntime?.registration.serviceOptions.historyLoader ?? profile.historyLoader,
       preserveListedTimestamps: profile.preserveListedTimestamps,
       reloadOnHistoryRefresh: profile.reloadOnHistoryRefresh,
       replaySettleMs: profile.replaySettleMs,

@@ -6,6 +6,7 @@ import { OMP_EXTENSION_ACTION_PROVIDERS } from "./extension-actions.js"
 import { createAcpProviderRegistry, defineAcpProvider } from "./acp-provider-kit.js"
 import { resolveOpenCodeCommand } from "./opencode-discovery.js"
 import { CopilotModelCatalog } from "./copilot-model-catalog.js"
+import { createOpenCode2HistoryLoader } from "./opencode2-session-history.js"
 
 const COMMON_ACP_LIFECYCLE_CONTRACT = {
   sessionAuthority: "native-harness",
@@ -25,8 +26,8 @@ const COMMON_CAPABILITIES = {
   filesystemBrowser: true,
   questions: false,
   permissions: false,
-  sessionRename: false,
-  sessionDelete: false
+  sessionRename: true,
+  sessionDelete: true
 }
 
 export const HARNESS_PROFILES = {
@@ -213,13 +214,17 @@ export const HARNESS_PROFILES = {
       questions: false,
       permissions: true,
       actions: false,
-      sessionRename: false,
-      sessionDelete: false
+      sessionRename: true,
+      sessionDelete: true
     }
   }),
   opencode2: defineAcpProvider({
     id: "opencode2",
     label: "OpenCode 2",
+    createHistoryLoader: createOpenCode2HistoryLoader,
+    requireExistingDirectory: true,
+    replaySettleMs: 250,
+    promptSettleMs: 250,
     // Both official command names are version-probed before launch. A v1 `opencode` stays on
     // the legacy HTTP path; explicit v2 selection can fetch this verified release independently.
     command: process.platform === "win32" ? "npx.cmd" : "npx",
@@ -229,8 +234,8 @@ export const HARNESS_PROFILES = {
     adapterCommand: "opencode2",
     adapterArgs: ["acp"],
     executableGeneration: 2,
-    // V2 session/load replays the complete native transcript. A cached stopped reply can be a
-    // shorter prefix of its durable native text and must not be appended to that replay.
+    // Native exports retain message boundaries and final text across restarts without opening a
+    // removed project. ACP replay remains authoritative when loading writer configuration.
     replayAuthoritative: true,
     allowPackageFallback: true,
     permissionMode: "allow",
@@ -239,8 +244,8 @@ export const HARNESS_PROFILES = {
     sessionContract: {
       authority: "native-harness",
       discovery: "native-list",
-      transcript: "session-load",
-      externalWriterObservation: "unverified-session-load",
+      transcript: "native-export",
+      externalWriterObservation: "supported-via-native-export",
       continuation: "session-load",
       writerOwnership: "adapter-defined",
       stop: "owned-session-native-cancel"
@@ -252,8 +257,8 @@ export const HARNESS_PROFILES = {
       commands: true,
       permissions: true,
       actions: false,
-      sessionRename: false,
-      sessionDelete: false
+      sessionRename: true,
+      sessionDelete: true
     }
   }),
   mimo: defineAcpProvider({
@@ -305,8 +310,8 @@ export const HARNESS_PROFILES = {
       commands: false,
       permissions: true,
       actions: false,
-      sessionRename: false,
-      sessionDelete: false
+      sessionRename: true,
+      sessionDelete: true
     }
   }),
   codex: defineAcpProvider({

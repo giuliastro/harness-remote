@@ -198,7 +198,7 @@ async function main() {
     serviceOptions: {
       ...daemon.hostEntry(primaryProfile.id).serviceOptions,
       snapshotDirectory: path.join(config.stateDirectory, primaryProfile.id),
-      historyLoader: primaryProfile.historyLoader,
+      historyLoader: daemon.hostEntry(primaryProfile.id).serviceOptions.historyLoader,
       preserveListedTimestamps: primaryProfile.preserveListedTimestamps,
       hiddenSessionIDs: daemon.hostEntry(primaryProfile.id).modelCatalog.hiddenSessionIDs,
       reloadOnHistoryRefresh: primaryProfile.reloadOnHistoryRefresh,

@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto"
-import { mkdir, readFile, rename, unlink, writeFile } from "node:fs/promises"
+import { mkdir, readFile, rename, stat, unlink, writeFile } from "node:fs/promises"
 import path from "node:path"
 import { selectableAcpModelValue, modelConfigOptionFromSessionResponse, modelValueIsExcluded, normalizedAcpModelCandidates, splitInlineAcpModelVariant } from "./agent-model-catalog.js"
 import { TranscriptCache } from "./transcript-cache.js"
@@ -467,6 +467,9 @@ export class AcpService {
   #acpOpenSessions = new Set()
   #promptAcknowledgements = new Map()
   #titles = new Map()
+  #titleIndexLoaded = false
+  #titleIndexLoading
+  #titleIndexWrite = Promise.resolve()
   #deletedSessions = new Set()
   #deletedSessionIndexLoaded = false
   #deletedSessionIndexWrite = Promise.resolve()
@@ -502,6 +505,7 @@ export class AcpService {
   #inlineModelVariantValues
   #modelProviderOrder
   #requireAssistantResponse
+  #requireExistingDirectory
   #recoverMissingSessionOnPrompt
   #turnResponseObserved = new Set()
   #fallbackModelCatalog
@@ -551,6 +555,7 @@ export class AcpService {
     inlineModelVariantValues = [],
     modelProviderOrder = [],
     requireAssistantResponse = false,
+    requireExistingDirectory = false,
     recoverMissingSessionOnPrompt = false,
     fallbackModelCatalog,
     fallbackModelSelectionMethod,
@@ -576,6 +581,7 @@ export class AcpService {
     this.#inlineModelVariantValues = inlineModelVariantValues
     this.#modelProviderOrder = modelProviderOrder
     this.#requireAssistantResponse = requireAssistantResponse
+    this.#requireExistingDirectory = requireExistingDirectory
     this.#recoverMissingSessionOnPrompt = recoverMissingSessionOnPrompt
     this.#fallbackModelCatalog = fallbackModelCatalog
     this.#fallbackModelSelectionMethod = fallbackModelSelectionMethod
@@ -618,6 +624,7 @@ export class AcpService {
 
   async listSessions(directory) {
     await this.#restoreDeletedSessionIndex()
+    await this.#restoreTitleIndex()
     const sessions = await this.#refreshSessions()
     await Promise.all(sessions.map((session) => this.#restoreSnapshot(session.sessionId)))
     return sessions
@@ -677,6 +684,7 @@ export class AcpService {
   }
 
   async createSession({ directory, title, model }) {
+    await this.#restoreTitleIndex()
     await this.#acp.start()
     const result = await this.#acp.request("session/new", { cwd: directory, mcpServers: [] })
     this.#acpOpenSessions.add(result.sessionId)
@@ -698,6 +706,7 @@ export class AcpService {
     if (title) {
       this.#titles.set(session.sessionId, title)
       await this.#applyNativeSessionName(session.sessionId, title)
+      await this.#persistTitleIndex()
     }
     if (model) await this.setModel(session.sessionId, model)
     this.#emit("session.created", session.sessionId)
@@ -755,6 +764,7 @@ export class AcpService {
   }
 
   async renameSession(sessionID, title) {
+    await this.#restoreTitleIndex()
     const normalized = title.trim().replace(/\s+/g, " ")
     if (!normalized) throw new Error("A session title is required")
     await this.#requireSession(sessionID)
@@ -774,6 +784,7 @@ export class AcpService {
       this.#actionStates.delete(sessionID)
       this.#authoritativeActionStates.delete(sessionID)
       this.#titles.delete(sessionID)
+      await this.#persistTitleIndex()
       await this.#refreshSessions()
       const session = this.#sessions.get(sessionID)
       if (!session) throw new Error("Harness session not found after rename")
@@ -790,6 +801,7 @@ export class AcpService {
     if (await this.#nativeRenameAvailable(sessionID)) {
       await this.#sendNativeSessionName(sessionID, normalized)
       this.#titles.delete(sessionID)
+      await this.#persistTitleIndex()
       await this.#refreshSessions()
       const session = this.#sessions.get(sessionID)
       if (!session) throw new Error("Harness session not found after rename")
@@ -804,6 +816,7 @@ export class AcpService {
     }
 
     this.#titles.set(sessionID, normalized)
+    await this.#persistTitleIndex()
     this.#persistSnapshot(sessionID)
     this.#emit("session.updated", sessionID)
     return sessionView(
@@ -871,6 +884,7 @@ export class AcpService {
       if (!await this.#nativeRenameAvailable(sessionID)) return
       await this.#sendNativeSessionName(sessionID, title)
       this.#titles.delete(sessionID)
+      await this.#persistTitleIndex()
       await this.#refreshSessions()
     } catch {
       this.#titles.set(sessionID, title)
@@ -878,6 +892,7 @@ export class AcpService {
   }
 
   async deleteSession(sessionID) {
+    await this.#restoreTitleIndex()
     // A Session deleted by a pre-index Harness Remote may already carry deleted:true only in its
     // per-Session snapshot. Restoring that snapshot must migrate the tombstone into the lightweight
     // deletion index instead of failing before the index can be written. This keeps DELETE
@@ -897,6 +912,7 @@ export class AcpService {
     this.#messages.delete(sessionID)
     this.#todos.delete(sessionID)
     this.#titles.delete(sessionID)
+    await this.#persistTitleIndex()
     this.#configOptions.delete(sessionID)
     this.#commandCatalogs.delete(sessionID)
     for (const resolve of this.#commandCatalogWaiters.get(sessionID) ?? []) resolve()
@@ -1384,6 +1400,7 @@ export class AcpService {
     } else {
       await this.#load(sessionID)
     }
+    await this.#requireSessionDirectory(this.#sessions.get(sessionID))
     this.#resetActionsForSessionChange(sessionID)
     if (this.#active.has(sessionID)) {
       const messageID = this.#recordPrompt(sessionID, text, attachments)
@@ -1595,6 +1612,7 @@ export class AcpService {
       await Promise.all(this.#snapshotWrites.values())
     }
     await this.#deletedSessionIndexWrite
+    await this.#titleIndexWrite
   }
 
   /**
@@ -1607,6 +1625,55 @@ export class AcpService {
   async deletedSessionIDs() {
     await this.#restoreDeletedSessionIndex()
     return new Set(this.#deletedSessions)
+  }
+
+  /** Persistent bridge-local names for lightweight index reads. */
+  async titleOverrides() {
+    await this.#restoreTitleIndex()
+    return new Map(this.#titles)
+  }
+
+  #titleIndexPath() {
+    return path.join(this.#snapshotDirectory, "session-titles.json")
+  }
+
+  async #restoreTitleIndex() {
+    if (this.#titleIndexLoading) return this.#titleIndexLoading
+    if (!this.#snapshotDirectory || this.#titleIndexLoaded) return
+    const loading = this.#readTitleIndex()
+    this.#titleIndexLoading = loading
+    try { await loading } finally { this.#titleIndexLoading = undefined }
+  }
+
+  async #readTitleIndex() {
+    this.#titleIndexLoaded = true
+    try {
+      const state = JSON.parse(await readFile(this.#titleIndexPath(), "utf8"))
+      if (state?.version !== 1 || !state.titles || typeof state.titles !== "object" || Array.isArray(state.titles)) return
+      for (const [sessionID, title] of Object.entries(state.titles)) {
+        if (sessionID && typeof title === "string" && title) this.#titles.set(sessionID, title)
+      }
+    } catch (error) {
+      if (error?.code !== "ENOENT") {
+        this.#titleIndexLoaded = false
+        throw error
+      }
+    }
+  }
+
+  async #persistTitleIndex() {
+    if (!this.#snapshotDirectory) return
+    const previous = this.#titleIndexWrite
+    const writing = previous.catch(() => undefined).then(async () => {
+      await mkdir(this.#snapshotDirectory, { recursive: true })
+      const target = this.#titleIndexPath()
+      const temporary = `${target}.${process.pid}.${randomUUID()}.tmp`
+      const titles = Object.fromEntries([...this.#titles.entries()].sort(([left], [right]) => left.localeCompare(right)))
+      await writeFile(temporary, JSON.stringify({ version: 1, titles }), { mode: 0o600 })
+      await rename(temporary, target)
+    })
+    this.#titleIndexWrite = writing
+    await writing
   }
 
   #deletedSessionIndexPath() {
@@ -1672,6 +1739,7 @@ export class AcpService {
   }
 
   async #readSnapshot(sessionID) {
+    await this.#restoreTitleIndex()
     try {
       const snapshot = JSON.parse(await readFile(this.#snapshotPath(sessionID), "utf8"))
       if (snapshot?.version !== 1) return
@@ -1701,7 +1769,7 @@ export class AcpService {
         && snapshot.selectedModel.providerID === this.#modelProviderID) {
         this.#fallbackModelSelections.set(sessionID, snapshot.selectedModel)
       }
-      if (!this.#preferListedTitles && typeof snapshot.title === "string" && snapshot.title) this.#titles.set(sessionID, snapshot.title)
+      if (!this.#preferListedTitles && !this.#titles.has(sessionID) && typeof snapshot.title === "string" && snapshot.title) this.#titles.set(sessionID, snapshot.title)
       if (snapshot?.deleted === true) this.#deletedSessions.add(sessionID)
     } catch (error) {
       if (error?.code !== "ENOENT") this.#emit("session.error", sessionID, { message: "Stored session snapshot is unreadable" })
@@ -1931,6 +1999,7 @@ export class AcpService {
     }
     // A single adapter process is not restarted by a request on its own, and the one that opened
     // this Session may have exited since. A project-scoped client starts its own process per request.
+    await this.#requireSessionDirectory(session)
     if (typeof this.#acp.withSession !== "function") await this.#acp.start?.()
     if (await this.#openWithoutReplay(sessionID, session)) return
     this.#replaying.add(sessionID)
@@ -1984,6 +2053,15 @@ export class AcpService {
    */
   #journalSeedsOwnedTranscript() {
     return this.#historyLoader?.authoritativeHistory !== true && !this.#journalPageWhileOwned
+  }
+
+  async #requireSessionDirectory(session) {
+    if (!this.#requireExistingDirectory) return
+    try {
+      if (!(await stat(session.cwd)).isDirectory()) throw new Error("Not a directory")
+    } catch (error) {
+      throw new Error(`Session project directory is missing or inaccessible: ${session.cwd}. History is still available; restore the directory before continuing this Session.`, { cause: error })
+    }
   }
 
   /**

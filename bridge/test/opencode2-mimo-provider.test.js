@@ -23,12 +23,12 @@ test("OpenCode 2 provider uses the dedicated binary alias and rich ACP surface",
   assert.equal(provider.capabilities.models, true)
   assert.equal(provider.capabilities.commands, true)
   assert.equal(provider.capabilities.permissions, true)
-  assert.equal(provider.capabilities.sessionRename, false)
-  assert.equal(provider.capabilities.sessionDelete, false)
+  assert.equal(provider.capabilities.sessionRename, true)
+  assert.equal(provider.capabilities.sessionDelete, true)
 
   assert.deepEqual(contract.models.variantConfigIDs, ["effort"])
   assert.equal(contract.sessions.discovery, "native-list")
-  assert.equal(contract.sessions.transcript, "session-load")
+  assert.equal(contract.sessions.transcript, "native-export")
 })
 
 test("MiMo uses native project-scoped sessions and excludes the retired hosted model", () => {
@@ -58,8 +58,8 @@ test("MiMo uses native project-scoped sessions and excludes the retired hosted m
   assert.equal(provider.capabilities.todos, false)
   assert.equal(provider.capabilities.questions, false)
   assert.equal(provider.capabilities.actions, false)
-  assert.equal(provider.capabilities.sessionRename, false)
-  assert.equal(provider.capabilities.sessionDelete, false)
+  assert.equal(provider.capabilities.sessionRename, true)
+  assert.equal(provider.capabilities.sessionDelete, true)
 
   assert.deepEqual(contract.models.variantConfigIDs, [])
   assert.equal(contract.sessions.discovery, "native-list")

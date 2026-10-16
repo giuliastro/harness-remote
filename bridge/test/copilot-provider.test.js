@@ -29,8 +29,8 @@ test("Copilot provider advertises only the ACP capabilities currently justified 
   assert.equal(provider.capabilities.todos, false)
   assert.equal(provider.capabilities.questions, false)
   assert.equal(provider.capabilities.actions, false)
-  assert.equal(provider.capabilities.sessionRename, false)
-  assert.equal(provider.capabilities.sessionDelete, false)
+  assert.equal(provider.capabilities.sessionRename, true)
+  assert.equal(provider.capabilities.sessionDelete, true)
 
   assert.equal(contract.protocol, "acp")
   assert.equal(contract.sessions.discovery, "native-list")

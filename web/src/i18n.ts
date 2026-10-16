@@ -429,6 +429,7 @@ type TranslationKey =
   | 'sf.renameSessionNamed'
   | 'sf.deleteSessionTitle'
   | 'sf.deleteSubtitle'
+  | 'sf.hideSessionSubtitle'
   | 'sf.closeDelete'
   | 'sf.keepSession'
   | 'sf.deleteSession'
@@ -957,6 +958,7 @@ const translations: Record<LanguageCode, Partial<Record<TranslationKey, string>>
     'sf.renameSessionNamed': 'Rename Session: {title}',
     'sf.deleteSessionTitle': 'Delete “{title}”?',
     'sf.deleteSubtitle': 'This deletes the native Session from {agent}. This cannot be undone from Harness Remote.',
+    'sf.hideSessionSubtitle': 'This hides the Session from Harness Remote. The native Session remains in {agent}.',
     'sf.closeDelete': 'Close Delete Session',
     'sf.keepSession': 'Keep Session',
     'sf.deleteSession': 'Delete Session',
@@ -1485,6 +1487,7 @@ const translations: Record<LanguageCode, Partial<Record<TranslationKey, string>>
     'sf.renameSessionNamed': 'Rinomina sessione: {title}',
     'sf.deleteSessionTitle': 'Eliminare “{title}”?',
     'sf.deleteSubtitle': 'Elimina la sessione nativa da {agent}. L\'operazione non è annullabile da Harness Remote.',
+    'sf.hideSessionSubtitle': 'Nasconde la sessione da Harness Remote. La sessione nativa resta in {agent}.',
     'sf.closeDelete': 'Chiudi Elimina sessione',
     'sf.keepSession': 'Mantieni sessione',
     'sf.deleteSession': 'Elimina sessione',
@@ -2013,6 +2016,7 @@ const translations: Record<LanguageCode, Partial<Record<TranslationKey, string>>
     'sf.renameSessionNamed': '重新命名工作階段：{title}',
     'sf.deleteSessionTitle': '要刪除「{title}」嗎？',
     'sf.deleteSubtitle': '這會從 {agent} 刪除原生工作階段，且無法從 Harness Remote 復原。',
+    'sf.hideSessionSubtitle': '這會在 Harness Remote 中隱藏工作階段。原生工作階段仍保留在 {agent}。',
     'sf.closeDelete': '關閉刪除工作階段',
     'sf.keepSession': '保留工作階段',
     'sf.deleteSession': '刪除工作階段',
@@ -2541,6 +2545,7 @@ const translations: Record<LanguageCode, Partial<Record<TranslationKey, string>>
     'sf.renameSessionNamed': '重命名会话：{title}',
     'sf.deleteSessionTitle': '要删除“{title}”吗？',
     'sf.deleteSubtitle': '这会从 {agent} 删除原生会话，且无法从 Harness Remote 撤销。',
+    'sf.hideSessionSubtitle': '这会在 Harness Remote 中隐藏会话。原生会话仍保留在 {agent}。',
     'sf.closeDelete': '关闭删除会话',
     'sf.keepSession': '保留会话',
     'sf.deleteSession': '删除会话',

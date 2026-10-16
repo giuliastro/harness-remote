@@ -128,7 +128,7 @@ export async function createAcpProviderRuntime({
         replayUserChunksAreMessages: provider.replayUserChunksAreMessages,
         refreshSessionListOnRead: provider.refreshSessionListOnRead,
         snapshotDirectory: path.join(config.stateDirectory, provider.id),
-        historyLoader: provider.historyLoader,
+        historyLoader: provider.createHistoryLoader?.(launch) ?? provider.historyLoader,
         preserveListedTimestamps: provider.preserveListedTimestamps,
         hiddenSessionIDs: modelCatalog.hiddenSessionIDs,
         reloadOnHistoryRefresh: provider.reloadOnHistoryRefresh,
