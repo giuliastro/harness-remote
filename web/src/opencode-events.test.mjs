@@ -341,11 +341,16 @@ await new Promise((resolve) => setTimeout(resolve, 10))
 assert.equal(hiddenConnects, 2, 'visible transition must resume a suspended subscription once')
 hiddenSubscription.close()
 
-// A retry queued before backgrounding is cancelled and cannot fire on its old delay.
+// A retry queued before backgrounding is cancelled and cannot fire on its old delay. Hide as soon
+// as the retry is queued: Windows timer granularity can stretch an extra 0ms hop past the 15ms
+// retry delay, which would let the retry fire while still visible and prove nothing about the
+// cancellation this scenario is actually testing.
 const retryVisibilityTarget = new EventTarget()
 const retryNetworkTarget = new EventTarget()
 let retryVisible = true
 let retryConnects = 0
+let retryQueued
+const retryQueuedPromise = new Promise((resolve) => { retryQueued = resolve })
 const retrySubscription = createFetchOpenCodeEventSubscription({
   url: 'http://127.0.0.1:4097/global/event',
   reconnect: { initialDelayMs: 15, maxDelayMs: 15 },
@@ -361,11 +366,11 @@ const retrySubscription = createFetchOpenCodeEventSubscription({
     })
   },
   onEvent() {},
+  onStatus(status) { if (status.type === 'reconnecting') retryQueued() },
   logger() {}
 })
-await new Promise((resolve) => setTimeout(resolve, 0))
+await retryQueuedPromise
 assert.equal(retryConnects, 1)
-await new Promise((resolve) => setTimeout(resolve, 0))
 retryVisible = false
 retryVisibilityTarget.dispatchEvent(new Event('visibilitychange'))
 retryNetworkTarget.dispatchEvent(new Event('online'))
