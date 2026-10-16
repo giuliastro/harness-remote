@@ -12,7 +12,7 @@ import {
 } from "../appPreferences"
 import { ChatIcon, LoadingIcon, RefreshIcon, ServerIcon, SettingsIcon } from "../Icons"
 import { createTranslator, languageOptions, type LanguageCode, type Translator } from "../i18n"
-import { chooseDesktopProjectFolder, desktopProjectRoots, setDesktopProjectRoots } from "../desktopBridge"
+import { chooseDesktopProjectFolder, desktopNetworkSettings, desktopProjectRoots, setDesktopNetworkSettings, setDesktopProjectRoots } from "../desktopBridge"
 import {
   availableMachineAgentCount,
   checkingMachineHealth,
@@ -50,6 +50,7 @@ import { reuseList } from "../workspace-runtime-merge"
 import { useDialogDismiss } from "../useDialogDismiss"
 import { useTranslator } from "../useTranslator"
 import { CommandPalette, type PaletteCommand } from "./shell"
+import { MachinePairingDialog } from "./machine-pairing-dialog"
 import { NativeSessionActions } from "./native-session-actions"
 import { NativeSessionHome } from "./native-session-home"
 import { NativeSessionTitle } from "./native-session-rename"
@@ -313,6 +314,7 @@ function MachineManager({
   onClose,
   onPersist,
   onScanPairing,
+  onOpenSettings,
   pairingBusy = false,
   pairingSuccessRevision = 0,
   pairingSuccessMachineName = null
@@ -321,6 +323,7 @@ function MachineManager({
   onClose: () => void
   onPersist: (machines: WorkspaceMachine[]) => void
   onScanPairing?: () => Promise<void>
+  onOpenSettings?: () => void
   pairingBusy?: boolean
   pairingSuccessRevision?: number
   pairingSuccessMachineName?: string | null
@@ -334,6 +337,7 @@ function MachineManager({
   const [editorBusy, setEditorBusy] = useState(false)
   const [machineFolders, setMachineFolders] = useState<Record<string, MachineFolders | undefined>>({})
   const [confirmRemoveID, setConfirmRemoveID] = useState<string | null>(null)
+  const [pairingMachineID, setPairingMachineID] = useState<string | null>(null)
   const [completionMachineName, setCompletionMachineName] = useState<string | null>(null)
   const [health, setHealth] = useState<Record<string, MachineManagerHealth<MachineSnapshot> | undefined>>({})
   const probeRequestIDs = useRef<Record<string, number>>({})
@@ -387,8 +391,11 @@ function MachineManager({
     }
   }, [machines, probeMachine])
 
+  const pairingMachine = pairingMachineID ? machines.find((machine) => machine.id === pairingMachineID) ?? null : null
   const dismiss = () => { if (!editorBusy) { if (editingID) setEditingID(null); else onClose() } }
-  useDialogDismiss(dialogRef, dismiss)
+  // The pairing dialog nested in this one owns Escape while it is open: the shared hook would
+  // otherwise dismiss the whole Machines dialog underneath it on the same keypress.
+  useDialogDismiss(dialogRef, dismiss, { enabled: !pairingMachine })
 
   useEffect(() => {
     if (pairingSuccessRevision <= 0) return
@@ -500,6 +507,7 @@ function MachineManager({
                   ) : (
                     <>
                       {state === "offline" ? <button type="button" className="uw-manager-button" data-machine-retry onClick={() => probeMachine(machine)}>{t("sf.retry")}</button> : null}
+                      <button type="button" className="uw-manager-button" data-machine-pair-phone onClick={() => setPairingMachineID(machine.id)}>{t("pair.action")}</button>
                       <button type="button" className="uw-manager-button" data-machine-edit onClick={() => { setCompletionMachineName(null); setEditingMachine(machine); setEditingID(machine.id) }}>{t("sf.edit")}</button>
                       {!runtimeOwned ? (
                         <>
@@ -531,6 +539,7 @@ function MachineManager({
             </div>
           ) : null}
         </footer>
+        {pairingMachine ? <MachinePairingDialog machine={pairingMachine} onClose={() => setPairingMachineID(null)} onOpenSettings={isDesktopLocalMachine(pairingMachine) ? onOpenSettings : undefined} /> : null}
       </section>
     </div>
   )
@@ -539,9 +548,41 @@ function MachineManager({
 function MobileSettingsPage({ onClose }: { onClose: () => void }) {
   const [language, setLanguage] = useState<LanguageCode>(loadLanguage)
   const [theme, setTheme] = useState<ThemePreference>(loadThemePreference)
+  // The local daemon's network exposure is an app-level setting: only the desktop shell has an
+  // embedded runtime to configure, so a missing bridge hides the section instead of explaining it.
+  const [network, setNetwork] = useState<{ lanPairing: boolean } | null>(null)
+  const [networkBusy, setNetworkBusy] = useState(false)
+  const [networkError, setNetworkError] = useState<string | null>(null)
   const t = useMemo(() => createTranslator(language), [language])
   const pageRef = useRef<HTMLElement>(null)
   useDialogDismiss(pageRef, onClose, { autoFocus: false })
+
+  useEffect(() => {
+    let cancelled = false
+    void desktopNetworkSettings().then((state) => {
+      if (!cancelled && state) setNetwork({ lanPairing: state.lanPairing })
+    }).catch(() => {})
+    return () => { cancelled = true }
+  }, [])
+
+  /**
+   * LAN pairing applies immediately: there is no separate save. The main process shows the native
+   * confirmation, restarts the local runtime when the user accepts, and answers with the state that
+   * is true now. The toggle is always re-synced from that answer, so a cancelled dialog snaps back.
+   */
+  async function toggleLocalNetworkPairing(enabled: boolean) {
+    if (networkBusy) return
+    setNetworkBusy(true)
+    setNetworkError(null)
+    try {
+      const result = await setDesktopNetworkSettings(enabled)
+      if (!result) throw new Error(t("machine.networkPairingError"))
+      setNetwork({ lanPairing: result.lanPairing })
+    } catch (error) {
+      setNetwork((current) => (current ? { ...current } : current))
+      setNetworkError(error instanceof Error ? error.message : t("machine.networkPairingError"))
+    } finally { setNetworkBusy(false) }
+  }
 
   function changeLanguage(value: string) {
     const next = languageOptions.find((option) => option.code === value)?.code
@@ -570,6 +611,23 @@ function MobileSettingsPage({ onClose }: { onClose: () => void }) {
             <label><strong>{t("settings.language")}</strong><select value={language} onChange={(event) => changeLanguage(event.target.value)}>{languageOptions.map((option) => <option value={option.code} key={option.code}>{option.label}</option>)}</select></label>
           </div>
           <p>{t("sf.appearanceShared")}</p>
+          {network ? (
+            <div className="hr-mobile-settings-group">
+              <span>{t("machine.networkPairingTitle")}</span>
+              <label>
+                <strong>{t("machine.networkPairingEnable")}</strong>
+                <input
+                  type="checkbox"
+                  data-settings-network-pairing
+                  checked={network.lanPairing}
+                  disabled={networkBusy}
+                  onChange={(event) => void toggleLocalNetworkPairing(event.target.checked)}
+                />
+              </label>
+              <p>{t("machine.networkPairingHint")}</p>
+              {networkError ? <p role="alert">{networkError}</p> : null}
+            </div>
+          ) : null}
         </div>
         <footer><button type="button" className="tdw-button primary" onClick={onClose}>{t("action.close")}</button></footer>
       </section>
@@ -1429,6 +1487,7 @@ export function StandaloneUniversalWorkspace({
           onClose={() => setManagerOpen(false)}
           onPersist={onPersistMachines}
           onScanPairing={onScanMachinePairing}
+          onOpenSettings={showSettings}
           pairingBusy={machinePairingBusy}
           pairingSuccessRevision={machinePairingSuccessRevision}
           pairingSuccessMachineName={machinePairingSuccessMachineName}

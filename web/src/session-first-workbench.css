@@ -1467,6 +1467,19 @@
   font-size: 14px;
 }
 
+/* A checkbox is the one control in a settings row that must not fill its column: it sits at the
+   end of the row like a switch, at a size you can hit with a thumb. */
+.hr-session-settings-page .hr-mobile-settings-group label input[type="checkbox"] {
+  justify-self: end;
+  width: 18px;
+  height: 18px;
+  margin: 0;
+}
+
+.hr-session-settings-page .hr-mobile-settings-group > p[role="alert"] {
+  color: var(--td3-red-text, inherit);
+}
+
 .uw-machine-overview {
   display: grid;
   gap: 12px;
@@ -1568,6 +1581,12 @@
   color: var(--td3-muted);
   font-size: 11px;
   line-height: 1.5;
+}
+
+/* The caption belongs to the group above it. When a second card follows, it needs its own breath
+   before it instead of sitting flush against the sentence. */
+.hr-session-settings-page .hr-mobile-settings-body > p + .hr-mobile-settings-group {
+  margin-top: 14px;
 }
 
 .hr-session-settings-page > footer {

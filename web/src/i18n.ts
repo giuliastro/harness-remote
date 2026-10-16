@@ -72,6 +72,14 @@ type TranslationKey =
   | 'machine.foldersBusy'
   | 'machine.foldersControlled'
   | 'machine.folderPickerError'
+  | 'machine.networkPairingTitle'
+  | 'machine.networkPairingEnable'
+  | 'machine.networkPairingHint'
+  | 'machine.networkPairingConfirmMessage'
+  | 'machine.networkPairingConfirmDetail'
+  | 'machine.networkPairingConfirmDisableDetail'
+  | 'machine.networkPairingError'
+  | 'machine.runtimeBusy'
   | 'machine.connectionInvalid'
   | 'machine.probeUnsupported'
   | 'machine.connectionCheckFailed'
@@ -463,6 +471,31 @@ type TranslationKey =
   | 'sf.pairingFailed'
   | 'sf.qrPairingFailed'
   | 'sf.dismissPairingStatus'
+  | 'pair.action'
+  | 'pair.title'
+  | 'pair.subtitle'
+  | 'pair.issuing'
+  | 'pair.qrLabel'
+  | 'pair.qrUnavailable'
+  | 'pair.address'
+  | 'pair.expiresIn'
+  | 'pair.expiredTitle'
+  | 'pair.expiredBody'
+  | 'pair.regenerate'
+  | 'pair.replaceHint'
+  | 'pair.claimedTitle'
+  | 'pair.claimedBody'
+  | 'pair.pairAnother'
+  | 'pair.loopbackTitle'
+  | 'pair.loopbackBody'
+  | 'pair.loopbackLocalHint'
+  | 'pair.loopbackLocalAction'
+  | 'pair.unsupportedTitle'
+  | 'pair.unsupportedBody'
+  | 'pair.failedTitle'
+  | 'pair.noAddressTitle'
+  | 'pair.noAddressBody'
+  | 'pair.retry'
   | 'sf.preparing'
   | 'sf.connectingMachines'
   | 'sf.connectingBody'
@@ -621,6 +654,14 @@ const translations: Record<LanguageCode, Partial<Record<TranslationKey, string>>
     'machine.foldersBusy': 'Project folders are already being updated. Try again in a moment.',
     'machine.foldersControlled': 'Project folders are controlled by HARNESS_REMOTE_ROOT.',
     'machine.folderPickerError': 'Could not open the folder picker.',
+    'machine.networkPairingTitle': 'Phone pairing',
+    'machine.networkPairingEnable': 'Allow phones on the local network to pair with this computer',
+    'machine.networkPairingHint': 'The daemon stays password-protected, but becomes reachable from your network. If your system asks to allow incoming connections, accept. Changing this restarts the local runtime.',
+    'machine.networkPairingConfirmMessage': 'Apply the phone pairing change and restart the local runtime?',
+    'machine.networkPairingConfirmDetail': 'Phones on your local network will be able to reach this computer’s daemon. It stays password-protected, and pairing still requires a one-time code.',
+    'machine.networkPairingConfirmDisableDetail': 'Phones on your local network will no longer reach this computer’s daemon. Outstanding pairing links stop working.',
+    'machine.networkPairingError': 'The phone pairing setting could not be updated.',
+    'machine.runtimeBusy': 'Another local runtime change is in progress. Try again in a moment.',
     'machine.connectionInvalid': 'Machine connection is invalid.',
     'machine.probeUnsupported': 'Unsupported machine configuration probe.',
     'machine.connectionCheckFailed': 'Could not check this machine’s connection.',
@@ -991,6 +1032,31 @@ const translations: Record<LanguageCode, Partial<Record<TranslationKey, string>>
     'sf.pairingFailed': 'Machine pairing failed.',
     'sf.qrPairingFailed': 'QR pairing failed.',
     'sf.dismissPairingStatus': 'Dismiss machine pairing status',
+    'pair.action': 'Pair a phone',
+    'pair.title': 'Pair a phone',
+    'pair.subtitle': 'Scan this QR with Harness Remote on your phone to add {name}.',
+    'pair.issuing': 'Preparing a pairing code…',
+    'pair.qrLabel': 'Machine pairing QR code',
+    'pair.qrUnavailable': 'The pairing code could not be rendered. Regenerate it and try again.',
+    'pair.address': 'Address',
+    'pair.expiresIn': 'Expires in {time}',
+    'pair.expiredTitle': 'Pairing code expired',
+    'pair.expiredBody': 'A pairing code stays valid for 5 minutes. Regenerate one to connect a phone.',
+    'pair.regenerate': 'Regenerate code',
+    'pair.replaceHint': 'Regenerating replaces the previous code immediately.',
+    'pair.claimedTitle': 'Phone paired',
+    'pair.claimedBody': '{name} is now available in Harness Remote on your phone.',
+    'pair.pairAnother': 'Pair another phone',
+    'pair.loopbackTitle': 'A phone cannot reach this machine',
+    'pair.loopbackBody': 'This machine’s daemon only accepts local connections. Configure it to listen on the LAN and restart it, then regenerate the code.',
+    'pair.loopbackLocalHint': 'To pair phones over your network, turn on phone pairing in Settings first.',
+    'pair.loopbackLocalAction': 'Open Settings',
+    'pair.unsupportedTitle': 'This daemon does not support phone pairing yet',
+    'pair.unsupportedBody': 'Update Harness Remote on {name}, then try again.',
+    'pair.failedTitle': 'Pairing code unavailable',
+    'pair.noAddressTitle': 'No address a phone can reach',
+    'pair.noAddressBody': 'This machine reports no network address usable for pairing. Check its network connection and try again.',
+    'pair.retry': 'Try again',
     'sf.preparing': 'Preparing Harness Remote',
     'sf.connectingMachines': 'Connecting to your machines…',
     'sf.connectingBody': 'Discovering Projects, installed coding agents and native Sessions. An ACP harness may need a few seconds to start.',
@@ -1149,6 +1215,14 @@ const translations: Record<LanguageCode, Partial<Record<TranslationKey, string>>
     'machine.foldersBusy': 'Le cartelle dei progetti sono già in aggiornamento. Riprova tra poco.',
     'machine.foldersControlled': 'Le cartelle dei progetti sono gestite da HARNESS_REMOTE_ROOT.',
     'machine.folderPickerError': 'Impossibile aprire il selettore di cartelle.',
+    'machine.networkPairingTitle': 'Pairing del telefono',
+    'machine.networkPairingEnable': 'Consenti ai telefoni sulla rete locale di accoppiarsi con questo computer',
+    'machine.networkPairingHint': 'Il daemon resta protetto da password, ma diventa raggiungibile dalla tua rete. Se il sistema chiede di consentire le connessioni in entrata, accetta. Modificando questa opzione il runtime locale verrà riavviato.',
+    'machine.networkPairingConfirmMessage': 'Applicare la modifica al pairing del telefono e riavviare il runtime locale?',
+    'machine.networkPairingConfirmDetail': 'I telefoni sulla rete locale potranno raggiungere il daemon di questo computer. Resta protetto da password e il pairing richiede comunque un codice monouso.',
+    'machine.networkPairingConfirmDisableDetail': 'I telefoni sulla rete locale non potranno più raggiungere il daemon di questo computer. I link di pairing ancora attivi smetteranno di funzionare.',
+    'machine.networkPairingError': 'Impossibile aggiornare l’impostazione di pairing del telefono.',
+    'machine.runtimeBusy': 'Un’altra modifica al runtime locale è in corso. Riprova tra un momento.',
     'machine.connectionInvalid': 'La connessione della macchina non è valida.',
     'machine.probeUnsupported': 'Verifica della configurazione della macchina non supportata.',
     'machine.connectionCheckFailed': 'Impossibile verificare la connessione a questa macchina.',
@@ -1519,6 +1593,31 @@ const translations: Record<LanguageCode, Partial<Record<TranslationKey, string>>
     'sf.pairingFailed': 'Collegamento della macchina non riuscito.',
     'sf.qrPairingFailed': 'Collegamento tramite QR non riuscito.',
     'sf.dismissPairingStatus': 'Chiudi stato collegamento macchina',
+    'pair.action': 'Abbina un telefono',
+    'pair.title': 'Abbina un telefono',
+    'pair.subtitle': 'Scansiona questo QR con Harness Remote sul telefono per aggiungere {name}.',
+    'pair.issuing': 'Preparazione codice di abbinamento…',
+    'pair.qrLabel': 'Codice QR di abbinamento macchina',
+    'pair.qrUnavailable': 'Impossibile mostrare il codice di abbinamento. Rigeneralo e riprova.',
+    'pair.address': 'Indirizzo',
+    'pair.expiresIn': 'Scade tra {time}',
+    'pair.expiredTitle': 'Codice di abbinamento scaduto',
+    'pair.expiredBody': 'Un codice di abbinamento resta valido per 5 minuti. Rigenerane uno per collegare un telefono.',
+    'pair.regenerate': 'Rigenera codice',
+    'pair.replaceHint': 'La rigenerazione sostituisce subito il codice precedente.',
+    'pair.claimedTitle': 'Telefono abbinato',
+    'pair.claimedBody': '{name} è ora disponibile in Harness Remote sul tuo telefono.',
+    'pair.pairAnother': 'Abbina un altro telefono',
+    'pair.loopbackTitle': 'Un telefono non può raggiungere questa macchina',
+    'pair.loopbackBody': 'Il daemon di questa macchina accetta solo connessioni locali. Configuralo per ascoltare sulla LAN e riavvialo, poi rigenera il codice.',
+    'pair.loopbackLocalHint': 'Per accoppiare telefoni sulla rete, attiva prima il pairing del telefono nelle Impostazioni.',
+    'pair.loopbackLocalAction': 'Apri le Impostazioni',
+    'pair.unsupportedTitle': 'Questo daemon non supporta ancora l’abbinamento del telefono',
+    'pair.unsupportedBody': 'Aggiorna Harness Remote su {name}, poi riprova.',
+    'pair.failedTitle': 'Codice di abbinamento non disponibile',
+    'pair.noAddressTitle': 'Nessun indirizzo raggiungibile da un telefono',
+    'pair.noAddressBody': 'Questa macchina non segnala indirizzi di rete utilizzabili per l’abbinamento. Controlla la connessione di rete e riprova.',
+    'pair.retry': 'Riprova',
     'sf.preparing': 'Preparazione di Harness Remote',
     'sf.connectingMachines': 'Connessione alle tue macchine…',
     'sf.connectingBody': 'Individuazione di progetti, coding agent installati e sessioni native. Un harness ACP può richiedere alcuni secondi per avviarsi.',
@@ -1677,6 +1776,14 @@ const translations: Record<LanguageCode, Partial<Record<TranslationKey, string>>
     'machine.foldersBusy': '專案資料夾正在更新中。請稍後再試。',
     'machine.foldersControlled': '專案資料夾由 HARNESS_REMOTE_ROOT 控制。',
     'machine.folderPickerError': '無法開啟資料夾選擇器。',
+    'machine.networkPairingTitle': '手機配對',
+    'machine.networkPairingEnable': '允許區域網路上的手機與此電腦配對',
+    'machine.networkPairingHint': 'daemon 仍然受密碼保護，但會從你的網路可連線。如果系統詢問是否允許連入連線，請允許。變更此設定會重新啟動本機執行環境。',
+    'machine.networkPairingConfirmMessage': '要套用手機配對變更並重新啟動本機執行環境嗎？',
+    'machine.networkPairingConfirmDetail': '區域網路上的手機將可連線至此電腦的 daemon。daemon 仍然受密碼保護，配對仍需要一次性的配對碼。',
+    'machine.networkPairingConfirmDisableDetail': '區域網路上的手機將無法再連線至此電腦的 daemon。尚未使用的配對連結將停止運作。',
+    'machine.networkPairingError': '無法更新手機配對設定。',
+    'machine.runtimeBusy': '另一個本機執行環境變更正在進行中。請稍後再試。',
     'machine.connectionInvalid': '機器連線無效。',
     'machine.probeUnsupported': '不支援此機器設定檢查。',
     'machine.connectionCheckFailed': '無法檢查此機器的連線。',
@@ -2047,6 +2154,31 @@ const translations: Record<LanguageCode, Partial<Record<TranslationKey, string>>
     'sf.pairingFailed': '機器配對失敗。',
     'sf.qrPairingFailed': 'QR 配對失敗。',
     'sf.dismissPairingStatus': '關閉機器配對狀態',
+    'pair.action': '配對手機',
+    'pair.title': '配對手機',
+    'pair.subtitle': '用手機上的 Harness Remote 掃描此 QR 碼，即可新增 {name}。',
+    'pair.issuing': '正在準備配對碼…',
+    'pair.qrLabel': '機器配對 QR 碼',
+    'pair.qrUnavailable': '無法顯示配對碼。請重新產生後再試。',
+    'pair.address': '位址',
+    'pair.expiresIn': '{time} 後到期',
+    'pair.expiredTitle': '配對碼已過期',
+    'pair.expiredBody': '配對碼有效期為 5 分鐘。請重新產生以連接手機。',
+    'pair.regenerate': '重新產生配對碼',
+    'pair.replaceHint': '重新產生會立即取代先前的配對碼。',
+    'pair.claimedTitle': '手機已配對',
+    'pair.claimedBody': '{name} 現在已可在手機上的 Harness Remote 中使用。',
+    'pair.pairAnother': '配對另一支手機',
+    'pair.loopbackTitle': '手機無法連線到此機器',
+    'pair.loopbackBody': '此機器的 daemon 只接受本機連線。請將其設定為在區域網路上接聽並重新啟動，然後重新產生配對碼。',
+    'pair.loopbackLocalHint': '若要透過網路配對手機，請先在「設定」中啟用手機配對。',
+    'pair.loopbackLocalAction': '開啟「設定」',
+    'pair.unsupportedTitle': '此 daemon 尚未支援手機配對',
+    'pair.unsupportedBody': '請更新 {name} 上的 Harness Remote，然後再試。',
+    'pair.failedTitle': '無法取得配對碼',
+    'pair.noAddressTitle': '沒有手機可連線的位址',
+    'pair.noAddressBody': '此機器未回報可用於配對的網路位址。請檢查網路連線後再試。',
+    'pair.retry': '再試一次',
     'sf.preparing': '正在準備 Harness Remote',
     'sf.connectingMachines': '正在連線到你的機器…',
     'sf.connectingBody': '正在探索專案、已安裝的編碼代理與原生工作階段。ACP harness 可能需要幾秒鐘啟動。',
@@ -2205,6 +2337,14 @@ const translations: Record<LanguageCode, Partial<Record<TranslationKey, string>>
     'machine.foldersBusy': '项目文件夹正在更新，请稍后重试。',
     'machine.foldersControlled': '项目文件夹由 HARNESS_REMOTE_ROOT 控制。',
     'machine.folderPickerError': '无法打开文件夹选择器。',
+    'machine.networkPairingTitle': '手机配对',
+    'machine.networkPairingEnable': '允许局域网上的手机与此电脑配对',
+    'machine.networkPairingHint': 'daemon 仍然受密码保护，但会从你的网络可连接。如果系统询问是否允许连入连接，请允许。更改此设置会重启本地运行环境。',
+    'machine.networkPairingConfirmMessage': '要应用手机配对更改并重启本地运行环境吗？',
+    'machine.networkPairingConfirmDetail': '局域网上的手机将可连接到此电脑的 daemon。daemon 仍然受密码保护，配对仍然需要一次性的配对码。',
+    'machine.networkPairingConfirmDisableDetail': '局域网上的手机将无法再连接到此电脑的 daemon。尚未使用的配对链接将停止工作。',
+    'machine.networkPairingError': '无法更新手机配对设置。',
+    'machine.runtimeBusy': '另一个本地运行环境更改正在进行中。请稍后再试。',
     'machine.connectionInvalid': '机器连接无效。',
     'machine.probeUnsupported': '不支持此机器配置检查。',
     'machine.connectionCheckFailed': '无法检查此机器的连接。',
@@ -2575,6 +2715,31 @@ const translations: Record<LanguageCode, Partial<Record<TranslationKey, string>>
     'sf.pairingFailed': '机器配对失败。',
     'sf.qrPairingFailed': '二维码配对失败。',
     'sf.dismissPairingStatus': '关闭机器配对状态',
+    'pair.action': '配对手机',
+    'pair.title': '配对手机',
+    'pair.subtitle': '用手机上的 Harness Remote 扫描此二维码，即可添加 {name}。',
+    'pair.issuing': '正在准备配对码…',
+    'pair.qrLabel': '机器配对二维码',
+    'pair.qrUnavailable': '无法显示配对码。请重新生成后再试。',
+    'pair.address': '地址',
+    'pair.expiresIn': '{time} 后过期',
+    'pair.expiredTitle': '配对码已过期',
+    'pair.expiredBody': '配对码有效期为 5 分钟。请重新生成以连接手机。',
+    'pair.regenerate': '重新生成配对码',
+    'pair.replaceHint': '重新生成会立即替换之前的配对码。',
+    'pair.claimedTitle': '手机已配对',
+    'pair.claimedBody': '{name} 现在可在手机上的 Harness Remote 中使用。',
+    'pair.pairAnother': '配对另一部手机',
+    'pair.loopbackTitle': '手机无法连接到此机器',
+    'pair.loopbackBody': '此机器的 daemon 只接受本地连接。请将其配置为在局域网上监听并重新启动，然后重新生成配对码。',
+    'pair.loopbackLocalHint': '若要通过网络配对手机，请先在“设置”中启用手机配对。',
+    'pair.loopbackLocalAction': '打开“设置”',
+    'pair.unsupportedTitle': '此 daemon 尚不支持手机配对',
+    'pair.unsupportedBody': '请更新 {name} 上的 Harness Remote，然后再试。',
+    'pair.failedTitle': '无法获取配对码',
+    'pair.noAddressTitle': '没有手机可连接的地址',
+    'pair.noAddressBody': '此机器未报告可用于配对的网络地址。请检查网络连接后重试。',
+    'pair.retry': '重试',
     'sf.preparing': '正在准备 Harness Remote',
     'sf.connectingMachines': '正在连接你的机器…',
     'sf.connectingBody': '正在发现项目、已安装的编码代理和原生会话。ACP harness 可能需要几秒钟启动。',

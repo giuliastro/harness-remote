@@ -7,7 +7,9 @@ const calls = {
   unsubscribe: [],
   attention: [],
   runtimeGet: 0,
-  runtimeRetry: 0
+  runtimeRetry: 0,
+  networkGet: 0,
+  networkSet: []
 }
 
 let attentionActivation
@@ -17,6 +19,8 @@ let runtimeState = {
   status: "ready",
   machine: { profileId: "desktop-local-runtime", host: "127.0.0.1", port: 4111, pid: 1234 }
 }
+let networkState = { lanPairing: false }
+let networkFailure
 
 globalThis.window = {
   harnessDesktop: {
@@ -50,6 +54,16 @@ globalThis.window = {
     retryLocalRuntime() {
       calls.runtimeRetry += 1
       return Promise.resolve(runtimeState)
+    },
+    getNetworkSettings() {
+      calls.networkGet += 1
+      return Promise.resolve({ ...networkState })
+    },
+    setNetworkSettings(lanPairing, language) {
+      calls.networkSet.push({ lanPairing, language })
+      if (networkFailure) return Promise.reject(networkFailure)
+      networkState = { lanPairing }
+      return Promise.resolve({ ...networkState, cancelled: false })
     },
     subscribeEvents(profileId, options) {
       calls.subscribe.push({ profileId, options })
@@ -250,5 +264,19 @@ assert.deepEqual(calls.replace.at(-1).profiles.map((profile) => profile.id), ["m
 runtimeState = { status: "unavailable", error: "not installed" }
 assert.deepEqual(await bridge.retryDesktopLocalRuntime(), runtimeState)
 assert.equal(calls.runtimeRetry, 1)
+
+// The LAN pairing opt-in is a plain main-process setting the renderer proxies. A restart that the
+// user cancels in the native dialog answers cancelled without changing anything, and a busy runtime
+// or a failed IPC turns into the translated error the machine editor shows.
+assert.deepEqual(await bridge.desktopNetworkSettings(), { lanPairing: false })
+assert.equal(calls.networkGet, 1)
+assert.deepEqual(await bridge.setDesktopNetworkSettings(true), { lanPairing: true, cancelled: false })
+assert.equal(calls.networkSet.at(-1).lanPairing, true)
+assert.equal(typeof calls.networkSet.at(-1).language, "string")
+networkState = { lanPairing: true }
+networkFailure = new Error("boom")
+await assert.rejects(bridge.setDesktopNetworkSettings(false), /could not be updated|impossibile|無法|无法/i, "an IPC failure must surface the translated settings error")
+networkFailure = undefined
+assert.deepEqual(await bridge.desktopNetworkSettings(), { lanPairing: true })
 
 console.log("desktop workspace bridge regression tests passed")

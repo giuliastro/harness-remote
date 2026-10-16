@@ -8,6 +8,8 @@ import type {
   DesktopLocalRuntimeState,
   DesktopMenuCommand,
   DesktopMenuTemplate,
+  DesktopNetworkSettingsState,
+  DesktopNetworkSettingsUpdate,
   DesktopProfile,
   DesktopProfileSyncResult,
   DesktopProjectFolderChoice,
@@ -34,6 +36,8 @@ export type DesktopBridgeAPI = {
   getProjectRoots(): Promise<DesktopProjectRootsState>
   chooseProjectFolder(language?: string): Promise<DesktopProjectFolderChoice>
   setProjectRoots(roots: string[], language?: string): Promise<DesktopProjectRootsUpdate>
+  getNetworkSettings(): Promise<DesktopNetworkSettingsState>
+  setNetworkSettings(lanPairing: boolean, language?: string): Promise<DesktopNetworkSettingsUpdate>
   subscribeEvents(
     profileId: string,
     options: DesktopEventSubscriptionOptions,
@@ -240,6 +244,20 @@ export async function setDesktopProjectRoots(roots: string[]): Promise<DesktopPr
   let result: DesktopProjectRootsUpdate
   try { result = await api.setProjectRoots(roots, loadLanguage()) }
   catch { throw new Error(createTranslator(loadLanguage())("settings.projectFoldersError")) }
+  if (result.error) throw new Error(result.error)
+  return result
+}
+
+export async function desktopNetworkSettings(): Promise<DesktopNetworkSettingsState | null> {
+  return bridge()?.getNetworkSettings() ?? null
+}
+
+export async function setDesktopNetworkSettings(lanPairing: boolean): Promise<DesktopNetworkSettingsUpdate | null> {
+  const api = bridge()
+  if (!api) return null
+  let result: DesktopNetworkSettingsUpdate
+  try { result = await api.setNetworkSettings(lanPairing, loadLanguage()) }
+  catch { throw new Error(createTranslator(loadLanguage())("machine.networkPairingError")) }
   if (result.error) throw new Error(result.error)
   return result
 }

@@ -10,6 +10,8 @@ import type {
   DesktopLocalRuntimeState,
   DesktopMenuCommand,
   DesktopMenuTemplate,
+  DesktopNetworkSettingsState,
+  DesktopNetworkSettingsUpdate,
   DesktopProfile,
   DesktopProfileSyncResult,
   DesktopProjectFolderChoice,
@@ -31,6 +33,8 @@ const IPC_CHANNELS = Object.freeze({
   getProjectRoots: "desktop:project-roots:get",
   chooseProjectFolder: "desktop:project-roots:choose",
   setProjectRoots: "desktop:project-roots:set",
+  getNetworkSettings: "desktop:network:get",
+  setNetworkSettings: "desktop:network:set",
   notifyCompletion: "desktop:completion:notify",
   notifyAttention: "desktop:attention:notify",
   attentionActivated: "desktop:attention:activated",
@@ -90,6 +94,12 @@ const harnessDesktop = Object.freeze({
   },
   setProjectRoots(roots: string[], language?: string): Promise<DesktopProjectRootsUpdate> {
     return ipcRenderer.invoke(IPC_CHANNELS.setProjectRoots, roots, language)
+  },
+  getNetworkSettings(): Promise<DesktopNetworkSettingsState> {
+    return ipcRenderer.invoke(IPC_CHANNELS.getNetworkSettings)
+  },
+  setNetworkSettings(lanPairing: boolean, language?: string): Promise<DesktopNetworkSettingsUpdate> {
+    return ipcRenderer.invoke(IPC_CHANNELS.setNetworkSettings, lanPairing, language)
   },
   async subscribeEvents(
     profileId: string,

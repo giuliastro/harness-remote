@@ -62,6 +62,10 @@ Start the gateway on the computer you want to control, then:
 
 The QR uses a short-lived one-time pairing token. Manual address/credential entry remains available as a fallback.
 
+The same QR is available without the terminal: in the desktop or web app, open **Machines**, choose **Pair a phone** on the machine you want to connect, and scan the code it shows. It counts down the remaining validity and can be regenerated at any time; a new code replaces the previous one immediately.
+
+A daemon bound to loopback only explains that no phone can reach it instead of showing a dead QR. The desktop app's own local runtime starts loopback-only too: enable **Phone pairing** in the app **Settings** to let it accept phones on your local network. The daemon keeps its password and every connection still needs the app credentials or a one-time pairing code; changing the setting restarts the local runtime after a confirmation.
+
 ### Web / PWA
 
 Use the [hosted web app](https://giuliastro.github.io/harness-remote/) and allow that browser origin when starting the remote gateway:

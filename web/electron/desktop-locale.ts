@@ -27,3 +27,25 @@ export function projectFolderDialogs(language: unknown, fallback = "en"): {
     }
   }
 }
+
+/**
+ * The native confirmation shown before LAN pairing is switched on or off. Enabling and disabling
+ * expose the user to different consequences, so the detail follows the direction of the change
+ * while the restart warning stays shared.
+ */
+export function networkPairingDialogs(language: unknown, fallback = "en", enabling = true): {
+  confirmation: MessageBoxOptions
+} {
+  const t = desktopTranslator(language, fallback)
+  return {
+    confirmation: {
+      type: "warning",
+      buttons: [t("machine.restartNow"), t("sf.cancel")],
+      defaultId: 1,
+      cancelId: 1,
+      title: t("machine.restartTitle"),
+      message: t("machine.networkPairingConfirmMessage"),
+      detail: t(enabling ? "machine.networkPairingConfirmDetail" : "machine.networkPairingConfirmDisableDetail")
+    }
+  }
+}

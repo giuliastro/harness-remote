@@ -360,7 +360,11 @@ button svg {
 }
 
 
-input,
+/* Checkboxes and radios are not text fields. This shell stretches its input to the width of the
+   row and gives it a text-field height, which turns a checkbox into a giant box that squeezes its
+   label to one wrapped word per line. `:where()` contributes no specificity, so every other input
+   matches this rule exactly as it did before. */
+input:where(:not([type="checkbox"], [type="radio"])),
 textarea,
 select {
   width: 100%;
@@ -397,7 +401,7 @@ textarea {
   padding: var(--space-2) var(--space-3);
 }
 
-input:focus,
+input:where(:not([type="checkbox"], [type="radio"])):focus,
 textarea:focus,
 select:focus {
   outline: none;

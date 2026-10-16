@@ -38,7 +38,7 @@
     "test:profiles": "node --experimental-strip-types src/server-profiles.test.mjs",
     "test:config": "node --experimental-strip-types src/server-config.test.mjs",
     "test:attachments": "node --experimental-strip-types src/attachments.test.mjs && node scripts/run-vite-test.mjs src/attachment-transport.test.mjs",
-    "test:machine-payload": "node --experimental-strip-types src/machine-payload.test.mjs && node scripts/run-vite-test.mjs src/machine-client-discovery.test.mjs src/machine-request-error.test.mjs",
+    "test:machine-payload": "node --experimental-strip-types src/machine-payload.test.mjs && node --experimental-strip-types src/pairing-qr.test.mjs && node scripts/run-vite-test.mjs src/machine-client-discovery.test.mjs src/machine-request-error.test.mjs src/machine-pairing-dialog.test.mjs",
     "test:platform": "node src/platform-regression.test.mjs",
     "test:completion-audio": "node src/completion-audio-regression.test.mjs",
     "test:completion-timing": "node --experimental-strip-types src/completion-audio-timing.test.mjs",
@@ -149,7 +149,8 @@
     "react": "18.3.1",
     "react-dom": "18.3.1",
     "react-markdown": "^10.1.0",
-    "remark-gfm": "^4.0.1"
+    "remark-gfm": "^4.0.1",
+    "uqr": "^0.1.3"
   },
   "devDependencies": {
     "@types/node": "^26.1.2",
@@ -158,6 +159,7 @@
     "@vitejs/plugin-react": "^6.0.2",
     "electron": "^43.3.0",
     "electron-builder": "^26.15.3",
+    "jsqr": "^1.4.0",
     "typescript": "5.6.3",
     "vite": "^8.0.14"
   },

@@ -8,6 +8,7 @@ import test from "node:test"
 
 const {
   EMBEDDED_DAEMON_HOST,
+  EMBEDDED_DAEMON_LAN_HOST,
   EMBEDDED_DAEMON_PROFILE_ID,
   EmbeddedDaemonRuntime,
   embeddedDaemonArgs,
@@ -34,7 +35,7 @@ test("desktop packaging carries the bridge runtime outside the app asar", async 
   assert.ok(resources.some((entry) => entry.from === "../bridge/package.json" && entry.to === "bridge-runtime/package.json"))
 })
 
-test("keeps the embedded daemon loopback-only, isolates state, and passes repeated configured project roots", () => {
+test("keeps the embedded daemon loopback-only by default, isolates state, and passes repeated configured project roots", () => {
   const args = embeddedDaemonArgs(4100, 4101, "/private/desktop-state")
   assert.deepEqual(args, [
     "--host", "127.0.0.1",
@@ -50,6 +51,12 @@ test("keeps the embedded daemon loopback-only, isolates state, and passes repeat
   assert.equal(embeddedDaemonArgs(4100, 4101, undefined, undefined, "/env/root").includes("--root"), false)
   assert.equal(args.includes("desktop-user"), false)
   assert.equal(args.includes("desktop-pass"), false)
+
+  // The LAN opt-in changes only the daemon bind. The managed OpenCode host stays loopback: the
+  // daemon is the only client of that port, and widening it would expose nothing useful.
+  const lanArgs = embeddedDaemonArgs(4100, 4101, undefined, ["/work"], undefined, EMBEDDED_DAEMON_LAN_HOST)
+  assert.equal(lanArgs[lanArgs.indexOf("--host") + 1], "0.0.0.0")
+  assert.equal(lanArgs[lanArgs.indexOf("--opencode-host") + 1], EMBEDDED_DAEMON_HOST)
 
   const env = embeddedDaemonEnvironment(
     { PATH: "/bin" },
@@ -112,6 +119,35 @@ process.on("SIGTERM", () => { clearInterval(timer); process.exit(0) })
     await runtime.stop()
     assert.equal(runtime.isRunning, false)
     assert.deepEqual(exits, [], "intentional shutdown must not be reported as an unexpected runtime exit")
+  } finally {
+    await runtime.stop()
+    await rm(root, { recursive: true, force: true })
+  }
+})
+
+test("binds the wildcard address on opt-in while the app keeps the loopback endpoint", async () => {
+  const root = await mkdtemp(join(tmpdir(), "hr-embedded-daemon-lan-"))
+  const script = join(root, "lan-daemon.mjs")
+  await writeFile(script, `
+const host = process.argv[process.argv.indexOf("--host") + 1]
+const port = process.argv[process.argv.indexOf("--port") + 1]
+if (host !== "0.0.0.0") process.exit(8)
+process.stdout.write("Harness daemon ready at http://" + host + ":" + port + "\\n")
+const timer = setInterval(() => {}, 1000)
+process.on("SIGTERM", () => { clearInterval(timer); process.exit(0) })
+`, "utf8")
+
+  const runtime = new EmbeddedDaemonRuntime({
+    entryPath: script,
+    bindHost: () => EMBEDDED_DAEMON_LAN_HOST,
+    startupTimeoutMs: 2_000,
+    shutdownTimeoutMs: 2_000
+  })
+  try {
+    const ready = await runtime.start()
+    assert.equal(ready.endpoint.host, EMBEDDED_DAEMON_HOST, "the app still talks to the daemon over loopback")
+    assert.ok(ready.endpoint.port >= 4097)
+    assert.equal(runtime.isRunning, true)
   } finally {
     await runtime.stop()
     await rm(root, { recursive: true, force: true })
