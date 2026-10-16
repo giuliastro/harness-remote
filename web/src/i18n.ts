@@ -45,6 +45,40 @@ type TranslationKey =
   | 'settings.themeSystem'
   | 'settings.themeLight'
   | 'settings.themeDark'
+  | 'settings.thisComputer'
+  | 'settings.projectFolders'
+  | 'settings.projectFoldersHint'
+  | 'settings.projectFoldersLoading'
+  | 'settings.projectFoldersAdd'
+  | 'settings.projectFoldersRemove'
+  | 'settings.projectFoldersOverride'
+  | 'settings.projectFoldersError'
+  | 'settings.remoteProjectFoldersHint'
+  | 'machine.editTitle'
+  | 'machine.localConnectionHint'
+  | 'machine.foldersSaveHint'
+  | 'machine.foldersUnavailable'
+  | 'machine.saving'
+  | 'machine.testFoldersHint'
+  | 'machine.managedByApp'
+  | 'machine.folderPickerTitle'
+  | 'machine.restartTitle'
+  | 'machine.restartMessage'
+  | 'machine.restartDetail'
+  | 'machine.restartNow'
+  | 'machine.foldersInvalid'
+  | 'machine.folderPathInvalid'
+  | 'machine.folderMissing'
+  | 'machine.foldersBusy'
+  | 'machine.foldersControlled'
+  | 'machine.folderPickerError'
+  | 'machine.connectionInvalid'
+  | 'machine.probeUnsupported'
+  | 'machine.connectionCheckFailed'
+  | 'machine.editorLabel'
+  | 'machine.agentRunning'
+  | 'machine.agentReady'
+  | 'machine.agentUnavailable'
   | 'settings.draftHint'
   | 'settings.testedNotSaved'
   | 'settings.savedButton'
@@ -560,6 +594,40 @@ const translations: Record<LanguageCode, Partial<Record<TranslationKey, string>>
     'settings.themeSystem': 'System',
     'settings.themeLight': 'Light',
     'settings.themeDark': 'Dark',
+    'settings.thisComputer': 'This computer',
+    'settings.projectFolders': 'Project folders',
+    'settings.projectFoldersHint': 'Choose folders available when creating a local Session. With no folders listed, your home folder is used.',
+    'settings.projectFoldersLoading': 'Loading project folders…',
+    'settings.projectFoldersAdd': 'Add folder…',
+    'settings.projectFoldersRemove': 'Remove',
+    'settings.projectFoldersOverride': 'Controlled by HARNESS_REMOTE_ROOT ({root}). These folders are read-only.',
+    'settings.projectFoldersError': 'Could not update project folders.',
+    'settings.remoteProjectFoldersHint': 'Project folders belong to this machine. Configure them on its daemon with --root when starting Harness Remote there.',
+    'machine.editTitle': 'Edit machine',
+    'machine.localConnectionHint': 'Connection settings on this computer are managed automatically by Harness Remote.',
+    'machine.foldersSaveHint': 'Folder changes apply only when you save. Restarting the local runtime requires confirmation.',
+    'machine.foldersUnavailable': 'Project folders are not reported by this machine.',
+    'machine.saving': 'Saving…',
+    'machine.testFoldersHint': 'Test the connection to read this machine’s project folders.',
+    'machine.managedByApp': 'Managed by Harness Remote',
+    'machine.folderPickerTitle': 'Add project folder',
+    'machine.restartTitle': 'Restart local runtime?',
+    'machine.restartMessage': 'Changing project folders restarts the local runtime.',
+    'machine.restartDetail': 'Any Session running on this computer will be interrupted. Wait for local Sessions to finish before continuing.',
+    'machine.restartNow': 'Restart now',
+    'machine.foldersInvalid': 'Project folders are invalid.',
+    'machine.folderPathInvalid': 'Project folder path is invalid.',
+    'machine.folderMissing': 'Project folder does not exist or is not a directory.',
+    'machine.foldersBusy': 'Project folders are already being updated. Try again in a moment.',
+    'machine.foldersControlled': 'Project folders are controlled by HARNESS_REMOTE_ROOT.',
+    'machine.folderPickerError': 'Could not open the folder picker.',
+    'machine.connectionInvalid': 'Machine connection is invalid.',
+    'machine.probeUnsupported': 'Unsupported machine configuration probe.',
+    'machine.connectionCheckFailed': 'Could not check this machine’s connection.',
+    'machine.editorLabel': 'Machine configuration',
+    'machine.agentRunning': 'Running',
+    'machine.agentReady': 'Ready',
+    'machine.agentUnavailable': 'Unavailable',
     'sessions.title': 'Sessions',
     'sessions.summary': '{total} total · {active} active · {changed} changed',
     'sessions.new': 'New Session',
@@ -1054,6 +1122,40 @@ const translations: Record<LanguageCode, Partial<Record<TranslationKey, string>>
     'settings.themeSystem': 'Sistema',
     'settings.themeLight': 'Chiaro',
     'settings.themeDark': 'Scuro',
+    'settings.thisComputer': 'Questo computer',
+    'settings.projectFolders': 'Cartelle dei progetti',
+    'settings.projectFoldersHint': 'Scegli le cartelle disponibili quando crei una Sessione locale. Se non elenchi cartelle, viene usata la cartella home.',
+    'settings.projectFoldersLoading': 'Caricamento cartelle dei progetti…',
+    'settings.projectFoldersAdd': 'Aggiungi cartella…',
+    'settings.projectFoldersRemove': 'Rimuovi',
+    'settings.projectFoldersOverride': 'Gestite da HARNESS_REMOTE_ROOT ({root}). Queste cartelle sono di sola lettura.',
+    'settings.projectFoldersError': 'Impossibile aggiornare le cartelle dei progetti.',
+    'settings.remoteProjectFoldersHint': 'Le cartelle dei progetti appartengono a questa macchina. Configurale sul suo daemon con --root quando avvii Harness Remote su quella macchina.',
+    'machine.editTitle': 'Modifica macchina',
+    'machine.localConnectionHint': 'La connessione di questo computer è gestita automaticamente da Harness Remote.',
+    'machine.foldersSaveHint': 'Le cartelle vengono applicate solo al salvataggio. Il riavvio del runtime locale richiede conferma.',
+    'machine.foldersUnavailable': 'Le cartelle dei progetti non sono comunicate da questa macchina.',
+    'machine.saving': 'Salvataggio…',
+    'machine.testFoldersHint': 'Verifica la connessione per leggere le cartelle dei progetti di questa macchina.',
+    'machine.managedByApp': 'Gestito da Harness Remote',
+    'machine.folderPickerTitle': 'Aggiungi cartella progetto',
+    'machine.restartTitle': 'Riavviare il runtime locale?',
+    'machine.restartMessage': 'Modificando le cartelle dei progetti, il runtime locale verrà riavviato.',
+    'machine.restartDetail': 'Le Sessioni in esecuzione su questo computer verranno interrotte. Attendi che le Sessioni locali terminino prima di continuare.',
+    'machine.restartNow': 'Riavvia ora',
+    'machine.foldersInvalid': 'Le cartelle dei progetti non sono valide.',
+    'machine.folderPathInvalid': 'Il percorso della cartella progetto non è valido.',
+    'machine.folderMissing': 'La cartella progetto non esiste o non è una directory.',
+    'machine.foldersBusy': 'Le cartelle dei progetti sono già in aggiornamento. Riprova tra poco.',
+    'machine.foldersControlled': 'Le cartelle dei progetti sono gestite da HARNESS_REMOTE_ROOT.',
+    'machine.folderPickerError': 'Impossibile aprire il selettore di cartelle.',
+    'machine.connectionInvalid': 'La connessione della macchina non è valida.',
+    'machine.probeUnsupported': 'Verifica della configurazione della macchina non supportata.',
+    'machine.connectionCheckFailed': 'Impossibile verificare la connessione a questa macchina.',
+    'machine.editorLabel': 'Configurazione macchina',
+    'machine.agentRunning': 'In esecuzione',
+    'machine.agentReady': 'Pronto',
+    'machine.agentUnavailable': 'Non disponibile',
     'sessions.title': 'Sessioni',
     'sessions.summary': '{total} totali · {active} attive · {changed} con modifiche',
     'sessions.new': 'Nuova sessione',
@@ -1548,6 +1650,40 @@ const translations: Record<LanguageCode, Partial<Record<TranslationKey, string>>
     'settings.themeSystem': '跟隨系統',
     'settings.themeLight': '淺色',
     'settings.themeDark': '深色',
+    'settings.thisComputer': '這台電腦',
+    'settings.projectFolders': '專案資料夾',
+    'settings.projectFoldersHint': '選擇建立本機工作階段時可用的資料夾。若未列出資料夾，會使用您的家目錄。',
+    'settings.projectFoldersLoading': '正在載入專案資料夾…',
+    'settings.projectFoldersAdd': '新增資料夾…',
+    'settings.projectFoldersRemove': '移除',
+    'settings.projectFoldersOverride': '由 HARNESS_REMOTE_ROOT ({root}) 管理。這些資料夾為唯讀。',
+    'settings.projectFoldersError': '無法更新專案資料夾。',
+    'settings.remoteProjectFoldersHint': '專案資料夾屬於這台機器。請在該機器啟動 Harness Remote 時，使用 --root 設定其常駐程式。',
+    'machine.editTitle': '編輯機器',
+    'machine.localConnectionHint': '此電腦的連線設定由 Harness Remote 自動管理。',
+    'machine.foldersSaveHint': '資料夾變更僅在儲存後套用。重新啟動本機執行環境需要確認。',
+    'machine.foldersUnavailable': '這台機器未回報專案資料夾。',
+    'machine.saving': '儲存中…',
+    'machine.testFoldersHint': '測試連線以讀取這台機器的專案資料夾。',
+    'machine.managedByApp': '由 Harness Remote 管理',
+    'machine.folderPickerTitle': '新增專案資料夾',
+    'machine.restartTitle': '要重新啟動本機執行環境嗎？',
+    'machine.restartMessage': '變更專案資料夾會重新啟動本機執行環境。',
+    'machine.restartDetail': '這台電腦上執行中的工作階段都會中斷。請先等待本機工作階段完成再繼續。',
+    'machine.restartNow': '立即重新啟動',
+    'machine.foldersInvalid': '專案資料夾無效。',
+    'machine.folderPathInvalid': '專案資料夾路徑無效。',
+    'machine.folderMissing': '專案資料夾不存在或不是目錄。',
+    'machine.foldersBusy': '專案資料夾正在更新中。請稍後再試。',
+    'machine.foldersControlled': '專案資料夾由 HARNESS_REMOTE_ROOT 控制。',
+    'machine.folderPickerError': '無法開啟資料夾選擇器。',
+    'machine.connectionInvalid': '機器連線無效。',
+    'machine.probeUnsupported': '不支援此機器設定檢查。',
+    'machine.connectionCheckFailed': '無法檢查此機器的連線。',
+    'machine.editorLabel': '機器設定',
+    'machine.agentRunning': '執行中',
+    'machine.agentReady': '就緒',
+    'machine.agentUnavailable': '無法使用',
     'sessions.title': '工作階段',
     'sessions.summary': '{total} 總數 · {active} 進行中 · {changed} 有變更',
     'sessions.new': '新增工作階段',
@@ -2042,6 +2178,40 @@ const translations: Record<LanguageCode, Partial<Record<TranslationKey, string>>
     'settings.themeSystem': '跟随系统',
     'settings.themeLight': '浅色',
     'settings.themeDark': '深色',
+    'settings.thisComputer': '这台电脑',
+    'settings.projectFolders': '项目文件夹',
+    'settings.projectFoldersHint': '选择创建本地会话时可用的文件夹。未列出文件夹时，会使用您的主目录。',
+    'settings.projectFoldersLoading': '正在加载项目文件夹…',
+    'settings.projectFoldersAdd': '添加文件夹…',
+    'settings.projectFoldersRemove': '移除',
+    'settings.projectFoldersOverride': '由 HARNESS_REMOTE_ROOT ({root}) 管理。这些文件夹为只读。',
+    'settings.projectFoldersError': '无法更新项目文件夹。',
+    'settings.remoteProjectFoldersHint': '项目文件夹属于这台机器。请在该机器启动 Harness Remote 时，使用 --root 配置其守护进程。',
+    'machine.editTitle': '编辑机器',
+    'machine.localConnectionHint': '此电脑的连接设置由 Harness Remote 自动管理。',
+    'machine.foldersSaveHint': '文件夹变更仅在保存后应用。重启本地运行环境需要确认。',
+    'machine.foldersUnavailable': '这台机器未报告项目文件夹。',
+    'machine.saving': '保存中…',
+    'machine.testFoldersHint': '测试连接以读取这台机器的项目文件夹。',
+    'machine.managedByApp': '由 Harness Remote 管理',
+    'machine.folderPickerTitle': '添加项目文件夹',
+    'machine.restartTitle': '要重启本地运行环境吗？',
+    'machine.restartMessage': '更改项目文件夹会重启本地运行环境。',
+    'machine.restartDetail': '这台电脑上运行中的会话都会中断。请先等待本地会话完成再继续。',
+    'machine.restartNow': '立即重启',
+    'machine.foldersInvalid': '项目文件夹无效。',
+    'machine.folderPathInvalid': '项目文件夹路径无效。',
+    'machine.folderMissing': '项目文件夹不存在或不是目录。',
+    'machine.foldersBusy': '项目文件夹正在更新，请稍后重试。',
+    'machine.foldersControlled': '项目文件夹由 HARNESS_REMOTE_ROOT 控制。',
+    'machine.folderPickerError': '无法打开文件夹选择器。',
+    'machine.connectionInvalid': '机器连接无效。',
+    'machine.probeUnsupported': '不支持此机器配置检查。',
+    'machine.connectionCheckFailed': '无法检查此机器的连接。',
+    'machine.editorLabel': '机器配置',
+    'machine.agentRunning': '运行中',
+    'machine.agentReady': '就绪',
+    'machine.agentUnavailable': '不可用',
     'sessions.title': '会话',
     'sessions.summary': '{total} 总数 · {active} 进行中 · {changed} 有更改',
     'sessions.new': '新建会话',

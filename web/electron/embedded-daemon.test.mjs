@@ -3,6 +3,7 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
 import { createServer } from "node:net"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
+import { homedir } from "node:os"
 import test from "node:test"
 
 const {
@@ -33,15 +34,20 @@ test("desktop packaging carries the bridge runtime outside the app asar", async 
   assert.ok(resources.some((entry) => entry.from === "../bridge/package.json" && entry.to === "bridge-runtime/package.json"))
 })
 
-test("keeps the embedded daemon loopback-only, isolates state, and keeps credentials out of process arguments", () => {
+test("keeps the embedded daemon loopback-only, isolates state, and passes repeated configured project roots", () => {
   const args = embeddedDaemonArgs(4100, 4101, "/private/desktop-state")
   assert.deepEqual(args, [
     "--host", "127.0.0.1",
     "--port", "4100",
     "--opencode-host", "127.0.0.1",
     "--opencode-port", "4101",
-    "--state-dir", "/private/desktop-state"
+    "--state-dir", "/private/desktop-state",
+    "--root", homedir()
   ])
+  assert.deepEqual(embeddedDaemonArgs(4100, 4101, undefined, ["/work/a", "/work/b"]).filter((value) => value === "--root"), ["--root", "--root"])
+  assert.deepEqual(embeddedDaemonArgs(4100, 4101, undefined, ["/work/a", "/work/b"]).slice(-4), ["--root", "/work/a", "--root", "/work/b"])
+  assert.equal(embeddedDaemonArgs(4100, 4101, undefined, ["/work/a"], "/env/root").includes("--root"), false)
+  assert.equal(embeddedDaemonArgs(4100, 4101, undefined, undefined, "/env/root").includes("--root"), false)
   assert.equal(args.includes("desktop-user"), false)
   assert.equal(args.includes("desktop-pass"), false)
 

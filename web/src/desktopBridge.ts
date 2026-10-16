@@ -10,10 +10,15 @@ import type {
   DesktopMenuTemplate,
   DesktopProfile,
   DesktopProfileSyncResult,
+  DesktopProjectFolderChoice,
+  DesktopProjectRootsState,
+  DesktopProjectRootsUpdate,
   DesktopRequest,
   DesktopRequestResult,
   DesktopResponse
 } from "../electron/ipc-contract"
+import { loadLanguage } from "./appPreferences"
+import { createTranslator } from "./i18n"
 import { normalizeServerConfig } from "./serverConfig"
 import { MachineHttpError } from "./machine-request-error"
 import type { ServerConfig } from "./types"
@@ -25,6 +30,10 @@ export type DesktopBridgeAPI = {
   request(profileId: string, request: DesktopRequest): Promise<DesktopRequestResult>
   getLocalRuntimeState(): Promise<DesktopLocalRuntimeState>
   retryLocalRuntime(): Promise<DesktopLocalRuntimeState>
+  probeMachineConfiguration(profile: DesktopProfile, path: "/v1/machine" | "/v1/projects", language?: string): Promise<DesktopRequestResult>
+  getProjectRoots(): Promise<DesktopProjectRootsState>
+  chooseProjectFolder(language?: string): Promise<DesktopProjectFolderChoice>
+  setProjectRoots(roots: string[], language?: string): Promise<DesktopProjectRootsUpdate>
   subscribeEvents(
     profileId: string,
     options: DesktopEventSubscriptionOptions,
@@ -200,6 +209,39 @@ export async function retryDesktopLocalRuntime(): Promise<DesktopLocalRuntimeSta
   const api = bridge()
   if (!api) return null
   return rememberLocalRuntimeState(await api.retryLocalRuntime())
+}
+
+export async function desktopConfigurationProbe(config: ServerConfig, path: "/v1/machine" | "/v1/projects"): Promise<DesktopRequestResult> {
+  const api = bridge()
+  if (!api) return { ok: false, error: { code: "connection", message: createTranslator(loadLanguage())("machine.connectionCheckFailed") } }
+  const connection = normalizeServerConfig({ ...config, backend: "opencode", agentId: undefined })
+  if (!connection) return { ok: false, error: { code: "invalid-profile", message: createTranslator(loadLanguage())("machine.connectionInvalid") } }
+  return api.probeMachineConfiguration({ ...connection, id: "desktop-configuration-probe", backend: "opencode" }, path, loadLanguage())
+}
+
+export async function desktopProjectRoots(): Promise<DesktopProjectRootsState | null> {
+  return bridge()?.getProjectRoots() ?? null
+}
+
+export async function chooseDesktopProjectFolder(): Promise<string | null> {
+  const api = bridge()
+  if (!api) return null
+  const t = createTranslator(loadLanguage())
+  let result: DesktopProjectFolderChoice
+  try { result = await api.chooseProjectFolder(loadLanguage()) }
+  catch { throw new Error(t("machine.folderPickerError")) }
+  if (result.error) throw new Error(result.error)
+  return result.path
+}
+
+export async function setDesktopProjectRoots(roots: string[]): Promise<DesktopProjectRootsUpdate | null> {
+  const api = bridge()
+  if (!api) return null
+  let result: DesktopProjectRootsUpdate
+  try { result = await api.setProjectRoots(roots, loadLanguage()) }
+  catch { throw new Error(createTranslator(loadLanguage())("settings.projectFoldersError")) }
+  if (result.error) throw new Error(result.error)
+  return result
 }
 
 function desktopMachineIdentity(config: ServerConfig): string | null {

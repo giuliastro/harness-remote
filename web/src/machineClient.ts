@@ -1,5 +1,6 @@
+import { createTranslator, type Translator } from "./i18n"
 import { Capacitor, CapacitorHttp } from "@capacitor/core"
-import { desktopRequestResult, isDesktopPlatform } from "./desktopBridge"
+import { desktopConfigurationProbe, desktopRequestResult, isDesktopPlatform } from "./desktopBridge"
 import { authHeader, hasCredentials, machineBaseUrl } from "./serverConfig"
 import type { MachineProject } from "./taskClient"
 import type { MachineSnapshot, ServerConfig } from "./types"
@@ -198,11 +199,13 @@ async function discoverBrowserMachine(config: ServerConfig): Promise<MachineSnap
  */
 export async function discoverMachine(
   config: ServerConfig,
-  options: { allowCachedOnTransportFailure?: boolean } = {}
+  options: { allowCachedOnTransportFailure?: boolean; configurationProbe?: boolean } = {}
 ): Promise<MachineSnapshot | null> {
   const allowCachedOnTransportFailure = options.allowCachedOnTransportFailure === true
   if (isDesktopPlatform()) {
-    const result = await desktopRequestResult(config, { path: "/v1/machine" })
+    const result = options.configurationProbe
+      ? await desktopConfigurationProbe(config, "/v1/machine")
+      : await desktopRequestResult(config, { path: "/v1/machine" })
     if (!result.ok) {
       if (result.error.code === "http" && noMachineStatus(result.error.status)) return null
       if (result.error.code !== "http" && allowCachedOnTransportFailure) {
@@ -243,9 +246,11 @@ export async function discoverMachine(
 }
 
 /** Read the daemon's canonical, machine-scoped Project catalog without depending on Task storage. */
-export async function listMachineProjects(config: ServerConfig): Promise<MachineProject[]> {
+export async function listMachineProjects(config: ServerConfig, options: { configurationProbe?: boolean } = {}): Promise<MachineProject[]> {
   if (isDesktopPlatform()) {
-    const result = await desktopRequestResult(config, { path: "/v1/projects" })
+    const result = options.configurationProbe
+      ? await desktopConfigurationProbe(config, "/v1/projects")
+      : await desktopRequestResult(config, { path: "/v1/projects" })
     if (!result.ok) {
       if (result.error.code !== "http") {
         const cached = recentCachedProjects(config)
@@ -367,9 +372,9 @@ export async function listApprovalDecisions(config: ServerConfig, identity: Appr
  * problem that does not exist, and having one definition keeps the machine list, the workspace rail
  * and the harness pills from disagreeing about the same agent.
  */
-export function machineAgentStateLabel(state: string): string {
-  if (state === "available") return "Running"
-  if (state === "configured") return "Ready"
-  if (state === "unavailable") return "Unavailable"
+export function machineAgentStateLabel(state: string, t: Translator = createTranslator("en")): string {
+  if (state === "available") return t("machine.agentRunning")
+  if (state === "configured") return t("machine.agentReady")
+  if (state === "unavailable") return t("machine.agentUnavailable")
   return state
 }

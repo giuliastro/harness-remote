@@ -2,6 +2,7 @@ import { spawn, spawnSync, type ChildProcess } from "node:child_process"
 import { randomBytes } from "node:crypto"
 import { createServer } from "node:net"
 import { join } from "node:path"
+import { homedir } from "node:os"
 
 export const EMBEDDED_DAEMON_HOST = "127.0.0.1"
 export const EMBEDDED_DAEMON_PROFILE_ID = "desktop-local-runtime"
@@ -52,13 +53,14 @@ export function embeddedDaemonEntry({ isPackaged, appPath, resourcesPath }: Embe
     : join(appPath, "..", "bridge", "src", "daemon-cli.js")
 }
 
-export function embeddedDaemonArgs(port: number, openCodePort: number, stateDirectory?: string): string[] {
+export function embeddedDaemonArgs(port: number, openCodePort: number, stateDirectory?: string, roots: readonly string[] = [homedir()], environmentRoot?: string): string[] {
   return [
     "--host", EMBEDDED_DAEMON_HOST,
     "--port", String(port),
     "--opencode-host", EMBEDDED_DAEMON_HOST,
     "--opencode-port", String(openCodePort),
-    ...(stateDirectory ? ["--state-dir", stateDirectory] : [])
+    ...(stateDirectory ? ["--state-dir", stateDirectory] : []),
+    ...(environmentRoot ? [] : roots.flatMap((root) => ["--root", root]))
   ]
 }
 
@@ -140,6 +142,7 @@ export class EmbeddedDaemonRuntime {
     executable?: string
     environment?: EmbeddedDaemonEnvironment
     stateDirectory?: string
+    roots?: () => readonly string[]
     startupTimeoutMs?: number
     shutdownTimeoutMs?: number
     healthCheckIntervalMs?: number
@@ -206,7 +209,10 @@ export class EmbeddedDaemonRuntime {
     const openCodePort = reuse?.openCodePort ?? await findLoopbackPort(4096, [port])
     const auth = reuse?.auth ?? credentials()
     const launchConfig = { port, openCodePort, auth }
-    const args = embeddedDaemonArgs(port, openCodePort, this.options.stateDirectory)
+    // HARNESS_REMOTE_ROOT is an established override. Passing CLI roots as well would merge the
+    // environment root with the user setting, so omit them entirely when the override is present.
+    const roots = this.options.roots?.() ?? [homedir()]
+    const args = embeddedDaemonArgs(port, openCodePort, this.options.stateDirectory, roots, environment.HARNESS_REMOTE_ROOT)
     const child = spawn(this.options.executable ?? process.execPath, [this.options.entryPath, ...args], {
       env: embeddedDaemonEnvironment(environment, auth),
       stdio: ["ignore", "pipe", "pipe"],

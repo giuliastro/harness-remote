@@ -54,7 +54,7 @@ test("the attention surface is announced and its options report their state", ()
   assert.match(attention, /aria-live="polite"/)
   assert.match(attention, /aria-pressed=\{selected\.includes\(option\.label\)\}/)
   assert.match(attention, /aria-label=\{`Custom answer for/)
-  assert.match(attentionHome, /aria-label="Attention Inbox"/, "global pending attention must be announced separately from the selected Session detail")
+  assert.match(attentionHome, /aria-label="Session attention"/, "actionable global attention must be announced separately from the selected Session detail")
 })
 
 test("the installed app describes the multi-harness product", () => {

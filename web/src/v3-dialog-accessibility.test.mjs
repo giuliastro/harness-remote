@@ -28,7 +28,7 @@ test("an open model popover inside a Session dialog owns Escape first", () => {
 })
 
 test("the active Session-first shell dialogs use the shared dismissal behaviour", () => {
-  assert.match(standalone, /useDialogDismiss\(dialogRef, onClose\)/)
+  assert.match(standalone, /useDialogDismiss\(dialogRef, dismiss\)/)
   assert.match(standalone, /useDialogDismiss\(pageRef, onClose, \{ autoFocus: false \}\)/)
   assert.match(actions, /useDialogDismiss\(deleteRef, close/)
   assert.equal(existsSync(new URL("./components/native-session-handoff-control.tsx", import.meta.url)), false)

@@ -7,6 +7,10 @@ export const IPC_CHANNELS = Object.freeze({
   unsubscribeEvents: "desktop:events:unsubscribe",
   getLocalRuntime: "desktop:runtime:local:get",
   retryLocalRuntime: "desktop:runtime:local:retry",
+  probeMachineConfiguration: "desktop:machine-configuration:probe",
+  getProjectRoots: "desktop:project-roots:get",
+  chooseProjectFolder: "desktop:project-roots:choose",
+  setProjectRoots: "desktop:project-roots:set",
   notifyCompletion: "desktop:completion:notify",
   notifyAttention: "desktop:attention:notify",
   attentionActivated: "desktop:attention:activated",
@@ -34,6 +38,10 @@ export type DesktopLocalRuntimeState =
   | { status: "starting" }
   | { status: "ready"; machine: DesktopLocalRuntimeMachine }
   | { status: "unavailable"; error: string }
+
+export type DesktopProjectRootsState = { roots: string[]; environmentOverride: string | null }
+export type DesktopProjectFolderChoice = { path: string | null; error?: string }
+export type DesktopProjectRootsUpdate = DesktopProjectRootsState & { cancelled: boolean; error?: string }
 
 export type DesktopCompletionNotification = {
   title: string
