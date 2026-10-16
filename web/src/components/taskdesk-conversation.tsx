@@ -26,8 +26,8 @@ const NEAR_BOTTOM_PX = 96
 const COMPOSER_MAX_HEIGHT_PX = 180
 const JUMP_AFFORDANCE_MAX_THRESHOLD = 320
 const JUMP_AFFORDANCE_MIN_RANGE = 240
-/** Room left above a just-sent message once it is lifted to the top of the transcript. */
-const SEND_ANCHOR_GAP_PX = 12
+/** Where the live tail sits while a turn runs, as a fraction of the transcript height from the top. */
+const LIVE_TAIL_POSITION = 0.5
 
 type Props = {
   messages: MessageEnvelope[]
@@ -82,26 +82,14 @@ function hasTouchFirstPointer(): boolean {
 }
 
 /**
- * Size the reply room under the newest user message and return the scroll position that lifts that
- * message to the top of the transcript, or null once the reply below it no longer fits on screen.
- *
- * The spacer is exactly the height that lets the message reach the top and no more, so it shrinks
- * as the reply streams into it and disappears when the reply fills the view.
+ * Size the room kept under a live turn so that, followed to the bottom, its newest line sits at
+ * LIVE_TAIL_POSITION of the transcript instead of against the composer. What the agent writes next
+ * then appears in open space, as in Claude and Codex.
  */
-function sizeSendAnchor(transcript: HTMLElement, spacer: HTMLElement): number | null {
-  const users = transcript.querySelectorAll<HTMLElement>(".uw-message-user")
-  const anchor = users[users.length - 1]
-  if (!anchor) {
-    spacer.style.height = "0px"
-    return null
-  }
-  const origin = transcript.getBoundingClientRect().top - transcript.scrollTop
-  const top = Math.max(0, anchor.getBoundingClientRect().top - origin - SEND_ANCHOR_GAP_PX)
-  const contentEnd = spacer.getBoundingClientRect().top - origin
+function sizeLiveRoom(transcript: HTMLElement, spacer: HTMLElement) {
   const paddingBottom = Number.parseFloat(window.getComputedStyle(transcript).paddingBottom) || 0
-  const room = Math.max(0, Math.round(top + transcript.clientHeight - contentEnd - paddingBottom))
+  const room = Math.max(0, Math.round(transcript.clientHeight * (1 - LIVE_TAIL_POSITION) - paddingBottom))
   spacer.style.height = `${room}px`
-  return room > 0 ? top : null
 }
 
 function jumpAffordancesFor(element: HTMLElement): JumpAffordances {
@@ -211,10 +199,9 @@ const ConversationTranscript = memo(function ConversationTranscript({
   const scrollFrameRef = useRef<number | undefined>(undefined)
   const previousSendingRef = useRef(false)
   const spacerRef = useRef<HTMLDivElement>(null)
-  // Since the last Send the transcript keeps reply room under the newest user message; while pinned
-  // it also holds that message at the top, the way Claude and Codex present a fresh turn.
-  const sendAnchorRef = useRef(false)
-  const pinnedRef = useRef(false)
+  // Once a turn has run in this transcript it keeps its live room, including after the turn ends:
+  // dropping the room at completion would yank the finished reply down against the composer.
+  const liveRoomRef = useRef(false)
   const liveRef = useRef(false)
   const [jumpAffordances, setJumpAffordances] = useState<JumpAffordances>({ top: false, bottom: false })
   loadOlderRef.current = onLoadOlder
@@ -224,23 +211,9 @@ const ConversationTranscript = memo(function ConversationTranscript({
     setJumpAffordances((current) => current.top === next.top && current.bottom === next.bottom ? current : next)
   }
 
-  /** True while the pinned message still has room below it, after placing it; false hands over to tail follow. */
-  function holdSendAnchor(current: HTMLElement): boolean {
-    const spacer = spacerRef.current
-    if (!sendAnchorRef.current || !spacer) return false
-    const top = sizeSendAnchor(current, spacer)
-    if (top === null) {
-      // The reply now fills the view: from here on it is the live tail that has to stay visible.
-      pinnedRef.current = false
-      return false
-    }
-    if (!pinnedRef.current) return false
-    current.scrollTop = top
-    return true
-  }
-
-  function releaseSendAnchor() {
-    pinnedRef.current = false
+  function openLiveRoom(current: HTMLElement) {
+    liveRoomRef.current = true
+    if (spacerRef.current) sizeLiveRoom(current, spacerRef.current)
   }
 
   useEffect(() => () => {
@@ -253,7 +226,7 @@ const ConversationTranscript = memo(function ConversationTranscript({
   // A reply keeps growing after the frame that followed it: message content renders after the
   // envelope arrives, and the transcript itself resizes with the window, the composer and a soft
   // keyboard. Re-settle on those too, or the newest lines end up under the composer. Outside a live
-  // turn or a Send anchor this stays inert, so expanding an old tool card never moves the view.
+  // turn this only resizes the live room, so expanding an old tool card never moves the view.
   useEffect(() => {
     const transcript = transcriptRef.current
     if (!transcript) return
@@ -263,14 +236,9 @@ const ConversationTranscript = memo(function ConversationTranscript({
       frame = window.requestAnimationFrame(() => {
         frame = undefined
         if (preservingOlderRef.current) return
-        if (nearBottomRef.current && (liveRef.current || pinnedRef.current)) {
-          if (!holdSendAnchor(transcript)) transcript.scrollTop = transcript.scrollHeight
-        } else if (sendAnchorRef.current && spacerRef.current) {
-          // Only the reply room changes: content growth is absorbed by it, so nothing on screen moves.
-          sizeSendAnchor(transcript, spacerRef.current)
-        } else {
-          return
-        }
+        if (liveRoomRef.current && spacerRef.current) sizeLiveRoom(transcript, spacerRef.current)
+        if (nearBottomRef.current && liveRef.current) transcript.scrollTop = transcript.scrollHeight
+        else if (!liveRoomRef.current) return
         refreshJumpAffordances(transcript)
       })
     }
@@ -285,30 +253,31 @@ const ConversationTranscript = memo(function ConversationTranscript({
     }
   }, [])
 
+  // A live turn - just sent, or already working when the Session opened - leaves its tail halfway up
+  // the transcript, with room below for what comes next. Declared before the follow effect so the
+  // room exists when that effect pins the tail. Opening the room adds space below the content and
+  // moves nothing by itself.
+  useEffect(() => {
+    const transcript = transcriptRef.current
+    if (!transcript || loading || !ready || liveRoomRef.current || !(sending || waiting)) return
+    openLiveRoom(transcript)
+  }, [loading, ready, sending, waiting])
+
   useEffect(() => {
     const transcript = transcriptRef.current
     const startedSend = sending && !previousSendingRef.current
     previousSendingRef.current = sending
     if (!transcript || loading || !ready || preservingOlderRef.current) return
 
-    // A deliberate send re-enters follow mode and lifts the new message to the top. After that, the
-    // user's scroll position wins. Status changes such as Working -> Needs attention never move the
-    // transcript by themselves.
-    if (startedSend) {
-      nearBottomRef.current = true
-      sendAnchorRef.current = true
-      pinnedRef.current = true
-    }
-    if (!nearBottomRef.current || followFrameRef.current !== undefined) {
-      // Not following, but the reply room still has to shrink as the reply fills it.
-      if (!nearBottomRef.current && sendAnchorRef.current && spacerRef.current) sizeSendAnchor(transcript, spacerRef.current)
-      return
-    }
+    // A deliberate send re-enters follow mode. After that, the user's scroll position wins. Status
+    // changes such as Working -> Needs attention never move the transcript by themselves.
+    if (startedSend) nearBottomRef.current = true
+    if (!nearBottomRef.current || followFrameRef.current !== undefined) return
 
     const followTail = () => {
       const current = transcriptRef.current
       if (!current || preservingOlderRef.current || !nearBottomRef.current) return
-      if (!holdSendAnchor(current)) current.scrollTop = current.scrollHeight
+      current.scrollTop = current.scrollHeight
       refreshJumpAffordances(current)
     }
 
@@ -348,7 +317,6 @@ const ConversationTranscript = memo(function ConversationTranscript({
     // History loading is an explicit move away from the live tail. Cancel any already-scheduled
     // follow frame before it can race the prepend and snap the transcript back to the newest turn.
     nearBottomRef.current = false
-    releaseSendAnchor()
     preservingOlderRef.current = true
     if (followFrameRef.current !== undefined) {
       window.cancelAnimationFrame(followFrameRef.current)
@@ -379,7 +347,6 @@ const ConversationTranscript = memo(function ConversationTranscript({
     const current = transcriptRef.current
     if (!current) return
     nearBottomRef.current = false
-    releaseSendAnchor()
     current.scrollTo({ top: 0, behavior: "smooth" })
   }
 
@@ -387,7 +354,6 @@ const ConversationTranscript = memo(function ConversationTranscript({
     const current = transcriptRef.current
     if (!current) return
     nearBottomRef.current = true
-    releaseSendAnchor()
     current.scrollTo({ top: current.scrollHeight, behavior: "smooth" })
   }
 
@@ -399,14 +365,7 @@ const ConversationTranscript = memo(function ConversationTranscript({
         aria-label="Conversation transcript"
         ref={transcriptRef}
         onWheel={(event) => {
-          if (event.deltaY < 0) {
-            nearBottomRef.current = false
-            releaseSendAnchor()
-          }
-        }}
-        onTouchMove={releaseSendAnchor}
-        onKeyDown={(event) => {
-          if (event.key === "ArrowUp" || event.key === "PageUp" || event.key === "Home") releaseSendAnchor()
+          if (event.deltaY < 0) nearBottomRef.current = false
         }}
         onScroll={(event) => {
           const element = event.currentTarget

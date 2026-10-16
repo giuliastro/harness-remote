@@ -111,14 +111,14 @@ test("selected ACP lifecycle edges always re-read the mounted transcript", () =>
   assert.match(liveRefresh, /event\.type === "session\.updated"[\s\S]*selectedEvent[\s\S]*throttle\("message", 120, onMessage\)[\s\S]*settleAfterLifecycle\(\)/)
 })
 
-test("a Send lifts the new message to the top and leaves reply room under it", () => {
-  assert.match(component, /function sizeSendAnchor\(transcript: HTMLElement, spacer: HTMLElement\)/)
-  assert.match(component, /querySelectorAll<HTMLElement>\("\.uw-message-user"\)/)
+test("a live turn keeps its tail halfway up the transcript, after a Send or on opening", () => {
+  assert.match(component, /const LIVE_TAIL_POSITION = 0\.5/)
+  assert.match(component, /function sizeLiveRoom\(transcript: HTMLElement, spacer: HTMLElement\)/)
   assert.match(component, /className="uw-transcript-reply-room" ref=\{spacerRef\}/)
-  // A Send pins; the reply outgrowing the view hands back to tail follow; the user scrolling up wins.
-  assert.match(component, /sendAnchorRef\.current = true\s+pinnedRef\.current = true/)
-  assert.match(component, /if \(!holdSendAnchor\(current\)\) current\.scrollTop = current\.scrollHeight/)
-  assert.match(component, /if \(event\.deltaY < 0\) \{\s+nearBottomRef\.current = false\s+releaseSendAnchor\(\)/)
+  // Sending and an already-working Session both open the room; the user scrolling up still wins.
+  assert.match(component, /liveRoomRef\.current \|\| !\(sending \|\| waiting\)\) return\s+openLiveRoom\(transcript\)\s+\}, \[loading, ready, sending, waiting\]\)/)
+  assert.match(component, /if \(event\.deltaY < 0\) nearBottomRef\.current = false/)
+  assert.doesNotMatch(component, /sizeSendAnchor|pinnedRef/)
 })
 
 test("a wide Session pane shows the outcome as a toolbar chip, a phone keeps its own row", () => {
