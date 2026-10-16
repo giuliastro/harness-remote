@@ -366,7 +366,7 @@ export function NativeSessionHome(props: Props) {
     props.onAttentionCountChange?.(totalAttentionCount)
   }, [props.onAttentionCountChange, totalAttentionCount])
 
-  return (
+  const attentionInbox = (
     <>
       {inbox.length || openError ? (
         <section className="hr-native-attention-inbox" aria-label="Session attention" aria-live="polite">
@@ -406,13 +406,16 @@ export function NativeSessionHome(props: Props) {
           {openError ? <div className="hr-native-attention-error" role="alert">{openError}</div> : null}
         </section>
       ) : null}
-      <NativeSessionHomeBase
-        {...props}
-        attentionSessionKeys={inboxSessionKeys}
-        onAttentionCountChange={() => {}}
-        onAttentionKeysChange={setBaseAttentionKeys}
-        onOpen={rememberAndOpen}
-      />
     </>
+  )
+  return (
+    <NativeSessionHomeBase
+      {...props}
+      attentionInbox={attentionInbox}
+      attentionSessionKeys={inboxSessionKeys}
+      onAttentionCountChange={() => {}}
+      onAttentionKeysChange={setBaseAttentionKeys}
+      onOpen={rememberAndOpen}
+    />
   )
 }

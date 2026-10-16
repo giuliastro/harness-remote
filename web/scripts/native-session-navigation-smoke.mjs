@@ -311,3 +311,7 @@ try {
   stopPreview(preview)
   stopServer(daemon)
 }
+
+// The rail is the entry point for Session navigation; exercise its machine pagination and scrolling
+// through the same CI entry point, after the transcript-navigation fixture has been cleaned up.
+await import("./native-session-rail-pagination-smoke.mjs")

@@ -98,14 +98,32 @@
 }
 
 .hr-native-workspace-list {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
   border-right-color: var(--td3-border-soft);
   background: var(--td3-panel);
-  scrollbar-gutter: stable;
 }
 
 .hr-native-home {
-  min-height: 100%;
-  padding: 0 10px 24px;
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  padding: 0 10px;
+}
+
+.hr-native-home-controls {
+  flex: none;
+}
+
+.hr-native-home-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
+  scrollbar-gutter: stable;
+  padding-bottom: 24px;
 }
 
 .hr-native-home-heading {
@@ -1999,6 +2017,10 @@
 
   .hr-native-workspace-body {
     grid-template-columns: 1fr;
+  }
+
+  .hr-native-workspace-list {
+    padding-bottom: var(--hr-mobile-nav-height);
   }
 
   .hr-rail-resizer {
