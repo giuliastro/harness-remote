@@ -1,5 +1,5 @@
 import assert from "node:assert/strict"
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
+import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import test from "node:test"
@@ -13,16 +13,17 @@ test("project folders persist, reload, canonicalize, and reject paths outside th
   const folderB = join(root, "projects-b")
   await mkdir(folderA)
   await mkdir(folderB)
+  const canonicalRoots = await Promise.all([realpath(folderA), realpath(folderB)])
   try {
     const store = new ProjectRootsStore(foldersFile)
     await store.load()
     assert.deepEqual(store.get(), [])
-    assert.deepEqual(await store.replace([folderA, folderB, folderA]), [folderA, folderB])
-    assert.deepEqual(JSON.parse(await readFile(foldersFile, "utf8")), [folderA, folderB])
+    assert.deepEqual(await store.replace([folderA, folderB, folderA]), canonicalRoots)
+    assert.deepEqual(JSON.parse(await readFile(foldersFile, "utf8")), canonicalRoots)
 
     const reloaded = new ProjectRootsStore(foldersFile)
     await reloaded.load()
-    assert.deepEqual(reloaded.get(), [folderA, folderB])
+    assert.deepEqual(reloaded.get(), canonicalRoots)
     await assert.rejects(validateProjectRoots([join(root, "missing")]), ProjectRootsError)
     await assert.rejects(validateProjectRoots(["relative/path"]), ProjectRootsError)
     const regularFile = join(root, "not-a-folder")
