@@ -339,7 +339,7 @@ function MachineManager({
   const probeRequestIDs = useRef<Record<string, number>>({})
   const dialogRef = useRef<HTMLElement>(null)
   const draft = useMemo(() => {
-    if (editingID === "new") return createWorkspaceMachine()
+    if (editingID === "new") return { ...createWorkspaceMachine(), name: "" }
     return editingMachine?.id === editingID ? editingMachine : machines.find((candidate) => candidate.id === editingID) ?? null
   }, [editingID, editingMachine, machines])
 
@@ -425,7 +425,7 @@ function MachineManager({
     <div className="uw-manager-backdrop" role="presentation" onMouseDown={dismiss}>
       <section className="uw-machine-manager" role="dialog" aria-modal="true" aria-label={draft ? t(editingID === "new" ? "sf.addMachine" : "machine.editTitle") : t("sf.machines")} ref={dialogRef} onMouseDown={(event) => event.stopPropagation()}>
         <header className="uw-machine-manager-header">
-          <div><h2>{draft ? t(editingID === "new" ? "sf.addMachine" : "machine.editTitle") : t("sf.machines")}</h2><p>{draft ? isDesktopLocalMachine(draft) ? t("settings.thisComputer") : draft.name : t("sf.machinesSubtitle")}</p></div>
+          <div><h2>{draft ? t(editingID === "new" ? "sf.addMachine" : "machine.editTitle") : t("sf.machines")}</h2><p>{draft ? isDesktopLocalMachine(draft) ? t("settings.thisComputer") : draft.name || t("sf.machinesSubtitle") : t("sf.machinesSubtitle")}</p></div>
           <button type="button" className="uw-manager-close" disabled={editorBusy} onClick={dismiss} aria-label={t("sf.close")}>×</button>
         </header>
         <div className="uw-machine-manager-body">
