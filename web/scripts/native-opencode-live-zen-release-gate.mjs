@@ -241,7 +241,7 @@ async function waitReady(targetPage, timeout = 120_000) {
 }
 
 const finalLocator = (targetPage, token) => targetPage.locator(".uw-message-agent:not(.uw-message-pending) .uw-message-content-group .uw-markdown").filter({ hasText: token })
-const reasoningLocator = (targetPage, token) => targetPage.locator(".uw-message-agent .uw-activity-group .uw-reasoning").filter({ hasText: token })
+const reasoningLocator = (targetPage, token) => targetPage.locator(".uw-message-agent .hr-activity .hr-act-thought").filter({ hasText: token })
 
 async function waitVisibleFinal(targetPage, token, timeout = 30_000) {
   const locator = finalLocator(targetPage, token)
@@ -352,7 +352,7 @@ try {
   }
   assert.equal(await page.locator(".uw-message-pending").count(), 0, "pending assistant row remains")
   assert.equal(await page.locator(".tdw-conversation-state.working").count(), 0, "Session remains Working")
-  assert.equal(await page.locator(".uw-activity-group.uw-tool-running").count(), 0, "Activity remains running")
+  assert.equal(await page.locator(".hr-activity.is-running").count(), 0, "Activity remains running")
 
   await page.screenshot({ path: path.join(artifacts, "live-opencode-release-passed.png"), fullPage: true })
   fs.writeFileSync(path.join(artifacts, "live-opencode-release-result.json"), `${JSON.stringify({ status: "passed", opencodeVersion: process.env.OPENCODE_TEST_VERSION || "unknown", chosenModel, probeAttempts, sessionID, turns: TOKENS.length }, null, 2)}\n`)

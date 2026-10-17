@@ -615,7 +615,7 @@ async function assertPersistedReplyWithoutLiveEvent(page, label) {
     `${label}: a persisted OpenCode reply must settle the Session while it remains mounted`
   )
   assert.equal(
-    await page.locator(".uw-activity-group.uw-tool-running").count(),
+    await page.locator(".hr-activity.is-running").count(),
     0,
     `${label}: the completed OpenCode reply must not leave an Activity spinning`
   )
