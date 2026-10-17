@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, Menu, Notification, nativeImage, screen, session, ipcMain, type IpcMainInvokeEvent } from "electron"
+import { app, BrowserWindow, clipboard, dialog, Menu, Notification, nativeImage, screen, session, ipcMain, type IpcMainInvokeEvent } from "electron"
 import { readFileSync, writeFileSync } from "node:fs"
 import { homedir } from "node:os"
 import { dirname, join } from "node:path"
@@ -6,6 +6,7 @@ import { fileURLToPath, pathToFileURL } from "node:url"
 import { desktopTranslator, networkPairingDialogs, projectFolderDialogs } from "./desktop-locale.js"
 import { executeConfigurationProbe } from "./configuration-probe.js"
 import { buildApplicationMenu } from "./app-menu.js"
+import { buildContextMenu } from "./context-menu.js"
 import { EmbeddedDaemonRuntime, EMBEDDED_DAEMON_HOST, EMBEDDED_DAEMON_LAN_HOST, EMBEDDED_DAEMON_PROFILE_ID, embeddedDaemonEntry, type EmbeddedDaemonExit } from "./embedded-daemon.js"
 import { DesktopEventTransport } from "./event-transport.js"
 import { IPC_CHANNELS, parseDesktopAttentionNotification, parseDesktopMenuTemplate, type DesktopNetworkSettingsState, type DesktopProjectRootsState } from "./ipc-contract.js"
@@ -291,6 +292,20 @@ function createWindow(): BrowserWindow {
   })
   contents.session.setPermissionRequestHandler((_webContents, _permission, callback) => callback(false))
   contents.session.on("will-download", (event) => event.preventDefault())
+  contents.on("context-menu", (_event, params) => {
+    // The renderer owns the language preference and mirrors it onto <html lang>, so the menu reads
+    // it from there at the moment it opens instead of keeping a second copy in sync.
+    void contents.executeJavaScript("document.documentElement.lang", true)
+      .catch(() => app.getLocale())
+      .then((language: unknown) => {
+        if (window.isDestroyed()) return
+        const template = buildContextMenu(params, desktopTranslator(language, app.getLocale()), {
+          copyLink: (url) => clipboard.writeText(url),
+          inspect: isDevelopment ? () => contents.inspectElement(params.x, params.y) : undefined
+        })
+        Menu.buildFromTemplate(template).popup({ window })
+      })
+  })
   window.on("closed", () => {
     cancelWindowStateSave()
     eventTransport.closeForOwner(contents)
