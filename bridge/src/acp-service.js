@@ -2160,8 +2160,13 @@ export class AcpService {
         id: update.toolCallId,
         messageID,
         type: "tool",
-        tool: update._meta?.toolName ?? update.title,
+        // Claude's adapter names the tool under its own namespace; without it the tool name fell back
+        // to the title, which for a shell call is the command line itself.
+        tool: update._meta?.toolName ?? update._meta?.claudeCode?.toolName ?? update.title,
         callID: update.toolCallId,
+        // ACP's own classification (read, edit, execute, search, fetch, think, ...): the client
+        // labels calls by it instead of guessing from tool names.
+        kind: typeof update.kind === "string" ? update.kind : undefined,
         state: {
           status: update.status === "in_progress" ? "running" : update.status,
           input: update.rawInput,
@@ -2180,7 +2185,13 @@ export class AcpService {
       const output = update.rawOutput ?? update.content
         ?.flatMap((item) => item.type === "content" && item.content?.type === "text" ? [item.content.text] : [])
         .join("")
-      tool.state.status = update.status === "in_progress" ? "running" : update.status === "failed" ? "error" : update.status
+      // An update carries only the fields that changed. The input and title in particular often
+      // arrive here rather than on the opening tool_call, and an update without a status must not
+      // erase the one the call already has.
+      if (update.status) tool.state.status = update.status === "in_progress" ? "running" : update.status === "failed" ? "error" : update.status
+      if (update.rawInput && typeof update.rawInput === "object") tool.state.input = update.rawInput
+      if (typeof update.title === "string" && update.title) tool.state.title = update.title
+      if (typeof update.kind === "string") tool.kind = update.kind
       if (output) tool.state.output = typeof output === "string" ? output : JSON.stringify(output)
       if (tool.state.time && ["completed", "error"].includes(tool.state.status)) tool.state.time.end = Date.now()
       if (!replaying) this.#emit("message.updated", sessionId)

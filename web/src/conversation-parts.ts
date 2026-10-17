@@ -63,16 +63,3 @@ export function groupConversationParts(parts: MessagePart[], options: Conversati
 
   return groups
 }
-
-export function activityLabel(group: Extract<ConversationPartGroup, { kind: "activity" }>): string {
-  const toolCount = group.parts.filter((part) => part.type === "tool").length
-  const hasReasoning = group.parts.some((part) => part.type === "reasoning")
-  const hasWorkingNotes = group.parts.some((part) => part.type === "text")
-  const detail = [
-    toolCount ? `${toolCount} tool${toolCount === 1 ? "" : "s"}` : "",
-    hasReasoning ? "reasoning" : "",
-    hasWorkingNotes ? "working notes" : ""
-  ].filter(Boolean).join(" · ")
-
-  return detail ? `Activity · ${detail}` : "Activity"
-}

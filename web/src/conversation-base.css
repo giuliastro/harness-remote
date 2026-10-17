@@ -61,95 +61,6 @@
   background: transparent;
 }
 
-.uw-tool-stack {
-  min-width: 0;
-  display: grid;
-  gap: 5px;
-  margin-top: 8px;
-}
-
-.uw-tool-card {
-  min-width: 0;
-  max-width: 100%;
-  overflow: hidden;
-  border: 1px solid var(--td3-border-soft);
-  border-radius: 9px;
-  background: var(--td3-raise-1);
-}
-
-/* <details>/<summary> is the Activity disclosure control. Without these base
- * rules the browser falls back to its native triangle marker and the title,
- * command and status stop occupying the renderer's intended grid columns. */
-.uw-tool-card > summary {
-  min-width: 0;
-  min-height: 34px;
-  display: grid;
-  grid-template-columns: 20px auto minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 6px;
-  padding: 0 9px;
-  cursor: pointer;
-  list-style: none;
-}
-
-.uw-tool-card > summary::-webkit-details-marker {
-  display: none;
-}
-
-.uw-tool-card > summary::marker {
-  content: "";
-}
-
-.uw-tool-icon {
-  width: 17px;
-  height: 17px;
-  display: grid;
-  place-items: center;
-  border-radius: 50%;
-  color: var(--td3-green-text);
-  background: var(--td3-green-soft);
-}
-
-.uw-tool-error .uw-tool-icon {
-  color: var(--td3-red-text);
-  background: var(--td3-red-soft);
-}
-
-.uw-tool-title {
-  min-width: 0;
-  color: var(--td3-text-2);
-  font-weight: 650;
-}
-
-.uw-tool-card summary code {
-  min-width: 0;
-  overflow: hidden;
-  color: var(--td3-muted);
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.uw-tool-status {
-  color: var(--td3-muted);
-  text-transform: capitalize;
-}
-
-.uw-tool-card pre {
-  width: 100%;
-  max-width: 100%;
-  max-height: 240px;
-  margin: 0;
-  overflow: auto;
-  padding: 8px 10px 10px 35px;
-  border-top: 1px solid var(--td3-border-soft);
-  color: var(--td3-text-3);
-  background: var(--td3-sunken);
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-  word-break: break-word;
-  line-height: 1.5;
-}
-
 /* A new/unknown protocol part must degrade into a contained neutral chip, never
  * raw unstyled text that can widen or visually break the conversation. */
 .uw-unsupported-part {
@@ -165,13 +76,6 @@
   overflow-wrap: anywhere;
   word-break: break-word;
   font-size: 10px;
-}
-
-/* The first final-answer paragraph intentionally has no top margin. That is good
- * after the identity row, but too tight when it follows a collapsed/open Activity
- * card. Give only this boundary a little breathing room. */
-.tdw-work-thread-conversation .uw-activity-group + .uw-message-content-group {
-  margin-top: 10px;
 }
 
 /* Provider errors can contain long model IDs, endpoints and URLs. Keep the red

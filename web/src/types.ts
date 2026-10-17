@@ -203,6 +203,8 @@ export type MessagePart = {
   type: string
   text?: string
   tool?: string
+  /** ACP's classification of a tool call (read, edit, execute, search, fetch, think, other). */
+  kind?: string
   callID?: string
   state?: ToolState
   hash?: string

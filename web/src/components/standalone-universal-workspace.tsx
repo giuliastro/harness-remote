@@ -1,6 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react"
 import { App as CapacitorApp } from "@capacitor/app"
 import { api } from "../api"
+import {
+  FINISHED_ACTIVITY_MODES, LIVE_ACTIVITY_MODES, loadActivityPreferences, persistActivityPreferences, REASONING_MODES,
+  type ActivityPreferences, type FinishedActivityMode, type LiveActivityMode, type ReasoningMode
+} from "../activity-preferences"
 import { Capacitor } from "@capacitor/core"
 import {
   isThemePreference,
@@ -548,6 +552,7 @@ function MachineManager({
 function MobileSettingsPage({ onClose }: { onClose: () => void }) {
   const [language, setLanguage] = useState<LanguageCode>(loadLanguage)
   const [theme, setTheme] = useState<ThemePreference>(loadThemePreference)
+  const [activity, setActivity] = useState<ActivityPreferences>(loadActivityPreferences)
   // The local daemon's network exposure is an app-level setting: only the desktop shell has an
   // embedded runtime to configure, so a missing bridge hides the section instead of explaining it.
   const [network, setNetwork] = useState<{ lanPairing: boolean } | null>(null)
@@ -591,6 +596,12 @@ function MobileSettingsPage({ onClose }: { onClose: () => void }) {
     persistLanguage(next)
   }
 
+  function changeActivity(change: Partial<ActivityPreferences>) {
+    const next = { ...activity, ...change }
+    setActivity(next)
+    persistActivityPreferences(next)
+  }
+
   function changeTheme(value: string) {
     if (!isThemePreference(value)) return
     setTheme(value)
@@ -611,6 +622,13 @@ function MobileSettingsPage({ onClose }: { onClose: () => void }) {
             <label><strong>{t("settings.language")}</strong><select value={language} onChange={(event) => changeLanguage(event.target.value)}>{languageOptions.map((option) => <option value={option.code} key={option.code}>{option.label}</option>)}</select></label>
           </div>
           <p>{t("sf.appearanceShared")}</p>
+          <div className="hr-mobile-settings-group" data-settings-activity>
+            <span>{t("settings.activityTitle")}</span>
+            <label><strong>{t("settings.activityLive")}</strong><select value={activity.live} onChange={(event) => changeActivity({ live: event.target.value as LiveActivityMode })}>{LIVE_ACTIVITY_MODES.map((mode) => <option value={mode} key={mode}>{t(`settings.activityLive.${mode}`)}</option>)}</select></label>
+            <label><strong>{t("settings.activityFinished")}</strong><select value={activity.finished} onChange={(event) => changeActivity({ finished: event.target.value as FinishedActivityMode })}>{FINISHED_ACTIVITY_MODES.map((mode) => <option value={mode} key={mode}>{t(`settings.activityFinished.${mode}`)}</option>)}</select></label>
+            <label><strong>{t("settings.activityReasoning")}</strong><select value={activity.reasoning} onChange={(event) => changeActivity({ reasoning: event.target.value as ReasoningMode })}>{REASONING_MODES.map((mode) => <option value={mode} key={mode}>{t(`settings.activityReasoning.${mode}`)}</option>)}</select></label>
+          </div>
+          <p>{t("settings.activityHint")}</p>
           {network ? (
             <div className="hr-mobile-settings-group">
               <span>{t("machine.networkPairingTitle")}</span>

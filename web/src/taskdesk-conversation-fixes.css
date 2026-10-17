@@ -23,60 +23,10 @@
   contain-intrinsic-size: none;
 }
 
-.tdw-work-thread-conversation .uw-message-parts,
-.tdw-work-thread-conversation .uw-activity-group,
-.tdw-work-thread-conversation .uw-activity-parts,
-.tdw-work-thread-conversation .uw-reasoning,
-.tdw-work-thread-conversation .uw-reasoning .uw-markdown,
-.tdw-work-thread-conversation .uw-tool-stack,
-.tdw-work-thread-conversation .uw-tool-card {
+.tdw-work-thread-conversation .uw-message-parts {
   min-width: 0;
   max-width: 100%;
   box-sizing: border-box;
-}
-
-.tdw-work-thread-conversation .uw-activity-group,
-.tdw-work-thread-conversation .uw-activity-parts,
-.tdw-work-thread-conversation .uw-reasoning {
-  overflow: hidden;
-  isolation: isolate;
-}
-
-.tdw-work-thread-conversation .uw-activity-parts > *,
-.tdw-work-thread-conversation .uw-reasoning .uw-markdown > * {
-  min-width: 0;
-  max-width: 100%;
-  box-sizing: border-box;
-}
-
-.tdw-work-thread-conversation .uw-reasoning a,
-.tdw-work-thread-conversation .uw-activity-parts a {
-  overflow-wrap: anywhere;
-  word-break: break-word;
-}
-
-.tdw-work-thread-conversation .uw-reasoning img,
-.tdw-work-thread-conversation .uw-activity-parts img {
-  max-width: 100%;
-  height: auto;
-}
-
-.tdw-work-thread-conversation .uw-reasoning table,
-.tdw-work-thread-conversation .uw-activity-parts table {
-  display: block;
-  width: 100%;
-  max-width: 100%;
-  overflow-x: auto;
-}
-
-.tdw-work-thread-conversation .uw-reasoning pre,
-.tdw-work-thread-conversation .uw-activity-parts pre {
-  width: 100%;
-  max-width: 100%;
-  overflow: auto;
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-  word-break: break-word;
 }
 
 /* Working state belongs in the compact chat chrome. Never sweep a colour animation across the

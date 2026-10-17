@@ -340,18 +340,6 @@
     touch-action: manipulation;
   }
 
-  .tdw-work-thread-conversation .uw-activity-parts,
-  .tdw-work-thread-conversation .uw-reasoning,
-  .tdw-work-thread-conversation .uw-tool-card,
-  .tdw-work-thread-conversation .uw-tool-card pre {
-    max-width: 100% !important;
-  }
-
-  .tdw-work-thread-conversation .uw-tool-card pre,
-  .tdw-work-thread-conversation .uw-reasoning .uw-markdown {
-    font-size: 12px;
-  }
-
   .tdw-attention {
     max-height: 46%;
     padding: 8px 10px;

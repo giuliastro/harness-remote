@@ -63,9 +63,13 @@ offering a control that fails.
 - browse and monitor sessions (`idle`, `busy`, `retry`, `waiting`) — a session a harness reports as
   waiting, on a subagent for instance, reads as working rather than idle, and carries its own marker
   on a wide screen
-- open a session and read messages and progress, thinking and tool calls included, each as its own
-  step rather than folded into the reply
-- copy a message: right-click it, or long-press on a phone, for its text or its markdown
+- open a session and read messages and progress: each reply keeps the agent's work in one Activity
+  section above the answer — its own progress notes, its reasoning, and one compact row per tool call
+  that opens to show the command, the diff or the output. **Settings → Conversation activity**
+  chooses how much of it stays visible while the agent works (its latest update, all its updates,
+  every step, or just a summary line) and after it answers, and whether reasoning is shown
+- copy a message or a code block with its copy button, or select any text and copy it; in the
+  desktop app right-click offers Copy, Paste and Select all as a browser does
 - send prompts from the chat input, including a follow-up typed while the agent is still working
 - stop running work when necessary
 - pick the model a session uses

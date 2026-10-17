@@ -129,8 +129,9 @@ test("Session chat keeps bounded paging live events attention Stop and startup f
   const chat = read("./components/work-thread-conversation.tsx")
   const shared = read("./components/taskdesk-conversation.tsx")
   const parts = read("./conversation-parts.ts")
-  const overrides = read("./conversation-control-plane-overrides.css")
-  const messageContent = read("./components/taskdesk-message-content.tsx")
+  const activityCss = read("./activity-timeline.css")
+  const activityView = read("./components/activity-timeline.tsx")
+  const i18n = read("./i18n.ts")
   const attentionHome = read("./components/native-session-home-attention.tsx")
 
   assert.match(chat, /INITIAL_PAGE_SIZE = 200/)
@@ -149,8 +150,9 @@ test("Session chat keeps bounded paging live events attention Stop and startup f
   assert.match(shared, /sending \|\| \(waiting && showWaitingIndicator\)/)
   assert.match(parts, /if \(forceRunning\) return "running"/)
   assert.doesNotMatch(parts, /state\?\.status === "error"\)\) return "error"/)
-  assert.match(overrides, /uw-activity-group\.uw-tool-running/)
-  assert.match(messageContent, /status === "running" \? "Working" : status/)
+  assert.match(activityCss, /\.hr-activity\.is-running/)
+  assert.match(activityView, /running \? t\("act\.working"\)/)
+  assert.match(i18n, /'act\.working': 'Working'/)
 })
 
 test("Session UI preserves stable autoscroll memoized rows and mobile keyboard behavior", () => {

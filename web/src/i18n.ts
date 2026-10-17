@@ -424,6 +424,78 @@ type TranslationKey =
   | 'sf.noProjectAvailable'
   | 'sf.noAgentCanCreate'
   | 'sf.cancel'
+  | 'act.label'
+  | 'act.working'
+  | 'act.worked'
+  | 'act.workedFor'
+  | 'act.failed'
+  | 'act.thinking'
+  | 'act.writing'
+  | 'act.thought'
+  | 'act.thoughtFor'
+  | 'act.expandAll'
+  | 'act.collapseAll'
+  | 'act.collapse'
+  | 'act.showEarlier'
+  | 'act.showEarlier.one'
+  | 'act.steps'
+  | 'act.steps.one'
+  | 'act.outputTruncated'
+  | 'act.status.failed'
+  | 'act.status.incomplete'
+  | 'act.count.run'
+  | 'act.count.run.one'
+  | 'act.count.read'
+  | 'act.count.read.one'
+  | 'act.count.edit'
+  | 'act.count.edit.one'
+  | 'act.count.search'
+  | 'act.count.search.one'
+  | 'act.count.web'
+  | 'act.count.web.one'
+  | 'act.count.task'
+  | 'act.count.task.one'
+  | 'act.count.todo'
+  | 'act.count.todo.one'
+  | 'act.count.tool'
+  | 'act.count.tool.one'
+  | 'act.verb.run.done'
+  | 'act.verb.run.live'
+  | 'act.verb.read.done'
+  | 'act.verb.read.live'
+  | 'act.verb.edit.done'
+  | 'act.verb.edit.live'
+  | 'act.verb.search.done'
+  | 'act.verb.search.live'
+  | 'act.verb.web.done'
+  | 'act.verb.web.live'
+  | 'act.verb.task.done'
+  | 'act.verb.task.live'
+  | 'act.verb.todo.done'
+  | 'act.verb.todo.live'
+  | 'settings.activityTitle'
+  | 'settings.activityHint'
+  | 'settings.activityLive'
+  | 'settings.activityLive.latest'
+  | 'settings.activityLive.highlights'
+  | 'settings.activityLive.expanded'
+  | 'settings.activityLive.collapsed'
+  | 'settings.activityFinished'
+  | 'settings.activityFinished.collapsed'
+  | 'settings.activityFinished.highlights'
+  | 'settings.activityFinished.expanded'
+  | 'settings.activityReasoning'
+  | 'settings.activityReasoning.collapsed'
+  | 'settings.activityReasoning.expanded'
+  | 'settings.activityReasoning.hidden'
+  | 'ctx.undo'
+  | 'ctx.redo'
+  | 'ctx.cut'
+  | 'ctx.copy'
+  | 'ctx.paste'
+  | 'ctx.selectAll'
+  | 'ctx.copyLink'
+  | 'ctx.inspect'
   | 'sf.createSession'
   | 'sf.creating'
   | 'sf.renameSession'
@@ -985,6 +1057,78 @@ const translations: Record<LanguageCode, Partial<Record<TranslationKey, string>>
     'sf.noProjectAvailable': 'No Project is available on the selected machine.',
     'sf.noAgentCanCreate': 'No installed coding agent can create a native Session on this machine yet.',
     'sf.cancel': 'Cancel',
+    'act.label': 'Agent activity',
+    'act.working': 'Working',
+    'act.worked': 'Worked',
+    'act.workedFor': 'Worked for {duration}',
+    'act.failed': 'Stopped with an error',
+    'act.thinking': 'Thinking…',
+    'act.writing': 'Writing…',
+    'act.thought': 'Thought',
+    'act.thoughtFor': 'Thought for {duration}',
+    'act.expandAll': 'Expand all',
+    'act.collapseAll': 'Collapse all',
+    'act.collapse': 'Collapse activity',
+    'act.showEarlier': 'Show {count} earlier steps',
+    'act.showEarlier.one': 'Show 1 earlier step',
+    'act.steps': '{count} steps',
+    'act.steps.one': '1 step',
+    'act.outputTruncated': 'Showing the first {count} characters. Copy to get the full output.',
+    'act.status.failed': 'Failed',
+    'act.status.incomplete': 'No result',
+    'act.count.run': '{count} commands',
+    'act.count.run.one': '1 command',
+    'act.count.read': '{count} reads',
+    'act.count.read.one': '1 read',
+    'act.count.edit': '{count} edits',
+    'act.count.edit.one': '1 edit',
+    'act.count.search': '{count} searches',
+    'act.count.search.one': '1 search',
+    'act.count.web': '{count} web fetches',
+    'act.count.web.one': '1 web fetch',
+    'act.count.task': '{count} subagents',
+    'act.count.task.one': '1 subagent',
+    'act.count.todo': '{count} plan updates',
+    'act.count.todo.one': '1 plan update',
+    'act.count.tool': '{count} tool calls',
+    'act.count.tool.one': '1 tool call',
+    'act.verb.run.done': 'Ran',
+    'act.verb.run.live': 'Running',
+    'act.verb.read.done': 'Read',
+    'act.verb.read.live': 'Reading',
+    'act.verb.edit.done': 'Edited',
+    'act.verb.edit.live': 'Editing',
+    'act.verb.search.done': 'Searched',
+    'act.verb.search.live': 'Searching',
+    'act.verb.web.done': 'Fetched',
+    'act.verb.web.live': 'Fetching',
+    'act.verb.task.done': 'Delegated',
+    'act.verb.task.live': 'Delegating',
+    'act.verb.todo.done': 'Updated the plan',
+    'act.verb.todo.live': 'Updating the plan',
+    'settings.activityTitle': 'Conversation activity',
+    'settings.activityHint': 'What the agent does between your message and its answer: its updates, its reasoning and the tools it runs. Changes apply to open conversations immediately.',
+    'settings.activityLive': 'While the agent works',
+    'settings.activityLive.latest': 'Show its latest update',
+    'settings.activityLive.highlights': 'Show all its updates',
+    'settings.activityLive.expanded': 'Show every step',
+    'settings.activityLive.collapsed': 'Only a summary line',
+    'settings.activityFinished': 'After it answers',
+    'settings.activityFinished.collapsed': 'Collapse to a summary line',
+    'settings.activityFinished.highlights': 'Keep its updates, hide the steps',
+    'settings.activityFinished.expanded': 'Keep every step open',
+    'settings.activityReasoning': 'Reasoning',
+    'settings.activityReasoning.collapsed': 'Collapsed to one line',
+    'settings.activityReasoning.expanded': 'Expanded',
+    'settings.activityReasoning.hidden': 'Hidden',
+    'ctx.undo': 'Undo',
+    'ctx.redo': 'Redo',
+    'ctx.cut': 'Cut',
+    'ctx.copy': 'Copy',
+    'ctx.paste': 'Paste',
+    'ctx.selectAll': 'Select all',
+    'ctx.copyLink': 'Copy link address',
+    'ctx.inspect': 'Inspect element',
     'sf.createSession': 'Create Session',
     'sf.creating': 'Creating…',
     'sf.renameSession': 'Rename Session',
@@ -1546,6 +1690,78 @@ const translations: Record<LanguageCode, Partial<Record<TranslationKey, string>>
     'sf.noProjectAvailable': 'Nessun progetto disponibile sulla macchina selezionata.',
     'sf.noAgentCanCreate': 'Nessun coding agent installato può ancora creare una sessione nativa su questa macchina.',
     'sf.cancel': 'Annulla',
+    'act.label': "Attività dell'agente",
+    'act.working': 'Al lavoro',
+    'act.worked': 'Lavoro svolto',
+    'act.workedFor': 'Ha lavorato per {duration}',
+    'act.failed': 'Interrotto da un errore',
+    'act.thinking': 'Sta ragionando…',
+    'act.writing': 'Sta scrivendo…',
+    'act.thought': 'Ragionamento',
+    'act.thoughtFor': 'Ha ragionato per {duration}',
+    'act.expandAll': 'Espandi tutto',
+    'act.collapseAll': 'Comprimi tutto',
+    'act.collapse': 'Comprimi attività',
+    'act.showEarlier': 'Mostra {count} passaggi precedenti',
+    'act.showEarlier.one': 'Mostra 1 passaggio precedente',
+    'act.steps': '{count} passaggi',
+    'act.steps.one': '1 passaggio',
+    'act.outputTruncated': "Sono mostrati i primi {count} caratteri. Copia per avere l'output completo.",
+    'act.status.failed': 'Non riuscito',
+    'act.status.incomplete': 'Nessun risultato',
+    'act.count.run': '{count} comandi',
+    'act.count.run.one': '1 comando',
+    'act.count.read': '{count} letture',
+    'act.count.read.one': '1 lettura',
+    'act.count.edit': '{count} modifiche',
+    'act.count.edit.one': '1 modifica',
+    'act.count.search': '{count} ricerche',
+    'act.count.search.one': '1 ricerca',
+    'act.count.web': '{count} pagine web',
+    'act.count.web.one': '1 pagina web',
+    'act.count.task': '{count} subagenti',
+    'act.count.task.one': '1 subagente',
+    'act.count.todo': '{count} aggiornamenti del piano',
+    'act.count.todo.one': '1 aggiornamento del piano',
+    'act.count.tool': '{count} strumenti',
+    'act.count.tool.one': '1 strumento',
+    'act.verb.run.done': 'Eseguito',
+    'act.verb.run.live': 'In esecuzione',
+    'act.verb.read.done': 'Letto',
+    'act.verb.read.live': 'Lettura di',
+    'act.verb.edit.done': 'Modificato',
+    'act.verb.edit.live': 'Modifica di',
+    'act.verb.search.done': 'Cercato',
+    'act.verb.search.live': 'Ricerca di',
+    'act.verb.web.done': 'Scaricato',
+    'act.verb.web.live': 'Download di',
+    'act.verb.task.done': 'Delegato',
+    'act.verb.task.live': 'Delega in corso',
+    'act.verb.todo.done': 'Piano aggiornato',
+    'act.verb.todo.live': 'Aggiornamento del piano',
+    'settings.activityTitle': 'Attività nelle conversazioni',
+    'settings.activityHint': "Ciò che l'agente fa tra il tuo messaggio e la risposta: i suoi aggiornamenti, il ragionamento e gli strumenti che usa. Le modifiche valgono subito anche per le conversazioni aperte.",
+    'settings.activityLive': "Mentre l'agente lavora",
+    'settings.activityLive.latest': "Mostra l'ultimo aggiornamento",
+    'settings.activityLive.highlights': 'Mostra tutti gli aggiornamenti',
+    'settings.activityLive.expanded': 'Mostra ogni passaggio',
+    'settings.activityLive.collapsed': 'Solo una riga di riepilogo',
+    'settings.activityFinished': 'Dopo la risposta',
+    'settings.activityFinished.collapsed': 'Riduci a una riga di riepilogo',
+    'settings.activityFinished.highlights': 'Tieni gli aggiornamenti, nascondi i passaggi',
+    'settings.activityFinished.expanded': 'Lascia aperti tutti i passaggi',
+    'settings.activityReasoning': 'Ragionamento',
+    'settings.activityReasoning.collapsed': 'Compresso su una riga',
+    'settings.activityReasoning.expanded': 'Espanso',
+    'settings.activityReasoning.hidden': 'Nascosto',
+    'ctx.undo': 'Annulla',
+    'ctx.redo': 'Ripeti',
+    'ctx.cut': 'Taglia',
+    'ctx.copy': 'Copia',
+    'ctx.paste': 'Incolla',
+    'ctx.selectAll': 'Seleziona tutto',
+    'ctx.copyLink': 'Copia indirizzo link',
+    'ctx.inspect': 'Ispeziona elemento',
     'sf.createSession': 'Crea sessione',
     'sf.creating': 'Creazione…',
     'sf.renameSession': 'Rinomina sessione',
@@ -2107,6 +2323,78 @@ const translations: Record<LanguageCode, Partial<Record<TranslationKey, string>>
     'sf.noProjectAvailable': '所選機器上沒有可用的專案。',
     'sf.noAgentCanCreate': '這部機器上尚無已安裝的編碼代理能建立原生工作階段。',
     'sf.cancel': '取消',
+    'act.label': '代理活動',
+    'act.working': '工作中',
+    'act.worked': '已完成工作',
+    'act.workedFor': '工作了 {duration}',
+    'act.failed': '因錯誤而停止',
+    'act.thinking': '思考中…',
+    'act.writing': '撰寫中…',
+    'act.thought': '思考',
+    'act.thoughtFor': '思考了 {duration}',
+    'act.expandAll': '全部展開',
+    'act.collapseAll': '全部收合',
+    'act.collapse': '收合活動',
+    'act.showEarlier': '顯示前 {count} 個步驟',
+    'act.showEarlier.one': '顯示前 1 個步驟',
+    'act.steps': '{count} 個步驟',
+    'act.steps.one': '1 個步驟',
+    'act.outputTruncated': '僅顯示前 {count} 個字元。複製即可取得完整輸出。',
+    'act.status.failed': '失敗',
+    'act.status.incomplete': '無結果',
+    'act.count.run': '{count} 個指令',
+    'act.count.run.one': '1 個指令',
+    'act.count.read': '讀取 {count} 次',
+    'act.count.read.one': '讀取 1 次',
+    'act.count.edit': '編輯 {count} 次',
+    'act.count.edit.one': '編輯 1 次',
+    'act.count.search': '搜尋 {count} 次',
+    'act.count.search.one': '搜尋 1 次',
+    'act.count.web': '擷取網頁 {count} 次',
+    'act.count.web.one': '擷取網頁 1 次',
+    'act.count.task': '{count} 個子代理',
+    'act.count.task.one': '1 個子代理',
+    'act.count.todo': '更新計畫 {count} 次',
+    'act.count.todo.one': '更新計畫 1 次',
+    'act.count.tool': '{count} 個工具呼叫',
+    'act.count.tool.one': '1 個工具呼叫',
+    'act.verb.run.done': '執行',
+    'act.verb.run.live': '正在執行',
+    'act.verb.read.done': '讀取',
+    'act.verb.read.live': '正在讀取',
+    'act.verb.edit.done': '編輯',
+    'act.verb.edit.live': '正在編輯',
+    'act.verb.search.done': '搜尋',
+    'act.verb.search.live': '正在搜尋',
+    'act.verb.web.done': '擷取',
+    'act.verb.web.live': '正在擷取',
+    'act.verb.task.done': '委派',
+    'act.verb.task.live': '正在委派',
+    'act.verb.todo.done': '更新計畫',
+    'act.verb.todo.live': '正在更新計畫',
+    'settings.activityTitle': '對話活動',
+    'settings.activityHint': '代理在你的訊息與它的回覆之間所做的事：進度訊息、推理與執行的工具。變更會立即套用到已開啟的對話。',
+    'settings.activityLive': '代理工作時',
+    'settings.activityLive.latest': '顯示最新進度',
+    'settings.activityLive.highlights': '顯示所有進度',
+    'settings.activityLive.expanded': '顯示每個步驟',
+    'settings.activityLive.collapsed': '只顯示摘要列',
+    'settings.activityFinished': '回覆完成後',
+    'settings.activityFinished.collapsed': '收合成摘要列',
+    'settings.activityFinished.highlights': '保留進度訊息，隱藏步驟',
+    'settings.activityFinished.expanded': '保持所有步驟展開',
+    'settings.activityReasoning': '推理',
+    'settings.activityReasoning.collapsed': '收合為一行',
+    'settings.activityReasoning.expanded': '展開',
+    'settings.activityReasoning.hidden': '隱藏',
+    'ctx.undo': '復原',
+    'ctx.redo': '重做',
+    'ctx.cut': '剪下',
+    'ctx.copy': '複製',
+    'ctx.paste': '貼上',
+    'ctx.selectAll': '全選',
+    'ctx.copyLink': '複製連結網址',
+    'ctx.inspect': '檢查元素',
     'sf.createSession': '建立工作階段',
     'sf.creating': '建立中…',
     'sf.renameSession': '重新命名工作階段',
@@ -2668,6 +2956,78 @@ const translations: Record<LanguageCode, Partial<Record<TranslationKey, string>>
     'sf.noProjectAvailable': '所选机器上没有可用的项目。',
     'sf.noAgentCanCreate': '该机器上尚无已安装的编码代理可以创建原生会话。',
     'sf.cancel': '取消',
+    'act.label': '代理活动',
+    'act.working': '工作中',
+    'act.worked': '已完成工作',
+    'act.workedFor': '工作了 {duration}',
+    'act.failed': '因错误而停止',
+    'act.thinking': '思考中…',
+    'act.writing': '撰写中…',
+    'act.thought': '思考',
+    'act.thoughtFor': '思考了 {duration}',
+    'act.expandAll': '全部展开',
+    'act.collapseAll': '全部收起',
+    'act.collapse': '收起活动',
+    'act.showEarlier': '显示前 {count} 个步骤',
+    'act.showEarlier.one': '显示前 1 个步骤',
+    'act.steps': '{count} 个步骤',
+    'act.steps.one': '1 个步骤',
+    'act.outputTruncated': '仅显示前 {count} 个字符。复制即可获取完整输出。',
+    'act.status.failed': '失败',
+    'act.status.incomplete': '无结果',
+    'act.count.run': '{count} 个命令',
+    'act.count.run.one': '1 个命令',
+    'act.count.read': '读取 {count} 次',
+    'act.count.read.one': '读取 1 次',
+    'act.count.edit': '编辑 {count} 次',
+    'act.count.edit.one': '编辑 1 次',
+    'act.count.search': '搜索 {count} 次',
+    'act.count.search.one': '搜索 1 次',
+    'act.count.web': '抓取网页 {count} 次',
+    'act.count.web.one': '抓取网页 1 次',
+    'act.count.task': '{count} 个子代理',
+    'act.count.task.one': '1 个子代理',
+    'act.count.todo': '更新计划 {count} 次',
+    'act.count.todo.one': '更新计划 1 次',
+    'act.count.tool': '{count} 个工具调用',
+    'act.count.tool.one': '1 个工具调用',
+    'act.verb.run.done': '执行',
+    'act.verb.run.live': '正在执行',
+    'act.verb.read.done': '读取',
+    'act.verb.read.live': '正在读取',
+    'act.verb.edit.done': '编辑',
+    'act.verb.edit.live': '正在编辑',
+    'act.verb.search.done': '搜索',
+    'act.verb.search.live': '正在搜索',
+    'act.verb.web.done': '抓取',
+    'act.verb.web.live': '正在抓取',
+    'act.verb.task.done': '委派',
+    'act.verb.task.live': '正在委派',
+    'act.verb.todo.done': '更新计划',
+    'act.verb.todo.live': '正在更新计划',
+    'settings.activityTitle': '对话活动',
+    'settings.activityHint': '代理在你的消息与它的回复之间所做的事：进度消息、推理与运行的工具。更改会立即应用到已打开的对话。',
+    'settings.activityLive': '代理工作时',
+    'settings.activityLive.latest': '显示最新进度',
+    'settings.activityLive.highlights': '显示所有进度',
+    'settings.activityLive.expanded': '显示每个步骤',
+    'settings.activityLive.collapsed': '只显示摘要行',
+    'settings.activityFinished': '回复完成后',
+    'settings.activityFinished.collapsed': '收起为摘要行',
+    'settings.activityFinished.highlights': '保留进度消息，隐藏步骤',
+    'settings.activityFinished.expanded': '保持所有步骤展开',
+    'settings.activityReasoning': '推理',
+    'settings.activityReasoning.collapsed': '收起为一行',
+    'settings.activityReasoning.expanded': '展开',
+    'settings.activityReasoning.hidden': '隐藏',
+    'ctx.undo': '撤销',
+    'ctx.redo': '重做',
+    'ctx.cut': '剪切',
+    'ctx.copy': '复制',
+    'ctx.paste': '粘贴',
+    'ctx.selectAll': '全选',
+    'ctx.copyLink': '复制链接地址',
+    'ctx.inspect': '检查元素',
     'sf.createSession': '创建会话',
     'sf.creating': '创建中…',
     'sf.renameSession': '重命名会话',

@@ -24,6 +24,8 @@ const here = path.dirname(fileURLToPath(import.meta.url))
 const read = (name) => readFileSync(path.join(here, name), "utf8").replace(/\r\n/g, "\n")
 
 const content = read("components/taskdesk-message-content.tsx")
+const markdown = read("components/message-markdown.tsx")
+const timeline = read("components/activity-timeline.tsx")
 const conversationCss = read("taskdesk-conversation.css")
 const mobileParity = read("v3-mobile-product-parity.css")
 const clipboard = read("clipboard.ts")
@@ -38,21 +40,21 @@ test("a conversation can be copied out of, as it could in 2.x", () => {
   // 3.0 shipped with no copy affordance anywhere: `clipboard.ts` existed but only the retired shell
   // called it. For an agent that answers with commands and patches, this is the most common thing to
   // want from a reply.
-  assert.match(content, /import \{ copyToClipboard \} from "\.\.\/clipboard"/)
-  assert.match(content, /function CopyButton\(\{ text, label \}/)
+  assert.match(markdown, /import \{ copyToClipboard \} from "\.\.\/clipboard"/)
+  assert.match(markdown, /function CopyButton\(\{ text, label \}/)
 
   // All three places worth copying from: the whole message, a fenced code block, and tool output.
   assert.match(content, /<CopyButton text=\{text\} label="Copy message" \/>/)
-  assert.match(content, /<CopyButton text=\{hastText\(node\)\} label="Copy code" \/>/)
-  assert.match(content, /<CopyButton text=\{output\} label="Copy output" \/>/)
+  assert.match(markdown, /<CopyButton text=\{hastText\(node\)\} label="Copy code" \/>/)
+  assert.match(timeline, /<CopyButton text=\{output\} label="Copy output" \/>/)
 })
 
 test("the copy carries the source text, not the rendered text", () => {
   // Reading React children back would yield elements by this point, and for tool output the on-screen
   // body is truncated — a stack trace clipped at 4000 characters is the useless half.
-  assert.match(content, /function hastText\(node: unknown\): string/)
-  assert.match(content, /if \(element\.type === "text"\) return element\.value \?\? ""/)
-  const toolCopy = content.match(/<CopyButton text=\{output\}[^/]*\/>/)[0]
+  assert.match(markdown, /function hastText\(node: unknown\): string/)
+  assert.match(markdown, /if \(element\.type === "text"\) return element\.value \?\? ""/)
+  const toolCopy = timeline.match(/<CopyButton text=\{output\}[^/]*\/>/)[0]
   assert.doesNotMatch(toolCopy, /slice/)
 })
 
@@ -62,13 +64,13 @@ test("copy survives the plain-http LAN this app is also served over", () => {
   // guard is that the new callers go through the helper instead of the API directly.
   assert.match(clipboard, /document\.execCommand\("copy"\)/)
   // Usage, not the word: the component's own comment names the API it deliberately avoids calling.
-  assert.doesNotMatch(content, /navigator\.clipboard\??\.\s*writeText/)
+  assert.doesNotMatch(markdown, /navigator\.clipboard\??\.\s*writeText/)
 })
 
 test("the markdown renderer keeps one component table across renders", () => {
   // Rebuilding it per render would remount every code block on every streamed token.
-  assert.match(content, /^const MARKDOWN_COMPONENTS: Components = \{/m)
-  assert.match(content, /components=\{MARKDOWN_COMPONENTS\}/)
+  assert.match(markdown, /^export const MARKDOWN_COMPONENTS: Components = \{/m)
+  assert.match(markdown, /components=\{MARKDOWN_COMPONENTS\}/)
 })
 
 test("copy is reachable with a thumb, not only a mouse", () => {
@@ -108,8 +110,8 @@ test("Session-first restores capability-gated image attachments without reviving
 })
 
 test("v3 renders todowrite tool input as the structured checklist available in v2.11", () => {
-  assert.match(messageContent, /function parseTodos\(value: unknown\)/)
-  assert.match(messageContent, /item\.status === "completed" \? "✓" : item\.status === "in_progress" \? "◐" : "○"/)
-  assert.match(messageContent, /<TodoListView items=\{todos\} \/>/)
+  assert.match(timeline, /function parseTodos\(value: unknown\)/)
+  assert.match(timeline, /item\.status === "completed" \? "✓" : item\.status === "in_progress" \? "◐" : "○"/)
+  assert.match(timeline, /<TodoListView items=\{todos\} \/>/)
   assert.doesNotMatch(messageContent, /SessionComposer/)
 })

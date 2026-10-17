@@ -18,113 +18,6 @@
  * without needing `!important` to do it.
  */
 
-/* ---------------------------------------------------------------- tool call */
-
-/* The kind glyph rides inside the title rather than in a column of its own: the summary grids in
-   `universal-workspace.css` and `taskdesk-conversation.css` are laid out by column count, and a
-   fifth child would drop the status onto the next line at exactly the widths phones use. */
-.bui-tool > summary .bui-tool-kind {
-  display: inline-block;
-  width: 12px;
-  margin-right: 5px;
-  flex: none;
-  color: var(--td3-muted);
-  font-size: 10px;
-  font-weight: 400;
-  font-style: normal;
-  text-align: center;
-}
-
-/* Only the two kinds that change state on the machine get an accent. "This call wrote something"
-   is worth a glance up-front; "this call read something" is not, and tinting all seven would spend
-   the whole palette on information nobody acts on. */
-.bui-tool-edit > summary .bui-tool-kind,
-.bui-tool-run > summary .bui-tool-kind {
-  color: var(--td3-attention-text);
-}
-
-.bui-tool > summary .uw-tool-title {
-  display: flex;
-  min-width: 0;
-  align-items: baseline;
-}
-
-/* Duration and status share one grid cell, so the cell has to do the spacing the grid used to. */
-.bui-tool-meta,
-.bui-activity > summary .bui-tool-meta {
-  display: inline-flex;
-  flex: none;
-  align-items: baseline;
-  gap: 7px;
-  white-space: nowrap;
-}
-
-/* Tabular figures: a clock that reflows the row every time it ticks past a 1 is worse than no
-   clock, and this one ticks once a second for the whole length of a turn. */
-.bui-tool-duration {
-  color: var(--td3-muted);
-  font-size: 10px;
-  font-variant-numeric: tabular-nums;
-  font-feature-settings: "tnum" 1;
-}
-
-.uw-tool-status {
-  font-variant-numeric: tabular-nums;
-  text-transform: none;
-}
-
-/* Done is the common case and must recede; failed is the one that has to be findable by scrolling
-   past it. The icon already carries the hue, so the word beside it only needs the quieter half. */
-.uw-tool-completed > summary .uw-tool-status {
-  color: var(--td3-muted-2);
-}
-
-.uw-tool-error > summary .uw-tool-status {
-  color: var(--td3-red-text);
-  font-weight: 700;
-}
-
-.uw-tool-incomplete > summary .uw-tool-icon {
-  color: var(--td3-muted);
-  background: var(--td3-raise-3);
-}
-
-/* Touch: `universal-workspace.css` sizes the summary at 34px, below the 44px a thumb needs, and
-   these rows are the ones users open most. Pointer-coarse only, so the desktop density is kept. */
-@media (pointer: coarse) {
-  .bui-tool > summary,
-  .bui-activity > summary {
-    min-height: 44px;
-  }
-}
-
-/* ------------------------------------------------------- thinking / activity */
-
-/* The live header is the whole thinking state: while a turn is working this row is often the only
-   thing moving on screen. The sweep is on the title's own text, which is why it needs the clip. */
-.bui-activity.uw-tool-running > summary .uw-tool-title {
-  background: linear-gradient(
-    90deg,
-    var(--td3-text-3) 20%,
-    var(--td3-text) 42%,
-    var(--td3-text-3) 64%
-  );
-  background-size: 220% 100%;
-  -webkit-background-clip: text;
-  background-clip: text;
-  -webkit-text-fill-color: transparent;
-  animation: bui-thinking-sweep 2.4s linear infinite;
-}
-
-.bui-activity.uw-tool-running > summary .bui-tool-duration {
-  color: var(--td3-blue-text);
-}
-
-@keyframes bui-thinking-sweep {
-  from { background-position: 120% 0; }
-  to { background-position: -120% 0; }
-}
-
 /* ------------------------------------------------------------- status pill */
 
 /* The pill already reported the right state; what it lacked was any sign of being live. The dot is
@@ -263,16 +156,8 @@
 /* ----------------------------------------------------------- reduced motion */
 
 /* Every animation above is decoration on a state that is already spelled out in text, so none of
-   them has anything to preserve when motion is refused. The gradient has to be unwound too: left
-   alone, a transparent text-fill with no sweep behind it renders an invisible title. */
+   them has anything to preserve when motion is refused. */
 @media (prefers-reduced-motion: reduce) {
-  .bui-activity.uw-tool-running > summary .uw-tool-title {
-    background: none;
-    -webkit-text-fill-color: currentcolor;
-    color: var(--td3-text);
-    animation: none;
-  }
-
   .tdw-conversation-state.working i,
   .bui-approval-dot {
     animation: none;
@@ -361,194 +246,6 @@
   --bui-ease: cubic-bezier(.2, .7, .3, 1);
 }
 
-/* ------------------------------------------------------------- type scale */
-
-/* The transcript was 10px and 11px throughout - tool names, commands, reasoning
-   and statuses all at or just above the legibility floor. Nothing else in this
-   file matters as much as this block. */
-.tdw-work-thread-conversation .uw-activity-group > summary .uw-tool-title,
-.tdw-work-thread-conversation .uw-activity-parts .uw-tool-card > summary .uw-tool-title {
-  font-size: 12.5px;
-  font-weight: 700;
-  letter-spacing: -.005em;
-}
-
-.tdw-work-thread-conversation .uw-activity-parts .uw-tool-card summary code {
-  font-size: 11.5px;
-}
-
-.tdw-work-thread-conversation .uw-reasoning .uw-markdown {
-  font-size: 13px;
-  line-height: 1.6;
-}
-
-.tdw-work-thread-conversation .uw-reasoning > strong {
-  margin-bottom: 7px;
-  font-size: 10.5px;
-}
-
-.tdw-work-thread-conversation .uw-activity-parts .uw-tool-card pre {
-  font-size: 11.5px;
-  line-height: 1.55;
-}
-
-/* --------------------------------------------------------- shape and depth */
-
-.tdw-work-thread-conversation .bui-activity {
-  width: 100%;
-  border-color: var(--td3-border);
-  border-radius: var(--bui-radius);
-  background: var(--td3-card-raised);
-}
-
-.tdw-work-thread-conversation .bui-activity > summary {
-  min-height: 48px;
-  grid-template-columns: 26px minmax(0, 1fr) auto;
-  gap: 11px;
-  padding: 0 14px;
-}
-
-.tdw-work-thread-conversation .bui-activity > summary .uw-tool-title {
-  font-size: 13px;
-}
-
-.tdw-work-thread-conversation .uw-activity-parts .bui-tool {
-  border-color: var(--td3-border);
-  border-radius: var(--bui-radius-inner);
-  background: var(--td3-sunken);
-}
-
-.tdw-work-thread-conversation .uw-activity-parts .bui-tool > summary {
-  min-height: 42px;
-  gap: 10px;
-  padding-inline: 12px;
-}
-
-.tdw-work-thread-conversation .uw-reasoning {
-  padding: 12px 14px;
-  border-radius: var(--bui-radius-inner);
-  background: var(--td3-sunken);
-}
-
-/* The status glyph was a 17px circle carrying a 10px mark. At this size it reads
-   as an icon rather than as punctuation, which is what lets the chip beside it
-   stop having to repeat the outcome in bold. */
-.tdw-work-thread-conversation .bui-tool > summary .uw-tool-icon,
-.tdw-work-thread-conversation .bui-activity > summary .uw-tool-icon {
-  width: 22px;
-  height: 22px;
-  border-radius: 7px;
-  font-size: 11px;
-  font-weight: 700;
-}
-
-/* The kind glyph becomes a badge rather than a bare character: at 12px, inline in
-   a title, it read as a typo. */
-.bui-tool > summary .bui-tool-kind {
-  width: 19px;
-  height: 19px;
-  display: inline-grid;
-  place-items: center;
-  margin-right: 9px;
-  border-radius: 6px;
-  background: var(--td3-raise-2);
-  font-size: 10px;
-}
-
-.bui-tool-edit > summary .bui-tool-kind,
-.bui-tool-run > summary .bui-tool-kind {
-  background: var(--td3-attention-soft);
-}
-
-/* ------------------------------------------------------------ status chips */
-
-/* A word in muted grey at the end of a row is not a state. A chip is - and it is
-   the one thing in a long Activity block worth finding by scanning. */
-.tdw-work-thread-conversation .bui-tool > summary .uw-tool-status,
-.tdw-work-thread-conversation .bui-activity > summary .uw-tool-status {
-  padding: 3.5px 9px;
-  border-radius: 999px;
-  color: var(--td3-muted);
-  background: var(--td3-raise-2);
-  font-size: 10.5px;
-  font-weight: 750;
-  letter-spacing: .01em;
-}
-
-.tdw-work-thread-conversation .uw-tool-completed > summary .uw-tool-status {
-  color: var(--td3-green-text);
-  background: var(--td3-green-soft);
-}
-
-.tdw-work-thread-conversation .uw-tool-error > summary .uw-tool-status {
-  color: var(--td3-red-text);
-  background: var(--td3-red-soft);
-}
-
-.tdw-work-thread-conversation .uw-tool-running > summary .uw-tool-status {
-  color: var(--td3-blue-text);
-  background: var(--td3-blue-soft);
-}
-
-/* ---------------------------------------------------- Activity as a timeline */
-
-/* A turn is a sequence, and it was rendering as an undifferentiated stack of
-   rows. The rail is what makes "six things happened, in this order, and the
-   fourth failed" readable without opening anything. */
-.tdw-work-thread-conversation .bui-activity .uw-activity-parts {
-  position: relative;
-  padding: 14px 14px 16px 34px;
-  background: transparent;
-}
-
-.tdw-work-thread-conversation .bui-activity .uw-activity-parts::before {
-  content: "";
-  position: absolute;
-  top: 18px;
-  bottom: 18px;
-  left: 18px;
-  width: 2px;
-  border-radius: 2px;
-  background: var(--td3-border-strong);
-}
-
-.tdw-work-thread-conversation .uw-activity-parts .uw-tool-stack {
-  display: grid;
-  gap: 7px;
-}
-
-/* ------------------------------------------------------------------ motion */
-
-/* Tool rows arrive one at a time in the real thing, so they arrive one at a time
-   here. Eight steps is where a stagger stops reading as sequence and starts
-   reading as lag, so the ninth row onward shares the last delay. */
-@keyframes bui-rise {
-  from { opacity: 0; transform: translateY(7px); }
-  to { opacity: 1; transform: none; }
-}
-
-.tdw-work-thread-conversation .uw-activity-parts .uw-tool-stack > .uw-tool-card,
-.tdw-work-thread-conversation .uw-activity-parts > .uw-reasoning {
-  animation: bui-rise .3s var(--bui-ease) both;
-}
-
-.tdw-work-thread-conversation .uw-tool-stack > .uw-tool-card:nth-child(1) { animation-delay: 30ms; }
-.tdw-work-thread-conversation .uw-tool-stack > .uw-tool-card:nth-child(2) { animation-delay: 70ms; }
-.tdw-work-thread-conversation .uw-tool-stack > .uw-tool-card:nth-child(3) { animation-delay: 110ms; }
-.tdw-work-thread-conversation .uw-tool-stack > .uw-tool-card:nth-child(4) { animation-delay: 150ms; }
-.tdw-work-thread-conversation .uw-tool-stack > .uw-tool-card:nth-child(5) { animation-delay: 190ms; }
-.tdw-work-thread-conversation .uw-tool-stack > .uw-tool-card:nth-child(6) { animation-delay: 230ms; }
-.tdw-work-thread-conversation .uw-tool-stack > .uw-tool-card:nth-child(n + 7) { animation-delay: 270ms; }
-
-.tdw-work-thread-conversation .bui-tool > summary,
-.tdw-work-thread-conversation .bui-activity > summary {
-  transition: background var(--motion-fast, .16s) var(--bui-ease);
-}
-
-.tdw-work-thread-conversation .bui-tool > summary:hover {
-  background: var(--td3-raise-1);
-}
-
 /* -------------------------------------------------------- approval card v2 */
 
 .bui-approval {
@@ -609,22 +306,6 @@
 .bui-approval .tdw-attention-options button span {
   font-size: 11px;
   line-height: 1.45;
-}
-
-/* ------------------------------------------- reduced motion, second pass */
-
-@media (prefers-reduced-motion: reduce) {
-  .tdw-work-thread-conversation .uw-activity-parts .uw-tool-stack > .uw-tool-card,
-  .tdw-work-thread-conversation .uw-activity-parts > .uw-reasoning {
-    animation: none;
-    opacity: 1;
-    transform: none;
-  }
-
-  .tdw-work-thread-conversation .bui-tool > summary,
-  .tdw-work-thread-conversation .bui-activity > summary {
-    transition: none;
-  }
 }
 
 /* =============================================================================
@@ -842,32 +523,6 @@
  * three passes read as a font change. Everything below moves.
  * ============================================================================= */
 
-/* ------------------------------------------------------------------ icons */
-
-/* The kind and status marks are SVG now rather than borrowed characters, so the
-   badge centres a box instead of a glyph sitting on a text baseline. */
-.bui-tool > summary .bui-tool-kind svg,
-.tdw-work-thread-conversation .uw-tool-icon svg {
-  display: block;
-}
-
-.bui-tool > summary .bui-tool-kind {
-  color: var(--td3-muted-2);
-}
-
-.bui-tool-edit > summary .bui-tool-kind,
-.bui-tool-run > summary .bui-tool-kind {
-  color: var(--td3-attention-text);
-}
-
-/* A rule, not a mark: `incomplete` is finished work that produced no result. */
-.bui-status-none {
-  width: 8px;
-  height: 2px;
-  border-radius: 2px;
-  background: currentcolor;
-}
-
 /* ---------------------------------------------------------------- spinner */
 
 /* One turning ring per running call. A conic gradient masked to a ring costs the
@@ -884,44 +539,6 @@
 
 @keyframes bui-spin {
   to { transform: rotate(1turn); }
-}
-
-.tdw-work-thread-conversation .uw-tool-running > summary .uw-tool-icon {
-  color: var(--td3-blue-text);
-  background: var(--td3-blue-soft);
-}
-
-/* ------------------------------------------------- running progress on a card */
-
-/* An indeterminate sweep along the bottom edge of a call that is still going. It
-   is the difference between "this row is working" and "this row is stuck", which
-   a static spinner in the corner does not settle. */
-.tdw-work-thread-conversation .uw-tool-running.bui-tool > summary {
-  position: relative;
-}
-
-.tdw-work-thread-conversation .uw-tool-running.bui-tool > summary::after {
-  content: "";
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  height: 2px;
-  background: linear-gradient(
-    90deg,
-    transparent,
-    var(--td3-blue) 45%,
-    var(--td3-blue) 55%,
-    transparent
-  );
-  background-size: 45% 100%;
-  background-repeat: no-repeat;
-  animation: bui-sweep 1.5s var(--bui-ease) infinite;
-}
-
-@keyframes bui-sweep {
-  from { background-position: -50% 0; }
-  to { background-position: 150% 0; }
 }
 
 /* ------------------------------------------------------------- typing dots */
@@ -962,33 +579,6 @@
   50% { opacity: 1; }
 }
 
-/* ------------------------------------------------------- expand / collapse */
-
-/* A details element snaps open. Where the engine can animate its content box it
-   now grows into place instead; where it cannot, nothing changes and the panel
-   opens exactly as it did before. */
-@supports selector(::details-content) {
-  .tdw-work-thread-conversation .bui-tool,
-  .tdw-work-thread-conversation .bui-activity {
-    interpolate-size: allow-keywords;
-  }
-
-  .tdw-work-thread-conversation .bui-tool::details-content,
-  .tdw-work-thread-conversation .bui-activity::details-content {
-    height: 0;
-    overflow: clip;
-    opacity: 0;
-    transition: height .26s var(--bui-ease), opacity .2s var(--bui-ease),
-      content-visibility .26s allow-discrete;
-  }
-
-  .tdw-work-thread-conversation .bui-tool[open]::details-content,
-  .tdw-work-thread-conversation .bui-activity[open]::details-content {
-    height: auto;
-    opacity: 1;
-  }
-}
-
 /* --------------------------------------------------------------- skeletons */
 
 /* Loading older history was a bare button and a pause. A shimmering placeholder
@@ -1025,7 +615,6 @@
   .bui-spinner,
   .bui-typing i,
   .tdw-work-thread-conversation .uw-message-working,
-  .tdw-work-thread-conversation .uw-tool-running.bui-tool > summary::after,
   .tdw-work-thread-conversation .uw-history-loader::after {
     animation: none;
     opacity: 1;
@@ -1035,11 +624,6 @@
   /* A ring with no rotation is a static ring, which still reads as "in progress". */
   .bui-spinner {
     border-top-color: currentcolor;
-  }
-
-  .tdw-work-thread-conversation .bui-tool::details-content,
-  .tdw-work-thread-conversation .bui-activity::details-content {
-    transition: none;
   }
 }
 
@@ -1134,16 +718,6 @@
 
 .tdw-work-thread-conversation .uw-message-content-group > .uw-markdown > :last-child {
   margin-bottom: 0;
-}
-
-/* A collapsed Activity header is a one-line summary of finished work, and it was
-   as tall as a control. Open, it keeps its full presence. */
-.tdw-work-thread-conversation .bui-activity:not([open]) > summary {
-  min-height: 38px;
-}
-
-.tdw-work-thread-conversation .uw-activity-group {
-  margin-top: 6px;
 }
 
 @media (prefers-reduced-motion: reduce) {

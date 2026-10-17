@@ -82,10 +82,11 @@ test("surplus window width becomes margin instead of a wider prompt", () => {
 })
 
 test("the activity status label is component copy, not CSS content", () => {
-  const component = read("components/taskdesk-message-content.tsx")
+  const component = read("components/activity-timeline.tsx")
   const overrides = read("conversation-control-plane-overrides.css")
-  assert.match(component, /function activityStatusLabel\(status: string\): string/)
-  assert.match(component, /status === "running" \? "Working" : status/)
+  const i18n = read("i18n.ts")
+  assert.match(component, /running \? t\("act\.working"\)/)
+  assert.match(i18n, /'act\.working': 'Working'/)
   assert.doesNotMatch(overrides, /content: "Working"/)
 })
 

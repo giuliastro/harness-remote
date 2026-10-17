@@ -48,6 +48,9 @@ import "./machine-pairing.css"
 // Loaded last: the ported controls refine rules the sheets above already set, and settling those
 // ties by load order is what keeps the port free of `!important`.
 import "./beautiful-ui-controls.css"
+// A turn's Activity section. It styles only its own `hr-act*` classes, so its place here is about
+// reading order rather than winning ties.
+import "./activity-timeline.css"
 
 installAppPreferences()
 installCompletionAudioGuard()

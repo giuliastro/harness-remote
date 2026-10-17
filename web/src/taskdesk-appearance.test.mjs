@@ -57,7 +57,7 @@ test("live conversation and button bases survived the retired-sheet deletion", (
   // #361 moved the transcript/composer primitives into session-first-workbench.css but accidentally
   // dropped the still-live Activity/tool disclosure primitives. Keep both halves guarded explicitly.
   const workbench = read("session-first-workbench.css")
-  const conversation = read("conversation-base.css")
+  const activity = read("activity-timeline.css")
   assert.match(workbench, /(?:^|\r?\n)\.uw-transcript\s*\{[^}]*?overflow-y:\s*auto;/, ".uw-transcript must bound height with overflow-y: auto")
   assert.match(workbench, /(?:^|\r?\n)\.uw-transcript\s*\{[^}]*?flex:\s*1;/, ".uw-transcript must expand in conversation flex column")
   assert.match(workbench, /(?:^|\r?\n)\.uw-message\s*\{[^}]*?display:\s*grid;/, ".uw-message must declare grid layout")
@@ -68,12 +68,10 @@ test("live conversation and button bases survived the retired-sheet deletion", (
   assert.match(workbench, /(?:^|\r?\n)\.uw-manager-button\s*\{/, ".uw-manager-button has no base rule")
   assert.match(workbench, /(?:^|\r?\n)\.uw-machine-manager\s*\{[^}]*?display:\s*flex;/, ".uw-machine-manager has no modal flex rule")
 
-  assert.match(conversation, /\.uw-tool-card\s*>\s*summary\s*\{[^}]*?display:\s*grid;/s, "Activity summary must remain a grid")
-  assert.match(conversation, /\.uw-tool-card\s*>\s*summary\s*\{[^}]*?grid-template-columns:\s*20px\s+auto\s+minmax\(0,\s*1fr\)\s+auto;/s, "Activity summary columns must remain aligned")
-  assert.match(conversation, /\.uw-tool-card\s*>\s*summary\s*\{[^}]*?list-style:\s*none;/s, "Activity summary must suppress the native disclosure marker")
-  assert.match(conversation, /\.uw-tool-card\s*>\s*summary::?-webkit-details-marker\s*\{[^}]*?display:\s*none;/s, "WebKit disclosure triangle must stay hidden")
-  assert.match(conversation, /\.uw-tool-card\s*>\s*summary::marker\s*\{[^}]*?content:\s*"";/s, "standards disclosure marker must stay hidden")
-  assert.match(conversation, /\.uw-tool-stack\s*\{[^}]*?display:\s*grid;/s, "tool stack must retain its base layout")
+  assert.match(activity, /\.hr-activity-toggle\s*\{[^}]*?display:\s*flex;/s, "Activity header must remain a flex row")
+  assert.match(activity, /\.hr-activity-toggle\s*\{[^}]*?border:\s*0;[^}]*?background:\s*transparent;/s, "Activity header must suppress the native button chrome")
+  assert.match(activity, /\.hr-act-timeline\s*\{[^}]*?display:\s*grid;[^}]*?grid-template-columns:\s*minmax\(0,\s*1fr\);/s, "Activity timeline must retain its base layout")
+  assert.match(activity, /\.hr-act-steps\s*\{[^}]*?display:\s*grid;/s, "tool steps must retain their base layout")
 })
 
 test("no TaskDesk text is authored below a readable size", () => {
