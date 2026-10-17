@@ -303,13 +303,15 @@ function assistantForTurn({
 
   const created = Number(assistants[0]?.info?.time?.created) || turnStart(conversation, turn, index) + 1
   const error = nativeError || (persistedError ? { name: "TaskRunError", message: persistedError } : undefined)
+  const interrupted = assistants.some((message) => message.info.interrupted === true)
   return {
     info: {
       id,
       role: "assistant",
       sessionID: session,
       time: { created },
-      ...(error ? { error } : {})
+      ...(error ? { error } : {}),
+      ...(interrupted ? { interrupted: true } : {})
     },
     parts,
     taskdesk: {

@@ -28,6 +28,17 @@
   letter-spacing: .05em;
 }
 
+/* A deliberate interruption is not a failure: a quiet divider-like note, not the red banner. */
+.uw-message-turn-stopped {
+  margin-top: 10px;
+  padding-top: 6px;
+  border-top: 1px solid var(--td3-border-soft);
+  color: var(--td3-muted);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: .05em;
+}
+
 /* --------------------------------------------------------------------------
    TaskDesk Work Thread conversation
    The old Native Session stylesheet deliberately stays dense for diagnostics.

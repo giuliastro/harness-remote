@@ -539,8 +539,13 @@ export function TaskDeskMessageContent({ message }: { message: MessageEnvelope }
   })
   const turnError = liveAssistant || hasFinalText ? "" : reportedError
   const hasActivity = visibleParts.some((part) => part.type === "reasoning" || part.type === "tool")
+  // A deliberate interruption is a fact about the turn, not a failure: one neutral line, in place,
+  // whichever harness recorded it. It also explains a missing final answer, so the red banner below
+  // is only for a turn that stopped without anyone stopping it.
+  const stopped = message.info.role === "assistant" && !liveAssistant && message.info.interrupted === true
   const interruptedWithoutFinal = message.info.role === "assistant"
     && !liveAssistant
+    && !stopped
     && !turnError
     && assistantTurnCompleted(message)
     && hasActivity
@@ -555,6 +560,7 @@ export function TaskDeskMessageContent({ message }: { message: MessageEnvelope }
       })}
       {turnError ? <div className="uw-message-turn-error" role="alert"><strong>Turn failed</strong><span>{turnError}</span></div> : null}
       {interruptedWithoutFinal ? <div className="uw-message-turn-error" role="alert"><strong>Response interrupted</strong><span>The coding agent stopped before producing a final answer.</span></div> : null}
+      {stopped ? <div className="uw-message-turn-stopped" role="note">Interrupted</div> : null}
     </div>
   )
 }

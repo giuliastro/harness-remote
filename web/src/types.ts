@@ -225,6 +225,8 @@ export type MessageEnvelope = {
     /** Present when the turn ended in a provider or harness failure instead of a reply. OpenCode
      * nests the readable sentence under `data.message`, often as a JSON string of its own. */
     error?: { name?: string; message?: string; data?: { message?: string } }
+    /** The turn was stopped before it finished: a Stop, or a message sent while it was running. */
+    interrupted?: boolean
   }
   parts: MessagePart[]
 }

@@ -5,7 +5,7 @@ import { tmpdir } from "node:os"
 import path from "node:path"
 import test from "node:test"
 import { createBridgeServer } from "../src/server.js"
-import { AcpService, isHarnessInjectedText } from "../src/acp-service.js"
+import { AcpService, chronologicalReplay, isHarnessInjectedText, isInterruptionMarker, markLatestTurnInterrupted } from "../src/acp-service.js"
 
 class FakeAcp extends EventEmitter {
   agentInfo = { version: "17.0.7" }
@@ -397,7 +397,7 @@ async function readJSON(baseURL, path, init) {
 }
 
 function conversation(messages) {
-  return messages.map((message) => `${message.info.role}: ${message.parts[0].text}`)
+  return messages.map((message) => `${message.info.role}: ${message.parts[0]?.text ?? ""}${message.info.interrupted ? " [interrupted]" : ""}`)
 }
 
 async function waitForIdle(baseURL, sessionID) {
@@ -474,8 +474,9 @@ test("discards queued prompts when the session is aborted", async () => {
 
     await fetch(`${bridge.baseURL}/session/session-1/abort`, { method: "POST", headers: authHeaders() })
     assert.deepEqual(conversation(await readJSON(bridge.baseURL, "/session/session-1/message")), [
-      "user: running"
-    ], "a cancelled queue must not leave a message that was never sent")
+      "user: running",
+      "assistant:  [interrupted]"
+    ], "a cancelled queue must not leave a message that was never sent; the stopped turn says so")
 
     acp.releaseTurn()
     await waitForIdle(bridge.baseURL, "session-1")
@@ -1639,6 +1640,60 @@ test("hides harness-injected blocks from the transcript without hiding a message
   )
   assert.equal(isHarnessInjectedText("deploy the <task-notification> tag docs"), false)
   assert.equal(isHarnessInjectedText("ordinary prompt"), false)
+})
+
+// Claude Code records a cancelled turn as a user-role marker, which read as text the user typed.
+test("recognises Claude Code's interruption marker without matching a message that quotes it", () => {
+  assert.equal(isInterruptionMarker("[Request interrupted by user]"), true)
+  assert.equal(isInterruptionMarker("[Request interrupted by user for tool use]"), true)
+  assert.equal(isInterruptionMarker("\n[Request interrupted by user]\n"), true)
+  assert.equal(isInterruptionMarker("it wrote [Request interrupted by user] while the session had finished"), false)
+  assert.equal(isInterruptionMarker("[Request interrupted by user] why?"), false)
+  assert.equal(isHarnessInjectedText("[Request interrupted by user]"), false, "the marker is not dropped as bookkeeping")
+})
+
+test("an interruption flags the reply of the newest turn, or adds an empty one", () => {
+  const replied = [
+    { info: { id: "u1", role: "user", time: { created: 1 } }, parts: [] },
+    { info: { id: "a1", role: "assistant", time: { created: 2 } }, parts: [{ type: "text", text: "partial" }] }
+  ]
+  assert.equal(markLatestTurnInterrupted(replied, "s"), true)
+  assert.equal(replied.length, 2)
+  assert.equal(replied[1].info.interrupted, true)
+  assert.equal(replied[0].info.interrupted, undefined)
+
+  const unanswered = [
+    { info: { id: "a0", role: "assistant", time: { created: 1 } }, parts: [] },
+    { info: { id: "u1", role: "user", time: { created: 2 } }, parts: [] }
+  ]
+  assert.equal(markLatestTurnInterrupted(unanswered, "s", 3), true)
+  assert.equal(unanswered[0].info.interrupted, undefined, "an earlier turn is never touched")
+  assert.deepEqual(unanswered[2].info, { id: unanswered[2].info.id, role: "assistant", sessionID: "s", time: { created: 3 }, interrupted: true })
+
+  assert.equal(markLatestTurnInterrupted([], "s"), false)
+})
+
+// Observed on Claude Code: a marker written mid-turn was first seen on reload, stamped with the reload
+// time, and clients sorting turns by time showed it below the reply of the turn that followed it.
+test("replayed creation times never place a message after the ones that follow it", () => {
+  const message = (id, role, created) => ({ info: { id, role, time: { created } }, parts: [] })
+  const replayed = chronologicalReplay([
+    message("before", "assistant", 1792227448300),
+    message("marker", "user", 1792227448304),
+    message("prompt", "user", 1792227289804),
+    message("reply", "assistant", 1792227448309),
+    message("next", "user", 1792227513380),
+    message("tail", "assistant", 1792227873663),
+    message("untimed", "assistant", undefined)
+  ])
+  const created = Object.fromEntries(replayed.map((entry) => [entry.info.id, entry.info.time.created]))
+  assert.ok(created.marker < created.prompt, "the marker stays before the prompt that followed it")
+  assert.ok(created.before < created.marker)
+  assert.equal(created.prompt, 1792227289804, "a known time is never moved")
+  assert.equal(created.next, 1792227513380)
+  assert.equal(created.tail, 1792227873663, "a time already in order is untouched")
+  assert.equal(created.untimed, undefined)
+  assert.ok(created.reply < created.next)
 })
 
 test("drops an injected user chunk while keeping the surrounding conversation", async () => {

@@ -196,16 +196,19 @@ test("PI history treats only native aborted assistant messages as cancellations"
 
   const loader = createPiHistoryLoader(root)
   const full = await loader(sessionID)
-  assert.deepEqual(full.map((message) => message.info.id), ["u1", "cancel-partial", "u2", "failure", "a3"])
+  assert.deepEqual(full.map((message) => message.info.id), ["u1", "cancel-empty", "cancel-partial", "u2", "failure", "a3"])
   assert.deepEqual(visible(full), [
     { role: "user", text: "First prompt" },
+    { role: "assistant", text: "" },
     { role: "assistant", text: "Partial reasoningPartial answer" },
     { role: "user", text: "Follow-up" },
     { role: "assistant", text: "" },
     { role: "assistant", text: "Follow-up answer" }
   ])
-  assert.equal(full[1].info.error, undefined, "aborted partial output remains history without a failed-turn marker")
-  assert.deepEqual(full[3].info.error, { name: "HarnessTurnError", message: "Request aborted" },
+  assert.deepEqual(full.map((message) => message.info.interrupted === true), [false, true, true, false, false, false],
+    "a Stop is kept as a neutral interruption, even when it produced no output yet")
+  assert.equal(full[2].info.error, undefined, "aborted partial output remains history without a failed-turn marker")
+  assert.deepEqual(full[4].info.error, { name: "HarnessTurnError", message: "Request aborted" },
     "an error stop remains a failure even when its provider text says request aborted")
 
   const pageGroups = []
@@ -220,7 +223,7 @@ test("PI history treats only native aborted assistant messages as cancellations"
   assert.deepEqual(pages.map((message) => message.info.id), full.map((message) => message.info.id),
     "paged history must retain the same branch while traversing the skipped empty cancellation")
   assert.equal(pages.find((message) => message.info.id === "cancel-partial").info.error, undefined)
-  assert.deepEqual(pages.find((message) => message.info.id === "failure").info.error, full[3].info.error)
+  assert.deepEqual(pages.find((message) => message.info.id === "failure").info.error, full[4].info.error)
 })
 
 test("PI journal rename appends the same session_info record PI list/resume uses", async () => {

@@ -90,6 +90,38 @@ function messageSignature(message) {
   return `${message?.info?.role ?? ""}\u0000${visibleMessageText(message)}${error}`
 }
 
+/**
+ * Keep replayed creation times in transcript order.
+ *
+ * A replay mixes two clocks: messages this bridge already knew keep their recorded time, while
+ * the ones ACP replays without a timestamp are stamped with the moment of the reload. Clients order
+ * turns by that time, so a user-role message first seen on replay — Claude Code's interruption
+ * marker, written mid-turn and never streamed live — moved past every later prompt and appeared at
+ * the bottom of a Session that had finished normally. Walking backward, a message may not claim the
+ * time of the message after it or a later one; known times are never moved forward. A moved time is
+ * strictly earlier, because clients break equal times by id, which says nothing about order.
+ */
+export function chronologicalReplay(messages) {
+  let ceiling = Number.POSITIVE_INFINITY
+  const ordered = new Array(messages.length)
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index]
+    const created = Number(message?.info?.time?.created)
+    if (!Number.isFinite(created) || created <= 0) {
+      ordered[index] = message
+      continue
+    }
+    if (created >= ceiling) {
+      ceiling -= 1
+      ordered[index] = { ...message, info: { ...message.info, time: { ...message.info.time, created: ceiling } } }
+      continue
+    }
+    ordered[index] = message
+    ceiling = created
+  }
+  return ordered
+}
+
 function authoritativeReplay(previous, replayed) {
   // ACP replay can omit timestamps and mint fresh ids. Retain known identities for unchanged
   // occurrences, while the native replay alone decides content, membership and order.
@@ -105,7 +137,8 @@ function authoritativeReplay(previous, replayed) {
     if (!prior) return message
     return {
       ...message,
-      info: { ...message.info, id: prior.info.id, time: prior.info.time },
+      // A live Stop is recorded only here; a harness that journals no interruption must not erase it.
+      info: { ...message.info, id: prior.info.id, time: prior.info.time, ...(prior.info.interrupted ? { interrupted: true } : {}) },
       parts: message.parts.map((part) => ({ ...part, ...(part.messageID ? { messageID: prior.info.id } : {}) }))
     }
   })
@@ -363,6 +396,38 @@ const HARNESS_INJECTED_BLOCK = /^(?:\s*<(task-notification|system-reminder)>[\s\
 
 export function isHarnessInjectedText(text) {
   return HARNESS_INJECTED_BLOCK.test(text)
+}
+
+/**
+ * Claude Code records a cancelled turn as a plain user-role marker: for a Stop, and for a message
+ * sent while a turn was running. Shown as is, it reads as text the user typed. It is a fact about the
+ * turn before it, so the transcript carries it as `info.interrupted` on that turn's reply instead -
+ * the same flag a live Stop and the OMP/PI journal aborts produce. Matched exactly, so a message that
+ * quotes the marker stays an ordinary message.
+ */
+const INTERRUPTION_MARKER = /^\s*\[Request interrupted by user(?: for tool use)?\]\s*$/
+
+export function isInterruptionMarker(text) {
+  return INTERRUPTION_MARKER.test(text)
+}
+
+/** Flag the reply of the newest turn as interrupted, adding an empty reply when it had none yet. */
+export function markLatestTurnInterrupted(messages, sessionID, created = Date.now()) {
+  let lastUser = -1
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    if (messages[index]?.info?.role === "user") {
+      lastUser = index
+      break
+    }
+  }
+  if (lastUser < 0) return false
+  for (let index = messages.length - 1; index > lastUser; index -= 1) {
+    if (messages[index]?.info?.role !== "assistant") continue
+    messages[index] = { ...messages[index], info: { ...messages[index].info, interrupted: true } }
+    return true
+  }
+  messages.push({ info: { id: randomUUID(), role: "assistant", sessionID, time: { created }, interrupted: true }, parts: [] })
+  return true
 }
 
 /** The two tool-call states that mean "still running" on the wire and in the transcript. */
@@ -1591,6 +1656,7 @@ export class AcpService {
       }
       this.#emit("message.updated", sessionID)
     }
+    const wasActive = this.#active.has(sessionID)
     this.#turnGenerations.set(sessionID, (this.#turnGenerations.get(sessionID) ?? 0) + 1)
     this.#cancelledSessions.add(sessionID)
     this.#turnResponseObserved.delete(sessionID)
@@ -1598,6 +1664,12 @@ export class AcpService {
     this.#chunkMessageIDs.delete(`${sessionID}:assistant`)
     // A cancelled turn gets no closing tool_call_update at all, so settle before it is published.
     this.#settleActivity(sessionID)
+    // Live, the Stop is the only record of the interruption; replay reads it back from the harness.
+    if (wasActive) {
+      const messages = this.#messages.get(sessionID) ?? []
+      this.#messages.set(sessionID, messages)
+      if (markLatestTurnInterrupted(messages, sessionID)) this.#emit("message.updated", sessionID)
+    }
     this.#acp.notify("session/cancel", { sessionId: sessionID })
     this.#emit("session.updated", sessionID)
     this.#persistSnapshot(sessionID)
@@ -2020,9 +2092,9 @@ export class AcpService {
       }
       this.#rememberSessionConfiguration(sessionID, result)
       const replayedMessages = mergeFragmentedPiSnapshot(this.#messages.get(sessionID) ?? [])
-      this.#messages.set(sessionID, this.#replayAuthoritative
+      this.#messages.set(sessionID, chronologicalReplay(this.#replayAuthoritative
         ? authoritativeReplay(previousMessages, replayedMessages)
-        : replaceHistory ? replayedMessages : mergeReplay(previousMessages, replayedMessages))
+        : replaceHistory ? replayedMessages : mergeReplay(previousMessages, replayedMessages)))
       // Replayed history is finished work by definition, and the adapter does not always close the
       // tool calls in it. Settling before the signature check keeps the restored (already settled)
       // snapshot and this replay comparable, so an unchanged history still reads as unchanged.
@@ -2292,6 +2364,15 @@ export class AcpService {
     if (role === "assistant" && !replaying && !this.#active.has(sessionId) && !this.#promptedSessions.has(sessionId)) return
     if (role === "user" && !replaying && this.#isAcknowledgedPromptChunk(sessionId, update.content.text)) return
     if (role === "user" && !image && isHarnessInjectedText(update.content.text)) return
+    if (role === "user" && !image && isInterruptionMarker(update.content.text)) {
+      const messages = this.#messages.get(sessionId) ?? []
+      this.#messages.set(sessionId, messages)
+      markLatestTurnInterrupted(messages, sessionId)
+      // Whatever the adapter sends next belongs to a new reply, not to the interrupted one.
+      this.#chunkMessageIDs.delete(`${sessionId}:assistant`)
+      if (!replaying) this.#emit("message.updated", sessionId)
+      return
+    }
     if (!replaying && session) session.updatedAt = new Date().toISOString()
     const counterpartKey = `${sessionId}:${role === "user" ? "assistant" : "user"}`
     this.#chunkMessageIDs.delete(counterpartKey)

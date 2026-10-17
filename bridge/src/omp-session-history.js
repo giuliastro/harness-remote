@@ -48,6 +48,12 @@ function isSuppressedAbort(message) {
  * its replies. The two abort reasons OMP's own renderers suppress are suppressed here too: showing
  * them turned every Stop into a red "Interrupted by user" banner in the reopened transcript.
  */
+/** A Stop by the user, as opposed to OMP's silent internal abort. Shown as a neutral interruption. */
+function isUserInterrupt(message) {
+  const errorId = Number.isInteger(message?.errorId) ? message.errorId : 0
+  return (errorId & ERROR_FLAG_USER_INTERRUPT) !== 0 || message?.errorMessage === USER_INTERRUPT_LABEL
+}
+
 function messageError(message) {
   if (isSuppressedAbort(message)) return undefined
   const detail = typeof message?.errorMessage === "string" ? message.errorMessage.trim() : ""
@@ -163,7 +169,8 @@ function branchMessages(branch, sessionID) {
 
     const parts = contentParts(message.content, messageID)
     const error = role === "assistant" ? messageError(message) : undefined
-    if (parts.length === 0 && !error) continue
+    const interrupted = role === "assistant" && isUserInterrupt(message)
+    if (parts.length === 0 && !error && !interrupted) continue
     for (const part of parts) {
       if (part.type === "tool") {
         part.state.time = { start: created }
@@ -176,7 +183,8 @@ function branchMessages(branch, sessionID) {
         role,
         sessionID,
         time: { created },
-        ...(error ? { error } : {})
+        ...(error ? { error } : {}),
+        ...(interrupted ? { interrupted: true } : {})
       },
       parts
     })
