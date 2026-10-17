@@ -45,8 +45,8 @@ export function findCodexExecutable(options = {}) {
   const candidates = platform === "linux"
     ? ["/usr/lib/chatgpt/resources/codex"]
     : platform === "darwin"
-      ? ["/Applications", path.join(home, "Applications")].flatMap((root) =>
-        ["Codex.app", "ChatGPT.app"].map((app) => path.join(root, app, "Contents/Resources/codex")))
+      ? ["/Applications", path.posix.join(home, "Applications")].flatMap((root) =>
+        ["Codex.app", "ChatGPT.app"].map((app) => path.posix.join(root, app, "Contents/Resources/codex")))
       : []
   return candidates.find((candidate) => executable(candidate, options)) ?? null
 }
