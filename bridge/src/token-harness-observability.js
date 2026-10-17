@@ -93,7 +93,7 @@ export function projectTokenHarnessObservations(doctor, budget, metrics, observe
     }))
   return {
     schemaVersion: 1,
-    state: !doctor ? "unavailable" : !budget || !metrics ? "partial" : "available",
+    state: !doctor ? "unavailable" : !budget?.data || !metrics?.data ? "partial" : "available",
     observedAt,
     toolVersion: text(doctor?.toolVersion, 60),
     agents,
