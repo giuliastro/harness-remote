@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { createOpenCode2HistoryLoader } from '../src/opencode2-session-history.js'
 import { AcpService } from '../src/acp-service.js'
+import { harnessProfile } from '../src/harness-profiles.js'
 
 const exported = {
   info: { id: 'ses_test', model: { providerID: 'opencode', id: 'longcat-2.5-preview-free' } },
@@ -76,5 +77,23 @@ test('continuation reports a removed project even for an already open writer', a
     assert.equal((await service.messagePage('ses_test')).messages.at(-1).parts[0].text, 'final answer')
   } finally {
     await rm(directory, { recursive: true, force: true })
+  }
+})
+
+test('native export paging restores default effort as the base model and preserves real effort', async () => {
+  const profile = harnessProfile('opencode2')
+  for (const variant of ['default', 'high']) {
+    const snapshot = structuredClone(exported)
+    snapshot.info.model.variant = variant
+    const loader = createOpenCode2HistoryLoader({ runExport: async () => snapshot })
+    const service = new AcpService(new Native(), {
+      historyLoader: loader,
+      modelVariantDefaultValues: profile.modelVariantDefaultValues
+    })
+    assert.deepEqual((await service.messagePage('ses_test')).model, {
+      providerID: 'opencode', modelID: 'longcat-2.5-preview-free',
+      ...(variant === 'high' ? { variant } : {})
+    })
+    assert.equal((await loader.page('ses_test')).model.variant, variant, 'normalization must not mutate the native export')
   }
 })

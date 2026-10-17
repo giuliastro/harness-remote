@@ -1,4 +1,4 @@
-import { findExecutable } from "./executable-discovery.js"
+import { findExecutable, codexAdapterEnvironment } from "./executable-discovery.js"
 import { createCodexHistoryLoader } from "./codex-session-history.js"
 import { createOmpHistoryLoader } from "./omp-session-history.js"
 import { createPiHistoryLoader } from "./pi-session-history.js"
@@ -241,6 +241,7 @@ export const HARNESS_PROFILES = {
     permissionMode: "allow",
     lifecycleContract: COMMON_ACP_LIFECYCLE_CONTRACT,
     modelVariantConfigIDs: ["effort"],
+    modelVariantDefaultValues: ["default"],
     sessionContract: {
       authority: "native-harness",
       discovery: "native-list",
@@ -316,23 +317,25 @@ export const HARNESS_PROFILES = {
   }),
   codex: defineAcpProvider({
     id: "codex",
-    label: "Codex CLI",
+    label: "Codex",
     // Uses the official ACP adapter for the OpenAI Codex CLI. The adapter speaks ACP JSON-RPC
     // over stdio and embeds @openai/codex, so no separate Codex installation is needed. The
-    // user must have run `codex login` (ChatGPT account) or set an OpenAI API key first.
+    // user needs a cached Codex login (desktop app or CLI) or configured provider credentials.
     // Requires Node 22+ (same as the PI and Claude adapters it mirrors).
     command: process.platform === "win32" ? "npx.cmd" : "npx",
     detectCommands: ["codex"],
+    // Use the detected CLI or desktop binary rather than an unrelated npm copy.
+    environment: codexAdapterEnvironment(),
     launchPriority: 10,
     // Pinned to avoid the `notarget` scenario that PI hit. Like PI, install the scoped package
     // explicitly and invoke its published binary instead of relying on npx package-spec inference.
     args: ["--yes", "--package=@agentclientprotocol/codex-acp@1.13.1", "codex-acp"],
     adapterCommand: "codex-acp",
     permissionMode: "allow",
-    // The adapter offers `api-key` before `chat-gpt`; the former demands CODEX_API_KEY or
-    // OPENAI_API_KEY, while a `codex login` leaves ChatGPT credentials the `chat-gpt` method
-    // reads from disk. Prefer the login, exactly like the generic default already avoids
-    // env-var methods for the other harnesses.
+    // The adapter checks the existing account before each operation. Calling authenticate
+    // during discovery forces token refresh and can open a browser login on app startup.
+    // Reuse the native account; a missing login should surface as an auth error instead.
+    authenticate: false,
     authMethod: "chat-gpt",
     // Codex holds a single-writer lock for as long as a client keeps a thread open, so a session the
     // desktop app is showing cannot be loaded over ACP at all. Its rollout file can, which is what

@@ -163,7 +163,7 @@ async function readCodexPage(file, sessionID, { limit = 100, before } = {}) {
  * records also hold instruction blocks Codex feeds the model, AGENTS.md, the plugin list and desktop
  * app context under the `user` role, which would surface as the user's own turns.
  */
-export function createCodexHistoryLoader(sessionRoot = path.join(homedir(), ".codex", "sessions")) {
+export function createCodexHistoryLoader(sessionRoot = path.join(process.env.CODEX_HOME || path.join(homedir(), ".codex"), "sessions")) {
   const sessionFiles = new Map()
 
   async function locateSession(sessionID) {

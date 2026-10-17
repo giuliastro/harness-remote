@@ -5,6 +5,7 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import path from "node:path"
 import { AcpClient } from "../src/acp-client.js"
+import { harnessProfile } from "../src/harness-profiles.js"
 
 test("a missing native project directory reports the path instead of a misleading executable ENOENT", async () => {
   const root = await mkdtemp(path.join(tmpdir(), "harness-acp-missing-project-"))
@@ -430,4 +431,23 @@ test("waits for a closing child before restart and ignores its late error", asyn
   first.emit("error", new Error("late old child error"))
   assert.equal(client.processID, 4242, "an old process event must not clear the current child")
   await client.close()
+})
+
+
+test("Codex discovers native sessions without triggering interactive authentication", async () => {
+  const profile = harnessProfile("codex")
+  const sent = []
+  const client = new AcpClient({
+    authenticate: profile.authenticate,
+    preferredAuthMethod: profile.authMethod,
+    spawnProcess: fakeSpawn((child, request) => {
+      sent.push(request.method)
+      respondToHandshake(child, request, [{ id: "api-key" }, { id: "chat-gpt" }])
+      if (request.method === "session/list") child.respond({ jsonrpc: "2.0", id: request.id, result: { sessions: [{ sessionId: "desktop-session" }] } })
+    })
+  })
+  try {
+    assert.deepEqual(await client.listSessions(), [{ sessionId: "desktop-session" }])
+    assert.equal(sent.includes("authenticate"), false)
+  } finally { await client.close() }
 })

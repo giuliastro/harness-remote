@@ -565,6 +565,7 @@ export class AcpService {
   #replayUserChunksAreMessages
   #refreshSessionListOnRead
   #modelVariantConfigIDs
+  #modelVariantDefaultValues
   #modelProviderID
   #excludedModelValuePrefixes
   #inlineModelVariantValues
@@ -615,6 +616,7 @@ export class AcpService {
      * id the running adapter actually advertised.
      */
     modelVariantConfigIDs = [],
+    modelVariantDefaultValues = [],
     modelProviderID,
     excludedModelValuePrefixes = [],
     inlineModelVariantValues = [],
@@ -641,6 +643,7 @@ export class AcpService {
     this.#replayUserChunksAreMessages = replayUserChunksAreMessages
     this.#refreshSessionListOnRead = refreshSessionListOnRead
     this.#modelVariantConfigIDs = modelVariantConfigIDs
+    this.#modelVariantDefaultValues = modelVariantDefaultValues
     this.#modelProviderID = modelProviderID
     this.#excludedModelValuePrefixes = excludedModelValuePrefixes
     this.#inlineModelVariantValues = inlineModelVariantValues
@@ -1079,7 +1082,15 @@ export class AcpService {
         }
         if (pageOptions) {
           const page = await this.#historyLoader.page(sessionID, pageOptions)
-          if (page && Array.isArray(page.messages)) return page
+          if (page && Array.isArray(page.messages)) {
+            // Native exports can carry the same default-effort sentinel as ACP config options.
+            // Normalize both read paths before the UI restores a model for the next prompt.
+            if (this.#modelVariantDefaultValues.includes(page.model?.variant)) {
+              const { variant, ...model } = page.model
+              return { ...page, model }
+            }
+            return page
+          }
         }
       } catch {
         this.#emit("session.error", sessionID, { message: "Harness session history page could not be read" })
@@ -1137,9 +1148,10 @@ export class AcpService {
     if (separator <= 0 && !this.#modelProviderID || separator === current.length - 1) return undefined
     // The reasoning variant belongs to the selection: reporting the model without it would let the
     // app carry the next turn on with the variant silently dropped.
-    const variant = inline?.variant ?? this.#modelVariantConfigIDs
+    const selectedVariant = inline?.variant ?? this.#modelVariantConfigIDs
       .map((configId) => options?.find((item) => item.id === configId)?.currentValue)
       .find((value) => typeof value === "string" && value)
+    const variant = this.#modelVariantDefaultValues.includes(selectedVariant) ? undefined : selectedVariant
     return {
       providerID: separator > 0 ? current.slice(0, separator) : this.#modelProviderID,
       modelID: separator > 0 ? current.slice(separator + 1) : current,

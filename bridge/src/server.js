@@ -194,6 +194,7 @@ export function createBridgeServer({ config, acp, serviceOptions, machineRegistr
     journalPageWhileOwned: profile.journalPageWhileOwned !== false,
     replayAuthoritative: profile.replayAuthoritative === true,
     modelVariantConfigIDs: profile.modelVariantConfigIDs ?? [],
+    modelVariantDefaultValues: profile.modelVariantDefaultValues ?? [],
     modelProviderID: profile.id,
     excludedModelValuePrefixes: profile.excludedModelValuePrefixes ?? [],
     inlineModelVariantValues: profile.inlineModelVariantValues ?? [],

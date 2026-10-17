@@ -4,7 +4,7 @@ import fs from "node:fs"
 import net from "node:net"
 import { networkInterfaces } from "node:os"
 import path from "node:path"
-import { findExecutable } from "./executable-discovery.js"
+import { findExecutable, findCodexExecutable } from "./executable-discovery.js"
 import { listAcpProviderProfiles } from "./harness-profiles.js"
 import { spawn } from "node:child_process"
 import { fileURLToPath } from "node:url"
@@ -51,6 +51,7 @@ export function detectBackends(options = {}) {
   return providers
     .filter((provider) => provider.id === "opencode" || provider.executableGeneration
       ? openCode.some((candidate) => candidate.generation === (provider.executableGeneration ?? 1))
+      : provider.id === "codex" ? Boolean(findCodexExecutable(options))
       : provider.detectCommands.some((command) => findExecutable(command, options)))
     .map((provider) => provider.id)
 }

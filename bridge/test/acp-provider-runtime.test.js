@@ -93,7 +93,10 @@ test("provider runtime builds separate user and model ACP clients and a complete
 
   const historyLoader = async () => []
   let historyLaunch
-  const p = provider({ createHistoryLoader(launch) { historyLaunch = launch; return historyLoader } })
+  const p = provider({
+    modelVariantDefaultValues: ["default"],
+    createHistoryLoader(launch) { historyLaunch = launch; return historyLoader }
+  })
   const config = {
     backend: "primary",
     roots: ["/work/project"],
@@ -146,6 +149,7 @@ test("provider runtime builds separate user and model ACP clients and a complete
   assert.equal(registration.serviceOptions.reloadOnHistoryRefresh, false)
   assert.equal(registration.serviceOptions.replaySettleMs, 125)
   assert.equal(registration.serviceOptions.promptSettleMs, 250)
+  assert.deepEqual(registration.serviceOptions.modelVariantDefaultValues, ["default"])
   assert.equal(registration.contract.protocol, "acp")
   assert.equal(registration.contract.sessions.transcript, "session-load")
 })

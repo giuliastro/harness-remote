@@ -80,6 +80,9 @@ export function defineAcpProvider(definition) {
     ...(definition.environment ? { environment: { ...definition.environment } } : {}),
     capabilities: { ...definition.capabilities },
     modelVariantConfigIDs: stringArray(definition.modelVariantConfigIDs ?? [], "modelVariantConfigIDs"),
+    ...(definition.modelVariantDefaultValues !== undefined ? {
+      modelVariantDefaultValues: stringArray(definition.modelVariantDefaultValues, "modelVariantDefaultValues")
+    } : {}),
     sessionContract: { ...definition.sessionContract },
     lifecycleContract: { ...definition.lifecycleContract }
   }

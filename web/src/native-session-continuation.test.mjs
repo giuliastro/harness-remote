@@ -14,7 +14,7 @@ function target(overrides = {}) {
     key: 'machine:codex:s1',
     machineID: 'machine',
     agentID: 'codex',
-    agentLabel: 'Codex CLI',
+    agentLabel: 'Codex',
     backend: 'codex',
     transport: 'acp',
     sessionID: 's1',

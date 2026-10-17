@@ -1,6 +1,7 @@
 import assert from "node:assert/strict"
 import test from "node:test"
 import { AcpService } from "../src/acp-service.js"
+import { harnessProfile } from "../src/harness-profiles.js"
 
 /**
  * A harness legitimately resets dependent controls when the model changes, so the variant must be
@@ -12,11 +13,13 @@ class RecordingAcp {
   #listeners = new Set()
   promptCapabilities = {}
   processID = 4242
-  constructor({ holdPrompt = false, models = ["openai/a", "openai/b"], currentModel = models[0] } = {}) {
+  constructor({ holdPrompt = false, models = ["openai/a", "openai/b"], currentModel = models[0], variantConfigID = "thinking", currentVariant = "off" } = {}) {
     this.holdPrompt = holdPrompt
     this.releasePrompt = undefined
     this.models = models
     this.currentModel = currentModel
+    this.variantConfigID = variantConfigID
+    this.currentVariant = currentVariant
   }
   on() { return this }
   off() { return this }
@@ -28,7 +31,7 @@ class RecordingAcp {
   #configOptions() {
     return [
       { id: "model", currentValue: this.currentModel, options: this.models.map((value) => ({ value })) },
-      { id: "thinking", currentValue: "off", options: [{ value: "off" }, { value: "high" }] }
+      { id: this.variantConfigID, currentValue: this.currentVariant, options: [{ value: this.currentVariant }, { value: "high" }] }
     ]
   }
   async request(method, params) {
@@ -57,6 +60,38 @@ test("a journal-less ACP session restores its native model and variant on transc
   assert.deepEqual(page.model, { providerID: "opencode", modelID: "longcat-2.5-preview-free", variant: "off" })
   assert.ok(acp.calls.some(([method]) => method === "session/load"))
   assert.equal(acp.calls.some(([method]) => method === "session/resume"), false)
+})
+
+test("OpenCode 2 omits only its declared native default variant while preserving selected effort", async () => {
+  const profile = harnessProfile("opencode2")
+  const options = {
+    modelVariantConfigIDs: profile.modelVariantConfigIDs,
+    modelVariantDefaultValues: profile.modelVariantDefaultValues
+  }
+  const defaultAcp = new RecordingAcp({ models: ["opencode/longcat-2.5-preview-free"], variantConfigID: "effort", currentVariant: "default" })
+  const defaultService = new AcpService(defaultAcp, options)
+  assert.deepEqual((await defaultService.messagePage("s1")).model, {
+    providerID: "opencode",
+    modelID: "longcat-2.5-preview-free"
+  })
+
+  const highAcp = new RecordingAcp({ models: ["opencode/longcat-2.5-preview-free"], variantConfigID: "effort", currentVariant: "high" })
+  const highService = new AcpService(highAcp, options)
+  assert.deepEqual((await highService.messagePage("s1")).model, {
+    providerID: "opencode",
+    modelID: "longcat-2.5-preview-free",
+    variant: "high"
+  })
+})
+
+test("an undeclared native default remains a literal selection for other harnesses", async () => {
+  const acp = new RecordingAcp({ models: ["openai/a"], variantConfigID: "reasoning", currentVariant: "default" })
+  const service = new AcpService(acp, { modelVariantConfigIDs: ["reasoning"] })
+  assert.deepEqual((await service.messagePage("s1")).model, {
+    providerID: "openai",
+    modelID: "a",
+    variant: "default"
+  })
 })
 
 test("MiMo inline variants use one exact native model value and survive transcript reads", async () => {

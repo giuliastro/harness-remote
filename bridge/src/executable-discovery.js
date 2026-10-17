@@ -1,5 +1,6 @@
 import fs from "node:fs"
 import path from "node:path"
+import { homedir } from "node:os"
 
 function executableNames(name, platform = process.platform) {
   if (platform !== "win32") return [name]
@@ -31,4 +32,29 @@ export function findExecutable(name, { pathValue = process.env.PATH ?? "", platf
     }
   }
   return null
+}
+
+export function findCodexExecutable(options = {}) {
+  const configured = options.codexPath ?? process.env.CODEX_PATH
+  if (configured && executable(configured, options)) return configured
+  const onPath = findExecutable("codex", options)
+  if (onPath) return onPath
+  const platform = options.platform ?? process.platform
+  const home = options.homeDirectory ?? homedir()
+  // GUI apps do not inherit the private PATH that Codex adds to its terminals.
+  const candidates = platform === "linux"
+    ? ["/usr/lib/chatgpt/resources/codex"]
+    : platform === "darwin"
+      ? ["/Applications", path.join(home, "Applications")].flatMap((root) =>
+        ["Codex.app", "ChatGPT.app"].map((app) => path.join(root, app, "Contents/Resources/codex")))
+      : []
+  return candidates.find((candidate) => executable(candidate, options)) ?? null
+}
+
+export function codexAdapterEnvironment({ environment = process.env, find = findCodexExecutable } = {}) {
+  // An explicit adapter override remains authoritative, including its error reporting.
+  if (environment.CODEX_PATH) return { CODEX_PATH: environment.CODEX_PATH }
+  const command = find({ pathValue: environment.PATH ?? "" })
+  // Without an installed binary the adapter retains its bundled Codex fallback.
+  return command ? { CODEX_PATH: command } : {}
 }

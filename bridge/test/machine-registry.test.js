@@ -61,7 +61,7 @@ test("represents multiple heterogeneous agent hosts on one machine", () => {
   const registry = new MachineRegistry({ id: "machine_test", name: "workstation" })
   registry.registerHost({
     id: "codex",
-    label: "Codex CLI",
+    label: "Codex",
     backend: "codex",
     transport: "acp",
     capabilities: { sessions: true, models: true }
@@ -80,7 +80,7 @@ test("represents multiple heterogeneous agent hosts on one machine", () => {
     agents: [
       {
         id: "codex",
-        label: "Codex CLI",
+        label: "Codex",
         backend: "codex",
         transport: "acp",
         managed: true,

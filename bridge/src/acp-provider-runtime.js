@@ -135,6 +135,7 @@ export async function createAcpProviderRuntime({
         replaySettleMs: provider.replaySettleMs,
         promptSettleMs: provider.promptSettleMs,
         modelVariantConfigIDs: provider.modelVariantConfigIDs,
+        modelVariantDefaultValues: provider.modelVariantDefaultValues,
         modelProviderID: provider.id,
         excludedModelValuePrefixes: provider.excludedModelValuePrefixes,
         inlineModelVariantValues: provider.inlineModelVariantValues,

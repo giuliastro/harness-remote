@@ -229,7 +229,7 @@ responder = (url) => {
   return new Response(JSON.stringify({
     models: [{
       providerID: 'codex',
-      providerName: 'Codex CLI',
+      providerName: 'Codex',
       modelID: 'gpt-5.6-sol',
       modelName: 'GPT-5.6-Sol'
     }],

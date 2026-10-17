@@ -1,5 +1,6 @@
 import assert from "node:assert/strict"
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises"
+import { execFileSync } from "node:child_process"
+import { mkdir, mkdtemp, rename, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import path from "node:path"
 import test from "node:test"
@@ -203,4 +204,21 @@ test("reports no history rather than failing when a rollout is absent", async ()
   } finally {
     await rm(root, { recursive: true, force: true })
   }
+})
+
+
+test("default history reader follows the native CODEX_HOME used by the adapter", async () => {
+  const root = await writeRollout([
+    { timestamp: "2026-08-07T09:28:51.290Z", type: "event_msg", payload: { type: "user_message", message: "custom home history" } }
+  ])
+  try {
+    await mkdir(path.join(root, "sessions"))
+    await rename(path.join(root, "2026"), path.join(root, "sessions", "2026"))
+    const moduleURL = new URL("../src/codex-session-history.js", import.meta.url).href
+    const source = `import { createCodexHistoryLoader } from ${JSON.stringify(moduleURL)}; console.log(JSON.stringify(await createCodexHistoryLoader()(${JSON.stringify(sessionID)})))`
+    const result = execFileSync(process.execPath, ["--input-type=module", "-e", source], {
+      env: { ...process.env, CODEX_HOME: root }, encoding: "utf8"
+    })
+    assert.equal(JSON.parse(result)[0].parts[0].text, "custom home history")
+  } finally { await rm(root, { recursive: true, force: true }) }
 })

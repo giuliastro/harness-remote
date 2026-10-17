@@ -59,7 +59,7 @@ function profileID(): string {
 }
 
 function profileName(backend: BackendKind, position: number): string {
-  const label = backend === "omp" ? "Oh My Pi" : backend === "pi" ? "PI" : backend === "claude" ? "Claude Code" : backend === "codex" ? "Codex CLI" : backend === "copilot" ? "GitHub Copilot CLI" : backend === "mimo" ? "MiMo Code" : backend === "opencode2" ? "OpenCode 2" : "OpenCode Legacy"
+  const label = backend === "omp" ? "Oh My Pi" : backend === "pi" ? "PI" : backend === "claude" ? "Claude Code" : backend === "codex" ? "Codex" : backend === "copilot" ? "GitHub Copilot CLI" : backend === "mimo" ? "MiMo Code" : backend === "opencode2" ? "OpenCode 2" : "OpenCode Legacy"
   return position === 0 ? `${label} server` : `${label} server ${position + 1}`
 }
 
