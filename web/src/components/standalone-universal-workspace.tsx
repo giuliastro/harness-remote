@@ -55,6 +55,7 @@ import { useDialogDismiss } from "../useDialogDismiss"
 import { useTranslator } from "../useTranslator"
 import { CommandPalette, type PaletteCommand } from "./shell"
 import { MachinePairingDialog } from "./machine-pairing-dialog"
+import { MachineTokenHarness } from "./machine-token-harness"
 import { NativeSessionActions } from "./native-session-actions"
 import { NativeSessionHome } from "./native-session-home"
 import { NativeSessionTitle } from "./native-session-rename"
@@ -500,6 +501,7 @@ function MachineManager({
                   ) : null}
                   <MachineFolderSummary folders={machineFolders[machine.id]} />
                   {snapshot?.agents.length ? <div className="uw-machine-harness-list">{snapshot.agents.map((agent) => <span className="uw-machine-harness" key={agent.id}><i className={agent.state} aria-hidden="true" /><strong>{agent.label}</strong><small>{machineAgentStateLabel(agent.state, t)}{agent.processID ? ` · PID ${agent.processID}` : ""}</small></span>)}</div> : null}
+                  {state === "online" ? <MachineTokenHarness machine={machine} /> : null}
                 </div>
                 <div className="uw-machine-config-actions">
                   {confirmRemoveID === machine.id && !runtimeOwned ? (
