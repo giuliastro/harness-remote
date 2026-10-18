@@ -1,6 +1,21 @@
 import { spawn } from "node:child_process"
 import { ownChildProcess } from "./managed-child-process.js"
 
+// OpenCode's standalone export streams the JSON to stdout and can exit 0 with a truncated document
+// when several exports of the same Session overlap, which happens while the app polls a live turn.
+// A truncated read is not a real history failure, so concurrent reads of one Session are coalesced
+// and a failed export is retried a few times before it is surfaced as an error.
+const EXPORT_ATTEMPTS = 3
+const EXPORT_RETRY_BACKOFF_MS = 75
+const MAX_EXPORT_BYTES = 64 * 1024 * 1024
+
+function sleep(ms) {
+  return new Promise((resolve) => {
+    const timer = setTimeout(resolve, ms)
+    timer.unref?.()
+  })
+}
+
 function partFromContent(part, messageID, index) {
   const base = { id: `${messageID}:part:${index}`, messageID, type: part.type }
   if (part.type === "text" || part.type === "reasoning") return {
@@ -48,11 +63,21 @@ export function createOpenCode2HistoryLoader({ command = "opencode2", args = ["a
       shim ? ["/d", "/s", "/c", command, ...exportArgs] : exportArgs,
       { stdio: ["ignore", "pipe", "pipe"], windowsHide: true }))
     let output = ""
-    const timer = setTimeout(() => { child.kill(); reject(new Error("OpenCode 2 history export timed out")) }, 30_000)
+    const timer = setTimeout(() => {
+      child.kill()
+      const error = new Error("OpenCode 2 history export timed out")
+      error.nonRetryable = true
+      reject(error)
+    }, 30_000)
     child.stdout.setEncoding("utf8")
     child.stdout.on("data", (chunk) => {
       output += chunk
-      if (Buffer.byteLength(output) > 64 * 1024 * 1024) { child.kill(); reject(new Error("OpenCode 2 history export exceeds 64 MiB")) }
+      if (Buffer.byteLength(output) > MAX_EXPORT_BYTES) {
+        child.kill()
+        const error = new Error("OpenCode 2 history export exceeds 64 MiB")
+        error.nonRetryable = true
+        reject(error)
+      }
     })
     child.stderr.resume()
     child.once("error", (error) => { clearTimeout(timer); reject(error) })
@@ -62,9 +87,33 @@ export function createOpenCode2HistoryLoader({ command = "opencode2", args = ["a
       try { resolve(JSON.parse(output)) } catch { reject(new Error("OpenCode 2 returned an invalid history export")) }
     })
   }))
+  const readExportOnce = async (sessionID) => {
+    let lastError
+    for (let attempt = 1; attempt <= EXPORT_ATTEMPTS; attempt += 1) {
+      try {
+        return await readExport(sessionID)
+      } catch (error) {
+        lastError = error
+        if (attempt >= EXPORT_ATTEMPTS || error?.nonRetryable) break
+        await sleep(EXPORT_RETRY_BACKOFF_MS * attempt)
+      }
+    }
+    throw lastError
+  }
+  const inFlight = new Map()
   const read = async (sessionID) => {
     if (!/^[A-Za-z0-9_-]+$/.test(sessionID)) throw new Error("Invalid OpenCode 2 session id")
-    return readExport(sessionID)
+    // Share one export between callers that ask for the same Session at the same time. This is what
+    // keeps a poll from launching overlapping exports, which is the condition that truncates them.
+    const joined = inFlight.get(sessionID)
+    if (joined) return joined
+    const pending = readExportOnce(sessionID)
+    inFlight.set(sessionID, pending)
+    try {
+      return await pending
+    } finally {
+      if (inFlight.get(sessionID) === pending) inFlight.delete(sessionID)
+    }
   }
   const loader = async (sessionID) => openCode2ExportMessages(sessionID, await read(sessionID))
   loader.authoritativeHistory = true

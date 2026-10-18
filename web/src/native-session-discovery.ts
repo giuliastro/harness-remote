@@ -300,6 +300,54 @@ export async function discoverAgentNativeSessionPage(
 }
 
 /**
+ * Read through a short run of empty pages so a newly created native Session is not hidden behind
+ * stale/empty pagination entries. This deliberately keeps the same one-page semantics above and
+ * only follows cursors while every returned page is empty. The request count and wall-clock budget
+ * are bounded; when either bound is reached, the last successful page (including its cursor) is
+ * returned so the caller can offer an explicit continuation.
+ */
+export async function discoverAgentNativeSessionPageSkippingEmpty(
+  base: ServerConfig,
+  agent: MachineAgentHost,
+  cursor?: string,
+  client: NativeSessionPageReadApi = api,
+  timeoutMs = NATIVE_SESSION_DISCOVERY_BUDGET_MS
+): Promise<NativeSessionRecordPage> {
+  const maxPageRequests = 4
+  const startedAt = Date.now()
+  const requestedCursors = new Set<string>()
+  let nextCursor = cursor
+  let lastPage: NativeSessionRecordPage | undefined
+
+  for (let request = 0; request < maxPageRequests; request += 1) {
+    if (nextCursor !== undefined && requestedCursors.has(nextCursor)) break
+    const remainingMs = timeoutMs - (Date.now() - startedAt)
+    if (request > 0 && remainingMs <= 0) break
+    if (nextCursor !== undefined) requestedCursors.add(nextCursor)
+
+    try {
+      const page = await discoverAgentNativeSessionPage(
+        base,
+        agent,
+        nextCursor,
+        client,
+        request === 0 ? timeoutMs : remainingMs
+      )
+      lastPage = page
+      if (page.records.length > 0 || !page.nextCursor) return page
+      nextCursor = page.nextCursor
+    } catch (error) {
+      // The first read is the user's requested operation and should retain its normal error path.
+      // Once an empty page has succeeded, keep its cursor available for manual retry instead.
+      if (!lastPage) throw error
+      return lastPage
+    }
+  }
+
+  return lastPage ?? { records: [] }
+}
+
+/**
  * Read-only discovery for one native harness. The experimental global listing is preferred because
  * it already provides pagination for large histories; harnesses that do not expose it fall back to
  * the stable Session endpoint. Status is enrichment only and must never make discovery fail.

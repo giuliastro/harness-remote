@@ -32,6 +32,17 @@ const OPENCODE_RECOVERY_WATCH_MS = 2 * 60 * 1000
 // that orphaned optimistic turn into a visible failure instead of spinning until navigation.
 const OPENCODE_SILENT_TURN_GRACE_MS = 15_000
 
+/**
+ * OpenCode 2 exports the same native message records as OpenCode: an assistant envelope carries
+ * `finish` and `time.completed`, and a reasoning-only envelope can look finished before any
+ * user-visible text exists. The transcript-based lifecycle reconciliation and the bounded
+ * idle/no-final recovery therefore apply to both; only the backend id differs, for routing and
+ * model discovery.
+ */
+function usesOpenCodeLifecycle(backend: string): boolean {
+  return backend === "opencode" || backend === "opencode2"
+}
+
 type NativeTurnRecord = {
   id: string
   prompt: string
@@ -345,7 +356,7 @@ function reconcileNativeSessionModel(entry: NativeConversationEntry, page: Messa
  * between the browser and OpenCode cannot attach an older completed assistant to a new turn.
  */
 function reconcileOpenCodeTranscriptStatus(entry: NativeConversationEntry, page: MessagePage, before?: string): void {
-  if (entry.target.backend !== "opencode" || before) return
+  if (!usesOpenCodeLifecycle(entry.target.backend) || before) return
   const recoveryWatchActive = entry.openCodeRecoveryWatchUntil > Date.now()
   if (entry.forcedStatus !== "running" && !recoveryWatchActive) return
 
@@ -423,7 +434,7 @@ function clearOpenCodeSilentTurn(entry: NativeConversationEntry): void {
 }
 
 function armOpenCodeSilentTurnRecovery(entry: NativeConversationEntry, turnID: string): void {
-  if (entry.target.backend !== "opencode") return
+  if (!usesOpenCodeLifecycle(entry.target.backend)) return
   clearOpenCodeSilentTurn(entry)
   const timer = setTimeout(() => {
     void settleOpenCodeSilentTurn(entry, turnID)
@@ -436,7 +447,7 @@ async function settleOpenCodeSilentTurn(entry: NativeConversationEntry, turnID: 
   entry.openCodeSilentTurn = null
   const orderedTurns = [...entry.turns.values()].sort((left, right) => left.created - right.created || left.id.localeCompare(right.id))
   const newestTurn = orderedTurns[orderedTurns.length - 1]
-  if (entry.target.backend !== "opencode" || newestTurn?.id !== turnID) return
+  if (!usesOpenCodeLifecycle(entry.target.backend) || newestTurn?.id !== turnID) return
 
   const retry = () => {
     const ordered = [...entry.turns.values()].sort((left, right) => left.created - right.created || left.id.localeCompare(right.id))
@@ -674,14 +685,14 @@ function reconcilePendingPromptFromTranscript(entry: NativeConversationEntry, pa
     const message = page.messages[index]
     if (message.info.role === "user") break
     if (message.info.role === "assistant") latestAssistant = message
-    if (entry.target.backend === "opencode" || !nativeAssistantCompleted(message)) continue
+    if (usesOpenCodeLifecycle(entry.target.backend) || !nativeAssistantCompleted(message)) continue
     completed = true
     completedAt = Math.max(
       completedAt,
       Number(message.info.time?.completed) || Number(message.info.time?.created) || 0
     )
   }
-  if (entry.target.backend === "opencode" && latestAssistant) {
+  if (usesOpenCodeLifecycle(entry.target.backend) && latestAssistant) {
     completed = openCodeAssistantProvesTurnCompleted(latestAssistant)
     if (completed) {
       completedAt = Number(latestAssistant.info.time?.completed) || Number(latestAssistant.info.time?.created) || 0
@@ -762,16 +773,16 @@ async function refreshStatus(entry: NativeConversationEntry): Promise<void> {
   // until the durable transcript proves a final answer or the bounded silent-turn recovery converts
   // stable idle/no-final state into an explicit failure.
   const now = Date.now()
-  const openCodeRecoveryWatchActive = entry.target.backend === "opencode"
+  const openCodeRecoveryWatchActive = usesOpenCodeLifecycle(entry.target.backend)
     && entry.openCodeRecoveryWatchUntil > now
-  if (entry.target.backend === "opencode" && entry.forcedStatus !== "running" && !openCodeRecoveryWatchActive) return
+  if (usesOpenCodeLifecycle(entry.target.backend) && entry.forcedStatus !== "running" && !openCodeRecoveryWatchActive) return
 
   try {
     const statuses = await api.listStatuses(entry.target.config)
     const next = statuses[entry.target.sessionID]?.type
     if (typeof next !== "string" || !next) return
 
-    if (entry.target.backend === "opencode") {
+    if (usesOpenCodeLifecycle(entry.target.backend)) {
       if (nativeSessionIsWorking(next)) {
         entry.statusType = next
         entry.error = null

@@ -412,7 +412,9 @@ const ConversationTranscript = memo(function ConversationTranscript({
                 ))}
           </>
         )}
-        {sending || (waiting && showWaitingIndicator) ? <ThinkingIndicator agentLabel={agentLabel} agentBackend={agentBackend} workingLabel={workingLabel} /> : null}
+        {/* Loading history is a read, not a new reply. Wait for the transcript before deciding
+            whether the live turn needs a placeholder or already has its own assistant bubble. */}
+        {!loading && ready && (sending || (waiting && showWaitingIndicator)) ? <ThinkingIndicator agentLabel={agentLabel} agentBackend={agentBackend} workingLabel={workingLabel} /> : null}
         <div className="uw-transcript-reply-room" ref={spacerRef} aria-hidden="true" />
       </div>
 

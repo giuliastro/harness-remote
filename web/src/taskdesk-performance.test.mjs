@@ -21,7 +21,7 @@ test("Session list and global Attention Inbox never fan out transcript reads for
   const attentionHome = read("./components/native-session-home-attention.tsx")
   assert.doesNotMatch(home, /loadMessagePage/)
   assert.doesNotMatch(home, /loadLatestMessage/)
-  assert.match(home, /discoverAgentNativeSessionPage\(machine\.config, agent\)/)
+  assert.match(home, /discoverAgentNativeSessionPageSkippingEmpty\(machine\.config, agent\)/)
   assert.match(home, /loadOlderSessions/)
   assert.doesNotMatch(home, /discoverMachineNativeSessions/)
   assert.match(attentionHome, /loadNativeSessionAttentionIndex/, "attention previews must use the small pending-request index")

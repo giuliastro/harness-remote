@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import { listMachineProjects, type MachineProject } from "../machineClient"
 import { canCreateNativeSession, createNativeSessionTarget } from "../native-session-create"
 import {
-  discoverAgentNativeSessionPage,
+  discoverAgentNativeSessionPageSkippingEmpty,
   nativeSessionSurfaceTarget,
   type NativeSessionRecord,
   type NativeSessionSurfaceTarget
@@ -539,7 +539,7 @@ export function NativeSessionHome({
       const [pages, projects] = await Promise.all([
         Promise.all(snapshot.agents.map(async (agent) => ({
           agent,
-          page: await discoverAgentNativeSessionPage(machine.config, agent).catch(() => null)
+          page: await discoverAgentNativeSessionPageSkippingEmpty(machine.config, agent).catch(() => null)
         }))),
         listMachineProjects(machine.config).catch(() => [] as MachineProject[])
       ])
@@ -896,7 +896,7 @@ export function NativeSessionHome({
     const outcomes = await Promise.all(targets.map(async ([scope, entry]) => {
       const cursor = entry.nextCursor!
       try {
-        const page = await discoverAgentNativeSessionPage(entry.machine.config, entry.agent, cursor)
+        const page = await discoverAgentNativeSessionPageSkippingEmpty(entry.machine.config, entry.agent, cursor)
         if (page.nextCursor === cursor) throw new Error("Session listing returned the same pagination cursor twice.")
         const records = page.records.map((record) => ({
           machine: entry.machine,
@@ -1245,10 +1245,10 @@ export function NativeSessionHome({
             const machineCollapsed = collapsedMachines.has(machine.id)
             const loadingOlder = loadingOlderMachines.has(machine.id)
             const olderSessionError = olderSessionErrors[machine.id]
-            // A continuation cursor can exist for a machine whose first page holds no rows at all -
-            // an unscanned tail of empty Project roots. Offering "Load older Sessions" there reads as
-            // a broken control, so it is shown only when the machine has something to continue from.
-            const hasOlderSessions = state === "online" && sessionCount > 0 && olderPageTargets.some(([, entry]) => entry.machine.id === machine.id)
+            // Empty pages are skipped within a bounded discovery read. If that budget runs out,
+            // a remaining cursor still means unscanned history: keep manual continuation reachable
+            // even when no rows have been found yet. A fully scanned empty machine has no cursor.
+            const hasOlderSessions = state === "online" && olderPageTargets.some(([, entry]) => entry.machine.id === machine.id)
             const reconnecting = state === "online" && Boolean(error)
             return (
               <section className={`hr-native-machine-group ${state}${machineCollapsed ? " collapsed" : ""}`} key={machine.id} aria-label={t("sf.groupSessions", { name: label })}>
