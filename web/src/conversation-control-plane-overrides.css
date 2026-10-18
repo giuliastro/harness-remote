@@ -521,9 +521,10 @@
   }
 
   .hr-mobile-settings-group select {
-    max-width: 180px;
+    max-width: 240px;
     min-height: 40px;
-    padding-inline: 9px;
+    padding-left: 9px;
+    padding-right: 1.75rem;
     border: 1px solid var(--td3-border);
     border-radius: 9px;
     color: var(--td3-text);

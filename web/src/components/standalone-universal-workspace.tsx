@@ -44,6 +44,7 @@ import { nativeSessionTransferredContext } from "../native-session-prompt"
 import type { NativeSessionRouteMachine } from "../native-session-routing"
 import type { MachineSnapshot, Session } from "../types"
 import { subscribeTaskDeskLiveEvents } from "../taskdesk-live-events"
+import { clearSessionIndexLiveStatuses } from "../session-index-live-state"
 import {
   createWorkspaceMachine,
   isDesktopLocalMachine,
@@ -119,6 +120,10 @@ type Props = {
   machinePairingBusy?: boolean
   machinePairingSuccessRevision?: number
   machinePairingSuccessMachineName?: string | null
+  // Desktop assembles its own local runtime asynchronously, so a momentarily empty `machines` is not
+  // proof that the user has none. Until this is true the shell must not treat emptiness as "add a
+  // machine", and must not auto-open the Machines manager over the Session list.
+  machinesReady?: boolean
 }
 type NativeMachineRuntime = {
   machine: WorkspaceMachine
@@ -667,11 +672,13 @@ function compactNumber(value: number): string {
 
 function NativeSessionsWorkspace({
   machines,
+  machinesLoading,
   onManageMachines,
   onManageSettings,
   onAttentionCountChange
 }: {
   machines: WorkspaceMachine[]
+  machinesLoading: boolean
   onManageMachines: () => void
   onManageSettings: () => void
   onAttentionCountChange: (count: number) => void
@@ -710,6 +717,10 @@ function NativeSessionsWorkspace({
   const [liveMachines, setLiveMachines] = useState<Record<string, boolean>>({})
   const [reconnectingStreams, setReconnectingStreams] = useState<Record<string, boolean>>({})
   const [selected, setSelected] = useState<NativeSessionSurfaceTarget | null>(null)
+  // Every explicit open of a Session surface is a new view. It lets the conversation retire the
+  // "getting started" label that belonged to a Send made in an earlier view, even when the phone rail
+  // kept the very same Session mounted instead of remounting it.
+  const [sessionViewRevision, setSessionViewRevision] = useState(0)
   const [selectedState, setSelectedState] = useState<NativeSessionVisualState | undefined>(undefined)
   const [selectedLinks, setSelectedLinks] = useState<NativeSessionLink[]>([])
   const [lineageError, setLineageError] = useState<string | null>(null)
@@ -920,7 +931,13 @@ function NativeSessionsWorkspace({
       if (document.visibilityState === "visible") setRevision((value) => value + 1)
     }, interval)
     const onVisibility = () => {
-      if (document.visibilityState === "visible") setRevision((value) => value + 1)
+      if (document.visibilityState !== "visible") return
+      // The phone may have slept through a turn's terminal edge while the tab was hidden. A streamed
+      // busy status is only a short bridge across an event/index race, so on resume it is dropped and
+      // the rail is told to re-read native truth immediately instead of waiting out its own interval.
+      clearSessionIndexLiveStatuses()
+      setRevision((value) => value + 1)
+      setListRevision((value) => value + 1)
     }
     document.addEventListener("visibilitychange", onVisibility)
     return () => {
@@ -1064,7 +1081,7 @@ function NativeSessionsWorkspace({
   }
 
   const startupPhase: "machines" | "sessions" | "ready" =
-    !loaded || loadingCount > 0 ? "machines" : !sessionsDiscovered ? "sessions" : "ready"
+    machinesLoading || !loaded || loadingCount > 0 ? "machines" : !sessionsDiscovered ? "sessions" : "ready"
   const workspaceRefreshing = machineRefreshPending || sessionRefreshPending
   // Keep one feedback point near the action that began the explicit refresh. Background probes do
   // not set either flag, so an unreachable saved machine cannot leave a permanent global spinner.
@@ -1078,6 +1095,7 @@ function NativeSessionsWorkspace({
   function openSession(target: NativeSessionSurfaceTarget) {
     setSelectedState(undefined)
     setSelected(target)
+    setSessionViewRevision((value) => value + 1)
     setMobileDetailOpen(true)
   }
 
@@ -1267,10 +1285,6 @@ function NativeSessionsWorkspace({
                   <div className="hr-native-session-eyebrow">
                     <span>{selected.agentLabel}</span>
                     {selected.nativeAgent ? <><i aria-hidden="true">/</i><span>{selected.nativeAgent}</span></> : null}
-                    <i aria-hidden="true">/</i>
-                    <span>{selectedMachine?.name || "Machine"}</span>
-                    <i aria-hidden="true">/</i>
-                    <strong>{selectedProject}</strong>
                   </div>
                   <NativeSessionTitle target={selected} onRenamed={handleSessionRenamed} />
                   <small title={selected.directory}>
@@ -1340,6 +1354,7 @@ function NativeSessionsWorkspace({
                   key={selected.key}
                   target={selected}
                   routes={routeMachines}
+                  surfaceViewRevision={sessionViewRevision}
                   interactionEnabled={selectedInteractionEnabled}
                   onConnectionIssue={markSelectedMachineConnectionIssue}
                   onOpenSession={openSession}
@@ -1348,6 +1363,16 @@ function NativeSessionsWorkspace({
                 />
               </div>
             </>
+          ) : machinesLoading ? (
+            /* Desktop is still assembling its local runtime, so an empty list is not yet an answer.
+               Showing "add your first machine" here invited the user to configure what was already
+               on its way. */
+            <div className="hr-native-workspace-empty hr-native-startup connecting" role="status" aria-live="polite">
+              <LoadingIcon size={28} />
+              <span>{t("sf.preparing")}</span>
+              <strong>{t("sf.connectingMachines")}</strong>
+              <p>{t("sf.connectingBody")}</p>
+            </div>
           ) : machines.length === 0 ? (
             <div className="hr-native-workspace-empty hr-native-startup">
               <ServerIcon size={28} />
@@ -1416,16 +1441,29 @@ export function StandaloneUniversalWorkspace({
   onScanMachinePairing,
   machinePairingBusy = false,
   machinePairingSuccessRevision = 0,
-  machinePairingSuccessMachineName = null
+  machinePairingSuccessMachineName = null,
+  machinesReady = true
 }: Props) {
   const t = useTranslator()
   // With the chat full-screen on a phone the rail is invisible, so a Session asking for input had
   // no way of saying so. The counts already existed per machine and per project; only the badge
   // that carries them out of the rail was missing.
   const [attentionCount, setAttentionCount] = useState(0)
-  const [managerOpen, setManagerOpen] = useState(machines.length === 0)
+  // Never open the manager on the first render just because the list is still empty: on desktop that
+  // emptiness is a pending local runtime, so the manager flashed open and then showed the machines it
+  // had just found. Open it once, and only once the list has settled with no machines at all.
+  const [managerOpen, setManagerOpen] = useState(machinesReady && machines.length === 0)
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const managerAutoOpened = useRef(false)
+  const machinesLoading = !machinesReady && machines.length === 0
   const mobileSection = managerOpen ? "machines" : settingsOpen ? "settings" : "sessions"
+
+  useEffect(() => {
+    if (managerAutoOpened.current) return
+    if (!machinesReady) return
+    managerAutoOpened.current = true
+    if (machines.length === 0) setManagerOpen(true)
+  }, [machinesReady, machines.length])
 
   useEffect(() => {
     if (Capacitor.getPlatform() !== "android") return
@@ -1498,7 +1536,7 @@ export function StandaloneUniversalWorkspace({
 
   return (
     <div className="uw-standalone-host">
-      <NativeSessionsWorkspace machines={machines} onManageMachines={showMachines} onManageSettings={showSettings} onAttentionCountChange={setAttentionCount} />
+      <NativeSessionsWorkspace machines={machines} machinesLoading={machinesLoading} onManageMachines={showMachines} onManageSettings={showSettings} onAttentionCountChange={setAttentionCount} />
       {managerOpen ? (
         <MachineManager
           machines={machines}

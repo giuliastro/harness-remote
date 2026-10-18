@@ -70,6 +70,13 @@ test("an early empty assistant envelope stays behind the shared getting-started 
   assert.match(controller, /message\.info\.role === "assistant"[\s\S]*!assistantMessageHasSignal\(message\)/)
   assert.match(controller, /const preparingReply = replyPending \|\| sending/)
   assert.match(controller, /sending=\{preparingReply\}/)
+  assert.match(controller, /const freshSend = \(replyPending \|\| sending\) && sentInCurrentView/, "the getting-started label needs a reply sent while the user was watching this view, not merely a live turn whose assistant envelope has not landed yet")
+  const waitingExpression = controller.match(/const waitingLabel = hasAttention[\s\S]*?is working`/)?.[0] || ""
+  assert.doesNotMatch(waitingExpression, /preparingReply/, "a Session already working when it was reopened must read 'is working', never 'is getting started'")
+  assert.match(waitingExpression, /freshSend/, "only a fresh Send may show the getting-started label")
+  assert.match(controller, /const \[sentInCurrentView, setSentInCurrentView\] = useState\(false\)/)
+  assert.match(controller, /setSending\(true\)[\s\S]*setSentInCurrentView\(true\)/)
+  assert.match(controller, /useEffect\(\(\) => \{\n\s*setSentInCurrentView\(false\)\n\s*\}, \[surfaceViewRevision\]\)/, "opening the Session surface again must retire the getting-started label")
   assert.doesNotMatch(controller.match(/useEffect\(\(\) => \{[\s\S]*?if \(!awaitingReplyTurnID\) return[\s\S]*?\}, \[awaitingReplyTurnID[\s\S]*?\]\)/)?.[0] || "", /conversation\.currentTurn\?\.id !== awaitingReplyTurnID/)
   assert.match(controller, /liveTurnID = \(working \|\| replySettling\)[\s\S]*currentTurnHasAssistantSignal/)
   assert.match(component, /className="uw-message uw-message-agent uw-message-pending"/)

@@ -45,6 +45,8 @@ type Props = {
   interactionEnabled?: boolean
   /** A Session-scoped request discovered a transport outage before the machine poll did. */
   onConnectionIssue?: () => void
+  /** Bumped whenever the user explicitly opens this Session surface; retires the "getting started" label. */
+  surfaceViewRevision?: number
 }
 export type NativeSessionVisualState = "working" | "attention" | "stopped" | "ready"
 
@@ -178,7 +180,8 @@ export function NativeSessionObserver({
   onSessionRefresh,
   onStateChange,
   interactionEnabled = true,
-  onConnectionIssue
+  onConnectionIssue,
+  surfaceViewRevision = 0
 }: Props) {
   const [conversation, setConversation] = useState<ConversationRuntime | null>(null)
   const [controller, setController] = useState<ConversationController | null>(null)
@@ -472,6 +475,7 @@ export function NativeSessionObserver({
         deferModelFallback
         controller={controller}
         transcriptRefreshToken={transcriptRefreshToken}
+        surfaceViewRevision={surfaceViewRevision}
         onConversationUpdate={handleConversationUpdate}
         onAttentionChange={handleAttentionChange}
         commands={commands}

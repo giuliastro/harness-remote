@@ -1245,7 +1245,10 @@ export function NativeSessionHome({
             const machineCollapsed = collapsedMachines.has(machine.id)
             const loadingOlder = loadingOlderMachines.has(machine.id)
             const olderSessionError = olderSessionErrors[machine.id]
-            const hasOlderSessions = state === "online" && olderPageTargets.some(([, entry]) => entry.machine.id === machine.id)
+            // A continuation cursor can exist for a machine whose first page holds no rows at all -
+            // an unscanned tail of empty Project roots. Offering "Load older Sessions" there reads as
+            // a broken control, so it is shown only when the machine has something to continue from.
+            const hasOlderSessions = state === "online" && sessionCount > 0 && olderPageTargets.some(([, entry]) => entry.machine.id === machine.id)
             const reconnecting = state === "online" && Boolean(error)
             return (
               <section className={`hr-native-machine-group ${state}${machineCollapsed ? " collapsed" : ""}`} key={machine.id} aria-label={t("sf.groupSessions", { name: label })}>

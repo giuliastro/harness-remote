@@ -173,12 +173,12 @@
   .hr-mobile-settings-page>header span,
   .hr-mobile-settings-page>header button { display:none!important; }
   .hr-mobile-settings-page>header h2 { margin:0!important; font-size:18px!important; }
-  .hr-mobile-settings-body { width:min(520px,100%)!important; margin-inline:auto!important; padding:12px!important; }
+  .hr-mobile-settings-body { width:min(560px,100%)!important; margin-inline:auto!important; padding:12px!important; }
   .hr-mobile-settings-group { border-radius:11px!important; }
   .hr-mobile-settings-group>span { padding:9px 11px 6px!important; font-size:9.5px!important; }
   .hr-mobile-settings-group label { min-height:54px!important; grid-template-columns:minmax(0,1fr) minmax(120px,auto)!important; gap:10px!important; padding:7px 11px!important; }
   .hr-mobile-settings-group label strong { font-size:13px!important; }
-  .hr-mobile-settings-group select { min-height:38px!important; max-width:170px!important; font-size:16px!important; }
+  .hr-mobile-settings-group select { min-height:38px!important; max-width:min(240px,48vw)!important; font-size:16px!important; }
   .hr-mobile-settings-group label:nth-of-type(2),
   .hr-mobile-settings-body>p { display:none!important; }
 

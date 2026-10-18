@@ -88,6 +88,11 @@ function HarnessRemoteBoundary() {
   }, [localRuntime, persistedMachines])
   const machinesRef = useRef(machines)
   machinesRef.current = machines
+  // The desktop-local runtime is resolved asynchronously after the first paint. Until it settles, an
+  // empty machine list only means "not known yet", so the shell must not offer to add a machine or
+  // auto-open the manager over the Session list. Persisted machines load synchronously and need no
+  // wait; only the desktop runtime does.
+  const machinesReady = !isDesktopPlatform() || (localRuntime !== null && localRuntime.status !== "starting")
   const pairingInFlightRef = useRef(new Set<string>())
   const pairedGrantRef = useRef(new Set<string>())
   const [desktopReady, setDesktopReady] = useState(() => !isDesktopPlatform())
@@ -231,6 +236,7 @@ function HarnessRemoteBoundary() {
     <>
       <StandaloneUniversalWorkspace
         machines={machines}
+        machinesReady={machinesReady}
         onPersistMachines={persistMachines}
         onScanMachinePairing={Capacitor.getPlatform() === "android" ? scanPairingQR : undefined}
         machinePairingBusy={pairingScanBusy}

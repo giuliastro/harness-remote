@@ -1367,8 +1367,8 @@
 .hr-session-settings-page {
   position: relative;
   inset: auto;
-  width: min(520px, calc(100vw - 36px));
-  max-height: min(620px, calc(100dvh - 36px));
+  width: min(600px, calc(100vw - 36px));
+  max-height: min(700px, calc(100dvh - 36px));
   display: flex !important;
   flex-direction: column;
   overflow: hidden;
@@ -1457,12 +1457,16 @@
 
 .hr-session-settings-page .hr-mobile-settings-group select {
   min-height: 40px;
-  max-width: 190px;
-  padding-inline: 9px;
+  max-width: 300px;
+  /* The base `select` rule draws the chevron with background-image and reserves padding for it.
+     `padding-inline` and the `background` shorthand both erased that, so the control read as a plain
+     box. Keep the reserved right padding and set only the background color. */
+  padding-left: 9px;
+  padding-right: 1.75rem;
   border: 1px solid var(--td3-border);
   border-radius: 8px;
   color: var(--td3-text);
-  background: var(--td3-control);
+  background-color: var(--td3-control);
   font: inherit;
   font-size: 14px;
 }
@@ -2160,7 +2164,7 @@
   }
 
   .hr-session-settings-page .hr-mobile-settings-body {
-    width: min(520px, 100%) !important;
+    width: min(560px, 100%) !important;
     margin-inline: auto !important;
     padding: 12px !important;
   }

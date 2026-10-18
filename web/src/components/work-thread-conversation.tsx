@@ -97,6 +97,12 @@ type Props = {
   controller: ConversationController
   /** A background native recovery read must rehydrate the mounted transcript, not only runtime state. */
   transcriptRefreshToken?: number
+  /**
+   * Bumped every time the user explicitly opens this Session surface. A Session that stays mounted
+   * behind the mobile rail (or is re-opened while already selected) must not keep re-reading the
+   * "getting started" state of a Send it made in a previous view: the turn is already working.
+   */
+  surfaceViewRevision?: number
   /** Backend mutations/catalog reads pause while the owning machine is reconnecting. */
   interactionEnabled?: boolean
   /** Surface a Session-scoped transport failure to the machine runtime immediately. */
@@ -334,6 +340,7 @@ export function WorkThreadConversation({
   deferModelFallback = false,
   controller,
   transcriptRefreshToken = 0,
+  surfaceViewRevision = 0,
   interactionEnabled = true,
   onConnectionIssue,
   routing,
@@ -354,6 +361,10 @@ export function WorkThreadConversation({
   // OpenCode can acknowledge quickly and publish an empty assistant envelope before React commits
   // the transient `sending` frame. The user must still see the same pending row as every harness.
   const [replyPending, setReplyPending] = useState(false)
+  // Whether the reply currently being prepared was requested from *this* view of the Session. A Send
+  // made before the user navigated away must not keep labelling the live turn "getting started" when
+  // they come back; only a Send made while they are watching may.
+  const [sentInCurrentView, setSentInCurrentView] = useState(false)
   // The prompt that has been sent but is not yet in the transcript, with the turn that was current
   // when it was sent. See `visibleTimeline`.
   const [pendingPrompt, setPendingPrompt] = useState<OptimisticPrompt | null>(null)
@@ -475,6 +486,7 @@ export function WorkThreadConversation({
     setPendingPrompt(null)
     setAwaitingReplyTurnID(null)
     setReplyPending(false)
+    setSentInCurrentView(false)
     setTargetMachineID(routing?.currentMachineID || "")
     setTargetAgentID(currentAgentID)
     routeSelectionTouchedRef.current = false
@@ -486,6 +498,13 @@ export function WorkThreadConversation({
     attentionInFlightRef.current = false
     reconcileInFlightRef.current = false
   }, [conversation.id, routing?.currentMachineID])
+
+  // Re-opening the Session surface retires the "getting started" label for good: it belongs to the
+  // moment of a Send the user was watching, not to a turn that was already running when they returned.
+  // The pending bubble itself is unaffected - it stays honest about the live turn.
+  useEffect(() => {
+    setSentInCurrentView(false)
+  }, [surfaceViewRevision])
 
   useEffect(() => {
     if (currentAgentID !== targetAgentIDRef.current && conversation.currentTurn?.id) {
@@ -941,6 +960,7 @@ export function WorkThreadConversation({
     sendInFlightRef.current = true
     setSending(true)
     setReplyPending(true)
+    setSentInCurrentView(true)
     setError(null)
     setDraft("")
     const optimisticPrompt: OptimisticPrompt = {
@@ -1037,6 +1057,11 @@ export function WorkThreadConversation({
   const attachmentsSupported = !routeChanged && attachmentAgent?.capabilities?.attachments === true
   const routeBlockedByAttachments = routeChanged && attachments.length > 0
   const hasAttention = questions.length > 0 || permissions.length > 0
+  // "Getting started" only belongs to a reply this client sent while the user was watching this view
+  // of the Session. Returning to a Session that is already working - a re-opened OpenCode turn whose
+  // assistant envelope has not landed yet - also enters the preparing state, but it has long since
+  // started, so it must read "is working" instead.
+  const freshSend = (replyPending || sending) && sentInCurrentView
   const preparingReply = replyPending || sending || ((working || replySettling) && !currentTurnHasAssistantSignal)
   const pendingAgentLabel = (replyPending || sending) ? agentLabel(destinationAgents, targetAgentID) : currentLabel
   // The pending bubble is the reply that is coming, so it wears the identity of the agent that is
@@ -1060,7 +1085,7 @@ export function WorkThreadConversation({
 
   const waitingLabel = hasAttention
     ? "Waiting for your input"
-    : preparingReply
+    : freshSend
       ? `${pendingAgentLabel} is getting started`
       : `${currentLabel} is working`
   const conversationStateLabel = modelBootstrapBlocked
