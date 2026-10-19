@@ -1,5 +1,6 @@
 import { memo, useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react"
 import { ATTACHMENT_MAX_COUNT, fileToAttachment, type AttachmentPart } from "../attachments"
+import type { QueuedPromptEntry } from "../mid-turn-policy"
 import type { CommandInfo, MessageEnvelope } from "../types"
 import { AlertIcon, ChatIcon, CloseIcon, JumpToBottomIcon, JumpToTopIcon, LoadingIcon, PaperclipIcon, StopCircleIcon } from "../Icons"
 import "../taskdesk-conversation.css"
@@ -62,6 +63,16 @@ type Props = {
   directory?: string
   footerHint?: string
   renderMessage?: (message: MessageEnvelope) => ReactNode
+  /** Prompts accepted behind the running turn, rendered as the queued strip above the composer. */
+  queuedPrompts?: QueuedPromptEntry[]
+  /** Withdraw one queued prompt; renders the × on its row. */
+  onCancelQueuedPrompt?: (id: string) => void
+  /**
+   * The harness takes further prompts while its turn runs (steered into it or queued behind it), so
+   * `sending`/`waiting` describe the running turn rather than gate the composer, and Send stays
+   * available next to Stop.
+   */
+  canSendWhileWaiting?: boolean
 }
 
 type TranscriptProps = Pick<Props,
@@ -471,6 +482,9 @@ export function TaskDeskConversation({
   transcriptError,
   directory,
   footerHint,
+  queuedPrompts = [],
+  onCancelQueuedPrompt,
+  canSendWhileWaiting = false,
   renderMessage
 }: Props) {
   const composerRef = useRef<HTMLTextAreaElement>(null)
@@ -487,7 +501,16 @@ export function TaskDeskConversation({
       .filter((command) => command.name.toLowerCase().includes(query) || (command.description || "").toLowerCase().includes(query))
       .slice(0, 8)
   }, [commands, commandMenuOpen, commandToken])
-  const canSend = Boolean(draft.trim() && !sending && !waiting && !sendDisabled && !composerDisabled && ready)
+  // A consumer that never allows mid-turn prompts keeps the old gate: nothing is sent while a turn is
+  // waiting or its reply is being prepared. One whose harness steers or queues opts in explicitly.
+  const midTurnSend = canSendWhileWaiting && (waiting || sending)
+  const canSend = Boolean(
+    draft.trim()
+    && (midTurnSend || (!sending && !waiting))
+    && !sendDisabled
+    && !composerDisabled
+    && ready
+  )
   // A phone has no Ctrl or Cmd key, so telling a touch user to press Ctrl/Cmd+Enter named the one
   // way to send that they do not have. Enter inserts a newline there; the Send button is the action.
   const hint = footerHint ?? (touchFirst ? "Enter adds a line. Tap Send to send." : "Enter to send · Shift+Enter for a newline")
@@ -567,6 +590,32 @@ export function TaskDeskConversation({
       />
 
       <div className="uw-composer-shell">
+        {queuedPrompts.length ? (
+          <div className="uw-queued-prompts" aria-label="Prompts waiting behind the running turn">
+            {queuedPrompts.map((entry) => (
+              <span className="uw-queued-prompt" key={entry.id}>
+                <span className="uw-queued-prompt-badge">Queued</span>
+                {entry.text ? <span className="uw-queued-prompt-text">{entry.text}</span> : null}
+                {entry.attachmentCount ? (
+                  <span className="uw-queued-prompt-count">
+                    {entry.attachmentCount} image{entry.attachmentCount === 1 ? "" : "s"}
+                  </span>
+                ) : null}
+                {onCancelQueuedPrompt ? (
+                  <button
+                    type="button"
+                    className="uw-queued-prompt-cancel"
+                    onClick={() => onCancelQueuedPrompt(entry.id)}
+                    aria-label={`Remove queued prompt: ${entry.text || "attachments"}`}
+                    title="Remove from queue"
+                  >
+                    <CloseIcon size={13} />
+                  </button>
+                ) : null}
+              </span>
+            ))}
+          </div>
+        ) : null}
         {attachments.length ? (
           <div className="uw-composer-attachments" aria-label="Attached images">
             {attachments.map((attachment, index) => (
@@ -655,6 +704,19 @@ export function TaskDeskConversation({
               </>
             ) : null}
             <small id="uw-composer-hint">{hint}</small>
+            {waiting && onStop && midTurnSend && draft.trim() ? (
+              // Stop alone left no way to deliver the message typed while the agent works - and no
+              // way at all on a phone, where Enter only adds a line.
+              <button
+                type="button"
+                className="uw-button uw-button-primary"
+                disabled={!canSend}
+                onClick={() => void onSend()}
+                aria-label="Send"
+              >
+                ↑<span className="uw-button-label">Send</span>
+              </button>
+            ) : null}
             {waiting && onStop ? (
               <button
                 type="button"
@@ -672,10 +734,10 @@ export function TaskDeskConversation({
                 className="uw-button uw-button-primary"
                 disabled={!canSend}
                 onClick={() => void onSend()}
-                aria-label={sending ? "Sending" : "Send"}
+                aria-label={sending && !midTurnSend ? "Sending" : "Send"}
               >
-                {sending ? <LoadingIcon size={15} /> : "↑"}
-                <span className="uw-button-label">{sending ? "Sending" : "Send"}</span>
+                {sending && !midTurnSend ? <LoadingIcon size={15} /> : "↑"}
+                <span className="uw-button-label">{sending && !midTurnSend ? "Sending" : "Send"}</span>
               </button>
             )}
           </div>

@@ -401,6 +401,11 @@ export const api = {
     return request<boolean>(config, withDirectory(`/session/${id}`, directory), { method: "DELETE" })
   },
 
+  /** Withdraw one prompt the daemon still holds behind the running turn; the turn keeps running. */
+  cancelQueuedPrompt(config: ServerConfig, id: string, messageID: string, directory?: string) {
+    return request<{ removed: boolean }>(config, withDirectory(`/session/${id}/queue/${encodeURIComponent(messageID)}`, directory), { method: "DELETE" })
+  },
+
   async loadMessagePage(config: ServerConfig, sessionID: string, directory?: string, before?: string, limit = 100, refreshHistory = false): Promise<MessagePage> {
     const params = new URLSearchParams({ limit: String(Math.max(1, Math.min(500, Math.trunc(limit) || 100))) })
     if (before) params.set("before", before)

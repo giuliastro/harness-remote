@@ -70,9 +70,16 @@ type NativeConversationEntry = {
   writerReady: boolean
   writerClaimInFlight: Promise<void> | null
   turns: Map<string, NativeTurnRecord>
+  // Prompts the daemon holds behind the running turn, by native message id. Each becomes a turn only
+  // when the transcript shows it started; see reconcileQueuedPrompts.
+  queuedPrompts: Map<string, QueuedNativePrompt>
   listeners: Set<(conversation: ConversationRuntime) => void>
   transcriptListeners: Set<() => void>
 }
+
+// `seen`: a tail page has shown the row. Until then its absence from a page proves nothing, because
+// that page may predate the send.
+type QueuedNativePrompt = { prompt: string; model: ModelSelection | null; clientRequestId?: string; seen: boolean }
 
 const conversations = new Map<string, NativeConversationEntry>()
 
@@ -609,6 +616,8 @@ function captureUserTurns(entry: NativeConversationEntry, page: MessagePage, bef
   let changed = false
   for (const message of page.messages) {
     if (message.info.role !== "user" || !message.info.id) continue
+    // A queued prompt is not a turn yet; reconcileQueuedPrompts hands it over once it starts.
+    if (message.info.queued === true) continue
     const prompt = visiblePrompt(message)
     if (!prompt) continue
     const id = `${conversationID(entry.target)}:native-user:${message.info.id}`
@@ -648,6 +657,7 @@ function reconcilePendingPromptFromTranscript(entry: NativeConversationEntry, pa
   for (let index = page.messages.length - 1; index >= 0; index -= 1) {
     const message = page.messages[index]
     if (message.info.role !== "user" || !message.info.id) continue
+    if (message.info.queued === true) continue
     if (visiblePrompt(message) !== prompt) continue
     const alreadyClaimed = [...entry.turns.values()].some((turn) => turn.nativeMessageID === message.info.id)
     if (alreadyClaimed) continue
@@ -715,6 +725,54 @@ function reconcilePendingPromptFromTranscript(entry: NativeConversationEntry, pa
   notify(entry)
 }
 
+/**
+ * A queued prompt is not a turn. Its row carries `info.queued` and the conversation keeps tracking
+ * the turn that is running, so every reply, "getting started" and "working" state stays on that turn.
+ * When the daemon dequeues the prompt the flag clears, and only then does it become the newest turn.
+ *
+ * Tail pages also adopt queued rows this controller never sent - another client, or an app reload
+ * while one was waiting - so the hand-over never depends on in-memory send state. A row that vanished
+ * from a live page was discarded by a Stop; one missing from an idle page has run, because idle pages
+ * can come from the harness journal under the harness's own ids.
+ */
+function reconcileQueuedPrompts(entry: NativeConversationEntry, page: MessagePage, before?: string): void {
+  if (before) return
+  const byID = new Map(page.messages.map((message) => [message.info.id, message]))
+  for (const message of page.messages) {
+    if (message.info.role !== "user" || message.info.queued !== true || !message.info.id) continue
+    const tracked = entry.queuedPrompts.get(message.info.id)
+    if (tracked) {
+      tracked.seen = true
+      continue
+    }
+    if ([...entry.turns.values()].some((turn) => turn.nativeMessageID === message.info.id)) continue
+    const prompt = visiblePrompt(message)
+    if (prompt) entry.queuedPrompts.set(message.info.id, { prompt, model: entry.currentModel, seen: true })
+  }
+  if (!entry.queuedPrompts.size) return
+
+  const working = entry.forcedStatus === "running" || nativeSessionIsWorking(entry.statusType)
+  let started = 0
+  for (const [messageID, queued] of [...entry.queuedPrompts]) {
+    const message = byID.get(messageID)
+    if (message?.info.queued === true) continue
+    if (!message && working) {
+      if (queued.seen) entry.queuedPrompts.delete(messageID)
+      continue
+    }
+    entry.queuedPrompts.delete(messageID)
+    const scope = conversationID(entry.target)
+    const id = queued.clientRequestId ? `${scope}:request:${queued.clientRequestId}` : `${scope}:native-user:${messageID}`
+    if (entry.turns.has(id)) continue
+    // Later than every turn already known, in queue order: the newest turn is the current one.
+    const created = Math.max(Date.now(), ...[...entry.turns.values()].map((turn) => turn.created + 1)) + started
+    entry.turns.set(id, { id, prompt: queued.prompt, created, model: queued.model, ...(message ? { nativeMessageID: messageID } : {}) })
+    entry.updatedAt = Math.max(entry.updatedAt, created)
+    started += 1
+  }
+  if (started) notify(entry)
+}
+
 async function reconcilePromptAfterTransportFailure(entry: NativeConversationEntry): Promise<ConversationRuntime | null> {
   const pending = loadPendingNativeSessionPrompt(entry.target)
   if (!pending) return null
@@ -732,6 +790,7 @@ async function reconcilePromptAfterTransportFailure(entry: NativeConversationEnt
     page = stabilizePiTailPage(entry, page)
     reconcilePendingPromptFromTranscript(entry, page)
     captureUserTurns(entry, page)
+    reconcileQueuedPrompts(entry, page)
     reconcileOpenCodeTranscriptStatus(entry, page)
     reconcileNativeSessionModel(entry, page)
   } catch {
@@ -744,11 +803,11 @@ async function reconcilePromptAfterTransportFailure(entry: NativeConversationEnt
   return entry.turns.has(expectedTurnID) ? conversationSnapshot(entry) : null
 }
 
-function appendAcceptedTurn(entry: NativeConversationEntry, prompt: string, model: ModelSelection | null, clientRequestId: string): ConversationRuntime {
+function appendAcceptedTurn(entry: NativeConversationEntry, prompt: string, model: ModelSelection | null, clientRequestId: string, nativeMessageID?: string): ConversationRuntime {
   const id = `${conversationID(entry.target)}:request:${clientRequestId}`
   if (!entry.turns.has(id)) {
     const created = Date.now()
-    entry.turns.set(id, { id, prompt: canonicalText(prompt), created, model })
+    entry.turns.set(id, { id, prompt: canonicalText(prompt), created, model, ...(nativeMessageID ? { nativeMessageID } : {}) })
     entry.updatedAt = created
   }
   entry.currentModel = model
@@ -860,6 +919,7 @@ function nativeConversationController(entry: NativeConversationEntry): Conversat
         page = stabilizePiTailPage(entry, page, before)
         reconcilePendingPromptFromTranscript(entry, page, before)
         captureUserTurns(entry, page, before)
+        reconcileQueuedPrompts(entry, page, before)
         reconcileOpenCodeTranscriptStatus(entry, page, before)
         reconcileNativeSessionModel(entry, page, before)
       }
@@ -897,7 +957,28 @@ function nativeConversationController(entry: NativeConversationEntry): Conversat
       if (result.status !== "accepted") {
         throw new Error(`${body.command ? "Command" : "Prompt"} delivery is ${result.status}. Retry the same request to reconcile the existing request id.`)
       }
-      return appendAcceptedTurn(entry, prompt, model ?? null, result.clientRequestId)
+      // A queued prompt is not a turn yet: the conversation keeps tracking the turn that is running,
+      // and the prompt becomes a turn when the transcript shows the daemon started it.
+      if (result.outcome?.disposition === "queued" && result.outcome.messageID) {
+        entry.queuedPrompts.set(result.outcome.messageID, {
+          prompt: canonicalText(prompt),
+          model: model ?? null,
+          clientRequestId: result.clientRequestId,
+          seen: false
+        })
+        entry.error = null
+        notifyTranscript(entry)
+        return notify(entry)
+      }
+      return appendAcceptedTurn(entry, prompt, model ?? null, result.clientRequestId, result.outcome?.messageID)
+    },
+
+    async cancelQueuedPrompt(_config, conversationId, messageID) {
+      requireConversationScope(entry, conversationId)
+      await ensureWriter(entry)
+      await api.cancelQueuedPrompt(entry.target.config, entry.target.sessionID, messageID, entry.target.directory)
+      entry.queuedPrompts.delete(messageID)
+      notifyTranscript(entry)
     },
 
     async stopConversation(_config, conversationId) {
@@ -912,6 +993,8 @@ function nativeConversationController(entry: NativeConversationEntry): Conversat
       }
       entry.forcedStatus = "cancelled"
       entry.error = null
+      // A Stop discards everything still queued behind the turn, in the daemon as here.
+      entry.queuedPrompts.clear()
       clearOpenCodeSilentTurn(entry)
       entry.statusType = "idle"
       entry.openCodeIdleObservedAt = null
@@ -947,6 +1030,7 @@ export function registerNativeSessionV3Adapter(
       writerReady: !target.requiresExplicitClaim,
       writerClaimInFlight: null,
       turns: new Map(),
+      queuedPrompts: new Map(),
       listeners: new Set(),
       transcriptListeners: new Set()
     }

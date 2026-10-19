@@ -442,13 +442,14 @@ test("queues a prompt sent while the agent is still working", async () => {
 
     acp.releaseTurn()
     await waitForIdle(bridge.baseURL, "session-1")
-    // Showing a queued prompt the moment it is sent means both user messages precede the
-    // first reply, the way any chat looks when two messages are fired off in a row.
-    // Reopening the session replays OMP's own history, which is strictly interleaved.
+    // The queued prompt is visible the moment it is sent, but the running turn's reply still lands
+    // above it: user rows are the turn boundaries clients read, so a reply below the queued row
+    // would be taken for that prompt's answer. This also matches OMP's own replayed history, which
+    // is strictly interleaved.
     assert.deepEqual(conversation(await readJSON(bridge.baseURL, "/session/session-1/message")), [
       "user: first",
-      "user: second",
       "assistant: reply to first",
+      "user: second",
       "assistant: reply to second"
     ])
   } finally {

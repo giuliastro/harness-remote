@@ -4,6 +4,7 @@ import type { AttachmentPart } from "../attachments"
 import { createCoalescedTailRefresh } from "../coalesced-tail-refresh"
 import type { ConversationController } from "../conversation-controller"
 import { conversationTurnSessionID, conversationTurns, type ConversationRuntime, type ConversationTurn } from "../conversation-runtime"
+import { midTurnPromptPolicy, messageRowText, type QueuedPromptEntry } from "../mid-turn-policy"
 import { mergeLatestMessagePage, prependOlderMessagePage } from "../message-pages"
 import { isMachineTransportFailure as isTransportFailure } from "../machine-request-error"
 import { provenCopilotAutoDefault, shouldClearDeferredCatalogDefault } from "../native-session-model"
@@ -573,9 +574,18 @@ export function WorkThreadConversation({
     () => Object.fromEntries(Object.entries(feeds).map(([session, feed]) => [session, feed.messages])),
     [feeds]
   )
+  // A queued prompt is not part of the conversation until it starts (see queuedPrompts), so its row
+  // stays out of the turn timeline; it is the strip above the composer instead.
+  const conversationMessages = useMemo(
+    () => Object.fromEntries(Object.entries(messagesBySession).map(([session, messages]) => [
+      session,
+      messages.some((message) => message.info.queued === true) ? messages.filter((message) => message.info.queued !== true) : messages
+    ])),
+    [messagesBySession]
+  )
   const timeline = useMemo(
-    () => buildConversationTimeline(conversation, messagesBySession, agentsByID),
-    [conversationSignature, messagesBySession, agentsByID]
+    () => buildConversationTimeline(conversation, conversationMessages, agentsByID),
+    [conversationSignature, conversationMessages, agentsByID]
   )
 
   /**
@@ -614,6 +624,27 @@ export function WorkThreadConversation({
   useEffect(() => {
     if (settledPrompt) setPendingPrompt(null)
   }, [settledPrompt])
+
+  /**
+   * Prompts the daemon holds behind the running turn, read from the transcript: their rows carry
+   * `info.queued` until the daemon starts them. Being the daemon's own record, it is the same after a
+   * remount, a reload or on another client, and nothing has to be matched by text. A stale row a
+   * merged page might retain cannot outlive the turn, because nothing is queued once nothing runs.
+   */
+  // Prompts withdrawn with their × that the next transcript read has not dropped yet.
+  const [withdrawnPrompts, setWithdrawnPrompts] = useState<ReadonlySet<string>>(() => new Set())
+  const queuedPrompts = useMemo<QueuedPromptEntry[]>(() => {
+    if (!working) return []
+    return Object.values(messagesBySession).flat()
+      .filter((message) => message.info.role === "user" && message.info.queued === true && !withdrawnPrompts.has(message.info.id))
+      .map((message) => ({
+        id: message.info.id,
+        text: messageRowText(message),
+        attachmentCount: message.parts.filter((part) => part.type === "file" || part.type === "image").length,
+        queuedAt: Number(message.info.time?.created) || 0
+      }))
+      .sort((left, right) => left.queuedAt - right.queuedAt)
+  }, [messagesBySession, working, withdrawnPrompts])
 
   const uncertainDeliverySettled = Boolean(
     uncertainDelivery
@@ -715,7 +746,7 @@ export function WorkThreadConversation({
         setFeeds((current) => {
           const existing = current[session]
           if (!existing) return { ...current, [session]: { messages: page.messages, before: page.before, hasMore: page.hasMore } }
-          const messages = mergeLatestMessagePage(existing.messages, page.messages)
+          const messages = mergeLatestMessagePage(existing.messages, page.messages, { complete: !page.hasMore })
           const hasMore = existing.hasMore || page.hasMore
           const before = existing.before || page.before
           if (messages === existing.messages && hasMore === existing.hasMore && before === existing.before) return current
@@ -948,33 +979,51 @@ export function WorkThreadConversation({
     const slashCommand = slashMatch && matchedCommand
       ? { name: matchedCommand.name, arguments: (slashMatch[2] || "").trim() }
       : undefined
+    // The previous prompt counts as running from the moment it was accepted, including the
+    // "getting started" stretch before its first reply arrives.
+    const busySinceOpen = working || replySettling || replyPending
     if (
       (!text && !promptAttachments.length)
       || sending
-      || working
-      || replySettling
       || sendInFlightRef.current
       || !interactionEnabled
       || modelBootstrapBlocked
+      || hasAttention
     ) return
+    if (busySinceOpen) {
+      // Queueing or steering a cross-route handoff behind a running turn has no single owner for the
+      // next turn, so route changes keep waiting until this one finishes.
+      if (routeChanged) return
+      // Attachments only prompt must run as its own turn on every harness, so it keeps waiting.
+      if (!text.trim()) return
+    }
     sendInFlightRef.current = true
     setSending(true)
-    setReplyPending(true)
     setSentInCurrentView(true)
     setError(null)
     setDraft("")
-    const optimisticPrompt: OptimisticPrompt = {
-      text,
-      priorTurnID: conversationRef.current.currentTurn?.id ?? null,
-      attachments: promptAttachments
+    const priorTurnID = conversationRef.current.currentTurn?.id ?? null
+    const optimisticPrompt: OptimisticPrompt = { text, priorTurnID, attachments: promptAttachments }
+    // From idle a reply is certainly coming, so the prompt and its pending reply show at once. Mid-turn
+    // the daemon decides whether the prompt starts, waits in its queue or joins the live turn, and only
+    // its answer says which - so nothing stands in for this prompt until it has answered. Guessing
+    // from the harness policy here is what used to draw a second "getting started" for a turn that
+    // had not begun.
+    let midTurn = busySinceOpen
+    const presentOptimistically = (show: boolean) => {
+      setReplyPending(show)
+      setPendingPrompt(show ? optimisticPrompt : null)
     }
-    setPendingPrompt(optimisticPrompt)
+    if (!midTurn) presentOptimistically(true)
     setUncertainDelivery(null)
     try {
       const latest = await controller.refreshConversation(baseConfig, conversation.id)
-      if (isActive(latest)) {
+      if (isActive(latest) && !midTurn) {
+        // Another client or an external writer is running a turn: the daemon will queue or steer this
+        // prompt like any other mid-turn send.
         onConversationUpdateRef.current(latest)
-        throw new Error(`${agentLabel(agentsRef.current, agentForTurn(latest, latest.currentTurn))} is still working. Stop it or wait for the reply before sending another message.`)
+        midTurn = true
+        presentOptimistically(false)
       }
       const selectedModelValue = selectedModel
         ? { providerID: selectedModel.providerID, modelID: selectedModel.modelID, variant: selectedModel.variant }
@@ -1003,12 +1052,28 @@ export function WorkThreadConversation({
         })
         localStorage.removeItem(draftStorageKey)
         setAttachments([])
-        onConversationUpdateRef.current(next)
-        conversationRef.current = next
-        setAwaitingReplyTurnID(next.currentTurn?.id ?? null)
         modelSelectionTouchedRef.current = false
-        await refreshCurrentTail(next)
-        void refreshAttention(next)
+        // A new current turn means the prompt started (or joined the live turn as one of its own);
+        // an unchanged one means the daemon queued it, and its row shows as the queued strip.
+        const startedTurn = Boolean(next.currentTurn?.id && next.currentTurn.id !== priorTurnID)
+        if (startedTurn) {
+          onConversationUpdateRef.current(next)
+          conversationRef.current = next
+          setAwaitingReplyTurnID(next.currentTurn?.id ?? null)
+          if (midTurn) setReplyPending(true)
+          // The tail refresh is coalesced: while a turn streams, every event extends the same drain,
+          // so awaiting it held this Send "in flight" for as long as the turn kept writing - the
+          // composer stayed locked until the reply ended, which is why a prompt typed meanwhile was
+          // only delivered after it and never queued, and a live reply read "getting started". The
+          // read is only started; the optimistic row already shows the prompt and its pending reply.
+          void refreshCurrentTail(next)
+          void refreshAttention(next)
+        } else {
+          if (!midTurn) presentOptimistically(false)
+          // The queued row is already in the daemon transcript; reading the tail shows it as queued.
+          // Not awaited, for the same reason as above: the running turn keeps that read draining.
+          void refreshCurrentTail(next)
+        }
       }
     } catch (reason) {
       const transportFailure = isTransportFailure(reason)
@@ -1020,15 +1085,34 @@ export function WorkThreadConversation({
       }
       // The prompt goes back to the composer, so it must also stop standing in for a turn that was
       // never accepted. If transport made acceptance ambiguous, the transcript reconciliation above
-      // clears this restored draft only after the exact native turn becomes authoritative.
-      setPendingPrompt(null)
-      setReplyPending(false)
-      setDraft((current) => text ? (current ? `${text}\n${current}` : text) : current)
+      // clears this restored draft only after the exact native turn becomes authoritative. A mid-turn
+      // send presented nothing, and the running turn's own pending state is not this send's to clear.
+      if (!midTurn) presentOptimistically(false)
+      setDraft((current) => text ? (current ? `${text}
+${current}` : text) : current)
       setAttachments(promptAttachments)
       setError(reason instanceof Error ? reason.message : String(reason))
     } finally {
       sendInFlightRef.current = false
       setSending(false)
+    }
+  }
+
+  /** Withdraw one queued prompt. The running turn is not touched; Stop is what ends it. */
+  async function cancelQueuedPrompt(messageID: string) {
+    if (!controller.cancelQueuedPrompt || !interactionEnabled) return
+    setWithdrawnPrompts((current) => new Set(current).add(messageID))
+    try {
+      await controller.cancelQueuedPrompt(baseConfig, conversation.id, messageID)
+      void refreshCurrentTail()
+    } catch (reason) {
+      if (isTransportFailure(reason)) onConnectionIssueRef.current?.()
+      setWithdrawnPrompts((current) => {
+        const next = new Set(current)
+        next.delete(messageID)
+        return next
+      })
+      setError(reason instanceof Error ? reason.message : String(reason))
     }
   }
 
@@ -1062,7 +1146,20 @@ export function WorkThreadConversation({
   // assistant envelope has not landed yet - also enters the preparing state, but it has long since
   // started, so it must read "is working" instead.
   const freshSend = (replyPending || sending) && sentInCurrentView
-  const preparingReply = replyPending || sending || ((working || replySettling) && !currentTurnHasAssistantSignal)
+  // A send made while a turn runs is not a reply getting started: the daemon may queue it, and the
+  // running turn keeps its own state until a new turn actually begins (see send). Counting that
+  // in-flight request here flashed "getting started" over a reply that was already streaming.
+  // Reopening a running Session reads its transcript first; until it is loaded the running reply is
+  // simply not known yet, so it must not be presented as a turn "getting started".
+  const preparingReply = replyPending
+    || (sending && !working && !replySettling)
+    || (!loading && (working || replySettling) && !currentTurnHasAssistantSignal)
+  // While a turn runs, only a Send that is itself still in flight blocks the next one: the harness
+  // steers or queues every further prompt. That includes the "getting started" stretch: the daemon
+  // accepted the previous prompt before replyPending was set, so the turn is already running there.
+  // Gating on preparingReply instead locked the composer until the first reply arrived (or until a
+  // remount dropped that local state), and again as soon as a prompt was queued.
+  const midTurnSendAllowed = (working || replySettling || replyPending) && !sending
   const pendingAgentLabel = (replyPending || sending) ? agentLabel(destinationAgents, targetAgentID) : currentLabel
   // The pending bubble is the reply that is coming, so it wears the identity of the agent that is
   // about to answer rather than the one that answered last.
@@ -1189,21 +1286,28 @@ export function WorkThreadConversation({
         onAttachmentError={setError}
         onSend={send}
         sending={preparingReply}
-        sendDisabled={!interactionEnabled || working || replySettling || hasAttention || routeBlockedByAttachments || modelBootstrapBlocked}
+        canSendWhileWaiting={midTurnSendAllowed && !routeChanged}
+        sendDisabled={!interactionEnabled || hasAttention || routeBlockedByAttachments || modelBootstrapBlocked}
         composerDisabled={!interactionEnabled || modelBootstrapBlocked}
         onStop={working && interactionEnabled ? stop : undefined}
         stopping={stopping}
         placeholder={`Message ${agentLabel(destinationAgents, targetAgentID)}…`}
         emptyText="Start the conversation. You can continue with another coding agent at any time."
         transcriptError={transcriptError || undefined}
+        queuedPrompts={queuedPrompts}
+        onCancelQueuedPrompt={controller.cancelQueuedPrompt && interactionEnabled ? cancelQueuedPrompt : undefined}
         footerHint={hasAttention
           ? "Your input is required before the agent can continue"
           : modelBootstrapBlocked
             ? modelsLoading ? "Loading available models…" : "A verified model is required before sending"
             : working
-              ? "The agent is working on your last message"
+              ? midTurnPromptPolicy(attachmentAgent) === "steer"
+                ? "New messages are delivered live into the running task"
+                : "New messages are queued and start when the current reply finishes"
               : replySettling
-                ? "Waiting for the completed reply to become available…"
+                ? midTurnPromptPolicy(attachmentAgent) === "steer"
+                  ? "New messages are delivered live into the running task"
+                  : "Waiting for the completed reply to become available…"
                 : undefined}
         renderMessage={(message) => {
           const activity = activityForMessage(message as WorkThreadMessage)

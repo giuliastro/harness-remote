@@ -68,7 +68,7 @@ test("an early empty assistant envelope stays behind the shared getting-started 
   assert.match(controller, /const replyTurnID = awaitingReplyTurnID \|\| conversation\.currentTurn\?\.id \|\| null/)
   assert.match(controller, /const presentedTimeline = useMemo/)
   assert.match(controller, /message\.info\.role === "assistant"[\s\S]*!assistantMessageHasSignal\(message\)/)
-  assert.match(controller, /const preparingReply = replyPending \|\| sending/)
+  assert.match(controller, /const preparingReply = replyPending\s*\|\| \(sending && !working && !replySettling\)/)
   assert.match(controller, /sending=\{preparingReply\}/)
   assert.match(controller, /const freshSend = \(replyPending \|\| sending\) && sentInCurrentView/, "the getting-started label needs a reply sent while the user was watching this view, not merely a live turn whose assistant envelope has not landed yet")
   const waitingExpression = controller.match(/const waitingLabel = hasAttention[\s\S]*?is working`/)?.[0] || ""
@@ -88,7 +88,10 @@ test("machine reconnect pauses mutations and resumes reconciliation in place", (
   assert.match(controller, /interactionEnabled = true/)
   assert.match(controller, /if \(!interactionEnabled\) \{[\s\S]*setModelsLoading\(false\)/)
   assert.match(controller, /sendInFlightRef\.current[\s\S]*\|\| !interactionEnabled[\s\S]*\|\| modelBootstrapBlocked/)
-  assert.match(controller, /sendDisabled=\{!interactionEnabled \|\| working/)
+  // Mid-turn prompts keep Send enabled while the turn runs (steering or backing the queue), so the
+  // disabled flag no longer contains `working`; reconnect and attention still block it unconditionally.
+  assert.match(controller, /sendDisabled=\{!interactionEnabled \|\| hasAttention/)
+  assert.doesNotMatch(controller, /sendDisabled=\{[^}]*\bworking\b/)
   assert.match(controller, /if \(!wasEnabled && interactionEnabled\) \{[\s\S]*void reconcile\(\)/)
   assert.match(controller, /onConnectionIssueRef\.current\?\.\(\)/)
 })

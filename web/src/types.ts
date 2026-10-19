@@ -27,6 +27,9 @@ export type HarnessCapabilities = {
   sessionRename: boolean
   sessionDelete: boolean
   attachments: boolean
+  /** What happens to a prompt sent while a reply is already streaming: "steer" forwards it into the
+   * live turn (the agent reads it immediately), "queue" holds it behind the running turn. */
+  midTurnPrompt?: "steer" | "queue"
 }
 
 export type HarnessCapabilityContract = {
@@ -229,6 +232,9 @@ export type MessageEnvelope = {
     error?: { name?: string; message?: string; data?: { message?: string } }
     /** The turn was stopped before it finished: a Stop, or a message sent while it was running. */
     interrupted?: boolean
+    /** A user prompt the daemon holds behind the running turn. It is not a turn of the conversation
+     * until the flag clears, which is when the daemon hands it to the harness. */
+    queued?: boolean
   }
   parts: MessagePart[]
 }

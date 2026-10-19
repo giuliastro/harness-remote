@@ -259,6 +259,76 @@
   padding: 10px 12px 0;
 }
 
+/* Queued prompts are a band of their own at the top of the composer, one line per prompt, set off
+   from the text field by a rule. Pills wrapped against the shell's rounded, clipped top edge read as
+   overlapping the input border. */
+.tdw-work-thread-conversation .uw-queued-prompts {
+  display: grid;
+  gap: 4px;
+  padding: 9px 12px 8px;
+  border-bottom: 1px solid var(--td3-border);
+  background: var(--td3-raise-1);
+}
+
+.tdw-work-thread-conversation .uw-queued-prompt {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.tdw-work-thread-conversation .uw-queued-prompt-badge {
+  flex: none;
+  padding: 1px 7px;
+  border: 1px solid var(--td3-blue-border);
+  border-radius: 6px;
+  background: var(--td3-blue-soft);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: .06em;
+  line-height: 1.6;
+  text-transform: uppercase;
+  color: var(--td3-blue-text);
+}
+
+.tdw-work-thread-conversation .uw-queued-prompt-text {
+  min-width: 0;
+  flex: 1 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--td3-text-2);
+  font-size: 12px;
+}
+
+.tdw-work-thread-conversation .uw-queued-prompt-cancel {
+  flex: none;
+  display: inline-grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  color: var(--td3-text-3);
+  background: transparent;
+  cursor: pointer;
+}
+
+.tdw-work-thread-conversation .uw-queued-prompt-cancel:hover,
+.tdw-work-thread-conversation .uw-queued-prompt-cancel:focus-visible {
+  color: var(--td3-text);
+  background: var(--td3-raise-2);
+}
+
+.tdw-work-thread-conversation .uw-queued-prompt-count {
+  flex: none;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--td3-blue-text);
+  opacity: .75;
+}
+
 .tdw-work-thread-conversation .uw-composer-attachment {
   min-width: 0;
   max-width: min(260px, 100%);

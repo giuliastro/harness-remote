@@ -200,7 +200,8 @@ export function createBridgeServer({ config, acp, serviceOptions, machineRegistr
     inlineModelVariantValues: profile.inlineModelVariantValues ?? [],
     modelProviderOrder: profile.modelProviderOrder ?? [],
     requireAssistantResponse: profile.requireAssistantResponse === true,
-    recoverMissingSessionOnPrompt: profile.recoverMissingSessionOnPrompt === true
+    recoverMissingSessionOnPrompt: profile.recoverMissingSessionOnPrompt === true,
+    midTurnPrompt: profile.capabilities?.midTurnPrompt
   })
   const hiddenSessionIDs = serviceOptions?.hiddenSessionIDs
   const liveSessionActivity = new Map()
@@ -415,7 +416,7 @@ export function createBridgeServer({ config, acp, serviceOptions, machineRegistr
         return
       }
 
-      const sessionMatch = /^\/session\/([^/]+)(?:\/(message|prompt_async|abort|todo|diff|action|command)(?:\/([^/]+))?)?$/.exec(url.pathname)
+      const sessionMatch = /^\/session\/([^/]+)(?:\/(message|prompt_async|abort|todo|diff|action|command|queue)(?:\/([^/]+))?)?$/.exec(url.pathname)
       if (sessionMatch) {
         const [, sessionID, operation, actionID] = sessionMatch
         if (request.method === "PATCH" && !operation) {
@@ -486,6 +487,11 @@ export function createBridgeServer({ config, acp, serviceOptions, machineRegistr
           const text = argumentsText ? `/${body.command} ${argumentsText}` : `/${body.command}`
           await service.prompt(sessionID, text, modelWireName(body.model))
           writeJSON(response, 200, true)
+          return
+        }
+        if (request.method === "DELETE" && operation === "queue" && actionID) {
+          // One prompt waiting behind the running turn is withdrawn; the turn itself keeps running.
+          writeJSON(response, 200, { removed: service.unqueue(sessionID, decodeURIComponent(actionID)) })
           return
         }
         if (request.method === "POST" && operation === "abort") {

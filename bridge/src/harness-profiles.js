@@ -27,7 +27,12 @@ const COMMON_CAPABILITIES = {
   questions: false,
   permissions: false,
   sessionRename: true,
-  sessionDelete: true
+  sessionDelete: true,
+  // What a prompt decoded while the harness is still working does. `steer` posts it into the live
+  // turn, where the official adapter documents that behavior; `queue` holds it until that turn
+  // completes, which is what every other ACP harness does. The UI presentation of one Send falls out
+  // of this capability, so it must match what AcpService actually does per harness.
+  midTurnPrompt: "queue"
 }
 
 export const HARNESS_PROFILES = {
@@ -362,6 +367,11 @@ export const HARNESS_PROFILES = {
     },
     capabilities: {
       ...COMMON_CAPABILITIES,
+      // Codex accepts new input while it is still working: its turn keeps running and the input
+      // joins it, which is what typing into the Codex CLI mid-task feels like. The official adapter
+      // exposes exactly that through `_session/steering`, injected into or starting a turn, so this
+      // bridge forwards mid-turn prompts as steering instead of queueing them.
+      midTurnPrompt: "steer",
       // The adapter advertises model ids as bare ids rather than `provider/model`, which is
       // handled where the response is built. Slash commands and plan updates arrive through
       // the same notifications OMP emits, so commands and todos reflect the actual wire data.

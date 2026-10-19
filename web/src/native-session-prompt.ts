@@ -9,6 +9,20 @@ import { messageText } from "./message-content"
 
 export type NativeSessionPromptStatus = "accepted" | "pending" | "uncertain"
 
+/**
+ * What the daemon did with an accepted prompt, when it says so (ACP harnesses do; legacy OpenCode
+ * over HTTP does not). `queued` means it waits behind the running turn and is not a turn yet.
+ */
+export type NativeSessionPromptDisposition = { disposition: "started" | "queued" | "steered"; messageID?: string }
+
+function parseDisposition(data: unknown): NativeSessionPromptDisposition | undefined {
+  const result = data && typeof data === "object" ? (data as { result?: unknown }).result : undefined
+  if (!result || typeof result !== "object") return undefined
+  const { disposition, messageID } = result as { disposition?: unknown; messageID?: unknown }
+  if (disposition !== "started" && disposition !== "queued" && disposition !== "steered") return undefined
+  return { disposition, ...(typeof messageID === "string" && messageID ? { messageID } : {}) }
+}
+
 export type PendingNativeSessionPrompt = {
   clientRequestId: string
   text: string
@@ -179,7 +193,7 @@ export async function sendNativeSessionPrompt(
   text: string,
   model?: ModelSelection | null,
   attachments: AttachmentPart[] = []
-): Promise<{ status: NativeSessionPromptStatus; clientRequestId: string }> {
+): Promise<{ status: NativeSessionPromptStatus; clientRequestId: string; outcome?: NativeSessionPromptDisposition }> {
   const normalized = text.trim()
   if (!normalized) throw new Error("A text prompt is required")
   const requestedModel = normalizeModel(model)
@@ -223,6 +237,7 @@ export async function sendNativeSessionPrompt(
   }
 
   let status: NativeSessionPromptStatus
+  let outcome: NativeSessionPromptDisposition | undefined
   if (isDesktopPlatform()) {
     const result = await desktopRequestResult(target.config, { path, method: "POST", body })
     if (!result.ok) {
@@ -234,6 +249,7 @@ export async function sendNativeSessionPrompt(
       throw new Error(result.error.message)
     }
     status = parseStatus(result.response.data)
+    outcome = parseDisposition(result.response.data)
   } else {
     const headers: Record<string, string> = {
       Accept: "application/json",
@@ -262,6 +278,7 @@ export async function sendNativeSessionPrompt(
         throw new Error(errorDetail(response.data, response.status))
       }
       status = parseStatus(response.data)
+      outcome = parseDisposition(response.data)
     } else {
       let response: Response
       try {
@@ -279,11 +296,12 @@ export async function sendNativeSessionPrompt(
         throw new Error(errorDetail(data, response.status))
       }
       status = parseStatus(data)
+      outcome = parseDisposition(data)
     }
   }
 
   if (status === "accepted") markPendingNativeSessionPromptAccepted(target)
-  return { status, clientRequestId: pending.clientRequestId }
+  return { status, clientRequestId: pending.clientRequestId, ...(outcome ? { outcome } : {}) }
 }
 
 
@@ -336,7 +354,7 @@ export async function sendNativeSessionCommand(
   command: string,
   argumentsText = "",
   model?: ModelSelection | null
-): Promise<{ status: NativeSessionPromptStatus; clientRequestId: string }> {
+): Promise<{ status: NativeSessionPromptStatus; clientRequestId: string; outcome?: NativeSessionPromptDisposition }> {
   const normalizedCommand = command.replace(/^\/+/, "").trim()
   const normalizedArguments = argumentsText.trim()
   if (!normalizedCommand) throw new Error("A command name is required")
@@ -379,6 +397,7 @@ export async function sendNativeSessionCommand(
   }
 
   let status: NativeSessionPromptStatus
+  let outcome: NativeSessionPromptDisposition | undefined
   if (isDesktopPlatform()) {
     const result = await desktopRequestResult(target.config, { path, method: "POST", body })
     if (!result.ok) {
@@ -386,6 +405,7 @@ export async function sendNativeSessionCommand(
       throw new Error(result.error.message)
     }
     status = parseStatus(result.response.data)
+    outcome = parseDisposition(result.response.data)
   } else {
     const headers: Record<string, string> = {
       Accept: "application/json",
@@ -414,6 +434,7 @@ export async function sendNativeSessionCommand(
         throw new Error(errorDetail(response.data, response.status))
       }
       status = parseStatus(response.data)
+      outcome = parseDisposition(response.data)
     } else {
       let response: Response
       try {
@@ -431,9 +452,10 @@ export async function sendNativeSessionCommand(
         throw new Error(errorDetail(data, response.status))
       }
       status = parseStatus(data)
+      outcome = parseDisposition(data)
     }
   }
 
   if (status === "accepted") clearPendingNativeSessionCommand(target)
-  return { status, clientRequestId: pending.clientRequestId }
+  return { status, clientRequestId: pending.clientRequestId, ...(outcome ? { outcome } : {}) }
 }
