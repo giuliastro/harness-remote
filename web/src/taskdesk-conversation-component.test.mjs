@@ -76,7 +76,7 @@ test("an early empty assistant envelope stays behind the shared getting-started 
   assert.match(waitingExpression, /freshSend/, "only a fresh Send may show the getting-started label")
   assert.match(controller, /const \[sentInCurrentView, setSentInCurrentView\] = useState\(false\)/)
   assert.match(controller, /setSending\(true\)[\s\S]*setSentInCurrentView\(true\)/)
-  assert.match(controller, /useEffect\(\(\) => \{\n\s*setSentInCurrentView\(false\)\n\s*\}, \[surfaceViewRevision\]\)/, "opening the Session surface again must retire the getting-started label")
+  assert.match(controller, /useEffect\(\(\) => \{\r?\n\s*setSentInCurrentView\(false\)\r?\n\s*\}, \[surfaceViewRevision\]\)/, "opening the Session surface again must retire the getting-started label")
   assert.doesNotMatch(controller.match(/useEffect\(\(\) => \{[\s\S]*?if \(!awaitingReplyTurnID\) return[\s\S]*?\}, \[awaitingReplyTurnID[\s\S]*?\]\)/)?.[0] || "", /conversation\.currentTurn\?\.id !== awaitingReplyTurnID/)
   assert.match(controller, /liveTurnID = \(working \|\| replySettling\)[\s\S]*currentTurnHasAssistantSignal/)
   assert.match(component, /className="uw-message uw-message-agent uw-message-pending"/)

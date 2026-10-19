@@ -1,5 +1,6 @@
 import { api, type NativeSessionLinkRecord } from "./api"
 import { nativeSessionDisplayTitle } from "./native-session-title"
+import { federatedSessionBucket, type FederatedSessionPresentationState } from "./native-session-federation"
 import { liveSessionIndexStatus } from "./session-index-live-state"
 import type { BackendKind, MachineAgentHost, MessageEnvelope, ModelSelection, ServerConfig, Session, SessionStatus } from "./types"
 
@@ -141,7 +142,8 @@ export function nativeSessionConfig(base: ServerConfig, agent: MachineAgentHost)
 export function nativeSessionSurfaceTarget(
   machineID: string,
   base: ServerConfig,
-  record: NativeSessionRecord
+  record: NativeSessionRecord,
+  presentationState?: FederatedSessionPresentationState
 ): NativeSessionSurfaceTarget {
   const directory = record.session.directory || ""
   const ref: NativeSessionRef = {
@@ -151,6 +153,14 @@ export function nativeSessionSurfaceTarget(
     directory
   }
   const external = record.session.external === true
+  // Opening the row must retain the live activity it displays while the first transcript is read.
+  // Discovery can still contain idle from before the observed turn started (or busy after it ended).
+  const discoveredWorking = federatedSessionBucket(record.status) === "active"
+  const status = presentationState === "working" && !discoveredWorking
+    ? { type: "running" }
+    : presentationState === "ready" && discoveredWorking
+      ? { type: "idle" }
+      : record.status
   return {
     key: `${machineID}:${record.key}`,
     ref,
@@ -167,7 +177,7 @@ export function nativeSessionSurfaceTarget(
       backend: record.backend,
       agentId: record.agentId
     },
-    status: record.status,
+    status,
     external,
     modelsSupported: record.modelsSupported,
     commandsSupported: record.commandsSupported === true,

@@ -319,20 +319,29 @@
   pointer-events: none;
 }
 
+.hr-native-scope > svg:last-child {
+  grid-column: 3;
+}
+
 .hr-native-scope select {
+  position: absolute;
+  z-index: 1;
+  inset: 0;
   width: 100%;
   min-width: 0;
   height: 100%;
-  padding: 0;
+  min-height: 0;
+  padding: 0 27px;
   border: 0;
   outline: 0;
   appearance: none;
   -webkit-appearance: none;
   color: var(--td3-text-2);
-  /* `taskdesk-workthreads.css` pins `background-color` on every select with `!important` so the
-     native option popover stays themed, and that wins here. The chip is painted with the same
-     `--td3-control`, so the select's own fill lands seamlessly inside it. */
-  background: transparent;
+  /* `taskdesk-workthreads.css` pins a control fill on native selects with `!important` so their
+     option popovers stay themed. Keep the closed select transparent over the chip, while its
+     options retain the shared themed surface. */
+  background-color: transparent !important;
+  background-image: none;
   font: inherit;
   font-size: 10.5px;
   font-weight: 600;

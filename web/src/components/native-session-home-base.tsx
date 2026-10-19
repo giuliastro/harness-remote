@@ -978,7 +978,7 @@ export function NativeSessionHome({
   }, [createAgentID, createOpen, selectedCreateMachine])
 
   function open(item: RecordWithMachine) {
-    onOpen(nativeSessionSurfaceTarget(item.machineID, item.machine.config, item.record))
+    onOpen(nativeSessionSurfaceTarget(item.machineID, item.machine.config, item.record, liveStateForItem(item)))
   }
 
   function toggleProject(groupKey: string) {
