@@ -6,7 +6,7 @@ import { chromium } from "playwright"
 const origin = "http://127.0.0.1:4198"
 const daemons = []
 const requests = []
-let failA = true
+let failuresA2 = 2
 let preview
 let browser
 const sessions = (machine, older = false) => Array.from({ length: older ? 1 : 36 }, (_, index) => ({
@@ -32,7 +32,10 @@ async function startDaemon(machine) {
       if (!cursor) return json(200, sessions(machine), machine === "C" ? undefined : `${machine}1`)
       requests.push({ machine, cursor })
       if (cursor === "A1") return json(200, [], "A2") // Empty page with a valid continuation.
-      if (cursor === "A2" && failA) { failA = false; return json(500, { error: "Temporary listing failure" }) }
+      if (cursor === "A2" && failuresA2 > 0) {
+        failuresA2 -= 1
+        return json(500, { error: "Temporary listing failure" })
+      }
       return json(200, sessions(machine, true))
     }
     if (url.pathname.endsWith("/session/status")) return json(200, {})
@@ -90,12 +93,13 @@ try {
     await assertScroll(page)
     if (viewport.width === 1366) {
       await older(a).click()
-      await waitFor(async () => requests.length === 1 && await older(a).isEnabled())
-      assert.deepEqual(requests, [{ machine: "A", cursor: "A1" }], "A must not page B")
+      await waitFor(async () => requests.length === 2 && await older(a).isEnabled())
+      assert.deepEqual(requests, [{ machine: "A", cursor: "A1" }, { machine: "A", cursor: "A2" }], "A must skip its empty page without paging B")
+      assert.equal(await a.getByRole("alert").count(), 0, "a failed lookahead must preserve manual continuation after a successful empty page")
       await older(a).click(); await a.getByRole("alert").waitFor({ state: "visible" })
       await a.getByRole("button", { name: "Retry", exact: true }).click()
       await waitFor(async () => await a.locator(".hr-native-home-pagination").count() === 0)
-      assert.deepEqual(requests.map(({ cursor }) => cursor), ["A1", "A2", "A2"], "retry must retain failing cursor")
+      assert.deepEqual(requests.map(({ cursor }) => cursor), ["A1", "A2", "A2", "A2"], "both automatic lookahead and manual retry must retain the failing cursor")
       await older(b).click(); await waitFor(async () => await b.locator(".hr-native-home-pagination").count() === 0)
       assert.equal(await page.locator(".hr-native-home-pagination").count(), 0, "exhausted cursors remove pagination")
       assert.equal(await a.getByRole("alert").count(), 0)
