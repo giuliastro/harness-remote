@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import { EventEmitter } from 'node:events'
+import { spawnSync } from 'node:child_process'
 import test from 'node:test'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -124,6 +125,23 @@ test('a transient truncated export is retried before the read fails', async () =
   })
   assert.deepEqual((await loader('ses_test')).map((message) => message.info.id), ['u1', 'a1', 'a2'])
   assert.equal(calls, 3)
+})
+
+test('an awaited export retry keeps an otherwise idle process alive', () => {
+  const moduleURL = new URL('../src/opencode2-session-history.js', import.meta.url).href
+  const result = spawnSync(process.execPath, ['--input-type=module', '--eval', `
+    import { createOpenCode2HistoryLoader } from ${JSON.stringify(moduleURL)}
+    let attempts = 0
+    const loader = createOpenCode2HistoryLoader({ runExport: async () => {
+      if (++attempts < 3) throw new Error('truncated export')
+      return { info: { id: 'isolated_retry' }, messages: [] }
+    } })
+    await loader('isolated_retry')
+    console.log('retry completed', attempts)
+  `], { encoding: 'utf8', timeout: 10_000 })
+  assert.ifError(result.error)
+  assert.equal(result.status, 0, result.stderr)
+  assert.match(result.stdout, /retry completed 3/)
 })
 
 test('a non-retryable export failure is surfaced without retrying', async () => {

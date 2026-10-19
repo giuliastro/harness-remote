@@ -10,10 +10,8 @@ const EXPORT_RETRY_BACKOFF_MS = 75
 const MAX_EXPORT_BYTES = 64 * 1024 * 1024
 
 function sleep(ms) {
-  return new Promise((resolve) => {
-    const timer = setTimeout(resolve, ms)
-    timer.unref?.()
-  })
+  // This timer owns an awaited retry, so keep the process alive until it can finish the read.
+  return new Promise((resolve) => setTimeout(resolve, ms))
 }
 
 function partFromContent(part, messageID, index) {
