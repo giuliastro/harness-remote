@@ -330,6 +330,12 @@ prompt (`started`, `queued` or `steered`), so the app never guesses, and the sam
 Sessions, reloading the app, or a second client. Slash commands always queue. Stopping the session discards
 anything still queued.
 
+An agent can also start a turn on its own. Claude Code does this when a background command, subagent or monitor
+it was waiting on finishes: it resumes with no new prompt. The daemon adopts that turn for a session it has
+prompted. The session reads as working again, and the agent's output and tool calls arrive as a new reply.
+The turn ends after 30 seconds without output, or longer while one of its tool calls is still running. A prompt
+sent meanwhile queues behind it, and Stop cancels it like any other turn.
+
 Session titles come from the title you give a session in the app, otherwise from its first prompt; sessions created outside the app are listed with a generated `Session <id>` title when the ACP listing carries no title.
 
 Rename and delete use the same controls as OpenCode, but they are bridge-local metadata: a rename is a

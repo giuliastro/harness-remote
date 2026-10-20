@@ -55,6 +55,20 @@ const SLASH_PROMPT = /^\/[^\s/]/
 const STEER_ADOPT_SETTLE_IDLE_MS = 90_000
 const STEER_ADOPT_SWEEP_INTERVAL_MS = 10_000
 
+/**
+ * Claude Code wakes its model on its own when a background command, subagent or monitor finishes,
+ * and the adapter streams that turn with no session/prompt behind it. Such a turn is adopted the
+ * same way as a steering turn, but settles sooner: it is usually a short report. A tool call it
+ * still has running holds it open, up to the hard cap.
+ */
+const AGENT_TURN_SETTLE_IDLE_MS = 30_000
+const AGENT_TURN_RUNNING_TOOL_CAP_MS = 10 * 60_000
+/**
+ * Zero-drain adapters deliver the tail of a turn just after its session/prompt response. Output
+ * that close to the end still belongs to the turn that ended, not to one the agent started.
+ */
+const AGENT_TURN_GRACE_MS = 2_000
+
 function sessionView(session, status = "idle", title = session.title, external = false) {
   return {
     id: session.sessionId,
@@ -530,6 +544,7 @@ export class AcpService {
       this.#chunkMessageIDs.delete(`${sessionID}:user`)
       this.#chunkMessageIDs.delete(`${sessionID}:assistant`)
       this.#turnGenerations.delete(sessionID)
+      this.#turnSettledAt.delete(sessionID)
       this.#cancelledSessions.delete(sessionID)
       this.#promptedSessions.delete(sessionID)
       this.#queues.delete(sessionID)
@@ -566,9 +581,14 @@ export class AcpService {
   #active = new Set()
   #listeners = new Set()
   #turnGenerations = new Map()
-  // A prompt forwarded to the live turn while it streams. See `#steerPrompt` for the adapter rules.
-  #steerAdoptedTurns = new Map()
-  #steerSweep
+  // Turns the adapter runs without a session/prompt this bridge awaits: a steering prompt it started
+  // as a turn of its own (see `#steerPrompt`), or a turn the agent started itself (see
+  // `#adoptAgentTurn`). Only their own stream going silent ends them.
+  #adoptedTurns = new Map()
+  #adoptedTurnSweep
+  #turnSettledAt = new Map()
+  #agentTurnSettleIdleMs
+  #agentTurnGraceMs
   #promptGates = new Map()
   #midTurnPrompt
   #cancelledSessions = new Set()
@@ -655,6 +675,10 @@ export class AcpService {
     recoverMissingSessionOnPrompt = false,
     /** Transport policy for a prompt that arrives while a turn is still running. */
     midTurnPrompt = "queue",
+    /** Streamed silence after which a turn the agent started on its own is settled. */
+    agentTurnSettleIdleMs = AGENT_TURN_SETTLE_IDLE_MS,
+    /** How long after a turn ends its adapter's output still counts as that turn's tail. */
+    agentTurnGraceMs = AGENT_TURN_GRACE_MS,
     fallbackModelCatalog,
     fallbackModelSelectionMethod,
     fallbackModelCommand,
@@ -683,6 +707,8 @@ export class AcpService {
     this.#requireExistingDirectory = requireExistingDirectory
     this.#recoverMissingSessionOnPrompt = recoverMissingSessionOnPrompt
     this.#midTurnPrompt = MID_TURN_PROMPT_POLICIES.has(midTurnPrompt) ? midTurnPrompt : "queue"
+    this.#agentTurnSettleIdleMs = agentTurnSettleIdleMs
+    this.#agentTurnGraceMs = agentTurnGraceMs
     this.#fallbackModelCatalog = fallbackModelCatalog
     this.#fallbackModelSelectionMethod = fallbackModelSelectionMethod
     this.#fallbackModelCommand = fallbackModelCommand
@@ -1027,6 +1053,8 @@ export class AcpService {
     this.#chunkMessageIDs.delete(`${sessionID}:user`)
     this.#chunkMessageIDs.delete(`${sessionID}:assistant`)
     this.#turnGenerations.delete(sessionID)
+    this.#turnSettledAt.delete(sessionID)
+    this.#discardAdoptedTurn(sessionID)
     this.#cancelledSessions.delete(sessionID)
     this.#promptedSessions.delete(sessionID)
     this.#queues.delete(sessionID)
@@ -1589,7 +1617,7 @@ export class AcpService {
     // same way taking ownership of an external session stops the journal being re-read for it.
     this.#adoptedSessions.delete(sessionID)
     // A regular turn reclaims the session from any steering adoption that raced its end.
-    this.#discardSteerAdoption(sessionID)
+    this.#discardAdoptedTurn(sessionID)
     const generation = (this.#turnGenerations.get(sessionID) ?? 0) + 1
     this.#turnGenerations.set(sessionID, generation)
     this.#cancelledSessions.delete(sessionID)
@@ -1644,6 +1672,7 @@ export class AcpService {
     }
     if (this.#turnGenerations.get(sessionID) !== generation) return
     this.#active.delete(sessionID)
+    this.#turnSettledAt.set(sessionID, Date.now())
     this.#turnResponseObserved.delete(sessionID)
     // Older adapters intentionally deliver assistant chunks after their RPC response, so their
     // historical zero-drain behavior must stay permissive. PI opts into a real drain window above;
@@ -1713,43 +1742,96 @@ export class AcpService {
     this.#active.add(sessionID)
     this.#promptedSessions.add(sessionID)
     this.#chunkMessageIDs.delete(`${sessionID}:assistant`)
-    this.#steerAdoptedTurns.set(sessionID, { generation, lastStreamAt: Date.now() })
+    this.#adoptedTurns.set(sessionID, { generation, lastStreamAt: Date.now(), idleMs: STEER_ADOPT_SETTLE_IDLE_MS })
     this.#emit("session.updated", sessionID)
-    this.#startSteerSweep()
+    this.#startAdoptedTurnSweep()
     // The adapter ran the prompt as a turn of its own, which is what a client must show.
     return { disposition: "started", messageID }
   }
 
-  /** Stop tracking an adopted steering turn. A later regular turn or Stop owns the teardown. */
-  #discardSteerAdoption(sessionID) {
-    this.#steerAdoptedTurns.delete(sessionID)
-    if (this.#steerAdoptedTurns.size === 0 && this.#steerSweep) {
-      clearInterval(this.#steerSweep)
-      this.#steerSweep = undefined
+  /**
+   * Whether live output for an idle Session opens a turn the agent started on its own.
+   *
+   * Only a Session this bridge has run a turn in qualifies: its adapter process is the one whose
+   * background work just finished. A Stop is definitive, and output arriving right after a turn
+   * ended is that turn's transport tail (see AGENT_TURN_GRACE_MS), so neither opens a turn.
+   */
+  #opensAgentTurn(sessionID) {
+    if (this.#active.has(sessionID) || this.#cancelledSessions.has(sessionID)) return false
+    if (!this.#turnGenerations.has(sessionID)) return false
+    if (this.#historyLoader && !this.#ownedSessions.has(sessionID)) return false
+    return Date.now() - (this.#turnSettledAt.get(sessionID) ?? 0) >= this.#agentTurnGraceMs
+  }
+
+  /**
+   * Take over a turn the agent started without a prompt from this bridge, typically Claude Code
+   * resuming after a background command or subagent it was waiting on finished. It reads busy and
+   * records its output as a new reply until its own stream goes silent; a prompt or a Stop that
+   * arrives meanwhile is handled exactly as during any other turn.
+   */
+  #adoptAgentTurn(sessionID) {
+    const generation = (this.#turnGenerations.get(sessionID) ?? 0) + 1
+    this.#turnGenerations.set(sessionID, generation)
+    this.#active.add(sessionID)
+    this.#promptedSessions.add(sessionID)
+    this.#chunkMessageIDs.delete(`${sessionID}:assistant`)
+    this.#adoptedTurns.set(sessionID, {
+      generation,
+      startedAt: Date.now(),
+      lastStreamAt: Date.now(),
+      idleMs: this.#agentTurnSettleIdleMs,
+      holdForRunningTools: true
+    })
+    this.#emit("session.updated", sessionID)
+    this.#startAdoptedTurnSweep()
+  }
+
+  /** Whether the Session's current turn is one the adapter runs without a pending session/prompt. */
+  hasAdoptedTurn(sessionID) {
+    return this.#adoptedTurns.has(sessionID)
+  }
+
+  /** A tool call the adopted turn opened that has not reported an end yet. */
+  #adoptedTurnHasRunningTool(sessionID, adoption) {
+    return (this.#messages.get(sessionID) ?? []).some((message) => message.info.role === "assistant"
+      && message.parts.some((part) => part.type === "tool"
+        && ["pending", "running"].includes(part.state?.status)
+        && (part.state.time?.start ?? 0) >= adoption.startedAt))
+  }
+
+  /** Stop tracking an adopted turn. A later regular turn or Stop owns the teardown. */
+  #discardAdoptedTurn(sessionID) {
+    this.#adoptedTurns.delete(sessionID)
+    if (this.#adoptedTurns.size === 0 && this.#adoptedTurnSweep) {
+      clearInterval(this.#adoptedTurnSweep)
+      this.#adoptedTurnSweep = undefined
     }
   }
 
   /**
-   * Settles adopted steering turns that went silent. A codex turn can outlive the steering response
-   * by minutes, so the last stream time - updated on every emitted session/message event for that
-   * session - is the only signal this bridge has that the turn finished.
+   * Settles adopted turns that went silent. A codex turn can outlive the steering response by
+   * minutes, so the last stream time - refreshed by every live session/update for that session - is
+   * the only signal this bridge has that the turn finished.
    */
-  #startSteerSweep() {
-    if (this.#steerSweep) return
-    this.#steerSweep = setInterval(() => {
+  #startAdoptedTurnSweep() {
+    if (this.#adoptedTurnSweep) return
+    this.#adoptedTurnSweep = setInterval(() => {
       const now = Date.now()
-      for (const [sessionID, adoption] of this.#steerAdoptedTurns) {
-        if (now - adoption.lastStreamAt < STEER_ADOPT_SETTLE_IDLE_MS) continue
-        this.#steerAdoptedTurns.delete(sessionID)
+      for (const [sessionID, adoption] of this.#adoptedTurns) {
+        const idle = now - adoption.lastStreamAt
+        if (idle < adoption.idleMs) continue
+        if (adoption.holdForRunningTools && idle < AGENT_TURN_RUNNING_TOOL_CAP_MS
+          && this.#adoptedTurnHasRunningTool(sessionID, adoption)) continue
+        this.#adoptedTurns.delete(sessionID)
         void this.#settleTurn(sessionID, adoption.generation)
       }
-      if (this.#steerAdoptedTurns.size === 0) {
-        clearInterval(this.#steerSweep)
-        this.#steerSweep = undefined
+      if (this.#adoptedTurns.size === 0) {
+        clearInterval(this.#adoptedTurnSweep)
+        this.#adoptedTurnSweep = undefined
       }
-    }, STEER_ADOPT_SWEEP_INTERVAL_MS)
+    }, Math.min(STEER_ADOPT_SWEEP_INTERVAL_MS, Math.max(10, Math.floor(this.#agentTurnSettleIdleMs / 3))))
     // A daemon process must not be kept alive by bookkeeping that only exists to close a race.
-    this.#steerSweep.unref?.()
+    this.#adoptedTurnSweep.unref?.()
   }
 
   async #requestPromptWithRecovery(sessionID, params) {
@@ -1877,7 +1959,7 @@ export class AcpService {
       throw new Error("This session is not active in the app")
     }
     // A Stop also ends any adopted steering turn: the harness cancel is definitive either way.
-    this.#discardSteerAdoption(sessionID)
+    this.#discardAdoptedTurn(sessionID)
     const queue = this.#queues.get(sessionID)
     if (queue?.length) {
       const discarded = new Set(queue.map((entry) => entry.messageID))
@@ -2533,6 +2615,14 @@ export class AcpService {
     }
     const replaying = this.#replaying.has(sessionId)
     const session = this.#sessions.get(sessionId)
+    if (!replaying) {
+      const adoption = this.#adoptedTurns.get(sessionId)
+      if (adoption) adoption.lastStreamAt = Date.now()
+      const agentOutput = update.sessionUpdate === "tool_call"
+        || ((update.sessionUpdate === "agent_message_chunk" || update.sessionUpdate === "agent_thought_chunk")
+          && update.content?.type === "text" && Boolean(update.content.text))
+      if (agentOutput && this.#opensAgentTurn(sessionId)) this.#adoptAgentTurn(sessionId)
+    }
     if (update.sessionUpdate === "available_commands_update") {
       const commands = Array.isArray(update.availableCommands)
         ? update.availableCommands.filter((command) => typeof command?.name === "string")

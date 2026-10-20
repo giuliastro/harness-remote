@@ -370,3 +370,136 @@ test("unqueue withdraws one waiting prompt and leaves the running turn and the r
   acp.releases.shift()()
   await waitFor(() => service.status("s1").type === "idle", "the queue never drained")
 })
+
+/**
+ * Claude Code resumes on its own when a background command or subagent it was waiting on finishes:
+ * the adapter streams a new turn after the previous session/prompt already resolved, with no
+ * session/prompt of its own. The bridge has to adopt that turn rather than drop or orphan it.
+ */
+class AgentTurnAcp extends StreamingAcp {
+  notifications = []
+  notify(method, params) { this.notifications.push([method, params]) }
+  update(update) {
+    this.emit("notification", { method: "session/update", params: { sessionId: "s1", update } })
+  }
+  toolCall(toolCallId, status = "pending") {
+    this.update({ sessionUpdate: "tool_call", toolCallId, title: "Read File", kind: "read", status })
+  }
+  toolDone(toolCallId) {
+    this.update({ sessionUpdate: "tool_call_update", toolCallId, status: "completed" })
+  }
+}
+
+/** The adopted-turn sweep runs on a real timer, so waiting on it needs wall-clock time. */
+async function waitForTime(condition, label, timeoutMs = 3000) {
+  const deadline = Date.now() + timeoutMs
+  while (!condition() && Date.now() < deadline) await new Promise((resolve) => setTimeout(resolve, 10))
+  assert.ok(condition(), label ?? "condition never held")
+}
+
+const AGENT_TURN_OPTIONS = { agentTurnSettleIdleMs: 60, agentTurnGraceMs: 0 }
+
+async function finishFirstTurn(acp, service, reply = "waiting for the background task") {
+  await service.prompt("s1", "run it in the background")
+  await waitFor(() => acp.releases.length === 1, "the first turn never started")
+  acp.chunk(reply)
+  acp.releases.shift()()
+  await waitFor(() => service.status("s1").type === "idle", "the first turn never settled")
+}
+
+test("a turn the agent starts after its prompt resolved is adopted as a new busy reply and settles on silence", async () => {
+  const acp = new AgentTurnAcp()
+  const service = new AcpService(acp, AGENT_TURN_OPTIONS)
+  const statuses = []
+  service.subscribe((event) => { if (event.type === "session.updated") statuses.push(service.status("s1").type) })
+  await finishFirstTurn(acp, service)
+  statuses.length = 0
+
+  acp.toolCall("t-read")
+  assert.equal(service.status("s1").type, "busy", "the resumed turn must read as running")
+  assert.equal(service.hasAdoptedTurn("s1"), true)
+  acp.toolDone("t-read")
+  acp.chunk("the background task printed DONE")
+
+  const messages = await service.messages("s1")
+  assert.deepEqual(messages.map((message) => message.info.role), ["user", "assistant", "assistant"],
+    "the resumed output is a reply of its own, not appended to the earlier one")
+  assert.equal(messages[1].parts.map((part) => part.text).join(""), "waiting for the background task")
+  assert.deepEqual(messages[2].parts.map((part) => part.type === "tool" ? `tool:${part.state.status}` : part.text),
+    ["tool:completed", "the background task printed DONE"])
+
+  await waitForTime(() => service.status("s1").type === "idle", "the adopted turn never settled")
+  assert.equal(service.hasAdoptedTurn("s1"), false)
+  assert.deepEqual(statuses, ["busy", "idle"])
+})
+
+test("output arriving right after a turn ended stays that turn's tail and does not open a new one", async () => {
+  const acp = new AgentTurnAcp()
+  const service = new AcpService(acp, { agentTurnSettleIdleMs: 60, agentTurnGraceMs: 60_000 })
+  await finishFirstTurn(acp, service)
+  acp.chunk(" late tail")
+  assert.equal(service.status("s1").type, "idle")
+  assert.equal(service.hasAdoptedTurn("s1"), false)
+})
+
+test("a Session this bridge never ran a turn in does not adopt unsolicited output", async () => {
+  const acp = new AgentTurnAcp()
+  const service = new AcpService(acp, AGENT_TURN_OPTIONS)
+  await service.messages("s1")
+  acp.chunk("someone else's turn")
+  assert.equal(service.status("s1").type, "idle")
+  assert.equal((await service.messages("s1")).length, 0)
+})
+
+test("a prompt sent during an adopted turn queues behind it and starts once the turn settles", async () => {
+  const acp = new AgentTurnAcp()
+  const service = new AcpService(acp, AGENT_TURN_OPTIONS)
+  await finishFirstTurn(acp, service)
+  acp.chunk("resuming after the subagent finished")
+  const queued = await service.prompt("s1", "and now this")
+  assert.equal(queued.disposition, "queued")
+  await waitForTime(() => acp.releases.length === 1, "the queued prompt never started after the adopted turn")
+  assert.equal(service.hasAdoptedTurn("s1"), false)
+  const prompts = acp.calls.filter(([method]) => method === "session/prompt").map(([, params]) => params.prompt[0].text)
+  assert.deepEqual(prompts, ["run it in the background", "and now this"])
+  acp.chunk("answer to the queued prompt")
+  assert.deepEqual(await transcriptShape(service), [
+    "user:run it in the background",
+    "assistant:waiting for the background task",
+    "assistant:resuming after the subagent finished",
+    "user:and now this",
+    "assistant:answer to the queued prompt"
+  ])
+  acp.releases.shift()()
+  await waitFor(() => service.status("s1").type === "idle", "the queued turn never settled")
+})
+
+test("Stop ends an adopted turn: the harness is cancelled and its later output is dropped", async () => {
+  const acp = new AgentTurnAcp()
+  const service = new AcpService(acp, AGENT_TURN_OPTIONS)
+  await finishFirstTurn(acp, service)
+  acp.chunk("resuming")
+  assert.equal(service.status("s1").type, "busy")
+  service.abort("s1")
+  assert.equal(service.status("s1").type, "idle")
+  assert.equal(service.hasAdoptedTurn("s1"), false)
+  assert.deepEqual(acp.notifications, [["session/cancel", { sessionId: "s1" }]])
+  acp.chunk(" after stop")
+  assert.equal(service.status("s1").type, "idle")
+  assert.deepEqual(await transcriptShape(service), [
+    "user:run it in the background",
+    "assistant:waiting for the background task",
+    "assistant:resuming"
+  ])
+})
+
+test("an adopted turn stays open while a tool call it opened is still running", async () => {
+  const acp = new AgentTurnAcp()
+  const service = new AcpService(acp, AGENT_TURN_OPTIONS)
+  await finishFirstTurn(acp, service)
+  acp.toolCall("t-long", "in_progress")
+  await new Promise((resolve) => setTimeout(resolve, 250))
+  assert.equal(service.status("s1").type, "busy", "a running tool keeps the adopted turn open past the idle window")
+  acp.toolDone("t-long")
+  await waitForTime(() => service.status("s1").type === "idle", "the adopted turn never settled after its tool ended")
+})
