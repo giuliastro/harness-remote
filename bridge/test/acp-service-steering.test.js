@@ -503,3 +503,33 @@ test("an adopted turn stays open while a tool call it opened is still running", 
   acp.toolDone("t-long")
   await waitForTime(() => service.status("s1").type === "idle", "the adopted turn never settled after its tool ended")
 })
+
+test("Claude replies streamed back to back become separate paragraphs, keyed by the adapter's message id", async () => {
+  const textParts = async (service) => (await service.messages("s1"))
+    .filter((message) => message.info.role === "assistant")
+    .flatMap((message) => message.parts.filter((part) => part.type === "text").map((part) => part.text))
+  const stream = (acp, messageId, text) => acp.update({ sessionUpdate: "agent_message_chunk", messageId, content: { type: "text", text } })
+
+  const claude = new AgentTurnAcp()
+  const service = new AcpService(claude, { ...AGENT_TURN_OPTIONS, assistantMessageIDsSeparateReplies: true })
+  await service.prompt("s1", "run both in the background")
+  await waitFor(() => claude.releases.length === 1, "the turn never started")
+  stream(claude, "msg_a", "I will report back")
+  stream(claude, "msg_a", " when they finish.")
+  // The first background task finished while the turn was still open: a new API message follows.
+  stream(claude, "msg_b", "The first one printed UNO.")
+  assert.deepEqual(await textParts(service), ["I will report back when they finish.", "The first one printed UNO."])
+  claude.releases.shift()()
+  await waitFor(() => service.status("s1").type === "idle", "the turn never settled")
+
+  // PI mints a fresh id per fragment, so without the option the fragments stay one paragraph.
+  const pi = new AgentTurnAcp()
+  const piService = new AcpService(pi, AGENT_TURN_OPTIONS)
+  await piService.prompt("s1", "hello")
+  await waitFor(() => pi.releases.length === 1, "the turn never started")
+  stream(pi, "frag-1", "Hel")
+  stream(pi, "frag-2", "lo")
+  assert.deepEqual(await textParts(piService), ["Hello"])
+  pi.releases.shift()()
+  await waitFor(() => piService.status("s1").type === "idle", "the turn never settled")
+})

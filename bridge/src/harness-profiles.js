@@ -159,6 +159,8 @@ export const HARNESS_PROFILES = {
     // a live turn is recorded as one bridge-owned message. Merging the two kept both copies.
     replayAuthoritative: true,
     recoverMissingSessionOnPrompt: true,
+    // Every chunk carries the Anthropic message id it belongs to (stable within one API message).
+    assistantMessageIDsSeparateReplies: true,
     // The current adapter exposes model/mode but no low/medium/high reasoning-effort selector.
     // Keep this empty rather than fabricating OpenCode-style variants.
     modelVariantConfigIDs: [],

@@ -543,6 +543,7 @@ export class AcpService {
       this.#transientFailureMessageIDs.delete(sessionID)
       this.#chunkMessageIDs.delete(`${sessionID}:user`)
       this.#chunkMessageIDs.delete(`${sessionID}:assistant`)
+      this.#chunkSourceIDs.delete(sessionID)
       this.#turnGenerations.delete(sessionID)
       this.#turnSettledAt.delete(sessionID)
       this.#cancelledSessions.delete(sessionID)
@@ -622,6 +623,9 @@ export class AcpService {
   #requireAssistantResponse
   #requireExistingDirectory
   #recoverMissingSessionOnPrompt
+  #assistantMessageIDsSeparateReplies
+  // The adapter's own message id behind the text most recently streamed into each live reply.
+  #chunkSourceIDs = new Map()
   #turnResponseObserved = new Set()
   #fallbackModelCatalog
   #fallbackModelSelectionMethod
@@ -673,6 +677,13 @@ export class AcpService {
     requireAssistantResponse = false,
     requireExistingDirectory = false,
     recoverMissingSessionOnPrompt = false,
+    /**
+     * Whether a change of the adapter's `messageId` between live assistant chunks starts a new reply
+     * paragraph. Claude stamps every chunk with the API message it belongs to, so a change marks a
+     * reply that follows another with no tool call between them - the reply a resumed turn sends
+     * after the one that said it would wait. PI mints a new id per fragment, so it must not opt in.
+     */
+    assistantMessageIDsSeparateReplies = false,
     /** Transport policy for a prompt that arrives while a turn is still running. */
     midTurnPrompt = "queue",
     /** Streamed silence after which a turn the agent started on its own is settled. */
@@ -706,6 +717,7 @@ export class AcpService {
     this.#requireAssistantResponse = requireAssistantResponse
     this.#requireExistingDirectory = requireExistingDirectory
     this.#recoverMissingSessionOnPrompt = recoverMissingSessionOnPrompt
+    this.#assistantMessageIDsSeparateReplies = assistantMessageIDsSeparateReplies
     this.#midTurnPrompt = MID_TURN_PROMPT_POLICIES.has(midTurnPrompt) ? midTurnPrompt : "queue"
     this.#agentTurnSettleIdleMs = agentTurnSettleIdleMs
     this.#agentTurnGraceMs = agentTurnGraceMs
@@ -1054,6 +1066,7 @@ export class AcpService {
     this.#chunkMessageIDs.delete(`${sessionID}:assistant`)
     this.#turnGenerations.delete(sessionID)
     this.#turnSettledAt.delete(sessionID)
+    this.#chunkSourceIDs.delete(sessionID)
     this.#discardAdoptedTurn(sessionID)
     this.#cancelledSessions.delete(sessionID)
     this.#promptedSessions.delete(sessionID)
@@ -2773,6 +2786,13 @@ export class AcpService {
     if (previous?.type === "reasoning" && partType !== "reasoning" && previous.time && !previous.time.end) {
       previous.time.end = now
     }
+    // Two replies streamed back to back are two paragraphs, not one run-on sentence.
+    let continuesPrevious = previous?.type === partType
+    if (!replaying && role === "assistant" && this.#assistantMessageIDsSeparateReplies && typeof update.messageId === "string") {
+      const source = this.#chunkSourceIDs.get(sessionId)
+      if (continuesPrevious && source && source !== update.messageId) continuesPrevious = false
+      this.#chunkSourceIDs.set(sessionId, update.messageId)
+    }
     if (image) {
       message.parts.push({
         id: `${messageID}:file:${message.parts.length}`,
@@ -2781,7 +2801,7 @@ export class AcpService {
         mime: image.mime,
         url: `data:${image.mime};base64,${image.data}`
       })
-    } else if (previous?.type === partType) {
+    } else if (continuesPrevious) {
       previous.text += update.content.text
     } else {
       message.parts.push({

@@ -201,6 +201,7 @@ export function createBridgeServer({ config, acp, serviceOptions, machineRegistr
     modelProviderOrder: profile.modelProviderOrder ?? [],
     requireAssistantResponse: profile.requireAssistantResponse === true,
     recoverMissingSessionOnPrompt: profile.recoverMissingSessionOnPrompt === true,
+    assistantMessageIDsSeparateReplies: profile.assistantMessageIDsSeparateReplies === true,
     midTurnPrompt: profile.capabilities?.midTurnPrompt
   })
   const hiddenSessionIDs = serviceOptions?.hiddenSessionIDs
