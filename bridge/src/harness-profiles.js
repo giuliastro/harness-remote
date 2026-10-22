@@ -161,9 +161,10 @@ export const HARNESS_PROFILES = {
     recoverMissingSessionOnPrompt: true,
     // Every chunk carries the Anthropic message id it belongs to (stable within one API message).
     assistantMessageIDsSeparateReplies: true,
-    // The current adapter exposes model/mode but no low/medium/high reasoning-effort selector.
-    // Keep this empty rather than fabricating OpenCode-style variants.
-    modelVariantConfigIDs: [],
+    // Since 0.84.0 the adapter exposes a per-model `effort` select (Default, then the levels the
+    // model supports), the same shape OpenCode 2 uses.
+    modelVariantConfigIDs: ["effort"],
+    modelVariantDefaultValues: ["default"],
     lifecycleContract: COMMON_ACP_LIFECYCLE_CONTRACT,
     sessionContract: {
       authority: "native-harness",
