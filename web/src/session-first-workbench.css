@@ -1975,17 +1975,6 @@
   padding: 4px 7px 7px 12px;
 }
 
-.hr-native-session-observer .uw-session-typing {
-  width: min(var(--hrsf-content-width), 100%);
-  min-height: 46px;
-  margin-block: 2px 16px;
-  padding: 6px 9px;
-  border-color: var(--td3-border-soft);
-  border-radius: 9px;
-  background: var(--td3-raise-1);
-  box-shadow: none;
-}
-
 /* The turn's live state, written into the reply's own name.
    It is deliberately only a colour and a slow pulse: this is the same line, in the same place, that
    will read the agent's name when the turn ends, and a badge or a spinner beside it would be the

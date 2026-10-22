@@ -2,49 +2,6 @@
   margin-left: auto;
 }
 
-.hr-control-plane .tdw-work-thread-conversation .uw-session-empty-copy,
-.hr-control-plane .tdw-work-thread-conversation .uw-empty-copy {
-  max-width: 520px;
-}
-
-/* Keep the first-run state visually anchored to the canvas center even though the welcome block has
-   an explicit reading width. The copy below is stateful without becoming another card or banner. */
-.hr-control-plane .hr-welcome {
-  align-self: center;
-  margin-inline: auto;
-}
-
-.hr-control-plane .hr-welcome > p::after {
-  content: "Next: select a project and start a conversation. If nothing is available yet, open Machines to add or reconnect a coding computer.";
-  width: fit-content;
-  max-width: 100%;
-  margin: 14px auto 0;
-  padding: 7px 10px;
-  display: block;
-  border: 1px solid var(--td3-border);
-  border-radius: 9px;
-  color: var(--td3-text-3);
-  background: var(--td3-raise-1);
-  font-size: 10px;
-  font-weight: 650;
-  line-height: 1.45;
-}
-
-.hr-control-plane:not(:has(.tdw-presence-dot.online)):not(:has(.tdw-presence-dot.loading)) .hr-welcome > p::after {
-  content: "No coding machine is connected. Open Machines to add one or reconnect an existing computer.";
-}
-
-.hr-control-plane:has(.tdw-presence-dot.loading) .hr-welcome > p::after {
-  content: "Connecting to your machines · loading projects and conversations";
-  padding-left: 29px;
-  border-color: var(--td3-blue-border-soft);
-  border-radius: 999px;
-  background:
-    radial-gradient(circle at 14px 50%, var(--td3-blue-text) 0 3px, transparent 3.5px),
-    var(--td3-raise-1);
-  animation: tdw-welcome-prepare 1.5s ease-in-out infinite;
-}
-
 /* Agent/model transitions are part of the conversation history. Keep them quiet, but make them
    unmistakable enough that a user can see where continuity crossed a native Session boundary. */
 .hr-control-plane .tdw-conversation-event {
@@ -69,54 +26,10 @@
   box-shadow: 0 0 0 3px var(--td3-blue-soft);
 }
 
-/* Mobile equivalent of the sidebar's Conversation filters, which are display:none below 780px. */
-.hr-filter-chips { display: none; }
-
-/* A machine the client already knows is unreachable must say so where the user is working. On a
-   phone the health pill, the Machines rail and the harness list are all hidden, so this banner is
-   the only place that state is visible at all. */
-.hr-offline-banner {
-  width: calc(100% - 20px);
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin: 8px 10px 0;
-  padding: 9px 11px;
-  border: 1px solid var(--td3-red-border);
-  border-radius: 11px;
-  color: inherit;
-  background: var(--td3-red-soft);
-  cursor: pointer;
-  font: inherit;
-  text-align: left;
-  touch-action: manipulation;
-}
-
-.hr-offline-dot {
-  flex: none;
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: var(--td3-red-text);
-}
-
-.hr-offline-copy { min-width: 0; flex: 1 1 auto; display: flex; flex-direction: column; gap: 2px; }
-.hr-offline-copy strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--td3-red-text); font-size: 11.5px; }
-.hr-offline-copy small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--td3-text-3); font-size: 10px; }
-.hr-offline-banner b { flex: none; color: var(--td3-red-text); font-size: 10px; font-weight: 750; }
-
 /* The mobile shell is intentionally closer to a native chat app than to a squeezed desktop layout. */
 .hr-mobile-nav,
 .hr-mobile-settings-page {
   display: none;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .hr-control-plane:has(.tdw-presence-dot.loading) .hr-welcome > p::after {
-    animation: none;
-    opacity: 1;
-    transform: none;
-  }
 }
 
 @media (max-width: 780px) {
@@ -128,10 +41,6 @@
     overflow: hidden;
   }
 
-  .hr-control-plane .hr-welcome > p::after {
-    text-align: left;
-  }
-
   /* The bottom navigation now owns top-level app navigation. Keep the top bar quiet and task-focused. */
   .hr-control-plane .tdw-topbar {
     grid-template-columns: minmax(0, 1fr) auto !important;
@@ -141,7 +50,6 @@
 
   .hr-control-plane .tdw-context-path,
   .hr-control-plane .tdw-machine-health,
-  .hr-control-plane .tdw-tasks-toggle,
   .hr-control-plane .tdw-machines-button,
   .hr-control-plane .tdw-top-actions > .tdw-icon-button {
     display: none !important;
@@ -154,61 +62,6 @@
   .hr-control-plane .hr-brand small {
     display: none;
   }
-
-  .hr-control-plane .hr-new-conversation {
-    width: 42px !important;
-    min-width: 42px;
-    height: 42px;
-    min-height: 42px;
-    padding: 0 !important;
-    border-radius: 12px;
-    font-size: 0 !important;
-  }
-
-  .hr-control-plane .hr-new-conversation svg {
-    width: 19px;
-    height: 19px;
-  }
-
-  .uw-standalone-host:not(:has(.tdw-main.mobile-open)) .hr-control-plane .tdw-layout {
-    height: calc(100dvh - 56px - var(--hr-mobile-nav-height)) !important;
-  }
-
-  .hr-filter-chips {
-    display: flex;
-    gap: 6px;
-    padding: 8px 10px 0;
-    overflow-x: auto;
-    scrollbar-width: none;
-  }
-
-  .hr-filter-chips::-webkit-scrollbar { display: none; }
-
-  .hr-filter-chips button {
-    flex: none;
-    min-height: 34px;
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    padding: 0 10px;
-    border: 1px solid var(--td3-border);
-    border-radius: 999px;
-    color: var(--td3-text-2);
-    background: var(--td3-raise-1);
-    cursor: pointer;
-    font: inherit;
-    font-size: 12px;
-    touch-action: manipulation;
-    white-space: nowrap;
-  }
-
-  .hr-filter-chips button.active {
-    border-color: var(--td3-blue-border);
-    color: var(--td3-blue-text);
-    background: var(--td3-blue-soft-2);
-  }
-
-  .hr-filter-chips button b { font-size: 11px; font-weight: 750; }
 
   .hr-mobile-nav {
     position: fixed;
@@ -264,7 +117,6 @@
 
   /* A conversation is a focused drill-in view. Hiding the global nav here gives the transcript back
      the vertical space while the explicit Conversations back button remains the escape hatch. */
-  .uw-standalone-host:has(.tdw-main.mobile-open) .hr-mobile-nav,
   .uw-standalone-host:has(.tdw-modal-backdrop) .hr-mobile-nav {
     display: none;
   }
@@ -592,5 +444,52 @@
     font-size: 20px;
     font-weight: 800;
     line-height: 1;
+  }
+}
+
+/* Final mobile control geometry. Keep this block after the larger mobile block above so selection
+   and icon alignment cannot be accidentally neutralized by responsive rules. */
+@media (max-width: 780px) {
+  /* Square controls use real geometric centering. Zero the inherited flex gap because icon-only
+     buttons may still contain visually hidden text nodes, which otherwise shift the icon sideways. */
+  .hr-control-plane .tdw-icon-button,
+  .hr-control-plane .tdw-work-thread-conversation .uw-composer-footer .uw-button,
+  .hr-mobile-settings-page > header button,
+  .uw-machine-manager .uw-manager-close,
+  .tdw-modal > header > button {
+    align-items: center !important;
+    justify-content: center !important;
+    gap: 0 !important;
+    text-align: center;
+  }
+
+  .hr-control-plane .tdw-work-thread-conversation .uw-composer-footer .uw-button {
+    line-height: 0 !important;
+  }
+
+  .hr-control-plane .tdw-icon-button svg,
+  .hr-control-plane .tdw-work-thread-conversation .uw-composer-footer .uw-button svg,
+  .uw-machine-manager .uw-manager-close svg,
+  .tdw-modal > header > button svg {
+    display: block;
+    flex: none;
+    margin: 0;
+  }
+
+  /* Use a geometric icon for the mobile Send action rather than a font arrow. Font glyph metrics
+     vary between Android WebView builds and can look low or off-center inside a square button. */
+  .hr-control-plane .tdw-work-thread-conversation .uw-composer-footer .uw-button-primary:not(:has(svg))::after {
+    content: "";
+    width: 18px;
+    height: 18px;
+    display: block;
+    flex: none;
+    background: currentColor;
+    -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M12 19V5M5 12l7-7 7 7' fill='none' stroke='black' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center / 18px 18px no-repeat;
+    mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M12 19V5M5 12l7-7 7 7' fill='none' stroke='black' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center / 18px 18px no-repeat;
+  }
+
+  .hr-control-plane .tdw-work-thread-conversation .uw-composer-footer .uw-button .uw-button-label {
+    display: none !important;
   }
 }

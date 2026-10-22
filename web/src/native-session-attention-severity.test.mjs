@@ -1,6 +1,6 @@
 import assert from "node:assert/strict"
 import { readFileSync } from "node:fs"
-import { attentionInboxCounts } from "./components/native-session-home.tsx"
+import { attentionInboxCounts } from "./components/native-session-home-attention.tsx"
 
 const item = (kind, reason) => ({ attention: { kind, reason } })
 

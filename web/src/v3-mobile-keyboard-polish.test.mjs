@@ -10,17 +10,12 @@ const read = (name) => readFileSync(path.join(here, name), "utf8").replace(/\r\n
 const MOBILE_SHEETS = [
   "taskdesk-mobile-navigation.css",
   "conversation-control-plane-overrides.css",
-  "conversation-control-plane-mobile-polish.css",
-  "v3-mobile-regression-fixes.css",
-  "v3-mobile-landscape-grid-fix.css",
-  "v3-mobile-workspace-switcher-polish.css",
-  "v3-mobile-a11y-fix.css",
-  "v3-mobile-product-parity.css",
+  "v3-mobile.css",
   "session-first-navigation.css",
   "session-first-workbench.css"
 ]
 
-const parity = read("v3-mobile-product-parity.css")
+const parity = read("v3-mobile.css")
 const workbench = read("session-first-workbench.css")
 const standalone = read("components/standalone-universal-workspace.tsx")
 const conversation = read("components/taskdesk-conversation.tsx")

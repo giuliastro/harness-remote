@@ -14,9 +14,6 @@ import type { MachineAgentHost, ServerConfig } from "../types"
 import { NativeSessionHome as NativeSessionHomeBase } from "./native-session-home-base"
 import "../native-session-attention-inbox.css"
 
-export { appendCursorPage, refreshCursorPage, sessionTreeRows } from "./native-session-home-base"
-export type { CursorPageState } from "./native-session-home-base"
-
 type BaseProps = ComponentProps<typeof NativeSessionHomeBase>
 type Props = Omit<BaseProps, "attentionSessionKeys" | "onAttentionKeysChange">
 

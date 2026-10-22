@@ -12,63 +12,6 @@
   max-width: 280px;
 }
 
-.hr-control-plane .hr-new-conversation {
-  white-space: nowrap;
-}
-
-.hr-control-plane .tdw-thread-column {
-  min-width: 280px;
-}
-
-.hr-control-plane .tdw-thread-card {
-  min-height: 96px;
-}
-
-.hr-control-plane .tdw-thread-status.ready {
-  color: var(--td3-text-2);
-}
-
-.hr-control-plane .tdw-filter-dot.attention {
-  background: var(--td3-red);
-}
-
-.hr-control-plane .tdw-filter-dot.working {
-  background: var(--td3-blue-text);
-}
-
-.hr-control-plane .tdw-filter-dot.all {
-  background: var(--td3-muted);
-}
-
-.hr-welcome {
-  width: min(680px, calc(100% - 40px));
-  gap: 12px;
-}
-
-.hr-welcome > p {
-  max-width: 650px;
-  line-height: 1.6;
-}
-
-.hr-control-plane:has(.tdw-presence-dot.loading) .hr-welcome > p::after {
-  content: "●  Preparing your workspace · connecting machines and loading conversations";
-  display: block;
-  width: max-content;
-  max-width: 100%;
-  min-height: 30px;
-  margin: 14px auto 0;
-  padding: 6px 11px;
-  border: 1px solid var(--td3-border);
-  border-radius: 999px;
-  background: var(--td3-raise-1);
-  color: var(--td3-text-2);
-  font-size: 11px;
-  font-weight: 650;
-  line-height: 1.45;
-  text-align: center;
-  animation: hr-preparing-pulse 1.8s ease-in-out infinite;
-}
-
 .hr-welcome-mark {
   box-shadow: none;
 }
@@ -101,26 +44,6 @@
   justify-content: center;
   gap: 8px;
   margin-top: 6px;
-}
-
-.hr-workspace-note {
-  display: grid;
-  gap: 4px;
-  padding: 12px 14px;
-  border: 1px solid var(--td3-border);
-  border-radius: 9px;
-  background: var(--td3-raise-1);
-}
-
-.hr-workspace-note strong {
-  color: var(--td3-text);
-  font-size: 12px;
-}
-
-.hr-workspace-note span {
-  color: var(--td3-text-2);
-  font-size: 11px;
-  line-height: 1.45;
 }
 
 .hr-conversation-header {
@@ -344,9 +267,7 @@
   margin-top: 24px;
 }
 
-.hr-control-plane .tdw-main,
-.hr-conversation-detail,
-.hr-conversation-detail .tdw-detail-body {
+.hr-conversation-detail {
   min-width: 0;
 }
 
@@ -369,24 +290,9 @@
   background: var(--td3-raise-1);
 }
 
-@keyframes hr-preparing-pulse {
-  0%, 100% { opacity: .72; }
-  50% { opacity: 1; }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .hr-control-plane:has(.tdw-presence-dot.loading) .hr-welcome > p::after {
-    animation: none;
-  }
-}
-
 @media (max-width: 900px) {
   .hr-control-plane .hr-brand small {
     display: none;
-  }
-
-  .hr-control-plane .tdw-thread-column {
-    min-width: 0;
   }
 
   .hr-session-panel,
@@ -415,9 +321,6 @@
 }
 
 @media (max-width: 620px) {
-  .hr-welcome {
-    width: calc(100% - 28px);
-  }
 
   .hr-welcome-actions {
     width: 100%;

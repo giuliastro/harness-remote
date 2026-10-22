@@ -34,6 +34,7 @@ export async function runAcpProviderRealSmoke(providerID, {
   defaultDirectory,
   defaultModel,
   checkCommands = false,
+  requiredCommands = [],
   checkModels = false,
   debugLaunchArgs = []
 } = {}) {
@@ -109,6 +110,7 @@ export async function runAcpProviderRealSmoke(providerID, {
       const commands = await first.service.commands(created.id)
       const commandNames = commands.map((command) => command.name)
       check(commandNames.length > 0, "runtime command catalog is available")
+      for (const name of requiredCommands) check(commandNames.includes(name), `runtime command catalog includes /${name}`)
       console.log(`commands: ${commandNames.slice(0, 12).map((name) => `/${name}`).join(", ")}${commandNames.length > 12 ? ", …" : ""}`)
     }
 

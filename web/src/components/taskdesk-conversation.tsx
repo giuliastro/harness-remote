@@ -4,7 +4,6 @@ import type { QueuedPromptEntry } from "../mid-turn-policy"
 import type { CommandInfo, MessageEnvelope } from "../types"
 import { AlertIcon, ChatIcon, CloseIcon, JumpToBottomIcon, JumpToTopIcon, LoadingIcon, PaperclipIcon, StopCircleIcon } from "../Icons"
 import "../taskdesk-conversation.css"
-import "../taskdesk-conversation-fixes.css"
 import "../taskdesk-history-loader.css"
 import { TaskDeskMessageContent } from "./taskdesk-message-content"
 

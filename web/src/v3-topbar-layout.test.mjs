@@ -5,7 +5,7 @@ import test from "node:test"
 const css = readFileSync(new URL("./taskdesk-workthreads.css", import.meta.url), "utf8")
 const workspace = readFileSync(new URL("./components/standalone-universal-workspace.tsx", import.meta.url), "utf8")
 const workbench = readFileSync(new URL("./session-first-workbench.css", import.meta.url), "utf8")
-const centering = readFileSync(new URL("./session-first-centering-fix.css", import.meta.url), "utf8")
+const centering = readFileSync(new URL("./conversation-base.css", import.meta.url), "utf8")
 const main = readFileSync(new URL("./main.tsx", import.meta.url), "utf8")
 const topbar = css.match(/\.tdw-topbar \{[\s\S]*?\n\}/)?.[0] || ""
 
@@ -42,7 +42,7 @@ test("the native Session conversation uses a bounded optical offset", () => {
   assert.match(centering, /@media \(max-width: 780px\)[\s\S]*?--hrsf-optical-shift: 0px;/)
   assert.match(centering, /\.hr-native-session-observer \.uw-empty-panel \{[\s\S]*?align-items: center;[\s\S]*?text-align: center;/)
   assert.ok(
-    main.indexOf('session-first-centering-fix.css') > main.indexOf('session-first-workbench.css'),
+    main.indexOf('conversation-base.css') > main.indexOf('session-first-workbench.css'),
     "the optical correction must load after the workbench rules it refines"
   )
 })

@@ -690,47 +690,6 @@ a:focus-visible,
   }
 }
 
-@keyframes typing-dot {
-  0%, 60%, 100% {
-    opacity: 0.35;
-    transform: translateY(0);
-  }
-  30% {
-    opacity: 1;
-    transform: translateY(-4px);
-  }
-}
-
-@keyframes pulse-dot {
-  0%, 100% {
-    opacity: 0.45;
-  }
-  50% {
-    opacity: 1;
-  }
-}
-
-/* A plain pixel-length shift (one full tile per loop) rather than a percentage-based one: with a
-   background taller than its element, percentage background-position isn't a simple fraction of
-   the tile size, so the loop never quite lined back up with itself. */
-@keyframes session-busy-sweep {
-  from {
-    background-position: 0 0;
-  }
-  to {
-    background-position: 0 24px;
-  }
-}
-
-@keyframes session-waiting-sweep {
-  from {
-    background-position: 0 24px;
-  }
-  to {
-    background-position: 0 0;
-  }
-}
-
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

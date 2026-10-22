@@ -18,8 +18,7 @@
   }
 
   .tdw-topbar .tdw-button,
-  .tdw-topbar .tdw-icon-button,
-  .tdw-more-menu button {
+  .tdw-topbar .tdw-icon-button {
     min-height: 40px;
     touch-action: manipulation;
   }
@@ -27,180 +26,6 @@
   .tdw-topbar .tdw-icon-button {
     width: 40px;
     height: 40px;
-  }
-
-  .tdw-more-menu button {
-    font-size: 13px;
-  }
-
-  .tdw-layout {
-    height: calc(100dvh - 56px) !important;
-    grid-template-columns: minmax(0, 1fr) !important;
-    grid-template-rows: 58px minmax(0, 1fr);
-  }
-
-  /* Projects remain available on phone as a horizontal filter rail instead of disappearing. */
-  .tdw-project-column {
-    grid-column: 1;
-    grid-row: 1;
-    min-width: 0;
-    min-height: 58px;
-    max-height: 58px;
-    display: flex !important;
-    flex-direction: row !important;
-    align-items: center;
-    gap: 6px;
-    padding: 7px 8px;
-    overflow-x: auto;
-    overflow-y: hidden;
-    border-right: 0;
-    border-bottom: 1px solid var(--tdw-border);
-    background: var(--td3-veil);
-    scrollbar-width: none;
-    overscroll-behavior-x: contain;
-  }
-
-  .tdw-project-column::-webkit-scrollbar,
-  .tdw-detail-tabs::-webkit-scrollbar {
-    display: none;
-  }
-
-  .tdw-project-column > .tdw-column-heading,
-  .tdw-project-column > .tdw-project-footer {
-    display: none !important;
-  }
-
-  .tdw-project-column > .tdw-project-row,
-  .tdw-project-list .tdw-project-row {
-    width: auto;
-    min-width: max-content;
-    min-height: 42px;
-    flex: none;
-    grid-template-columns: 24px minmax(0, auto) auto;
-    gap: 6px;
-    margin: 0;
-    padding: 5px 9px;
-    border-color: var(--td3-border-soft);
-    border-radius: 11px;
-    background: var(--td3-raise-1);
-    touch-action: manipulation;
-  }
-
-  .tdw-project-list {
-    min-width: max-content;
-    flex: none;
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    padding: 0;
-    overflow: visible;
-  }
-
-  .tdw-project-icon {
-    width: 24px;
-    height: 24px;
-    border-radius: 7px;
-  }
-
-  .tdw-project-row strong {
-    font-size: 12px;
-  }
-
-  .tdw-project-row small {
-    display: none;
-  }
-
-  .tdw-project-row b {
-    font-size: 10px;
-  }
-
-  .tdw-thread-column {
-    grid-column: 1 !important;
-    grid-row: 2;
-    min-height: 0;
-  }
-
-  .tdw-thread-column .tdw-column-heading {
-    min-height: 54px;
-    padding: 9px 12px;
-  }
-
-  .tdw-thread-column .tdw-column-heading h2 {
-    font-size: 16px;
-  }
-
-  .tdw-thread-column .tdw-column-heading span {
-    font-size: 10px;
-  }
-
-  .tdw-thread-search {
-    padding: 8px 10px;
-  }
-
-  .tdw-thread-search input {
-    height: 42px;
-    padding-inline: 12px;
-    font-size: 16px;
-  }
-
-  .tdw-thread-list {
-    padding: 8px;
-    overscroll-behavior-y: contain;
-  }
-
-  .tdw-thread-card {
-    min-height: 84px;
-    gap: 10px;
-    margin-bottom: 7px;
-    padding: 12px 11px;
-    border-radius: 12px;
-    touch-action: manipulation;
-  }
-
-  .tdw-thread-state {
-    min-height: 60px;
-  }
-
-  .tdw-thread-title strong {
-    font-size: 14px;
-  }
-
-  .tdw-thread-title time,
-  .tdw-thread-status {
-    font-size: 10px;
-  }
-
-  .tdw-thread-project {
-    font-size: 12px;
-  }
-
-  .tdw-thread-meta {
-    font-size: 11px;
-  }
-
-  /* A selected Task owns the phone screen. The global topbar would otherwise waste 56px above
-     Back + task header + tabs. The explicit .mobile-open state keeps this independent of selection. */
-  .tdw-main {
-    display: none !important;
-  }
-
-  .tdw-main.mobile-open {
-    display: flex !important;
-    position: absolute;
-    inset: 56px 0 0;
-    z-index: 20;
-  }
-
-  .tdw-shell:has(.tdw-main.mobile-open) .tdw-topbar {
-    display: none;
-  }
-
-  .tdw-shell:has(.tdw-main.mobile-open) .tdw-layout {
-    height: 100dvh !important;
-  }
-
-  .tdw-shell:has(.tdw-main.mobile-open) .tdw-main.mobile-open {
-    inset: 0;
   }
 
   .tdw-mobile-back {
@@ -217,55 +42,6 @@
     font-size: 13px;
     font-weight: 760;
     text-align: left;
-    touch-action: manipulation;
-  }
-
-  .tdw-thread-header {
-    min-height: 62px !important;
-    padding: 7px 10px !important;
-    gap: 10px !important;
-  }
-
-  .tdw-thread-heading > span {
-    margin-bottom: 1px;
-    font-size: 10px;
-  }
-
-  .tdw-thread-title-edit h1 {
-    font-size: 15px !important;
-  }
-
-  .tdw-thread-title-edit button {
-    min-height: 34px;
-    padding-inline: 8px;
-    font-size: 10px;
-    touch-action: manipulation;
-  }
-
-  .tdw-thread-heading p {
-    display: none;
-  }
-
-  .tdw-live-state {
-    min-height: 30px;
-    padding-inline: 8px;
-    font-size: 10px;
-  }
-
-  .tdw-detail-tabs {
-    min-height: 44px;
-    align-items: stretch;
-    gap: 14px;
-    padding: 0 11px;
-    overflow-x: auto;
-    scrollbar-width: none;
-    overscroll-behavior-x: contain;
-  }
-
-  .tdw-detail-tabs button {
-    min-height: 44px;
-    flex: none;
-    font-size: 11px;
     touch-action: manipulation;
   }
 
@@ -355,36 +131,6 @@
     touch-action: manipulation;
   }
 
-  .tdw-changes-panel,
-  .tdw-result-panel,
-  .tdw-history-panel {
-    padding: 12px !important;
-    overscroll-behavior-y: contain;
-  }
-
-  .tdw-diff-file summary {
-    min-height: 44px;
-    touch-action: manipulation;
-  }
-
-  .tdw-diff-file summary strong {
-    min-width: 0;
-    overflow-wrap: anywhere;
-  }
-
-  .tdw-result-hero p,
-  .tdw-result-actions span,
-  .tdw-history-copy p {
-    font-size: 12px;
-  }
-
-  .tdw-history-item .tdw-button,
-  .tdw-history-heading .tdw-button,
-  .tdw-result-actions .tdw-button {
-    min-height: 42px;
-    touch-action: manipulation;
-  }
-
   /* New Task behaves like a keyboard-safe bottom sheet. Only the body scrolls, keeping
      primary actions reachable when the software keyboard reduces the dynamic viewport. */
   .tdw-modal-backdrop {
@@ -410,13 +156,6 @@
     width: 42px;
     height: 42px;
     touch-action: manipulation;
-  }
-
-  .tdw-modal-body {
-    min-height: 0;
-    overflow-y: auto !important;
-    overflow-x: visible !important;
-    overscroll-behavior-y: contain;
   }
 
   .tdw-modal > footer {
@@ -488,10 +227,5 @@
 
   .tdw-agent-control {
     grid-template-columns: minmax(96px, .76fr) minmax(146px, 1.24fr) !important;
-  }
-
-  .tdw-detail-summary-strip,
-  .tdw-result-grid {
-    grid-template-columns: 1fr 1fr;
   }
 }

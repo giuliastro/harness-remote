@@ -14,11 +14,10 @@ const workbench = read("session-first-workbench.css")
 const navigation = read("session-first-navigation.css")
 
 // Session-first overrides load after the older shared/mobile styles and therefore own the final shell.
-assert.match(main, /import "\.\/v3-mobile-regression-fixes\.css"/)
-assert.match(main, /import "\.\/v3-mobile-landscape-grid-fix\.css"/)
+assert.match(main, /import "\.\/v3-mobile\.css"/)
 assert.match(main, /import "\.\/session-first-navigation\.css"/)
 assert.match(main, /import "\.\/session-first-workbench\.css"/)
-assert.ok(main.indexOf('import "./session-first-navigation.css"') > main.indexOf('import "./v3-mobile-product-parity.css"'))
+assert.ok(main.indexOf('import "./session-first-navigation.css"') > main.indexOf('import "./v3-mobile.css"'))
 assert.ok(main.indexOf('import "./session-first-workbench.css"') > main.indexOf('import "./session-first-navigation.css"'))
 
 // The old Conversation product surface is gone. Mobile navigation operates on real native Sessions.

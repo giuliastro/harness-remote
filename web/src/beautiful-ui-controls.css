@@ -557,24 +557,6 @@
  * three passes read as a font change. Everything below moves.
  * ============================================================================= */
 
-/* ---------------------------------------------------------------- spinner */
-
-/* One turning ring per running call. A conic gradient masked to a ring costs the
-   compositor a single rotation - no per-frame rasterising, which matters once six
-   of these are on screen on a phone. */
-.bui-spinner {
-  width: 13px;
-  height: 13px;
-  border-radius: 50%;
-  border: 1.75px solid var(--td3-border-strong);
-  border-top-color: currentcolor;
-  animation: bui-spin .75s linear infinite;
-}
-
-@keyframes bui-spin {
-  to { transform: rotate(1turn); }
-}
-
 /* ------------------------------------------------------------- typing dots */
 
 /* The pending row - the one thing on screen between sending a prompt and the
@@ -646,18 +628,12 @@
 /* ------------------------------------------ reduced motion, fourth pass */
 
 @media (prefers-reduced-motion: reduce) {
-  .bui-spinner,
   .bui-typing i,
   .tdw-work-thread-conversation .uw-message-working,
   .tdw-work-thread-conversation .uw-history-loader::after {
     animation: none;
     opacity: 1;
     transform: none;
-  }
-
-  /* A ring with no rotation is a static ring, which still reads as "in progress". */
-  .bui-spinner {
-    border-top-color: currentcolor;
   }
 }
 

@@ -13,9 +13,8 @@ const read = (name) => readFileSync(path.join(here, name), "utf8").replace(/\r\n
 const LIVE_STYLESHEETS = [
   "taskdesk-workspace-navigation.css", "taskdesk-workthreads.css", "work-thread-detail.css",
   "conversation-control-plane.css", "conversation-control-plane-overrides.css",
-  "conversation-control-plane-mobile-polish.css", "model-picker.css",
-  "universal-workspace-readable-fixes.css",
-  "taskdesk-conversation.css", "taskdesk-conversation-fixes.css",
+  "model-picker.css", "taskdesk-theme.css",
+  "taskdesk-conversation.css",
   "taskdesk-mobile-navigation.css",
   "taskdesk-focus-layout.css", "beautiful-ui-controls.css", "session-first-workbench.css"
 ]
@@ -71,7 +70,7 @@ test("both roles share one reading measure, and code and tables keep the full wi
 test("surplus window width becomes margin instead of a wider prompt", () => {
   // The row is what the user bubble grew inside. Capping it is the second half of the fix: past this
   // width a larger monitor adds margin, not line length.
-  const fixes = read("taskdesk-conversation-fixes.css")
+  const fixes = read("taskdesk-conversation.css")
   const row = fixes.match(/\.tdw-work-thread-conversation \.uw-message \{\n\s*width: min\((\d+)px, 100%\);/)
   assert.ok(row, "the transcript row must carry an explicit maximum width")
   assert.ok(Number(row[1]) <= 1040, `the row is still ${row[1]}px wide`)

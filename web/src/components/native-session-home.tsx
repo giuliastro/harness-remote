@@ -1,11 +1,5 @@
 import { useEffect, useMemo, useSyncExternalStore, type ComponentProps } from "react"
-import {
-  NativeSessionHome as NativeSessionHomeWithAttention,
-  appendCursorPage,
-  attentionInboxCounts,
-  refreshCursorPage,
-  sessionTreeRows
-} from "./native-session-home-attention"
+import { NativeSessionHome as NativeSessionHomeWithAttention } from "./native-session-home-attention"
 import { nativeSessionConfig } from "../native-session-discovery"
 import {
   sessionIndexInvalidationRevision,
@@ -13,13 +7,6 @@ import {
 } from "../session-index-live-state"
 import { subscribeTaskDeskLiveEvents } from "../taskdesk-live-events"
 import type { MachineAgentHost } from "../types"
-
-export { appendCursorPage, attentionInboxCounts, refreshCursorPage, sessionTreeRows }
-
-export type {
-  AttentionInboxCounts,
-  CursorPageState
-} from "./native-session-home-attention"
 
 type Props = ComponentProps<typeof NativeSessionHomeWithAttention>
 
