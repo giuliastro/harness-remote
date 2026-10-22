@@ -170,9 +170,10 @@ export const HARNESS_PROFILES = {
       discovery: "native-list",
       transcript: "session-load",
       externalWriterObservation: "unverified-session-load",
-      // Busy for Sessions run in a terminal or the desktop app is read from Claude Code's own
-      // transcript tail (projects/<cwd>/<session>.jsonl): stop_reason and turn-end system records.
-      liveStatus: "native-journal",
+      // Busy for Sessions run in a terminal or the desktop app is read from Claude Code's process
+      // registry (sessions/<pid>.json, its own busy/idle), or from the transcript tail where an
+      // older Claude Code keeps no registry.
+      liveStatus: "native-runtime-state",
       continuation: "session-load",
       writerOwnership: "adapter-defined",
       stop: "owned-session-native-cancel"
@@ -367,8 +368,9 @@ export const HARNESS_PROFILES = {
       discovery: "native-list",
       transcript: "native-journal",
       externalWriterObservation: "supported-via-journal",
-      // task_started / task_complete / turn_aborted markers in the rollout tail.
-      liveStatus: "native-journal",
+      // task_started / task_complete / turn_aborted markers in the rollout tail, aged by the newest
+      // record's timestamp (on Windows the open rollout's mtime does not move).
+      liveStatus: "native-runtime-state",
       continuation: "session-load",
       writerOwnership: "single-writer",
       stop: "owned-session-native-cancel"

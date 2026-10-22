@@ -32,10 +32,10 @@ export const CLAUDE_REPORTED_BUSY_STALE_MS = 360_000
  * Claude the live transport request is the narrow corroboration signal we actually need: if there is
  * no pending session/prompt, a leftover busy flag is stale presentation state and must read idle.
  *
- * `journalEvidence` is the independent, already staleness-checked observation read from Claude
- * Code's own transcript (a Session the user runs in a terminal or the desktop app). It is never
- * forced back to idle by the missing session/prompt, because that prompt was never this bridge's to
- * send. A live, corroborated bridge-owned turn still wins over it.
+ * `journalEvidence` is the independent observation read from Claude Code itself (its process
+ * registry, or the transcript tail on older builds) for a Session the user runs in a terminal or the
+ * desktop app. It is never forced back to idle by the missing session/prompt, because that prompt was
+ * never this bridge's to send. A live, corroborated bridge-owned turn still wins over it.
  */
 export function corroborateClaudeSessionStatus(status, sessionID, pendingRequests, _lastActivityAt, now = Date.now(), journalEvidence) {
   const external = journalEvidence && (journalEvidence.type === "busy" || journalEvidence.type === "attention") ? journalEvidence : undefined
@@ -191,7 +191,7 @@ function providersResponse(models, fallbackProviderID) {
 export function createBridgeServer({ config, acp, serviceOptions, machineRegistry, liveStatusProbe }) {
   const backend = config.backend ?? "omp"
   const profile = harnessProfile(backend)
-  // Evidence of turns this bridge is not driving (Codex rollout markers, Claude transcript tail).
+  // Evidence of turns this bridge is not driving (Codex thread history, Claude process registry).
   // `null` disables it; tests inject their own probe.
   const externalStatusProbe = liveStatusProbe === undefined
     ? createLiveStatusProbe(profile.liveStatusSource)

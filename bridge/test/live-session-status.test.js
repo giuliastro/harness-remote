@@ -11,7 +11,9 @@ import {
   CODEX_ROLLOUT_STALE_MS,
   claudeTranscriptRecordState,
   createClaudeTranscriptStatusProbe,
+  createClaudeLiveStatusProbe,
   createCodexLiveStatusProbe,
+  readClaudeSessionRegistry,
   overlayLiveStatus,
   probeLiveStatuses,
   readClaudeTranscriptTurnState,
@@ -79,6 +81,21 @@ test("Codex rollout tail: a stale rollout with a dangling task_started is a cras
     const file = await writeRollout(root, [eventLine("task_started")], { mtime: now - CODEX_ROLLOUT_STALE_MS - 60_000 })
     assert.equal((await readCodexRolloutTurnState(file, { now })).state, "idle")
     assert.equal((await readCodexRolloutTurnState(file, { now, staleMs: CODEX_ROLLOUT_STALE_MS * 10 })).state, "working")
+  })
+})
+
+test("Codex rollout tail: an open rollout with a day-old mtime is aged by its newest record (Windows)", async () => {
+  await withTemp("hr-codex-open-", async (root) => {
+    const now = Date.parse("2026-10-22T08:46:00.000Z")
+    const fresh = (type, at) => JSON.stringify({ timestamp: new Date(at).toISOString(), type: "event_msg", payload: { type } })
+    const file = await writeRollout(root, [fresh("task_started", now - 13_000), fresh("token_count", now - 1_000)], { mtime: now - 24 * 60 * 60_000 })
+    assert.equal((await readCodexRolloutTurnState(file, { now })).state, "working")
+
+    const probe = createCodexLiveStatusProbe({ sessionRoot: root, now: () => now })
+    assert.deepEqual(await probe(CODEX_ID), { type: "busy", source: "journal" })
+    // The cached result still ages: the same unchanged file reads idle once its turn has gone quiet.
+    const later = createCodexLiveStatusProbe({ sessionRoot: root, now: () => now + CODEX_ROLLOUT_STALE_MS + 60_000 })
+    assert.equal(await later(CODEX_ID), undefined)
   })
 })
 
@@ -169,7 +186,8 @@ test("Claude transcript tail: a stale transcript never reads working", async () 
     const now = Date.now()
     const file = await writeTranscript(root, [claude.prompt(), claude.assistant("tool_use")], { mtime: now - CLAUDE_TRANSCRIPT_STALE_MS - 60_000 })
     const result = await readClaudeTranscriptTurnState(file, { now })
-    assert.deepEqual([result.state, result.decidedBy], ["idle", undefined])
+    // The open turn is still found, but nobody has written to it for longer than the stale window.
+    assert.deepEqual([result.state, result.decidedBy], ["idle", "assistant:tool_use"])
     const probe = createClaudeTranscriptStatusProbe({ projectsRoot: root })
     assert.equal(await probe(CLAUDE_ID), undefined)
   })
@@ -215,6 +233,56 @@ test("Claude transcript probe: index by readdir, rescan only on miss and rate-li
   })
 })
 
+async function writeRegistryEntry(registryDir, pid, entry) {
+  await mkdir(registryDir, { recursive: true })
+  await writeFile(path.join(registryDir, `${pid}.json`), JSON.stringify({ pid, ...entry }))
+}
+
+test("Claude process registry: live processes only, and any busy process makes the Session busy", async () => {
+  await withTemp("hr-claude-registry-", async (registryDir) => {
+    await writeRegistryEntry(registryDir, 101, { sessionId: "running", status: "busy" })
+    await writeRegistryEntry(registryDir, 102, { sessionId: "waiting", status: "idle" })
+    await writeRegistryEntry(registryDir, 103, { sessionId: "crashed", status: "busy" })
+    await writeRegistryEntry(registryDir, 104, { sessionId: "shared", status: "busy" })
+    await writeRegistryEntry(registryDir, 105, { sessionId: "shared", status: "idle" })
+    await writeRegistryEntry(registryDir, 106, { sessionId: "../escape", status: "busy" })
+    await writeFile(path.join(registryDir, "107.json"), "{ partial")
+    await writeFile(path.join(registryDir, "107.abc.key"), "secret")
+    const alive = new Set([101, 102, 104, 105, 106, 107])
+    const sessions = await readClaudeSessionRegistry(registryDir, { isAlive: (pid) => alive.has(pid) })
+    assert.deepEqual(Object.fromEntries(sessions), { running: "busy", waiting: "idle", shared: "busy" })
+    assert.equal(await readClaudeSessionRegistry(path.join(registryDir, "missing")), undefined)
+  })
+})
+
+test("Claude probe: the registry is authoritative where it exists; the transcript is only a fallback", async () => {
+  await withTemp("hr-claude-live-", async (root) => {
+    const projectsRoot = path.join(root, "projects")
+    const registryDir = path.join(root, "sessions")
+    // A resume appends a task notification for orphaned shells and then stops: the transcript alone
+    // reads that as a turn in flight.
+    await writeTranscript(projectsRoot, [claude.assistant("end_turn"), claude.system("stop_hook_summary"), claude.prompt("<task-notification>")])
+    await writeTranscript(projectsRoot, [claude.prompt()], { id: "terminal-busy" })
+    const transcriptOnly = createClaudeLiveStatusProbe({ projectsRoot, registryDir })
+    assert.deepEqual(await transcriptOnly(CLAUDE_ID), { type: "busy", source: "journal" })
+
+    await writeRegistryEntry(registryDir, 201, { sessionId: CLAUDE_ID, status: "idle" })
+    await writeRegistryEntry(registryDir, 202, { sessionId: "terminal-busy", status: "busy" })
+    let clock = 0
+    const probe = createClaudeLiveStatusProbe({ projectsRoot, registryDir, isAlive: () => true, now: () => clock })
+    assert.equal(await probe(CLAUDE_ID), undefined)
+    assert.deepEqual(await probe("terminal-busy"), { type: "busy", source: "claude-session-registry" })
+    assert.equal(await probe("no-live-process"), undefined)
+
+    // Re-read after the TTL, not before.
+    await writeRegistryEntry(registryDir, 201, { sessionId: CLAUDE_ID, status: "busy" })
+    clock = 1_000
+    assert.equal(await probe(CLAUDE_ID), undefined)
+    clock = 5_000
+    assert.deepEqual(await probe(CLAUDE_ID), { type: "busy", source: "claude-session-registry" })
+  })
+})
+
 test("overlay precedence: bridge-owned busy wins, evidence only upgrades idle", () => {
   assert.deepEqual(overlayLiveStatus({ type: "busy" }, { type: "attention", source: "journal" }), { type: "busy" })
   assert.equal(overlayLiveStatus("busy", { type: "busy", source: "journal" }), "busy")
@@ -257,8 +325,8 @@ test("Claude corroboration keeps transcript evidence of a turn the bridge never 
 test("harness contracts declare where live status comes from", () => {
   assert.equal(harnessProfile("codex").liveStatusSource, "codex-journal")
   assert.equal(harnessProfile("claude").liveStatusSource, "claude-journal")
-  assert.equal(acpHarnessCapabilityContract(harnessProfile("codex")).sessions.liveStatus, "native-journal")
-  assert.equal(acpHarnessCapabilityContract(harnessProfile("claude")).sessions.liveStatus, "native-journal")
+  assert.equal(acpHarnessCapabilityContract(harnessProfile("codex")).sessions.liveStatus, "native-runtime-state")
+  assert.equal(acpHarnessCapabilityContract(harnessProfile("claude")).sessions.liveStatus, "native-runtime-state")
   assert.equal(acpHarnessCapabilityContract(harnessProfile("omp")).sessions.liveStatus, "bridge-owned-only")
   assert.equal(acpHarnessCapabilityContract(harnessProfile("pi")).sessions.liveStatus, "bridge-owned-only")
 })
