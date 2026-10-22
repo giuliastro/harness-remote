@@ -84,6 +84,26 @@ test("reads current Codex item-completed rollout events without exposing model i
   }
 })
 
+test("shows only the request a Codex desktop message wrapped in ambient UI context", async () => {
+  const wrapped = '\n<in-app-browser-context source="ambient-ui-state">\nURL: http://localhost:5173\n</in-app-browser-context>\n\n## My request:\ndi nuovo, rispondimi "ok"\n'
+  const root = await writeRollout([
+    { timestamp: "2026-10-21T09:41:01.000Z", type: "response_item", payload: { type: "message", role: "user", content: [{ type: "input_text", text: wrapped }] } },
+    { timestamp: "2026-10-21T09:41:01.100Z", type: "event_msg", payload: { type: "item_completed", item: { type: "UserMessage", id: "user-1", content: [{ type: "text", text: wrapped, text_elements: [] }] } } },
+    { timestamp: "2026-10-21T09:41:02.000Z", type: "event_msg", payload: { type: "user_message", message: wrapped, images: [] } },
+    { timestamp: "2026-10-21T09:41:03.000Z", type: "event_msg", payload: { type: "item_completed", item: { type: "AgentMessage", id: "assistant-1", content: [{ type: "text", text: "ok" }], phase: "final_answer" } } }
+  ])
+
+  try {
+    const messages = await createCodexHistoryLoader(root)(sessionID)
+    assert.deepEqual(
+      messages.map((message) => [message.info.role, message.parts[0].text]),
+      [["user", 'di nuovo, rispondimi "ok"'], ["user", 'di nuovo, rispondimi "ok"'], ["assistant", "ok"]]
+    )
+  } finally {
+    await rm(root, { recursive: true, force: true })
+  }
+})
+
 test("restores the current Codex model and reasoning effort from the newest native turn context", async () => {
   const root = await writeRollout([
     { timestamp: "2026-08-07T09:28:49.000Z", type: "turn_context", payload: { model: "gpt-5.6-codex", effort: "medium" } },

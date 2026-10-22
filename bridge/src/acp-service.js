@@ -3,6 +3,7 @@ import { mkdir, readFile, rename, stat, unlink, writeFile } from "node:fs/promis
 import path from "node:path"
 import { selectableAcpModelValue, modelConfigOptionFromSessionResponse, modelValueIsExcluded, normalizedAcpModelCandidates, splitInlineAcpModelVariant } from "./agent-model-catalog.js"
 import { TranscriptCache } from "./transcript-cache.js"
+import { stripAmbientContext } from "./ambient-context.js"
 import {
   listExtensionActions,
   loadExtensionActionState,
@@ -2759,6 +2760,8 @@ export class AcpService {
       if (!replaying) this.#emit("message.updated", sessionId)
       return
     }
+    // The Codex desktop app wraps the request in its UI state; session/load replays it that way.
+    const text = role === "user" && !image ? stripAmbientContext(update.content.text) : update.content?.text
     if (!replaying && session) session.updatedAt = new Date().toISOString()
     const counterpartKey = `${sessionId}:${role === "user" ? "assistant" : "user"}`
     this.#chunkMessageIDs.delete(counterpartKey)
@@ -2802,13 +2805,13 @@ export class AcpService {
         url: `data:${image.mime};base64,${image.data}`
       })
     } else if (continuesPrevious) {
-      previous.text += update.content.text
+      previous.text += text
     } else {
       message.parts.push({
         id: `${messageID}:${partType}:${message.parts.length}`,
         messageID,
         type: partType,
-        text: update.content.text,
+        text,
         ...(partType === "reasoning" ? { time: { start: now } } : {})
       })
     }
