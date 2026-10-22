@@ -72,6 +72,25 @@ test("OpenCode lifecycle edges invalidate the Session index while token chunks d
   unsubscribe()
 })
 
+test("an ACP turn end invalidates the Session index while its per-chunk message.updated does not", () => {
+  const omp = { ...base, backend: "omp", agentId: "omp" }
+  let notifications = 0
+  const unsubscribe = subscribeSessionIndexInvalidation(() => { notifications += 1 })
+
+  // The bridge's own envelope, as AcpService emits it while streaming and when the turn settles.
+  for (let index = 0; index < 50; index += 1) {
+    noteSessionIndexLiveEvent(omp, taskDeskLiveEvent("message.updated", { type: "message.updated", sessionId: "omp_a" }))
+  }
+  assert.equal(notifications, 0, "ACP streams message.updated per chunk; it must not re-read every Session index")
+
+  noteSessionIndexLiveEvent(omp, taskDeskLiveEvent("session.updated", { type: "session.updated", sessionId: "omp_a" }))
+  assert.equal(notifications, 1, "the session.updated that ends an ACP turn must reach the rail")
+
+  noteSessionIndexLiveEvent(base, { type: "message.updated", sessionID: "ses_a" })
+  assert.equal(notifications, 2, "OpenCode's terminal message.updated keeps its second chance")
+  unsubscribe()
+})
+
 test("OpenCode session.status normalization preserves the streamed status type", () => {
   const event = taskDeskLiveEvent(undefined, {
     type: "session.status",

@@ -150,7 +150,11 @@ export function noteSessionIndexLiveEvent(
   event: LiveEvent,
   now = Date.now()
 ): void {
+  // The message.updated carve-out above is OpenCode's turn-boundary metadata. An ACP bridge emits
+  // message.updated for every streamed chunk and marks every lifecycle edge with session.updated, so
+  // letting it through would re-read every agent's Session index once per token.
   const invalidates = sessionIndexLifecycleEvent(event.type)
+    && (event.type !== "message.updated" || config.backend === "opencode")
   if (!event.sessionID) {
     if (invalidates) invalidateSessionIndex()
     return
