@@ -48,7 +48,7 @@ test("the narrow Session header puts the back arrow and title on one row with a 
   // The title row has the back button's height, so the arrow and the title share a centre line.
   assert.match(headerCss, /\.hr-native-session-heading > \.hr-native-session-title \{[^}]*min-height: 38px;[^}]*align-items: center;/)
   assert.match(headerCss, /\.hr-native-session-heading > \.hr-native-session-eyebrow \{[^}]*grid-area: harness;/)
-  assert.match(headerCss, /\.hr-native-session-heading > small \{[^}]*grid-area: origin;/)
+  assert.match(headerCss, /\.hr-native-session-heading > small:not\(\.hr-native-session-directory\) \{[^}]*grid-area: origin;/)
   assert.ok(importIndex("session-header-narrow.css") > importIndex("beautiful-ui-controls.css"))
 })
 
@@ -87,4 +87,23 @@ test("the model wait is translated in every language", () => {
     }
   }
   assert.equal(createTranslator("pt-BR")("composer.loadingModels"), "Carregando modelos…")
+})
+
+test("the Session working directory keeps its own line, clipped at the start", () => {
+  assert.match(workspace, /<small className="hr-native-session-directory hr-path-tail" title=\{selected\.directory\}><bdi>\{selected\.directory\}<\/bdi><\/small>/)
+  assert.match(headerCss, /"directory directory"/)
+  assert.match(headerCss, /\.hr-native-session-heading > \.hr-native-session-directory \{[^}]*grid-area: directory;/)
+  // Clipped at the start so the end of the path stays readable; the characters keep their order.
+  assert.match(headerCss, /\.hr-path-tail \{[^}]*direction: rtl;[^}]*text-overflow: ellipsis;[^}]*white-space: nowrap;/)
+  assert.match(headerCss, /\.hr-path-tail > bdi \{[^}]*direction: ltr;/)
+})
+
+test("the machine editor lays folders out as rows and keeps a consistent footer", () => {
+  assert.match(workspace, /<li key=\{root\}><code className="hr-path-tail" title=\{root\}><bdi>\{root\}<\/bdi><\/code><button/)
+  assert.match(workspace, /<div className="hr-project-roots-add">/)
+  assert.match(workspace, /data-machine-test/)
+  assert.match(machineCss, /\.hr-project-roots-list li \{[^}]*grid-template-columns: minmax\(0, 1fr\) auto;/)
+  assert.match(machineCss, /\.hr-project-roots-list \.uw-manager-button \{[^}]*width: 96px;/)
+  assert.match(machineCss, /\.uw-machine-editor-actions \{[^}]*grid-template-columns: repeat\(2, minmax\(0, 1fr\)\) !important;/)
+  assert.match(machineCss, /\[data-machine-test\] \{[^}]*grid-column: 1 \/ -1 !important;/)
 })

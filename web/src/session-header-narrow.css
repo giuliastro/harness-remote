@@ -1,8 +1,27 @@
 /* Session header on a narrow window: the back arrow, the title and the Session actions share one
    38px row, so the arrow and the title read as one line instead of the arrow sitting beside a tiny
    harness label. The harness and where the Session was created follow as one muted line aligned
-   with the title. Loaded after the sheets that shape this header on a phone, so equal-specificity
+   with the title, and the working directory gets a line of its own. Loaded after the sheets that shape this header on a phone, so equal-specificity
    ties settle here. */
+
+/* A path clipped at its start, keeping the end that tells two folders apart ("…/Software/project").
+   The box runs right to left so the overflow falls off the left edge; the path itself sits in a
+   left-to-right <bdi>, so its characters keep their order. The full path is in the title. */
+.hr-path-tail {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  direction: rtl;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hr-path-tail > bdi {
+  direction: ltr;
+  unicode-bidi: isolate;
+}
+
 @media (max-width: 780px) {
   .hr-native-workspace .hr-native-workspace-session-header {
     min-height: 0;
@@ -19,7 +38,8 @@
     grid-template-columns: auto minmax(0, 1fr);
     grid-template-areas:
       "title title"
-      "harness origin";
+      "harness origin"
+      "directory directory";
     align-items: center;
   }
 
@@ -76,11 +96,19 @@
     text-transform: none;
   }
 
-  .hr-native-workspace .hr-native-session-heading > small {
+  .hr-native-workspace .hr-native-session-heading > small:not(.hr-native-session-directory) {
     grid-area: origin;
   }
 
-  .hr-native-workspace .hr-native-session-heading > small::before {
+  .hr-native-workspace .hr-native-session-heading > .hr-native-session-directory {
+    grid-area: directory;
+    direction: rtl;
+    text-align: left;
+    font-family: var(--td3-mono, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace);
+    font-size: 11px;
+  }
+
+  .hr-native-workspace .hr-native-session-heading > small:not(.hr-native-session-directory)::before {
     content: "·";
     margin-inline: 5px;
   }

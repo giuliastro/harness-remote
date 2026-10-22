@@ -113,3 +113,90 @@
     flex: 1 1 100%;
   }
 }
+
+/* Machine editor: the project folders section and the footer. Each folder is a row with its path
+   on the left (clipped at the start, full path in the title) and Remove on the right at a fixed
+   width; Add folder sits under the list on the same left edge; Cancel and Save share one footer
+   with matching widths. */
+.uw-machine-editor .hr-machine-project-roots h3,
+.uw-machine-editor .hr-machine-project-roots > p {
+  margin-inline: 0;
+}
+
+.uw-machine-editor .hr-machine-project-roots .hr-project-roots-list {
+  gap: 6px;
+  margin: 10px 0;
+}
+
+.uw-machine-editor .hr-machine-project-roots .hr-project-roots-list li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  min-height: 44px;
+  padding: 4px 4px 4px 11px;
+  border: 1px solid var(--td3-border);
+  border-radius: 9px;
+  background: var(--td3-panel-2);
+}
+
+.uw-machine-editor .hr-machine-project-roots .hr-project-roots-list code.hr-path-tail {
+  overflow-wrap: normal;
+  font-size: 12px;
+}
+
+.uw-machine-editor .hr-machine-project-roots .hr-project-roots-list .uw-manager-button {
+  width: 96px;
+  min-width: 96px;
+  min-height: 34px;
+  padding-inline: 8px;
+}
+
+.uw-machine-editor .hr-project-roots-add {
+  display: flex;
+}
+
+.uw-machine-editor .hr-project-roots-add .uw-manager-button {
+  min-width: 140px;
+}
+
+.uw-machine-editor .uw-machine-editor-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px solid var(--td3-border);
+}
+
+.uw-machine-editor .uw-machine-editor-actions .uw-manager-button {
+  min-width: 128px;
+}
+
+@media (max-width: 780px) {
+  .uw-machine-manager .uw-machine-editor .uw-machine-editor-actions {
+    display: grid !important;
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    gap: 8px !important;
+    margin-top: 14px !important;
+  }
+
+  /* Test connection takes a full row above the pair, so Cancel and Save stay side by side and
+     equal whether or not it is offered. */
+  .uw-machine-manager .uw-machine-editor .uw-machine-editor-actions .uw-manager-button {
+    grid-column: auto !important;
+    width: 100% !important;
+    min-width: 0 !important;
+    min-height: 42px !important;
+  }
+
+  .uw-machine-manager .uw-machine-editor .uw-machine-editor-actions .uw-manager-button[data-machine-test] {
+    grid-column: 1 / -1 !important;
+    order: -1;
+  }
+
+  .uw-machine-manager .uw-machine-editor .hr-project-roots-add .uw-manager-button {
+    width: 100%;
+    min-height: 42px;
+  }
+}
