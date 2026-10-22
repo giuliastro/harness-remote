@@ -55,6 +55,18 @@ import { sameMachineConnection } from "../machineConnection"
 import { reuseList } from "../workspace-runtime-merge"
 import { useDialogDismiss } from "../useDialogDismiss"
 import { useTranslator } from "../useTranslator"
+import {
+  SESSION_MONITOR_INTERVALS,
+  isSessionMonitorSupported,
+  loadSessionMonitorPrefs,
+  openSessionMonitorAppSettings,
+  persistSessionMonitorPrefs,
+  requestSessionMonitorBatteryExemption,
+  requestSessionMonitorPermission,
+  sessionMonitorStatus,
+  stopSessionMonitor,
+  type SessionMonitorPrefs
+} from "../session-monitor"
 import { CommandPalette, type PaletteCommand } from "./shell"
 import { MachinePairingDialog } from "./machine-pairing-dialog"
 import { NativeSessionActions } from "./native-session-actions"
@@ -568,6 +580,56 @@ function MobileSettingsPage({ onClose }: { onClose: () => void }) {
   const pageRef = useRef<HTMLElement>(null)
   useDialogDismiss(pageRef, onClose, { autoFocus: false })
 
+  const monitorSupported = isSessionMonitorSupported()
+  const [monitor, setMonitor] = useState<SessionMonitorPrefs>(loadSessionMonitorPrefs)
+  const [batteryOk, setBatteryOk] = useState(false)
+  const [monitorDenied, setMonitorDenied] = useState(false)
+  function changeMonitor(next: Partial<SessionMonitorPrefs>) {
+    const prefs = { ...monitor, ...next }
+    setMonitor(prefs)
+    persistSessionMonitorPrefs(prefs)
+  }
+  async function changeMonitorEnabled(enabled: boolean) {
+    if (!enabled) {
+      setMonitorDenied(false)
+      changeMonitor({ enabled: false })
+      // Stop the native service here too: the Session home may not be mounted to reconcile it.
+      void stopSessionMonitor()
+      return
+    }
+    if (!(await requestSessionMonitorPermission())) {
+      setMonitorDenied(true)
+      changeMonitor({ enabled: false })
+      return
+    }
+    setMonitorDenied(false)
+    changeMonitor({ enabled: true })
+    setBatteryOk(await requestSessionMonitorBatteryExemption())
+  }
+  async function pressMonitorBattery() {
+    if (monitorDenied || batteryOk) {
+      await openSessionMonitorAppSettings()
+      return
+    }
+    setBatteryOk(await requestSessionMonitorBatteryExemption())
+  }
+  useEffect(() => {
+    if (!monitorSupported) return
+    let cancelled = false
+    const refresh = () => {
+      void sessionMonitorStatus().then((status) => {
+        if (!cancelled) setBatteryOk(status.ignoringBatteryOptimizations)
+      })
+    }
+    const onVisible = () => { if (document.visibilityState === "visible") refresh() }
+    refresh()
+    document.addEventListener("visibilitychange", onVisible)
+    return () => {
+      cancelled = true
+      document.removeEventListener("visibilitychange", onVisible)
+    }
+  }, [monitorSupported])
+
   useEffect(() => {
     let cancelled = false
     void desktopNetworkSettings().then((state) => {
@@ -628,6 +690,24 @@ function MobileSettingsPage({ onClose }: { onClose: () => void }) {
             <label><strong>{t("settings.language")}</strong><select value={language} onChange={(event) => changeLanguage(event.target.value)}>{languageOptions.map((option) => <option value={option.code} key={option.code}>{option.label}</option>)}</select></label>
           </div>
           <p>{t("sf.appearanceShared")}</p>
+          {monitorSupported ? (
+            <>
+              <div className="hr-mobile-settings-group" data-settings-monitor>
+                <span>{t("monitor.group")}</span>
+                <label data-icon="notify"><strong>{t("monitor.enabled")}</strong><select value={monitor.enabled ? "on" : "off"} onChange={(event) => void changeMonitorEnabled(event.target.value === "on")}><option value="on">{t("monitor.on")}</option><option value="off">{t("monitor.off")}</option></select></label>
+                {monitor.enabled ? (
+                  <>
+                    <label data-icon="interval"><strong>{t("monitor.interval")}</strong><select value={monitor.intervalSeconds} onChange={(event) => changeMonitor({ intervalSeconds: Number(event.target.value) })}>{SESSION_MONITOR_INTERVALS.map((seconds) => <option value={seconds} key={seconds}>{seconds < 60 ? t("monitor.seconds", { count: seconds }) : t("monitor.minutes", { count: seconds / 60 })}</option>)}</select></label>
+                    <label data-icon="awake"><strong>{t("monitor.keepAwake")}</strong><select value={monitor.keepAwake ? "on" : "off"} onChange={(event) => changeMonitor({ keepAwake: event.target.value === "on" })}><option value="on">{t("monitor.on")}</option><option value="off">{t("monitor.off")}</option></select></label>
+                  </>
+                ) : null}
+                {monitor.enabled || monitorDenied ? (
+                  <label data-icon="battery"><strong>{t("monitor.battery")}</strong><button type="button" className="uw-manager-button" onClick={() => void pressMonitorBattery()}>{batteryOk ? t("monitor.batteryOk") : t("monitor.batteryAsk")}</button></label>
+                ) : null}
+              </div>
+              {monitor.enabled || monitorDenied ? <p>{monitorDenied ? t("monitor.denied") : t("monitor.hint")}</p> : null}
+            </>
+          ) : null}
           <div className="hr-mobile-settings-group" data-settings-activity>
             <span>{t("settings.activityTitle")}</span>
             <label><strong>{t("settings.activityLive")}</strong><select value={activity.live} onChange={(event) => changeActivity({ live: event.target.value as LiveActivityMode })}>{LIVE_ACTIVITY_MODES.map((mode) => <option value={mode} key={mode}>{t(`settings.activityLive.${mode}`)}</option>)}</select></label>

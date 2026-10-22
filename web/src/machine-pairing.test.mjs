@@ -168,7 +168,7 @@ test("a pairing grant status parses pending, claimed and expired answers", () =>
   assert.equal(parseMachinePairingGrantStatus({ version: 1, expiresAt, claimed: "yes", expired: false }), null)
 })
 
-test("Android packaging exposes deep-link and in-app QR pairing without CAMERA or notification permission", () => {
+test("Android packaging exposes deep-link and in-app QR pairing without CAMERA; notifications only for the opt-in session monitor", () => {
   const sync = readFileSync(new URL("../scripts/sync-native-live-events.mjs", import.meta.url), "utf8")
   const main = readFileSync(new URL("./main.tsx", import.meta.url), "utf8")
   const workspace = readFileSync(new URL("./components/standalone-universal-workspace.tsx", import.meta.url), "utf8")
@@ -179,7 +179,10 @@ test("Android packaging exposes deep-link and in-app QR pairing without CAMERA o
   assert.match(sync, /play-services-code-scanner:16\.1\.0/)
   assert.match(sync, /barcode_ui/)
   assert.doesNotMatch(sync, /android\.permission\.CAMERA/)
-  assert.doesNotMatch(sync, /POST_NOTIFICATIONS/)
+  // POST_NOTIFICATIONS exists only for the opt-in session monitor, requested at runtime when the user enables it.
+  const monitor = readFileSync(new URL("../native-android/SessionMonitorPlugin.java", import.meta.url), "utf8")
+  assert.match(monitor, /Manifest\.permission\.POST_NOTIFICATIONS[\s\S]*alias = "notifications"/)
+  assert.doesNotMatch(scanner, /POST_NOTIFICATIONS/)
   assert.match(activity, /registerPlugin\(PairingScannerPlugin\.class\)/)
   assert.match(scanner, /Barcode\.FORMAT_QR_CODE/)
   assert.match(scanner, /enableAutoZoom\(\)/)

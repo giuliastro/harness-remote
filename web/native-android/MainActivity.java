@@ -7,6 +7,7 @@ public class MainActivity extends BridgeActivity {
     public void onCreate(android.os.Bundle savedInstanceState) {
         registerPlugin(LiveEventsPlugin.class);
         registerPlugin(PairingScannerPlugin.class);
+        registerPlugin(SessionMonitorPlugin.class);
         super.onCreate(savedInstanceState);
     }
 }

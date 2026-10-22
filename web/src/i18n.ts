@@ -618,6 +618,28 @@ type TranslationKey =
   | 'sf.connectedTo'
   | 'sf.managerFooter'
   | 'sf.interface'
+  | 'monitor.group'
+  | 'monitor.enabled'
+  | 'monitor.interval'
+  | 'monitor.seconds'
+  | 'monitor.minutes'
+  | 'monitor.keepAwake'
+  | 'monitor.battery'
+  | 'monitor.batteryOk'
+  | 'monitor.batteryAsk'
+  | 'monitor.hint'
+  | 'monitor.denied'
+  | 'monitor.serviceTitle'
+  | 'monitor.serviceText'
+  | 'monitor.channelName'
+  | 'monitor.channelDescription'
+  | 'monitor.serviceChannelName'
+  | 'monitor.finished'
+  | 'monitor.attention'
+  | 'monitor.untitled'
+  | 'monitor.on'
+  | 'monitor.off'
+  | 'monitor.unavailable'
   | 'sf.appearanceShared'
   | 'sf.continueWith'
   | 'sf.model'
@@ -1259,6 +1281,28 @@ const translations: Record<LanguageCode, Partial<Record<TranslationKey, string>>
     'sf.connectedTo': 'Connected to {name}. {count} coding agents discovered.',
     'sf.managerFooter': '{machines} machines configured · {agents} coding agents running',
     'sf.interface': 'Interface',
+    'monitor.group': 'Notifications',
+    'monitor.enabled': 'Notify when a Session finishes',
+    'monitor.interval': 'Check every',
+    'monitor.seconds': '{count} s',
+    'monitor.minutes': '{count} min',
+    'monitor.keepAwake': 'Keep checking with screen off',
+    'monitor.battery': 'Background battery',
+    'monitor.batteryOk': 'Allowed',
+    'monitor.batteryAsk': 'Allow',
+    'monitor.hint': 'Android shows a fixed notification while monitoring. Shorter intervals and screen-off checks use more battery.',
+    'monitor.denied': 'Notification permission denied. Enable it in the app settings.',
+    'monitor.serviceTitle': 'Harness Remote',
+    'monitor.serviceText': 'Monitoring {count} agents',
+    'monitor.channelName': 'Session updates',
+    'monitor.channelDescription': 'A Session finished or needs attention',
+    'monitor.serviceChannelName': 'Background monitor',
+    'monitor.finished': '{agent} finished',
+    'monitor.attention': '{agent} needs attention',
+    'monitor.untitled': 'Untitled Session',
+    'monitor.on': 'On',
+    'monitor.off': 'Off',
+    'monitor.unavailable': 'The machine or harness for this notification is not available right now.',
     'sf.appearanceShared': 'Appearance and language are shared across Harness Remote on this device.',
     'sf.continueWith': 'Continue with',
     'sf.model': 'Model',
@@ -1900,6 +1944,28 @@ const translations: Record<LanguageCode, Partial<Record<TranslationKey, string>>
     'sf.connectedTo': 'Connesso a {name}. {count} coding agent trovati.',
     'sf.managerFooter': '{machines} macchine configurate · {agents} coding agent in esecuzione',
     'sf.interface': 'Interfaccia',
+    'monitor.group': 'Notifiche',
+    'monitor.enabled': 'Avvisa quando una sessione termina',
+    'monitor.interval': 'Controlla ogni',
+    'monitor.seconds': '{count} s',
+    'monitor.minutes': '{count} min',
+    'monitor.keepAwake': 'Continua a controllare a schermo spento',
+    'monitor.battery': 'Batteria in background',
+    'monitor.batteryOk': 'Consentita',
+    'monitor.batteryAsk': 'Consenti',
+    'monitor.hint': 'Android mostra una notifica fissa durante il monitoraggio. Intervalli più brevi e controlli a schermo spento consumano più batteria.',
+    'monitor.denied': 'Permesso notifiche negato. Attivalo nelle impostazioni dell\'app.',
+    'monitor.serviceTitle': 'Harness Remote',
+    'monitor.serviceText': 'Monitoraggio di {count} agenti',
+    'monitor.channelName': 'Aggiornamenti sessioni',
+    'monitor.channelDescription': 'Una sessione è terminata o richiede attenzione',
+    'monitor.serviceChannelName': 'Monitor in background',
+    'monitor.finished': '{agent} ha terminato',
+    'monitor.attention': '{agent} richiede attenzione',
+    'monitor.untitled': 'Sessione senza titolo',
+    'monitor.on': 'Attivo',
+    'monitor.off': 'Disattivo',
+    'monitor.unavailable': 'La macchina o l’harness di questa notifica non è disponibile al momento.',
     'sf.appearanceShared': 'Aspetto e lingua sono condivisi in tutto Harness Remote su questo dispositivo.',
     'sf.continueWith': 'Continua con',
     'sf.model': 'Modello',
@@ -2541,6 +2607,28 @@ const translations: Record<LanguageCode, Partial<Record<TranslationKey, string>>
     'sf.connectedTo': '已連線到 {name}，探索到 {count} 個編碼代理。',
     'sf.managerFooter': '已設定 {machines} 部機器 · {agents} 個編碼代理執行中',
     'sf.interface': '介面',
+    'monitor.group': '通知',
+    'monitor.enabled': '工作階段完成時通知',
+    'monitor.interval': '檢查間隔',
+    'monitor.seconds': '{count} 秒',
+    'monitor.minutes': '{count} 分鐘',
+    'monitor.keepAwake': '螢幕關閉時持續檢查',
+    'monitor.battery': '背景電池使用',
+    'monitor.batteryOk': '已允許',
+    'monitor.batteryAsk': '允許',
+    'monitor.hint': '監控期間 Android 會顯示常駐通知。間隔越短、螢幕關閉時檢查，耗電越多。',
+    'monitor.denied': '通知權限已被拒絕。請在應用程式設定中啟用。',
+    'monitor.serviceTitle': 'Harness Remote',
+    'monitor.serviceText': '正在監控 {count} 個代理',
+    'monitor.channelName': '工作階段更新',
+    'monitor.channelDescription': '工作階段已完成或需要注意',
+    'monitor.serviceChannelName': '背景監控',
+    'monitor.finished': '{agent} 已完成',
+    'monitor.attention': '{agent} 需要注意',
+    'monitor.untitled': '未命名工作階段',
+    'monitor.on': '開啟',
+    'monitor.off': '關閉',
+    'monitor.unavailable': '此通知對應的機器或 harness 目前無法使用。',
     'sf.appearanceShared': '外觀與語言在此裝置上的 Harness Remote 各處共用。',
     'sf.continueWith': '改用',
     'sf.model': '模型',
@@ -3182,6 +3270,28 @@ const translations: Record<LanguageCode, Partial<Record<TranslationKey, string>>
     'sf.connectedTo': '已连接到 {name}，发现 {count} 个编码代理。',
     'sf.managerFooter': '已配置 {machines} 台机器 · {agents} 个编码代理运行中',
     'sf.interface': '界面',
+    'monitor.group': '通知',
+    'monitor.enabled': '会话完成时通知',
+    'monitor.interval': '检查间隔',
+    'monitor.seconds': '{count} 秒',
+    'monitor.minutes': '{count} 分钟',
+    'monitor.keepAwake': '屏幕关闭时持续检查',
+    'monitor.battery': '后台电池使用',
+    'monitor.batteryOk': '已允许',
+    'monitor.batteryAsk': '允许',
+    'monitor.hint': '监控期间 Android 会显示常驻通知。间隔越短、屏幕关闭时检查，耗电越多。',
+    'monitor.denied': '通知权限已被拒绝。请在应用设置中启用。',
+    'monitor.serviceTitle': 'Harness Remote',
+    'monitor.serviceText': '正在监控 {count} 个代理',
+    'monitor.channelName': '会话更新',
+    'monitor.channelDescription': '会话已完成或需要注意',
+    'monitor.serviceChannelName': '后台监控',
+    'monitor.finished': '{agent} 已完成',
+    'monitor.attention': '{agent} 需要注意',
+    'monitor.untitled': '未命名会话',
+    'monitor.on': '开启',
+    'monitor.off': '关闭',
+    'monitor.unavailable': '此通知对应的机器或 harness 当前不可用。',
     'sf.appearanceShared': '外观和语言在此设备上的 Harness Remote 各处共享。',
     'sf.continueWith': '改用',
     'sf.model': '模型',
@@ -3823,6 +3933,28 @@ const translations: Record<LanguageCode, Partial<Record<TranslationKey, string>>
     'sf.connectedTo': 'Conectado a {name}. {count} agentes de código descobertos.',
     'sf.managerFooter': '{machines} máquinas configuradas · {agents} agentes de código em execução',
     'sf.interface': 'Interface',
+    'monitor.group': 'Notificações',
+    'monitor.enabled': 'Avisar quando uma sessão terminar',
+    'monitor.interval': 'Verificar a cada',
+    'monitor.seconds': '{count} s',
+    'monitor.minutes': '{count} min',
+    'monitor.keepAwake': 'Verificar com a tela apagada',
+    'monitor.battery': 'Bateria em segundo plano',
+    'monitor.batteryOk': 'Liberada',
+    'monitor.batteryAsk': 'Liberar',
+    'monitor.hint': 'O Android mostra uma notificação fixa enquanto monitora. Intervalos menores e verificar com a tela apagada gastam mais bateria.',
+    'monitor.denied': 'Permissão de notificação negada. Ative nas configurações do app.',
+    'monitor.serviceTitle': 'Harness Remote',
+    'monitor.serviceText': 'Monitorando {count} agentes',
+    'monitor.channelName': 'Atualizações de sessões',
+    'monitor.channelDescription': 'Uma sessão terminou ou precisa de atenção',
+    'monitor.serviceChannelName': 'Monitor em segundo plano',
+    'monitor.finished': '{agent} terminou',
+    'monitor.attention': '{agent} precisa de atenção',
+    'monitor.untitled': 'Sessão sem título',
+    'monitor.on': 'Ligado',
+    'monitor.off': 'Desligado',
+    'monitor.unavailable': 'A máquina ou o harness desta notificação não está disponível agora.',
     'sf.appearanceShared': 'Aparência e idioma são compartilhados em todo o Harness Remote neste dispositivo.',
     'sf.continueWith': 'Continuar com',
     'sf.model': 'Modelo',

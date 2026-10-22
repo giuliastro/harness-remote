@@ -1,4 +1,4 @@
-import { cpSync, existsSync, readFileSync, writeFileSync } from "node:fs"
+import { cpSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs"
 import { resolve } from "node:path"
 
 const root = resolve(import.meta.dirname, "..")
@@ -8,9 +8,14 @@ const manifest = resolve(root, "android/app/src/main/AndroidManifest.xml")
 const appGradle = resolve(root, "android/app/build.gradle")
 
 if (!existsSync(target)) throw new Error("Android project not found; run npx cap sync android first")
-for (const file of ["MainActivity.java", "LiveEventsPlugin.java", "PairingScannerPlugin.java"]) {
+for (const file of ["MainActivity.java", "LiveEventsPlugin.java", "PairingScannerPlugin.java", "SessionMonitorPlugin.java", "SessionMonitorService.java"]) {
   cpSync(resolve(source, file), resolve(target, file))
 }
+
+// Monochrome small icon for session monitor notifications.
+const drawableTarget = resolve(root, "android/app/src/main/res/drawable")
+mkdirSync(drawableTarget, { recursive: true })
+cpSync(resolve(source, "res/drawable/ic_stat_harness.xml"), resolve(drawableTarget, "ic_stat_harness.xml"))
 
 if (!existsSync(manifest)) throw new Error("Android manifest not found after Capacitor sync")
 let manifestText = readFileSync(manifest, "utf8")
@@ -47,6 +52,33 @@ if (!manifestText.includes(scannerMetadataMarker)) {
   changed = true
 }
 
+// Opt-in session monitor: foreground service (special use) polling the user's own agents, no Firebase.
+const monitorPermissions = [
+  "android.permission.POST_NOTIFICATIONS",
+  "android.permission.FOREGROUND_SERVICE",
+  "android.permission.FOREGROUND_SERVICE_SPECIAL_USE",
+  "android.permission.WAKE_LOCK",
+  "android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS"
+]
+const missingPermissions = monitorPermissions.filter((name) => !manifestText.includes(`android:name="${name}"`))
+if (missingPermissions.length > 0) {
+  const lines = missingPermissions.map((name) => `    <uses-permission android:name="${name}" />`).join("\n")
+  if (!/<application\b/.test(manifestText)) throw new Error("Android application element not found after Capacitor sync")
+  manifestText = manifestText.replace(/(\s*)(<application\b)/, `\n${lines}\n$1$2`)
+  changed = true
+}
+
+const serviceMarker = 'android:name=".SessionMonitorService"'
+if (!manifestText.includes(serviceMarker)) {
+  const serviceElement = `
+        <service android:name=".SessionMonitorService" android:exported="false" android:foregroundServiceType="specialUse">
+            <property android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE" android:value="Opt-in monitor that notifies the user when their own AI agent sessions finish or need attention" />
+        </service>`
+  if (!/<\/application>/.test(manifestText)) throw new Error("Android application closing tag not found after Capacitor sync")
+  manifestText = manifestText.replace(/(\s*)<\/application>/, `\n${serviceElement}\n    </application>`)
+  changed = true
+}
+
 if (changed) writeFileSync(manifest, manifestText)
 
 if (!existsSync(appGradle)) throw new Error("Android app Gradle file not found after Capacitor sync")
@@ -58,4 +90,4 @@ if (!gradleText.includes("com.google.android.gms:play-services-code-scanner")) {
   writeFileSync(appGradle, gradleText)
 }
 
-console.log("Synced Harness Remote native live events and QR machine pairing")
+console.log("Synced Harness Remote native live events, QR machine pairing and session monitor")

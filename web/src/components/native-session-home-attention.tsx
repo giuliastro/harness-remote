@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ComponentProps } from "react"
 import { notifyDesktopAttention, subscribeDesktopAttentionActivation } from "../desktopBridge"
-import { discoverAgentNativeSessionPage, nativeSessionSurfaceTarget, type NativeSessionSurfaceTarget } from "../native-session-discovery"
+import { discoverAgentNativeSessionPage, nativeSessionSurfaceFromSession, nativeSessionSurfaceTarget, type NativeSessionSurfaceTarget } from "../native-session-discovery"
 import { loadNativeSessionAttentionIndex, type NativeSessionAttentionIndex, type NativeSessionAttentionIndexItem } from "../native-session-attention-index"
 import { startNativeSessionAttentionLiveRefresh, type NativeSessionAttentionLiveTarget } from "../native-session-attention-live"
 import { desktopAttentionNotification, type NativeSessionAttentionNotificationContext } from "../native-session-attention-notification-presentation"
@@ -10,7 +10,20 @@ import {
   type NativeSessionAttentionNotificationEvent,
   type NativeSessionAttentionNotificationState
 } from "../native-session-attention-notifications"
-import type { MachineAgentHost, ServerConfig } from "../types"
+import {
+  configureSessionMonitor,
+  isSessionMonitorSupported,
+  loadSessionMonitorPrefs,
+  sessionMonitorTarget,
+  sessionMonitorTexts,
+  setSessionMonitorFocus,
+  subscribeSessionMonitorTap,
+  type SessionMonitorTap,
+  type SessionMonitorTarget
+} from "../session-monitor"
+import { APP_PREFERENCES_CHANGED_EVENT } from "../appPreferences"
+import { useTranslator } from "../useTranslator"
+import type { MachineAgentHost, ServerConfig, Session } from "../types"
 import { NativeSessionHome as NativeSessionHomeBase } from "./native-session-home-base"
 import "../native-session-attention-inbox.css"
 
@@ -45,6 +58,22 @@ export type AttentionInboxCounts = {
 
 const ATTENTION_FALLBACK_MS = 30_000
 const NOTIFICATION_CONTEXT_MAX_PAGES = 4
+
+const PENDING_TAP_TIMEOUT_MS = 20_000
+
+/** The listing row a notification tap carries, only when it really is the tapped Session. */
+function tappedSession(tap: SessionMonitorTap): Session | undefined {
+  if (!tap.session) return undefined
+  try {
+    const parsed = JSON.parse(tap.session) as Partial<Session> | null
+    if (!parsed || typeof parsed !== "object" || parsed.id !== tap.sessionID) return undefined
+    if (parsed.title !== undefined && typeof parsed.title !== "string") return undefined
+    if (parsed.directory !== undefined && typeof parsed.directory !== "string") return undefined
+    return parsed as Session
+  } catch {
+    return undefined
+  }
+}
 
 function supportsAttention(agent: MachineAgentHost): boolean {
   return agent.state === "available"
@@ -208,6 +237,67 @@ export function NativeSessionHome(props: Props) {
   const targetsRef = useRef<Map<string, AttentionTarget>>(new Map())
   targetsRef.current = new Map(attentionTargets.map((target) => [target.key, target]))
 
+  const t = useTranslator()
+  const [monitorPrefs, setMonitorPrefs] = useState(loadSessionMonitorPrefs)
+  useEffect(() => {
+    const follow = () => setMonitorPrefs(loadSessionMonitorPrefs())
+    window.addEventListener(APP_PREFERENCES_CHANGED_EVENT, follow)
+    return () => window.removeEventListener(APP_PREFERENCES_CHANGED_EVENT, follow)
+  }, [])
+
+  const hasOnlineSnapshot = props.sources.some(({ snapshot, state }) => Boolean(snapshot) && state === "online")
+  const monitorEntries = useMemo<Array<{ monitor: SessionMonitorTarget; target: AttentionTarget }>>(
+    () => props.sources.flatMap(({ machine, snapshot, state }) => {
+      if (!snapshot || state !== "online") return []
+      return snapshot.agents
+        .filter((agent) => agent.state === "available" && agent.capabilities?.sessions !== false)
+        .flatMap((agent) => {
+          try {
+            const machineName = snapshot.machine.name || machine.name
+            const baseConfig = machine.config as ServerConfig
+            return [{
+              monitor: sessionMonitorTarget(snapshot.machine.id, machineName, baseConfig, agent),
+              target: {
+                key: targetKey(snapshot.machine.id, agent.id),
+                baseConfig,
+                agent,
+                machineID: snapshot.machine.id,
+                machineName
+              }
+            }]
+          } catch {
+            return []
+          }
+        })
+    }),
+    [props.sources]
+  )
+  const monitorTargets = useMemo(() => monitorEntries.map((entry) => entry.monitor), [monitorEntries])
+  const monitorEntriesRef = useRef(monitorEntries)
+  monitorEntriesRef.current = monitorEntries
+
+  const monitorSignature = JSON.stringify([
+    monitorPrefs,
+    monitorTargets.map((target) => [
+      target.machineID, target.agentID, target.statusUrl, target.authorization, target.backend,
+      target.agentLabel, target.machineName
+    ])
+  ])
+  const monitorTargetsRef = useRef(monitorTargets)
+  monitorTargetsRef.current = monitorTargets
+  const monitorPrefsRef = useRef(monitorPrefs)
+  monitorPrefsRef.current = monitorPrefs
+  const translatorRef = useRef(t)
+  translatorRef.current = t
+  useEffect(() => {
+    if (!isSessionMonitorSupported() || !hasOnlineSnapshot) return
+    void configureSessionMonitor(
+      monitorPrefsRef.current,
+      monitorTargetsRef.current,
+      sessionMonitorTexts(translatorRef.current)
+    )
+  }, [monitorSignature, hasOnlineSnapshot, t])
+
   const rememberAndOpen = useCallback((target: NativeSessionSurfaceTarget) => {
     setKnownTargets((current) => ({ ...current, [target.key]: target }))
     const existingContext = notificationContextRef.current.get(target.key)
@@ -307,6 +397,51 @@ export function NativeSessionHome(props: Props) {
     }
     void openAttentionSession(target, activation.sessionID)
   }), [openAttentionSession])
+
+  // A tap that cold-starts the app arrives before any machine has answered, so it waits here
+  // until its machine and harness come online instead of failing straight away.
+  const [pendingTap, setPendingTap] = useState<{ tap: SessionMonitorTap; at: number } | null>(null)
+  useEffect(() => subscribeSessionMonitorTap((tap) => setPendingTap({ tap, at: Date.now() })), [])
+  useEffect(() => {
+    if (!pendingTap) return
+    const { tap } = pendingTap
+    const entry = monitorEntries.find(({ target }) =>
+      target.machineID === tap.machineID && target.agent.id === tap.agentID
+    )
+    if (entry) {
+      setPendingTap(null)
+      // The notification carries the Session's listing row: open it straight away instead of paging
+      // through the whole native history to find it again.
+      const session = tappedSession(tap)
+      if (session) {
+        rememberAndOpen(nativeSessionSurfaceFromSession(entry.target.machineID, entry.target.baseConfig, entry.target.agent, session))
+        return
+      }
+      void openAttentionSession(entry.target, tap.sessionID)
+      return
+    }
+    const timer = window.setTimeout(() => {
+      setPendingTap(null)
+      setOpenError(translatorRef.current("monitor.unavailable"))
+    }, Math.max(0, PENDING_TAP_TIMEOUT_MS - (Date.now() - pendingTap.at)))
+    return () => window.clearTimeout(timer)
+  }, [pendingTap, monitorEntries, openAttentionSession, rememberAndOpen])
+
+  useEffect(() => {
+    const selected = props.selectedKey
+    const match = selected
+      ? monitorTargets.find((target) => selected.startsWith(`${target.machineID}:${target.agentID}:`))
+      : undefined
+    if (match && selected) {
+      void setSessionMonitorFocus({
+        machineID: match.machineID,
+        agentID: match.agentID,
+        sessionID: selected.slice(`${match.machineID}:${match.agentID}:`.length)
+      })
+    } else {
+      void setSessionMonitorFocus(null)
+    }
+  }, [props.selectedKey, monitorTargets])
 
   useEffect(() => {
     const generation = ++generationRef.current

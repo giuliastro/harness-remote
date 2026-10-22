@@ -281,6 +281,20 @@ function nativeSessionRecords(
 }
 
 /**
+ * Surface for a Session whose listing row the caller already holds (a notification carries it), so
+ * opening it needs no discovery page.
+ */
+export function nativeSessionSurfaceFromSession(
+  machineID: string,
+  base: ServerConfig,
+  agent: MachineAgentHost,
+  session: Session
+): NativeSessionSurfaceTarget {
+  const [record] = nativeSessionRecords(agent, nativeSessionConfig(base, agent), [session])
+  return nativeSessionSurfaceTarget(machineID, base, record)
+}
+
+/**
  * Read exactly one lightweight native Session page. A cursor belongs to the adapter connection and
  * is forwarded untouched; only the initial page may fall back to the stable non-paged endpoint.
  *
