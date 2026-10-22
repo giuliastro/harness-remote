@@ -4,10 +4,11 @@ import { ManagedEventFanout } from "./managed-event-fanout.js"
 import { inspectGitProjectIdentity } from "./project-identity.js"
 import { inspectGitProjectOutcome } from "./project-outcome.js"
 import { normalizeTaskModel } from "./task-model.js"
+import { createTokenHarnessObserver } from "./token-harness-observability.js"
 
 const AGENT_ROUTE = /^\/v1\/agents\/([^/]+)(\/.*)?$/
 const TASK_WORKTREE_ROUTE = /^\/v1\/tasks\/([^/]+)\/worktree$/
-const MACHINE_ROUTES = new Set(["/v1/machine", "/global/machine", "/v1/projects", "/v1/project-identity", "/v1/project-outcome", "/v1/tasks", "/v1/diagnostics"])
+const MACHINE_ROUTES = new Set(["/v1/machine", "/global/machine", "/v1/projects", "/v1/project-identity", "/v1/project-outcome", "/v1/tasks", "/v1/diagnostics", "/v1/optimization"])
 const HOP_BY_HOP = new Set([
   "connection",
   "keep-alive",
@@ -208,7 +209,8 @@ export function createAgentRoutingServer({
   worktreeManager,
   diagnostics,
   createServer = http.createServer,
-  proxyRequest = proxyManagedHttpRequest
+  proxyRequest = proxyManagedHttpRequest,
+  observeOptimization = createTokenHarnessObserver()
 }) {
   const activeRequests = new Map()
   const eventFanouts = new Map()
@@ -259,6 +261,15 @@ export function createAgentRoutingServer({
             ...(typeof diagnostics === "function" ? diagnostics() : {}),
             router: routerDiagnostics()
           })
+          return
+        }
+        if (requestURL.pathname === "/v1/optimization") {
+          if (request.method !== "GET") {
+            response.writeHead(405, { Allow: "GET, OPTIONS" })
+            response.end()
+            return
+          }
+          writeJSON(response, 200, await observeOptimization())
           return
         }
         if (request.method === "GET" && requestURL.pathname === "/v1/projects") {
