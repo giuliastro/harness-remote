@@ -51,7 +51,8 @@ test("one unreachable machine does not hold up an already-answered one", () => {
   // saved machine that is down (and takes its own ~12s+retry to time out) no longer freezes
   // "Connecting to your machines..." for a machine that already answered.
   assert.match(workspace, /runtime\.machine\.id === machine\.id \? result : runtime/)
-  assert.match(workspace, /!loaded && !anyMachineSettled \? "machines"/)
+  // An empty machine list still waits for the desktop to assemble its local runtime (machinesLoading).
+  assert.match(workspace, /machinesLoading \|\| \(!loaded && !anyMachineSettled\) \? "machines"/)
 })
 
 test("an offline stream cannot cancel its own discovery probe forever", () => {
