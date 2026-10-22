@@ -488,24 +488,31 @@ function MachineManager({
             return (
               <div className="uw-machine-config-card" data-machine-state={state} data-runtime-owned={runtimeOwned || undefined} key={machine.id}>
                 <div className="uw-machine-config-main">
-                  <strong>{runtimeOwned ? snapshot?.machine.name || t("settings.thisComputer") : machine.name}</strong>
-                  {runtimeOwned ? <small className="uw-machine-runtime-owned">{t("settings.thisComputer")} · {t("machine.managedByApp")}</small> : null}
-                  <span>{machine.config.host}:{machine.config.port}</span>
-                  <small className={`uw-machine-connection-state ${state}`} aria-live="polite">
-                    <i aria-hidden="true" />
-                    {state === "checking"
-                      ? t("sf.checkingAgents")
-                      : state === "online"
-                        ? t("sf.agentsDetected", { count: snapshot?.agents.length || 0 })
-                        : t("sf.machineUnavailable")}
-                  </small>
+                  <div className="uw-machine-card-header">
+                    <strong>{runtimeOwned ? snapshot?.machine.name || t("settings.thisComputer") : machine.name}</strong>
+                    {runtimeOwned ? <small className="uw-machine-runtime-owned">{t("settings.thisComputer")} · {t("machine.managedByApp")}</small> : null}
+                    <small className={`uw-machine-connection-state ${state}`} aria-live="polite">
+                      <i aria-hidden="true" />
+                      {state === "checking"
+                        ? t("sf.checkingAgents")
+                        : state === "online"
+                          ? t("sf.agentsDetected", { count: snapshot?.agents.length || 0 })
+                          : t("sf.machineUnavailable")}
+                    </small>
+                  </div>
+                  <dl className="uw-machine-card-facts">
+                    <div>
+                      <dt>{t("pair.address")}</dt>
+                      <dd><code>{machine.config.host}:{machine.config.port}</code></dd>
+                    </div>
+                  </dl>
                   {state === "offline" ? (
                     <small className="uw-machine-connection-error" role="status">
                       {error ? machineConnectionErrorText(error, t) : t("sf.notADaemon")}
                     </small>
                   ) : null}
-                  <MachineFolderSummary folders={machineFolders[machine.id]} />
                   {snapshot?.agents.length ? <div className="uw-machine-harness-list">{snapshot.agents.map((agent) => <span className="uw-machine-harness" key={agent.id}><i className={agent.state} aria-hidden="true" /><strong>{agent.label}</strong><small>{machineAgentStateLabel(agent.state, t)}{agent.processID ? ` · PID ${agent.processID}` : ""}</small></span>)}</div> : null}
+                  <MachineFolderSummary folders={machineFolders[machine.id]} />
                 </div>
                 <div className="uw-machine-config-actions">
                   {confirmRemoveID === machine.id && !runtimeOwned ? (

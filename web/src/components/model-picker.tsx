@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react"
 import { ChevronDownIcon } from "../Icons"
 import type { ModelOption, ModelSelection } from "../types"
+import { useTranslator } from "../useTranslator"
 import "../model-picker.css"
 
 type Props = {
@@ -178,13 +179,14 @@ export function ModelPicker({ models, value, onChange, disabled = false, loading
   // A disabled control with a "Choose model" label reads as broken. When discovery finished and the
   // catalog is empty the conversation still starts — on the harness-native default — so say that
   // instead of leaving a dead dropdown with no explanation.
+  const t = useTranslator()
   const empty = !loading && models.length === 0
   const hint = nativeCurrent
     ? "This native session's current model is known, but it is unavailable in the current model catalog and cannot be selected."
     : unavailableHint || "No model catalog is available for this coding agent. The harness default will be used."
   const displayModelName = selected?.modelName || nativeCurrent?.modelID
   const triggerLabel = loading
-    ? "Loading models…"
+    ? t("composer.loadingModels")
     : empty
       ? displayModelName || "Harness default"
       : displayModelName || placeholder
@@ -202,6 +204,7 @@ export function ModelPicker({ models, value, onChange, disabled = false, loading
         }}
         aria-haspopup="listbox"
         aria-expanded={open}
+        aria-busy={loading || undefined}
       >
         <span className="tdw-model-trigger-copy">
           <strong>{triggerLabel}{!loading && !selected && nativeCurrent?.variant ? ` · ${nativeCurrent.variant}` : ""}</strong>

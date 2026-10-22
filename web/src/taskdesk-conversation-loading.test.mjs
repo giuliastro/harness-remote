@@ -37,4 +37,18 @@ assert.match(freshSend, /OpenCode 2 is getting started/)
 const hydrated = render({ waiting: true, showWaitingIndicator: false })
 assert.doesNotMatch(hydrated, /uw-message-pending/)
 
+// Waiting for the model catalog: the composer is blocked, and it has to say so rather than look idle.
+const modelsLoading = render({ composerDisabled: true, composerBusyLabel: 'Loading models…', draft: 'hello' })
+assert.match(modelsLoading, /class="uw-composer-shell busy" aria-busy="true"/)
+assert.match(modelsLoading, /<div class="uw-composer-busy" id="uw-composer-busy" role="status" aria-live="polite">/)
+assert.match(modelsLoading, /<span>Loading models…<\/span>/)
+assert.match(modelsLoading, /<textarea[^>]*disabled=""[^>]*aria-disabled="true"[^>]*aria-describedby="uw-composer-busy"/)
+assert.doesNotMatch(modelsLoading, /id="uw-composer-hint"/, 'the busy row replaces the footer hint instead of repeating it')
+assert.match(modelsLoading, /<button type="button" class="uw-button uw-button-primary" disabled=""/)
+
+const modelsReady = render({ draft: 'hello' })
+assert.doesNotMatch(modelsReady, /uw-composer-busy|aria-busy|aria-disabled/)
+assert.match(modelsReady, /class="uw-composer-shell"/)
+assert.match(modelsReady, /<small id="uw-composer-hint">/)
+
 console.log('conversation history loading and reply indicator rendering passed')

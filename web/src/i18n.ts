@@ -558,6 +558,9 @@ type TranslationKey =
   | 'pair.qrLabel'
   | 'pair.qrUnavailable'
   | 'pair.address'
+  | 'composer.loadingModels'
+  | 'composer.waitingForModel'
+  | 'composer.modelUnavailable'
   | 'pair.expiresIn'
   | 'pair.expiredTitle'
   | 'pair.expiredBody'
@@ -1199,6 +1202,9 @@ const translations: Record<LanguageCode, Partial<Record<TranslationKey, string>>
     'pair.qrLabel': 'Machine pairing QR code',
     'pair.qrUnavailable': 'The pairing code could not be rendered. Regenerate it and try again.',
     'pair.address': 'Address',
+    'composer.loadingModels': 'Loading models…',
+    'composer.waitingForModel': 'Waiting for a verified model…',
+    'composer.modelUnavailable': 'Model catalog unavailable. Sending is paused.',
     'pair.expiresIn': 'Expires in {time}',
     'pair.expiredTitle': 'Pairing code expired',
     'pair.expiredBody': 'A pairing code stays valid for 5 minutes. Regenerate one to connect a phone.',
@@ -1840,6 +1846,9 @@ const translations: Record<LanguageCode, Partial<Record<TranslationKey, string>>
     'pair.qrLabel': 'Codice QR di abbinamento macchina',
     'pair.qrUnavailable': 'Impossibile mostrare il codice di abbinamento. Rigeneralo e riprova.',
     'pair.address': 'Indirizzo',
+    'composer.loadingModels': 'Caricamento modelli…',
+    'composer.waitingForModel': 'In attesa di un modello verificato…',
+    'composer.modelUnavailable': 'Catalogo dei modelli non disponibile. Invio in pausa.',
     'pair.expiresIn': 'Scade tra {time}',
     'pair.expiredTitle': 'Codice di abbinamento scaduto',
     'pair.expiredBody': 'Un codice di abbinamento resta valido per 5 minuti. Rigenerane uno per collegare un telefono.',
@@ -2481,6 +2490,9 @@ const translations: Record<LanguageCode, Partial<Record<TranslationKey, string>>
     'pair.qrLabel': '機器配對 QR 碼',
     'pair.qrUnavailable': '無法顯示配對碼。請重新產生後再試。',
     'pair.address': '位址',
+    'composer.loadingModels': '正在載入模型…',
+    'composer.waitingForModel': '正在等待已驗證的模型…',
+    'composer.modelUnavailable': '模型目錄無法使用，已暫停傳送。',
     'pair.expiresIn': '{time} 後到期',
     'pair.expiredTitle': '配對碼已過期',
     'pair.expiredBody': '配對碼有效期為 5 分鐘。請重新產生以連接手機。',
@@ -3122,6 +3134,9 @@ const translations: Record<LanguageCode, Partial<Record<TranslationKey, string>>
     'pair.qrLabel': '机器配对二维码',
     'pair.qrUnavailable': '无法显示配对码。请重新生成后再试。',
     'pair.address': '地址',
+    'composer.loadingModels': '正在加载模型…',
+    'composer.waitingForModel': '正在等待已验证的模型…',
+    'composer.modelUnavailable': '模型目录不可用，已暂停发送。',
     'pair.expiresIn': '{time} 后过期',
     'pair.expiredTitle': '配对码已过期',
     'pair.expiredBody': '配对码有效期为 5 分钟。请重新生成以连接手机。',
@@ -3763,6 +3778,9 @@ const translations: Record<LanguageCode, Partial<Record<TranslationKey, string>>
     'pair.qrLabel': 'QR code de pareamento da máquina',
     'pair.qrUnavailable': 'Não foi possível exibir o código de pareamento. Gere-o novamente e tente de novo.',
     'pair.address': 'Endereço',
+    'composer.loadingModels': 'Carregando modelos…',
+    'composer.waitingForModel': 'Aguardando um modelo verificado…',
+    'composer.modelUnavailable': 'Catálogo de modelos indisponível. O envio está pausado.',
     'pair.expiresIn': 'Expira em {time}',
     'pair.expiredTitle': 'Código de pareamento expirado',
     'pair.expiredBody': 'Um código de pareamento fica válido por 5 minutos. Gere um novo para conectar um celular.',

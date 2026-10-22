@@ -87,6 +87,10 @@
   font-size: 10px;
 }
 
+.hr-native-outcome-project {
+  display: none;
+}
+
 .hr-native-outcome-facts strong {
   color: inherit;
   font-weight: 650;
@@ -178,18 +182,32 @@
   box-shadow: var(--td3-shadow-panel, 0 16px 38px rgba(0, 0, 0, 0.2));
 }
 
-@media (max-width: 620px) {
-  .hr-native-outcome-toggle {
-    grid-template-columns: minmax(0, 1fr) auto;
+/* Its own row on a narrow window: one summary line that expands on demand, so the transcript keeps
+   the height. The project name moves into the expanded detail, and the detail scrolls inside a
+   bounded height instead of pushing the conversation off screen. */
+@media (max-width: 780px) {
+  .hr-native-outcome:not(.compact) {
+    margin: 6px 10px;
+    border-radius: 10px;
   }
 
-  .hr-native-outcome-summary {
-    grid-column: 1 / -1;
-    grid-row: 2;
+  .hr-native-outcome:not(.compact) .hr-native-outcome-toggle {
+    min-height: 34px;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    gap: 8px;
+    padding: 5px 10px;
   }
 
-  .hr-native-outcome-toggle::after {
-    grid-column: 2;
-    grid-row: 1;
+  .hr-native-outcome:not(.compact) .hr-native-outcome-title small {
+    display: none;
+  }
+
+  .hr-native-outcome:not(.compact) .hr-native-outcome-facts > .hr-native-outcome-project {
+    display: inline;
+  }
+
+  .hr-native-outcome:not(.compact) .hr-native-outcome-body {
+    max-height: min(320px, 40vh);
+    overflow: auto;
   }
 }

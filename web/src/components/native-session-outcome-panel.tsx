@@ -230,6 +230,8 @@ export function NativeSessionOutcomePanel({
           {outcome ? (
             <>
               <div className="hr-native-outcome-facts">
+                {/* The narrow row hides the project name to stay on one line; it is repeated here. */}
+                {projectName && !compact ? <span className="hr-native-outcome-project">Project <strong>{projectName}</strong></span> : null}
                 {outcome.branch ? <span>Branch <strong>{outcome.branch}</strong></span> : null}
                 {outcome.head ? <span>HEAD <strong>{outcome.head.slice(0, 8)}</strong></span> : null}
                 <span>Worktree <strong>{state}</strong></span>

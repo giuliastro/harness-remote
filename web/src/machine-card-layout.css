@@ -1,0 +1,115 @@
+/* Machine card structure: a header (name, ownership, connection state), label/value facts, the
+   project folders as their own section, and the actions. On a wide manager the actions stay to the
+   right of the details; on a narrow one they sit in a footer below them, so the first thing a card
+   shows is which machine it is rather than a row of buttons. */
+
+.uw-machine-card-header {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.uw-machine-card-header > strong {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.uw-machine-card-header > .uw-machine-connection-state {
+  margin-top: 2px;
+}
+
+.uw-machine-card-facts {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+  margin: 8px 0 0;
+}
+
+.uw-machine-card-facts > div {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(64px, max-content) minmax(0, 1fr);
+  align-items: baseline;
+  gap: 10px;
+}
+
+.uw-machine-card-facts dt {
+  color: var(--td3-muted);
+  font-size: 11px;
+  font-weight: 650;
+}
+
+.uw-machine-card-facts dd {
+  min-width: 0;
+  margin: 0;
+}
+
+.uw-machine-card-facts code {
+  color: var(--td3-text-2);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 780px) {
+  .uw-machine-manager .uw-machine-config-card {
+    grid-template-areas: "details" "actions" !important;
+    gap: 0 !important;
+    padding: 12px 13px !important;
+  }
+
+  .uw-machine-manager .uw-machine-config-main {
+    gap: 0 !important;
+  }
+
+  .uw-machine-manager .uw-machine-card-header > strong {
+    font-size: 15px !important;
+  }
+
+  .uw-machine-manager .uw-machine-card-header > small {
+    font-size: 11.5px !important;
+  }
+
+  .uw-machine-manager .uw-machine-config-main > .uw-machine-connection-error {
+    margin-top: 6px;
+    font-size: 11.5px !important;
+    white-space: normal !important;
+  }
+
+  .uw-machine-manager .uw-machine-config-card .uw-machine-folder-summary {
+    margin-top: 10px;
+    padding-top: 10px;
+    border-top: 1px solid var(--td3-border);
+  }
+
+  .uw-machine-manager .uw-machine-config-card .uw-machine-folder-summary small {
+    color: var(--td3-muted);
+    font-size: 11.5px;
+  }
+
+  .uw-machine-manager .uw-machine-config-card .uw-machine-harness-list {
+    margin-top: 10px !important;
+  }
+
+  .uw-machine-manager .uw-machine-config-actions {
+    display: flex !important;
+    flex-wrap: wrap !important;
+    gap: 8px !important;
+    margin-top: 12px;
+    padding-top: 10px;
+    border-top: 1px solid var(--td3-border);
+  }
+
+  .uw-machine-manager .uw-machine-config-actions .uw-manager-button {
+    flex: 1 1 auto;
+    width: auto !important;
+    min-width: max-content !important;
+    min-height: 38px !important;
+    font-size: 12px !important;
+  }
+
+  .uw-machine-manager .uw-machine-config-actions .uw-machine-confirm {
+    flex: 1 1 100%;
+  }
+}

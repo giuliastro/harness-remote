@@ -403,6 +403,40 @@
   border-color: var(--td3-blue-border);
 }
 
+/* Waiting for something before a prompt can be written (the model catalog, say). A disabled field
+   on its own looked exactly like an idle one, so the wait is named above the field and the field
+   itself reads as inactive until it is ready. */
+.uw-composer-shell.busy {
+  cursor: progress;
+  border-style: dashed;
+}
+
+.uw-composer-busy {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 8px 13px 0;
+  color: var(--td3-blue-text);
+  font-size: 12.5px;
+  font-weight: 650;
+}
+
+.uw-composer-busy > svg {
+  flex: none;
+  animation: bui-spin .9s linear infinite;
+}
+
+.uw-composer-shell.busy textarea:disabled {
+  cursor: progress;
+  opacity: .55;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .uw-composer-busy > svg {
+    animation: none;
+  }
+}
+
 .tdw-work-thread-conversation .uw-composer-footer {
   min-height: 44px;
   padding: 6px 9px 9px 13px;

@@ -33,6 +33,7 @@ import { ModelPicker, modelOptionKey } from "./model-picker"
 import { TaskDeskConversation } from "./taskdesk-conversation"
 import { TaskDeskMessageContent } from "./taskdesk-message-content"
 import { WorkThreadAttention } from "./work-thread-attention"
+import { useTranslator } from "../useTranslator"
 
 const INITIAL_PAGE_SIZE = 200
 const OLDER_PAGE_SIZE = 500
@@ -384,6 +385,7 @@ export function WorkThreadConversation({
   const [targetMachineID, setTargetMachineID] = useState(routing?.currentMachineID || "")
   const [models, setModels] = useState<ModelOption[]>([])
   const [modelsLoading, setModelsLoading] = useState(false)
+  const t = useTranslator()
   const [targetModelKey, setTargetModelKey] = useState(initialModelKey)
   // The catalog effect must depend on the scope's value, not a caller's object identity: a fresh
   // object per render would restart model discovery on every render.
@@ -941,6 +943,14 @@ export function WorkThreadConversation({
   // finished loading: a brand-new Codex/PI Session has no safe implicit model at that point.
   const modelCatalogReady = !modelSelectionRequired || (!modelsLoading && models.length > 0)
   const modelBootstrapBlocked = modelSelectionRequired && !modelCatalogReady
+  // Sending waits for a verified model; the composer names that wait instead of only going inert.
+  const modelWaitLabel = !modelBootstrapBlocked
+    ? undefined
+    : modelsLoading
+      ? t("composer.loadingModels")
+      : modelError
+        ? t("composer.modelUnavailable")
+        : t("composer.waitingForModel")
 
   async function loadOlder() {
     if (loadingOlder || !interactionEnabled) return
@@ -1185,9 +1195,7 @@ ${current}` : text) : current)
     : freshSend
       ? `${pendingAgentLabel} is getting started`
       : `${currentLabel} is working`
-  const conversationStateLabel = modelBootstrapBlocked
-    ? modelsLoading ? "Loading models" : modelError ? "Model catalog unavailable" : "Waiting for model catalog"
-    : waitingLabel
+  const conversationStateLabel = modelWaitLabel ?? waitingLabel
 
   /**
    * Exactly one row, on exactly one bubble.
@@ -1229,7 +1237,7 @@ ${current}` : text) : current)
             <ModelPicker compact models={models} value={targetModelKey} currentModel={currentModelForPicker} onChange={(value) => {
               modelSelectionTouchedRef.current = true
               setTargetModelKey(value)
-            }} disabled={!interactionEnabled || working || replyPending || sending || modelsLoading || !targetAgentID} loading={modelsLoading} placeholder={modelBootstrapBlocked ? (modelError ? "Model unavailable" : "Loading models…") : deferModelFallback ? "Harness default" : undefined} unavailableHint={modelError || undefined} />
+            }} disabled={!interactionEnabled || working || replyPending || sending || modelsLoading || !targetAgentID} loading={modelsLoading} placeholder={modelBootstrapBlocked ? (modelError ? "Model unavailable" : t("composer.loadingModels")) : deferModelFallback ? "Harness default" : undefined} unavailableHint={modelError || undefined} />
             {modelError ? <small className="tdw-field-note" title={modelError}>Model catalog unavailable. Sending is paused until a model can be verified.</small> : null}
           </label>
         </div>
@@ -1289,6 +1297,7 @@ ${current}` : text) : current)
         canSendWhileWaiting={midTurnSendAllowed && !routeChanged}
         sendDisabled={!interactionEnabled || hasAttention || routeBlockedByAttachments || modelBootstrapBlocked}
         composerDisabled={!interactionEnabled || modelBootstrapBlocked}
+        composerBusyLabel={interactionEnabled ? modelWaitLabel : undefined}
         onStop={working && interactionEnabled ? stop : undefined}
         stopping={stopping}
         placeholder={`Message ${agentLabel(destinationAgents, targetAgentID)}…`}
@@ -1299,7 +1308,7 @@ ${current}` : text) : current)
         footerHint={hasAttention
           ? "Your input is required before the agent can continue"
           : modelBootstrapBlocked
-            ? modelsLoading ? "Loading available models…" : "A verified model is required before sending"
+            ? modelWaitLabel
             : working
               ? midTurnPromptPolicy(attachmentAgent) === "steer"
                 ? "New messages are delivered live into the running task"

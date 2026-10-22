@@ -52,6 +52,11 @@ type Props = {
   sendDisabled?: boolean
   /** Disable editing as well as Send while the owning Session is not safely writable yet. */
   composerDisabled?: boolean
+  /**
+   * Why the composer is waiting, shown as a status row above the field (for example while the model
+   * catalog loads). A disabled field alone looks the same as an idle one, so the wait has to be named.
+   */
+  composerBusyLabel?: string
   onStop?: () => Promise<void> | void
   stopping?: boolean
   workingLabel?: string
@@ -473,6 +478,7 @@ export function TaskDeskConversation({
   sending = false,
   sendDisabled = false,
   composerDisabled = false,
+  composerBusyLabel,
   onStop,
   stopping = false,
   workingLabel,
@@ -513,6 +519,7 @@ export function TaskDeskConversation({
   )
   // A phone has no Ctrl or Cmd key, so telling a touch user to press Ctrl/Cmd+Enter named the one
   // way to send that they do not have. Enter inserts a newline there; the Send button is the action.
+  const composerBusy = Boolean(composerBusyLabel)
   const hint = footerHint ?? (touchFirst ? "Enter adds a line. Tap Send to send." : "Enter to send · Shift+Enter for a newline")
 
   useEffect(() => {
@@ -589,7 +596,7 @@ export function TaskDeskConversation({
         renderMessage={renderMessage}
       />
 
-      <div className="uw-composer-shell">
+      <div className={`uw-composer-shell${composerBusy ? " busy" : ""}`} aria-busy={composerBusy || undefined}>
         {queuedPrompts.length ? (
           <div className="uw-queued-prompts" aria-label="Prompts waiting behind the running turn">
             {queuedPrompts.map((entry) => (
@@ -655,6 +662,12 @@ export function TaskDeskConversation({
             ))}
           </div>
         ) : null}
+        {composerBusy ? (
+          <div className="uw-composer-busy" id="uw-composer-busy" role="status" aria-live="polite">
+            <LoadingIcon size={14} />
+            <span>{composerBusyLabel}</span>
+          </div>
+        ) : null}
         <textarea
           ref={composerRef}
           value={draft}
@@ -664,8 +677,9 @@ export function TaskDeskConversation({
           rows={3}
           enterKeyHint={touchFirst ? "enter" : "send"}
           disabled={!ready || composerDisabled}
+          aria-disabled={!ready || composerDisabled || undefined}
           aria-label={`Message ${agentLabel}`}
-          aria-describedby="uw-composer-hint"
+          aria-describedby={composerBusy ? "uw-composer-busy" : "uw-composer-hint"}
         />
         <div className="uw-composer-footer">
           <span className="uw-composer-directory">{directory || ""}</span>
@@ -703,7 +717,8 @@ export function TaskDeskConversation({
                 </button>
               </>
             ) : null}
-            <small id="uw-composer-hint">{hint}</small>
+            {/* While the composer is busy its status row above the field already says why. */}
+            {composerBusy ? null : <small id="uw-composer-hint">{hint}</small>}
             {waiting && onStop && midTurnSend && draft.trim() ? (
               // Stop alone left no way to deliver the message typed while the agent works - and no
               // way at all on a phone, where Enter only adds a line.

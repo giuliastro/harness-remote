@@ -6,7 +6,8 @@ const conversation = readFileSync(new URL("./components/taskdesk-conversation.ts
 
 test("the composer is named for assistive technology", () => {
   assert.match(conversation, /aria-label=\{`Message \$\{agentLabel\}`\}/)
-  assert.match(conversation, /aria-describedby="uw-composer-hint"/)
+  // While the composer is busy (models loading) it is described by the status row that says why.
+  assert.match(conversation, /aria-describedby=\{composerBusy \? "uw-composer-busy" : "uw-composer-hint"\}/)
   assert.match(conversation, /<small id="uw-composer-hint">\{hint\}<\/small>/)
 })
 

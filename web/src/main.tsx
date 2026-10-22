@@ -45,12 +45,15 @@ import "./conversation-base.css"
 import "./session-first-centering-fix.css"
 import "./session-handoff-routing.css"
 import "./machine-pairing.css"
+import "./machine-card-layout.css"
 // Loaded last: the ported controls refine rules the sheets above already set, and settling those
 // ties by load order is what keeps the port free of `!important`.
 import "./beautiful-ui-controls.css"
 // A turn's Activity section. It styles only its own `hr-act*` classes, so its place here is about
 // reading order rather than winning ties.
 import "./activity-timeline.css"
+// The narrow Session header refines phone rules from several sheets above, so it settles last.
+import "./session-header-narrow.css"
 
 installAppPreferences()
 installCompletionAudioGuard()
