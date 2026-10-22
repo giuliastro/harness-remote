@@ -34,6 +34,12 @@ const LABELS: Record<LanguageCode, Labels> = {
     failed: "失败",
     completed: "已完成",
     recent: "最近"
+  },
+  "pt-BR": {
+    moreStates: "Mais estados",
+    failed: "Com falha",
+    completed: "Concluídas",
+    recent: "Recentes"
   }
 }
 

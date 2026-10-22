@@ -22,8 +22,8 @@ test("ACP capability contract preserves runtime-specific model controls without 
   assert.ok(omp.models.variantConfigIDs.includes("thinking"))
   assert.ok(pi.models.variantConfigIDs.some((id) => ["thinkingLevel", "thinking_level", "thinking"].includes(id)))
   assert.ok(codex.models.variantConfigIDs.some((id) => ["reasoning_effort", "reasoningEffort"].includes(id)))
-  assert.deepEqual(claude.models.variantConfigIDs, [])
-  assert.equal(claude.models.variants, "runtime-advertised-only")
+  assert.deepEqual(claude.models.variantConfigIDs, ["effort"])
+  assert.equal(claude.models.variants, "runtime-advertised-config-options")
 })
 
 test("Session-first contract separates discovery, transcript reads and writer acquisition per ACP harness", () => {

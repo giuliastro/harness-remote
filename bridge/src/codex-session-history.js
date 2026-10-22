@@ -3,6 +3,7 @@ import { open, readdir } from "node:fs/promises"
 import { homedir } from "node:os"
 import path from "node:path"
 import { scanLinesBackward } from "./backward-line-scan.js"
+import { stripAmbientContext } from "./ambient-context.js"
 
 const MODEL_CONTEXT_LOOKBACK_BYTES = 4 * 1024 * 1024
 
@@ -44,9 +45,10 @@ function messageFromRecord(sessionID, record, offset) {
   if (!role) return undefined
 
   const type = payload.type === "agent_reasoning" || completedItem?.type === "Reasoning" ? "reasoning" : "text"
-  const text = completedItem ? textFromCompletedItem(completedItem)
+  const raw = completedItem ? textFromCompletedItem(completedItem)
     : payload.type === "agent_reasoning" ? payload.text
       : payload.message
+  const text = role === "user" ? stripAmbientContext(raw) : raw
   if (typeof text !== "string" || !text) return undefined
 
   // Rollouts are append-only. A byte offset is therefore both unique inside the file and stable as

@@ -1731,6 +1731,39 @@ test("drops an injected user chunk while keeping the surrounding conversation", 
   assert.deepEqual(texts, ["a real question", "and a follow-up"], "the injected block must not become a user message")
 })
 
+test("shows only the request of a replayed Codex desktop message wrapped in ambient UI context", async () => {
+  class ChatAcp extends EventEmitter {
+    agentInfo = { version: "1.13.1" }
+    async start() {}
+    async listSessions() {
+      return [{ sessionId: "session-1", cwd: process.cwd(), updatedAt: "2026-10-21T00:00:00.000Z" }]
+    }
+    async request() {
+      return {}
+    }
+    notify() {}
+  }
+
+  const acp = new ChatAcp()
+  const service = new AcpService(acp)
+  await service.listSessions()
+  const send = (messageId, text) => acp.emit("notification", {
+    method: "session/update",
+    params: {
+      sessionId: "session-1",
+      update: { sessionUpdate: "user_message_chunk", messageId, content: { type: "text", text } }
+    }
+  })
+
+  send("u1", '\n<in-app-browser-context source="ambient-ui-state">\nURL\n</in-app-browser-context>\n\n## My request:\nrispondimi "ok"\n')
+  send("u2", "## My request: stays as typed")
+
+  const texts = (await service.messages("session-1")).map((message) =>
+    message.parts.filter((part) => part.type === "text").map((part) => part.text).join("")
+  )
+  assert.deepEqual(texts, ['rispondimi "ok"', "## My request: stays as typed"])
+})
+
 // Claude Code's adapter names models with bare ids rather than `provider/model`. The response
 // builder split on "/" and required both halves, so every option was dropped and the backend looked
 // like it exposed no models — the reason its profile carried `models: false`. Both directions are

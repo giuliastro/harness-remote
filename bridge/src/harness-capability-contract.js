@@ -14,8 +14,11 @@ function uniqueStrings(values = []) {
  * ownership of the Session.
  */
 function acpSessionContract(profile) {
-  if (profile?.sessionContract) return { ...profile.sessionContract }
+  // `liveStatus` names the evidence behind a Session's busy/idle status when this bridge is not the
+  // one driving it. Without a declared source only turns the bridge itself runs can read busy.
+  if (profile?.sessionContract) return { liveStatus: "bridge-owned-only", ...profile.sessionContract }
   return {
+    liveStatus: "bridge-owned-only",
     authority: "native-harness",
     discovery: "native-list",
     transcript: profile?.historyLoader ? "native-journal" : "session-load",
