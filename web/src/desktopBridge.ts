@@ -8,13 +8,21 @@ import type {
   DesktopLocalRuntimeState,
   DesktopMenuCommand,
   DesktopMenuTemplate,
+  DesktopNetworkSettingsState,
+  DesktopNetworkSettingsUpdate,
   DesktopProfile,
   DesktopProfileSyncResult,
+  DesktopProjectFolderChoice,
+  DesktopProjectRootsState,
+  DesktopProjectRootsUpdate,
   DesktopRequest,
   DesktopRequestResult,
   DesktopResponse
 } from "../electron/ipc-contract"
+import { loadLanguage } from "./appPreferences"
+import { createTranslator } from "./i18n"
 import { normalizeServerConfig } from "./serverConfig"
+import { MachineHttpError } from "./machine-request-error"
 import type { ServerConfig } from "./types"
 
 export type DesktopPlatform = { isDesktop: true; os: string; usesNativeMenu?: boolean }
@@ -24,6 +32,12 @@ export type DesktopBridgeAPI = {
   request(profileId: string, request: DesktopRequest): Promise<DesktopRequestResult>
   getLocalRuntimeState(): Promise<DesktopLocalRuntimeState>
   retryLocalRuntime(): Promise<DesktopLocalRuntimeState>
+  probeMachineConfiguration(profile: DesktopProfile, path: "/v1/machine" | "/v1/projects", language?: string): Promise<DesktopRequestResult>
+  getProjectRoots(): Promise<DesktopProjectRootsState>
+  chooseProjectFolder(language?: string): Promise<DesktopProjectFolderChoice>
+  setProjectRoots(roots: string[], language?: string): Promise<DesktopProjectRootsUpdate>
+  getNetworkSettings(): Promise<DesktopNetworkSettingsState>
+  setNetworkSettings(lanPairing: boolean, language?: string): Promise<DesktopNetworkSettingsUpdate>
   subscribeEvents(
     profileId: string,
     options: DesktopEventSubscriptionOptions,
@@ -201,6 +215,53 @@ export async function retryDesktopLocalRuntime(): Promise<DesktopLocalRuntimeSta
   return rememberLocalRuntimeState(await api.retryLocalRuntime())
 }
 
+export async function desktopConfigurationProbe(config: ServerConfig, path: "/v1/machine" | "/v1/projects"): Promise<DesktopRequestResult> {
+  const api = bridge()
+  if (!api) return { ok: false, error: { code: "connection", message: createTranslator(loadLanguage())("machine.connectionCheckFailed") } }
+  const connection = normalizeServerConfig({ ...config, backend: "opencode", agentId: undefined })
+  if (!connection) return { ok: false, error: { code: "invalid-profile", message: createTranslator(loadLanguage())("machine.connectionInvalid") } }
+  return api.probeMachineConfiguration({ ...connection, id: "desktop-configuration-probe", backend: "opencode" }, path, loadLanguage())
+}
+
+export async function desktopProjectRoots(): Promise<DesktopProjectRootsState | null> {
+  return bridge()?.getProjectRoots() ?? null
+}
+
+export async function chooseDesktopProjectFolder(): Promise<string | null> {
+  const api = bridge()
+  if (!api) return null
+  const t = createTranslator(loadLanguage())
+  let result: DesktopProjectFolderChoice
+  try { result = await api.chooseProjectFolder(loadLanguage()) }
+  catch { throw new Error(t("machine.folderPickerError")) }
+  if (result.error) throw new Error(result.error)
+  return result.path
+}
+
+export async function setDesktopProjectRoots(roots: string[]): Promise<DesktopProjectRootsUpdate | null> {
+  const api = bridge()
+  if (!api) return null
+  let result: DesktopProjectRootsUpdate
+  try { result = await api.setProjectRoots(roots, loadLanguage()) }
+  catch { throw new Error(createTranslator(loadLanguage())("settings.projectFoldersError")) }
+  if (result.error) throw new Error(result.error)
+  return result
+}
+
+export async function desktopNetworkSettings(): Promise<DesktopNetworkSettingsState | null> {
+  return bridge()?.getNetworkSettings() ?? null
+}
+
+export async function setDesktopNetworkSettings(lanPairing: boolean): Promise<DesktopNetworkSettingsUpdate | null> {
+  const api = bridge()
+  if (!api) return null
+  let result: DesktopNetworkSettingsUpdate
+  try { result = await api.setNetworkSettings(lanPairing, loadLanguage()) }
+  catch { throw new Error(createTranslator(loadLanguage())("machine.networkPairingError")) }
+  if (result.error) throw new Error(result.error)
+  return result
+}
+
 function desktopMachineIdentity(config: ServerConfig): string | null {
   const normalized = normalizeServerConfig({ ...config, backend: "opencode", agentId: undefined })
   if (!normalized) return null
@@ -275,7 +336,10 @@ export async function desktopRequestResult(config: ServerConfig, request: Deskto
 
 export async function desktopRequest(config: ServerConfig, request: DesktopRequest): Promise<DesktopResponse> {
   const result = await desktopRequestResult(config, request)
-  if (!result.ok) throw new Error(result.error.message)
+  if (!result.ok) {
+    if (result.error.code === "http") throw new MachineHttpError(result.error.message, result.error.status)
+    throw new Error(result.error.message)
+  }
   return result.response
 }
 

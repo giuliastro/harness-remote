@@ -1,6 +1,6 @@
 import assert from "node:assert/strict"
 import test from "node:test"
-import { activityLabel, groupConversationParts } from "./conversation-parts.ts"
+import { groupConversationParts } from "./conversation-parts.ts"
 
 function part(id, type, extra = {}) {
   return { id, type, ...extra }
@@ -19,7 +19,6 @@ test("technical activity absorbs pre-final assistant narration without changing 
   assert.deepEqual(groups.map((group) => group.kind), ["activity", "content"])
   assert.deepEqual(groups.flatMap((group) => group.parts.map((item) => item.id)), parts.map((item) => item.id))
   assert.equal(groups[0].status, "completed")
-  assert.equal(activityLabel(groups[0]), "Activity · 2 tools · reasoning · working notes")
   assert.deepEqual(groups[1].parts.map((item) => item.id), ["text-2"])
 })
 
@@ -34,7 +33,6 @@ test("assistant narration between technical parts stays inside Activity", () => 
   const groups = groupConversationParts(parts)
   assert.deepEqual(groups.map((group) => group.kind), ["activity", "content"])
   assert.deepEqual(groups[0].parts.map((item) => item.id), ["reasoning-1", "note", "tool"])
-  assert.equal(activityLabel(groups[0]), "Activity · 1 tool · reasoning · working notes")
   assert.deepEqual(groups[1].parts.map((item) => item.id), ["final"])
 })
 

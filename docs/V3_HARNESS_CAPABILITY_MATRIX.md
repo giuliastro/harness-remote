@@ -17,7 +17,8 @@ Harness Remote must not flatten harness-specific capabilities into a fake univer
 
 | Harness | Protocol / control | Live events | Tool representation | Model source | Catalog scope | Model controls | Session authority |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| OpenCode | HTTP JSON | daemon-owned SSE fanout | OpenCode message parts | runtime `/provider` or `/api/provider`; `/config/providers` compatibility fallback | machine | provider-advertised variants | OpenCode |
+| OpenCode Legacy (v1) | HTTP JSON | daemon-owned SSE fanout | OpenCode message parts | runtime `/provider` or `/api/provider`; `/config/providers` compatibility fallback | machine | provider-advertised variants | OpenCode v1 |
+| OpenCode 2 | ACP over stdio JSON-RPC | ACP Session updates | ACP Session updates | technical ACP Session `configOptions` | machine | `effort` only when advertised for the selected model | OpenCode 2 |
 | OMP | ACP over stdio JSON-RPC | ACP Session updates | ACP Session updates | fresh prompt-less technical ACP Session `configOptions` | machine | `thinking` only when advertised | OMP |
 | PI | ACP over stdio JSON-RPC | ACP Session updates | ACP Session updates | fresh prompt-less technical `pi-acp` Session `configOptions` | machine | `thinkingLevel`, compatible runtime aliases only when advertised | PI |
 | Codex | ACP over stdio JSON-RPC | ACP Session updates | ACP Session updates | fresh prompt-less technical ACP Session `configOptions` | machine | `reasoning_effort` only when advertised | Codex |

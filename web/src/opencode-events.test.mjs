@@ -224,6 +224,7 @@ const visibilityTarget = new EventTarget()
 const networkTarget = new EventTarget()
 let visible = true
 let wakeConnects = 0
+const wakeSignals = []
 const wakeSubscription = createFetchOpenCodeEventSubscription({
   url: 'http://127.0.0.1:4097/global/event',
   stallTimeoutMs: 60_000,
@@ -234,6 +235,7 @@ const wakeSubscription = createFetchOpenCodeEventSubscription({
   },
   fetchFn: async (_url, init = {}) => {
     wakeConnects += 1
+    wakeSignals.push(init.signal)
     const body = new ReadableStream({
       start(controller) {
         init.signal?.addEventListener('abort', () => controller.error(Object.assign(new Error('aborted'), { name: 'AbortError' })), { once: true })
@@ -254,10 +256,14 @@ visible = false
 visibilityTarget.dispatchEvent(new Event('visibilitychange'))
 await new Promise((resolve) => setTimeout(resolve, 0))
 assert.equal(wakeConnects, 1, 'backgrounding must not open a replacement stream')
+assert.equal(wakeSignals[0].aborted, true, 'backgrounding must abort the active request immediately')
 visible = true
 visibilityTarget.dispatchEvent(new Event('visibilitychange'))
 await new Promise((resolve) => setTimeout(resolve, 0))
 assert.equal(wakeConnects, 2, 'foregrounding after a real hidden state must replace the pre-sleep stream')
+visibilityTarget.dispatchEvent(new Event('visibilitychange'))
+await new Promise((resolve) => setTimeout(resolve, 0))
+assert.equal(wakeConnects, 2, 'repeated visible events must not create duplicate streams')
 const persistedPageShow = new Event('pageshow')
 Object.defineProperty(persistedPageShow, 'persisted', { value: true })
 networkTarget.dispatchEvent(persistedPageShow)
@@ -270,5 +276,106 @@ wakeSubscription.close()
 networkTarget.dispatchEvent(new Event('pageshow'))
 await new Promise((resolve) => setTimeout(resolve, 0))
 assert.equal(wakeConnects, 4, 'closed subscriptions must detach lifecycle listeners')
+
+// A hidden document does not start a socket. Network and page lifecycle events stay inert while
+// hidden, and a response from an aborted request is cancelled without publishing stale state.
+const hiddenVisibilityTarget = new EventTarget()
+const hiddenNetworkTarget = new EventTarget()
+let hiddenVisible = false
+let resolveLateFetch
+let hiddenConnects = 0
+let lateSignal
+let cancelledLateBody = false
+const hiddenStatuses = []
+const hiddenEvents = []
+const hiddenSubscription = createFetchOpenCodeEventSubscription({
+  url: 'http://127.0.0.1:4097/global/event',
+  lifecycle: {
+    visibilityTarget: hiddenVisibilityTarget,
+    networkTarget: hiddenNetworkTarget,
+    isVisible: () => hiddenVisible
+  },
+  fetchFn: async (_url, init) => {
+    hiddenConnects += 1
+    lateSignal = init.signal
+    if (hiddenConnects === 1) return await new Promise((resolve) => { resolveLateFetch = resolve })
+    return new Response(new ReadableStream({ start(controller) { controller.close() } }), {
+      headers: { 'content-type': 'text/event-stream' }
+    })
+  },
+  onEvent(event) { hiddenEvents.push(event) },
+  onStatus(status) { hiddenStatuses.push(status) },
+  logger() {}
+})
+await new Promise((resolve) => setTimeout(resolve, 0))
+assert.equal(hiddenConnects, 0, 'hidden initial documents must not fetch')
+hiddenNetworkTarget.dispatchEvent(new Event('online'))
+hiddenNetworkTarget.dispatchEvent(new Event('pageshow'))
+await new Promise((resolve) => setTimeout(resolve, 0))
+assert.equal(hiddenConnects, 0, 'hidden online and pageshow events must not fetch')
+hiddenVisible = true
+hiddenVisibilityTarget.dispatchEvent(new Event('visibilitychange'))
+await new Promise((resolve) => setTimeout(resolve, 0))
+assert.equal(hiddenConnects, 1, 'becoming visible must start one subscription')
+// The in-flight fetch deliberately ignores its aborted signal, like some fetch wrappers can.
+// Visibility suspension must still make its eventual response stale.
+hiddenVisible = false
+hiddenVisibilityTarget.dispatchEvent(new Event('visibilitychange'))
+assert.equal(lateSignal.aborted, true, 'hiding must abort the pending fetch immediately')
+const lateBody = new ReadableStream({
+  start(controller) { controller.enqueue(encoder.encode(`data: ${globalSessionCreated}\n\n`)) },
+  cancel() { cancelledLateBody = true }
+})
+resolveLateFetch(new Response(lateBody, { headers: { 'content-type': 'text/event-stream' } }))
+await new Promise((resolve) => setTimeout(resolve, 0))
+assert.equal(cancelledLateBody, true, 'late response body must be cancelled')
+assert.equal(hiddenStatuses.some((status) => status.type === 'connected'), false, 'late response must not publish connected')
+assert.equal(hiddenEvents.length, 0, 'late response must not publish events')
+hiddenNetworkTarget.dispatchEvent(new Event('online'))
+hiddenNetworkTarget.dispatchEvent(new Event('pageshow'))
+await new Promise((resolve) => setTimeout(resolve, 20))
+assert.equal(hiddenConnects, 1, 'hidden network events must not reconnect after suspension')
+hiddenVisible = true
+hiddenVisibilityTarget.dispatchEvent(new Event('visibilitychange'))
+await new Promise((resolve) => setTimeout(resolve, 10))
+assert.equal(hiddenConnects, 2, 'visible transition must resume a suspended subscription once')
+hiddenSubscription.close()
+
+// A retry queued before backgrounding is cancelled and cannot fire on its old delay. Hide as soon
+// as the retry is queued: Windows timer granularity can stretch an extra 0ms hop past the 15ms
+// retry delay, which would let the retry fire while still visible and prove nothing about the
+// cancellation this scenario is actually testing.
+const retryVisibilityTarget = new EventTarget()
+const retryNetworkTarget = new EventTarget()
+let retryVisible = true
+let retryConnects = 0
+let retryQueued
+const retryQueuedPromise = new Promise((resolve) => { retryQueued = resolve })
+const retrySubscription = createFetchOpenCodeEventSubscription({
+  url: 'http://127.0.0.1:4097/global/event',
+  reconnect: { initialDelayMs: 15, maxDelayMs: 15 },
+  lifecycle: {
+    visibilityTarget: retryVisibilityTarget,
+    networkTarget: retryNetworkTarget,
+    isVisible: () => retryVisible
+  },
+  fetchFn: async () => {
+    retryConnects += 1
+    return new Response(new ReadableStream({ start(controller) { controller.close() } }), {
+      headers: { 'content-type': 'text/event-stream' }
+    })
+  },
+  onEvent() {},
+  onStatus(status) { if (status.type === 'reconnecting') retryQueued() },
+  logger() {}
+})
+await retryQueuedPromise
+assert.equal(retryConnects, 1)
+retryVisible = false
+retryVisibilityTarget.dispatchEvent(new Event('visibilitychange'))
+retryNetworkTarget.dispatchEvent(new Event('online'))
+await new Promise((resolve) => setTimeout(resolve, 30))
+assert.equal(retryConnects, 1, 'cancelled hidden retry must not reconnect later')
+retrySubscription.close()
 
 console.log('OpenCode event subscription tests passed')

@@ -37,6 +37,23 @@ class FakeAcp extends EventEmitter {
   notify() {}
 }
 
+class PagedFakeAcp extends FakeAcp {
+  async listSessions() {
+    return [
+      { sessionId: "page-one-a", title: "First", cwd: process.cwd(), updatedAt: "2026-08-28T06:00:00.000Z" },
+      { sessionId: "page-one-b", title: "Second", cwd: process.cwd(), updatedAt: "2026-08-28T06:01:00.000Z" },
+      { sessionId: "page-two-target", title: "Original title", cwd: process.cwd(), updatedAt: "2026-08-28T06:02:00.000Z" }
+    ]
+  }
+
+  async listSessionPage(cursor) {
+    const sessions = await this.listSessions()
+    return cursor
+      ? { sessions: [sessions[2]] }
+      : { sessions: sessions.slice(0, 2), nextCursor: "older" }
+  }
+}
+
 function listen(server) {
   return new Promise((resolve) => {
     server.listen(0, "127.0.0.1", () => {
@@ -160,6 +177,59 @@ test("legacy deleted snapshot is migrated into the persistent Session-first dele
     const restored = await restoredResponse.json()
     assert.deepEqual(restored.map((session) => session.id), ["session-to-keep"])
     assert.deepEqual(secondAcp.requests, [])
+  } finally {
+    await close(secondServer)
+    await rm(stateDirectory, { recursive: true, force: true })
+  }
+})
+
+test("bridge-local ACP rename persists in the native page across restart without promoting the session to page one", async () => {
+  const stateDirectory = await mkdtemp(path.join(tmpdir(), "harness-remote-title-"))
+  const serviceOptions = { snapshotDirectory: path.join(stateDirectory, "acp") }
+  const acpConfig = { ...config, backend: "mimo" }
+  const firstServer = createBridgeServer({ config: acpConfig, acp: new PagedFakeAcp(), serviceOptions })
+  const firstBase = await listen(firstServer)
+
+  try {
+    const renamed = await fetch(`${firstBase}/session/page-two-target`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ title: "Persistent local name" })
+    })
+    assert.equal(renamed.status, 200)
+    assert.equal((await renamed.json()).title, "Persistent local name")
+
+    const firstPage = await fetch(`${firstBase}/experimental/session`)
+    assert.deepEqual((await firstPage.json()).map((session) => session.id), ["page-one-a", "page-one-b"])
+    assert.equal(firstPage.headers.get("x-next-cursor"), "older")
+
+    const secondPage = await fetch(`${firstBase}/experimental/session?cursor=older`)
+    const renamedPage = await secondPage.json()
+    assert.equal(renamedPage.length, 1)
+    assert.equal(renamedPage[0].id, "page-two-target")
+    assert.equal(renamedPage[0].title, "Persistent local name")
+  } finally {
+    await close(firstServer)
+  }
+
+  // A crash can leave an older transcript snapshot after the small title index was committed.
+  const snapshotID = Buffer.from("page-two-target").toString("base64url")
+  await writeFile(path.join(serviceOptions.snapshotDirectory, `${snapshotID}.json`), JSON.stringify({
+    version: 1, messages: [], title: "Stale snapshot title"
+  }))
+
+  const secondServer = createBridgeServer({ config: acpConfig, acp: new PagedFakeAcp(), serviceOptions })
+  const secondBase = await listen(secondServer)
+  try {
+    const firstPage = await fetch(`${secondBase}/experimental/session`)
+    assert.deepEqual((await firstPage.json()).map((session) => session.id), ["page-one-a", "page-one-b"])
+    const secondPage = await fetch(`${secondBase}/experimental/session?cursor=older`)
+    const restored = await secondPage.json()
+    assert.equal(restored.length, 1)
+    assert.equal(restored[0].id, "page-two-target")
+    assert.equal(restored[0].title, "Persistent local name")
+    const detail = await fetch(`${secondBase}/session`)
+    assert.equal((await detail.json()).find((session) => session.id === "page-two-target").title, "Persistent local name")
   } finally {
     await close(secondServer)
     await rm(stateDirectory, { recursive: true, force: true })

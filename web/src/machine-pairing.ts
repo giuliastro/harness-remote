@@ -9,6 +9,30 @@ export type MachinePairingActivation = {
   expiresAt: number
 }
 
+/** One scan-ready candidate address of the granting daemon. */
+export type MachinePairingGrantLink = {
+  endpoint: string
+  uri: string
+}
+
+/**
+ * The daemon's answer to an authenticated grant request: the one-time URIs a QR can be rendered
+ * from, when they stop working, and whether this daemon can be reached from another device at all.
+ * It never contains credentials; those still only travel through the claim response.
+ */
+export type MachinePairingGrant = {
+  expiresAt: number
+  loopbackOnly: boolean
+  links: MachinePairingGrantLink[]
+}
+
+/** Whether the outstanding grant is still pending, has been claimed, or has expired unclaimed. */
+export type MachinePairingGrantStatus = {
+  expiresAt: number
+  claimed: boolean
+  expired: boolean
+}
+
 type PairingClaimResponse = {
   version: 1
   machine: { id: string; name: string }
@@ -181,6 +205,36 @@ export async function claimMachinePairing(
   const payload = claimPayload(body)
   if (!payload) throw new Error("The machine returned an invalid pairing response.")
   return workspaceMachine(activation.endpoint, payload)
+}
+
+function machinePairingGrantLink(value: unknown): MachinePairingGrantLink | null {
+  const link = bodyObject(value)
+  const endpoint = typeof link?.endpoint === "string" ? normalizedPairingEndpoint(link.endpoint) : null
+  const uri = cleanText(link?.uri, 4_096)
+  if (!endpoint || !uri) return null
+  // The URI is the authority; the endpoint exists so the picker can label it. A link whose parts
+  // disagree would render a QR for a different address than the one the user selected.
+  const activation = parseMachinePairingActivation(uri)
+  if (!activation || activation.endpoint !== endpoint) return null
+  return { endpoint, uri }
+}
+
+export function parseMachinePairingGrant(value: unknown): MachinePairingGrant | null {
+  const body = bodyObject(value)
+  if (body?.version !== 1 || typeof body.loopbackOnly !== "boolean" || !Array.isArray(body.links)) return null
+  const expiresAt = Number(body.expiresAt)
+  if (!Number.isFinite(expiresAt) || expiresAt <= 0) return null
+  const links = body.links.map(machinePairingGrantLink)
+  if (links.some((link) => link === null)) return null
+  return { expiresAt, loopbackOnly: body.loopbackOnly, links: links as MachinePairingGrantLink[] }
+}
+
+export function parseMachinePairingGrantStatus(value: unknown): MachinePairingGrantStatus | null {
+  const body = bodyObject(value)
+  if (body?.version !== 1 || typeof body.claimed !== "boolean" || typeof body.expired !== "boolean") return null
+  const expiresAt = Number(body.expiresAt)
+  if (!Number.isFinite(expiresAt) || expiresAt <= 0) return null
+  return { expiresAt, claimed: body.claimed, expired: body.expired }
 }
 
 function endpointIdentity(machine: WorkspaceMachine): string {

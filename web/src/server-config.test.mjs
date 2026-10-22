@@ -36,7 +36,7 @@ assert.match(main, /<ErrorBoundary resetKeys=\{SERVER_STORAGE_KEYS\}>/)
 assert.match(main, /loadWorkspaceMachines/)
 assert.match(main, /<StandaloneUniversalWorkspace/)
 assert.doesNotMatch(main, /loadServerProfiles/)
-assert.match(standalone, /discoverMachine\(nextMachine\(\)\.config\)/)
+assert.match(standalone, /discoverMachine\(nextMachine\(\)\.config, \{ configurationProbe: true \}\)/)
 assert.match(standalone, /Number\(port\) >= 1 && Number\(port\) <= 65_535/)
 
 const boundary = readFileSync(new URL('./ErrorBoundary.tsx', import.meta.url), 'utf8')

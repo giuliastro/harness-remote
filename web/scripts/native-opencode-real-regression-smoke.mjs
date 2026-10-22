@@ -490,8 +490,8 @@ async function assertCompletionAndModel(page, text, reasoning, final, label) {
 
   // Reasoning text is intentionally collapsed by the mature renderer. Verify it exists in the same
   // activity group without changing the renderer's visibility semantics.
-  const activity = page.locator(".uw-activity-group").last()
-  await activity.locator("summary").click()
+  const activity = page.locator(".hr-activity").last()
+  await activity.locator(".hr-activity-toggle").click()
   await page.getByText(reasoning, { exact: true }).waitFor({ state: "visible", timeout: 1_000 })
 }
 

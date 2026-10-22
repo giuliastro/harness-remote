@@ -6,7 +6,7 @@
 
 **A local-first control plane for native AI coding-agent sessions.**
 
-Run, observe, resume and continue work across **Codex CLI, Claude Code, OpenCode, Oh My Pi and PI** from desktop, web or Android — while code, credentials and native Sessions stay on your own machines.
+Run, observe, resume and continue work across **Codex CLI, Claude Code, GitHub Copilot CLI, OpenCode, MiMo Code, Oh My Pi and PI** from desktop, web or Android — while code, credentials and native Sessions stay on your own machines.
 
 [![GitHub stars](https://img.shields.io/github/stars/giuliastro/harness-remote?style=flat&logo=github)](https://github.com/giuliastro/harness-remote/stargazers)
 [![Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-555)](LICENSE)
@@ -62,6 +62,10 @@ Start the gateway on the computer you want to control, then:
 
 The QR uses a short-lived one-time pairing token. Manual address/credential entry remains available as a fallback.
 
+The same QR is available without the terminal: in the desktop or web app, open **Machines**, choose **Pair a phone** on the machine you want to connect, and scan the code it shows. It counts down the remaining validity and can be regenerated at any time; a new code replaces the previous one immediately.
+
+A daemon bound to loopback only explains that no phone can reach it instead of showing a dead QR. The desktop app's own local runtime starts loopback-only too: enable **Phone pairing** in the app **Settings** to let it accept phones on your local network. The daemon keeps its password and every connection still needs the app credentials or a one-time pairing code; changing the setting restarts the local runtime after a confirmation.
+
 ### Web / PWA
 
 Use the [hosted web app](https://giuliastro.github.io/harness-remote/) and allow that browser origin when starting the remote gateway:
@@ -88,13 +92,15 @@ See the [Quick start guide](docs/QUICK_START.md) for advanced options and troubl
 
 ## What it gives you
 
-- **Native Sessions** — existing Sessions remain owned by Codex, Claude, OpenCode, OMP or PI.
+- **Native Sessions** — existing Sessions remain owned by Codex, Claude, Copilot, OpenCode, MiMo, OMP or PI.
 - **Remote control** — follow activity, send prompts, Stop turns and handle supported questions/permissions.
+- **Prompt while the agent works** — a prompt sent mid-turn is never blocked: Codex takes it into the running turn, every other harness queues it in a **Queued** strip above the composer, where each waiting prompt can be withdrawn on its own.
+- **Background work that comes back** — when a Claude Code subagent, background command or monitor finishes, the agent's follow-up turn appears live in the Session, exactly as in the CLI, with no prompt from you.
 - **One workspace** — Machines → Projects → native Sessions.
 - **Cross-agent continuation** — continue a task with another coding agent without pretending their hidden contexts are the same.
 - **Cross-machine continuation** — continue work on another configured machine while preserving Project identity and lineage.
 - **Model discovery** — models, defaults and variants come from the running harness instead of hardcoded assumptions.
-- **Attention visibility** — questions, permissions and other blocking states stay visible even when the Session is not open.
+- **Attention visibility** — questions, permissions and other blocking states stay visible even when the Session is not open, and a Session that finishes while you are elsewhere stays marked **Ready** until you open it.
 - **Recovery** — reconnect, idle/wake and desktop-runtime recovery are built around the native Session as the source of truth.
 - **Local-first operation** — repositories, credentials, subscriptions and native Session persistence stay on your machines.
 
@@ -126,15 +132,22 @@ That means you can start in a normal CLI, open Harness Remote later, find the sa
 
 ## Supported coding agents
 
-| Coding agent | Integration |
-| --- | --- |
-| **OpenCode** | HTTP + live event stream |
-| **Claude Code** | ACP adapter |
-| **Codex CLI** | ACP adapter |
-| **Oh My Pi (OMP)** | ACP adapter |
-| **PI** | ACP adapter |
+| Coding agent | Backend | Integration |
+| --- | --- | --- |
+| **Codex CLI** | `codex` | Official Codex ACP adapter |
+| **Claude Code** | `claude` | Official Claude Agent ACP adapter |
+| **GitHub Copilot CLI** | `copilot` | Native ACP (`copilot --acp`) |
+| **OpenCode 2** | `opencode2` | Native ACP (`opencode acp`) |
+| **OpenCode Legacy (v1)** | `opencode` | HTTP + live event stream |
+| **MiMo Code** | `mimo` | Native ACP (`mimo acp`) |
+| **Oh My Pi (OMP)** | `omp` | Native ACP (`omp acp`) |
+| **PI** | `pi` | PI ACP adapter |
+
+Install and sign in to the coding-agent CLIs you want to use; the gateway detects them on start. OpenCode 2 and OpenCode Legacy share the `opencode` command, and Harness Remote picks the integration that matches the installed version.
 
 Harness Remote surfaces capabilities advertised by the harness instead of inventing controls the harness does not support.
+
+A turn runs inside the harness process that the gateway started, so stopping or restarting the gateway interrupts any turn still in progress. The Session itself is kept by the harness: open it again to see what was done and continue from there.
 
 See the [capability matrix](docs/V3_HARNESS_CAPABILITY_MATRIX.md) for the detailed runtime contract.
 

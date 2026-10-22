@@ -50,11 +50,13 @@ HR_DIR_B="$HOME/Software/project-b" \
 npm run gate:real-harness
 ```
 
-By default the gate validates:
+By default the gate validates OpenCode Legacy plus every ACP provider registered in the Provider Kit:
 
 ```text
-opencode,codex,claude,omp,pi
+opencode,omp,pi,claude,copilot,opencode2,mimo,codex
 ```
+
+A provider added to the registry joins the default gate automatically.
 
 Each harness becomes primary once. The secondary rotates so that switching/isolation is exercised as part of every leg.
 

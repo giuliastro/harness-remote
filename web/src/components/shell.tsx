@@ -34,6 +34,10 @@ function fuzzyScore(haystack: string, query: string): number | null {
  * what keeps the app usable as it grows: a new capability becomes one more command rather than one
  * more button competing for room in the chrome.
  */
+function finePointer(): boolean {
+  return typeof window !== "undefined" && typeof window.matchMedia === "function" && window.matchMedia("(pointer: fine)").matches
+}
+
 export function CommandPalette({
   commands,
   placeholder,
@@ -118,7 +122,9 @@ export function CommandPalette({
             onChange={(event) => setQuery(event.target.value)}
             onKeyDown={onKeyDown}
             placeholder={placeholder}
-            autoFocus
+            // With a keyboard the palette is typed into at once. On touch, focusing would raise the
+            // on-screen keyboard over the command list, so the list shows first and a tap focuses.
+            autoFocus={finePointer()}
             autoComplete="off"
             autoCorrect="off"
             spellCheck={false}

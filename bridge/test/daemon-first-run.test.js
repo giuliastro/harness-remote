@@ -51,8 +51,8 @@ test("an ACP adapter already on PATH is preferred over fetching one", async () =
   // that share the fallback seam so PI, Claude and Codex cannot regress independently.
   const expectedFallbacks = {
     pi: ["--yes", "--package=@automatalabs/pi-acp@0.5.0", "pi-acp"],
-    claude: ["--yes", "--package=@agentclientprotocol/claude-agent-acp@0.75.1", "claude-agent-acp"],
-    codex: ["--yes", "--package=@agentclientprotocol/codex-acp@1.1.14", "codex-acp"]
+    claude: ["--yes", "--package=@agentclientprotocol/claude-agent-acp@0.84.0", "claude-agent-acp"],
+    codex: ["--yes", "--package=@agentclientprotocol/codex-acp@1.13.1", "codex-acp"]
   }
   for (const [backend, args] of Object.entries(expectedFallbacks)) {
     const profile = harnessProfile(backend)
@@ -62,6 +62,18 @@ test("an ACP adapter already on PATH is preferred over fetching one", async () =
     assert.deepEqual(fetched.args, args)
     assert.equal(fetched.args.at(-1), profile.adapterCommand)
   }
+
+  const openCode2 = harnessProfile("opencode2")
+  assert.deepEqual(resolveAcpLaunch(openCode2, { find: () => null }), {
+    command: process.platform === "win32" ? "npx.cmd" : "npx",
+    args: ["--yes", "--package=@opencode/cli@2.0.28", "opencode2", "acp"],
+    source: "npx"
+  })
+  assert.deepEqual(resolveAcpLaunch(openCode2, { find: (name) => name === "opencode2" ? "/usr/bin/opencode2" : null, readVersion: () => "opencode v2.0.28" }), {
+    command: "/usr/bin/opencode2",
+    args: ["acp"],
+    source: "path"
+  })
 
   // OMP speaks ACP itself, so there is no adapter to look for and nothing to prefer.
   assert.deepEqual(resolveAcpLaunch(harnessProfile("omp"), { find: () => "/never/used" }), {

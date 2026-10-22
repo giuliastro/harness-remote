@@ -77,6 +77,25 @@ test("one persisted Run renders one user instruction and one logical assistant t
   assert.deepEqual(timeline.find((entry) => entry.info.role === "assistant").parts.map((part) => part.type), ["text", "tool", "text"])
 })
 
+test("an interrupted reply marks its logical turn interrupted, never a later one", () => {
+  const first = run({ id: "run-1", prompt: "First request" })
+  const second = run({ id: "run-2", sequence: 2, prompt: "Second request", startedAt: "2026-08-21T10:02:00.000Z" })
+  const started = Date.parse(first.startedAt)
+  const stopped = message("session-codex", "a1", "assistant", started + 2, "Partial answer")
+  stopped.info.interrupted = true
+  const timeline = buildWorkThreadTimeline(task({ run: second, runs: [first, second] }), {
+    "session-codex": [
+      message("session-codex", "u1", "user", started + 1, first.prompt),
+      stopped,
+      message("session-codex", "u2", "user", started + 120_000, second.prompt),
+      message("session-codex", "a2", "assistant", started + 120_001, "Complete answer")
+    ]
+  }, agents)
+  const replies = timeline.filter((entry) => entry.info.role === "assistant")
+  assert.deepEqual(replies.map((entry) => entry.info.interrupted === true), [true, false])
+  assert.equal(textOf(replies[0]), "Partial answer", "the partial output stays visible above the interruption")
+})
+
 test("same native Session reused for many Runs follows native user-turn boundaries", () => {
   const first = run({ sessionId: "same-session" })
   const second = run({

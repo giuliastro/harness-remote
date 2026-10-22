@@ -32,5 +32,12 @@ test("daemon registers managed OpenCode for first-use startup instead of boot st
 })
 
 test("managed OpenCode stderr is visibly attributed by the daemon", () => {
-  assert.match(daemonSource, /managedOpenCode\.on\("stderr", \(line\) => process\.stderr\.write\(`\[opencode\] \$\{line\}\\n`\)\)/)
+  assert.match(daemonSource, /managedOpenCode\.on\("stderr", \(line\) => writeHarnessLog\("opencode", line\)\)/)
+})
+
+test("harness stderr goes through the verbose-aware writer", () => {
+  assert.match(daemonSource, /createHarnessLogWriter\(\{ verbose: config\.verbose \}\)/)
+  assert.match(daemonSource, /acp\.on\("stderr", \(line\) => writeHarnessLog\(provider\.id, line\)\)/)
+  assert.match(bridgeSource, /createHarnessLogWriter\(\{ verbose: config\.verbose \}\)/)
+  assert.match(bridgeSource, /if \(config\.verbose\) \{[\s\S]*granted tool permission[\s\S]*handled agent request/)
 })

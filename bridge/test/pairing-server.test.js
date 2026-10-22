@@ -2,12 +2,14 @@ import assert from "node:assert/strict"
 import http from "node:http"
 import test from "node:test"
 import {
+  MachinePairingGrants,
   OneTimePairingGrant,
   PAIRING_TTL_MS,
   announceMachinePairing,
   createOneTimePairingGrant,
   createPairingServer,
   machinePairingLinks,
+  pairingBoundToLoopback,
   renderPairingQRCode
 } from "../src/pairing-server.js"
 
@@ -17,10 +19,19 @@ async function listen(server) {
   return `http://127.0.0.1:${address.port}`
 }
 function close(server) { return new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve())) }
-function config() { return { host: "0.0.0.0", port: 4097, username: "harness", password: "secret-password", corsOrigins: [] } }
+function config(overrides = {}) { return { host: "0.0.0.0", port: 4097, username: "harness", password: "secret-password", corsOrigins: [], ...overrides } }
 function machine() { return { id: "machine-1", name: "Dev workstation" } }
 function grant(overrides = {}) {
   return new OneTimePairingGrant({ token: "one-time-token", expiresAt: 2_000, now: () => 1_000, ...overrides })
+}
+function grants(overrides = {}) {
+  return new MachinePairingGrants({ grant: grant(), ...overrides })
+}
+function authorization(username = "harness", password = "secret-password") {
+  return { Authorization: `Basic ${Buffer.from(`${username}:${password}`).toString("base64")}` }
+}
+function tokenFromURI(uri) {
+  return new URL(uri).searchParams.get("token")
 }
 
 async function claim(base, token = "one-time-token") {
@@ -121,7 +132,7 @@ test("pairing announcement falls back to normal machine setup without leaking pa
 
 test("pairing claim returns the existing daemon credentials without Basic Auth", async () => {
   const innerServer = http.createServer((_request, response) => { response.writeHead(401); response.end() })
-  const server = createPairingServer({ innerServer, config: config(), machine: machine(), grant: grant() })
+  const server = createPairingServer({ innerServer, config: config(), machine: machine(), grants: grants() })
   const base = await listen(server)
   try {
     const response = await claim(base)
@@ -137,7 +148,7 @@ test("pairing claim returns the existing daemon credentials without Basic Auth",
 
 test("a pairing grant can be consumed exactly once", async () => {
   const innerServer = http.createServer((_request, response) => { response.writeHead(500); response.end() })
-  const server = createPairingServer({ innerServer, config: config(), machine: machine(), grant: grant() })
+  const server = createPairingServer({ innerServer, config: config(), machine: machine(), grants: grants() })
   const base = await listen(server)
   try {
     assert.equal((await claim(base)).status, 200)
@@ -149,7 +160,7 @@ test("a pairing grant can be consumed exactly once", async () => {
 
 test("invalid token does not consume the valid grant", async () => {
   const innerServer = http.createServer((_request, response) => { response.writeHead(500); response.end() })
-  const server = createPairingServer({ innerServer, config: config(), machine: machine(), grant: grant() })
+  const server = createPairingServer({ innerServer, config: config(), machine: machine(), grants: grants() })
   const base = await listen(server)
   try {
     assert.equal((await claim(base, "wrong-token")).status, 401)
@@ -163,7 +174,7 @@ test("expired pairing grant fails closed", async () => {
     innerServer,
     config: config(),
     machine: machine(),
-    grant: grant({ expiresAt: 999 })
+    grants: grants({ grant: grant({ expiresAt: 999 }) })
   })
   const base = await listen(server)
   try {
@@ -181,11 +192,159 @@ test("pairing wrapper delegates every unrelated route to the existing authentica
     response.writeHead(401, { "WWW-Authenticate": "Basic" })
     response.end()
   })
-  const server = createPairingServer({ innerServer, config: config(), machine: machine(), grant: grant() })
+  const server = createPairingServer({ innerServer, config: config(), machine: machine(), grants: grants() })
   const base = await listen(server)
   try {
     const response = await fetch(`${base}/v1/machine`)
     assert.equal(response.status, 401)
     assert.equal(delegated, 1)
+  } finally { await close(server) }
+})
+
+test("pairing bind detection distinguishes loopback from network-reachable hosts", () => {
+  for (const host of ["127.0.0.1", "127.0.1.1", "::1", "localhost", "  LOCALHOST  "]) {
+    assert.equal(pairingBoundToLoopback(host), true, `${host} is loopback`)
+  }
+  for (const host of ["0.0.0.0", "::", "192.168.1.44", "harness.local", ""]) {
+    assert.equal(pairingBoundToLoopback(host), false, `${host} is reachable`)
+  }
+})
+
+test("the grant route rejects unauthenticated requests without issuing or exposing a grant", async () => {
+  const innerServer = http.createServer((_request, response) => { response.writeHead(500); response.end() })
+  const pairing = grants()
+  const server = createPairingServer({ innerServer, config: config(), machine: machine(), grants: pairing })
+  const base = await listen(server)
+  try {
+    assert.equal((await fetch(`${base}/v1/pairing/grant`, { method: "POST" })).status, 401)
+    assert.equal((await fetch(`${base}/v1/pairing/grant`)).status, 401)
+    const wrongPassword = await fetch(`${base}/v1/pairing/grant`, { method: "POST", headers: authorization("harness", "wrong-password") })
+    assert.equal(wrongPassword.status, 401)
+    // The refused requests changed nothing: the grant that existed before them is still the one the
+    // daemon holds, and it is only usable through the normal claim path.
+    assert.equal((await claim(base, pairing.current.token)).status, 200)
+  } finally { await close(server) }
+})
+
+test("an authenticated grant request issues fresh scan-ready URIs for every reachable address", async () => {
+  let counter = 0
+  const server = createPairingServer({
+    innerServer: http.createServer((_request, response) => { response.writeHead(500); response.end() }),
+    config: config(),
+    machine: machine(),
+    grants: new MachinePairingGrants({
+      now: () => 10_000,
+      randomBytesImpl: (size) => Buffer.alloc(size, 0x10 + counter++)
+    }),
+    interfaces: {
+      lo: [{ family: "IPv4", internal: true, address: "127.0.0.1" }],
+      eth0: [{ family: "IPv4", internal: false, address: "192.168.1.44" }],
+      wlan0: [{ family: "IPv4", internal: false, address: "192.168.1.45" }]
+    }
+  })
+  const base = await listen(server)
+  try {
+    const response = await fetch(`${base}/v1/pairing/grant`, { method: "POST", headers: authorization() })
+    assert.equal(response.status, 200)
+    assert.equal(response.headers.get("cache-control"), "no-store")
+    const body = await response.json()
+    assert.equal(body.version, 1)
+    assert.equal(body.loopbackOnly, false)
+    assert.equal(body.expiresAt, 10_000 + PAIRING_TTL_MS)
+    assert.deepEqual(body.links.map((link) => link.endpoint), [
+      "http://192.168.1.44:4097",
+      "http://192.168.1.45:4097"
+    ])
+    for (const link of body.links) {
+      assert.match(link.uri, /^harnessremote:\/\/pair\?/)
+      assert.equal(new URL(link.uri).searchParams.get("endpoint"), link.endpoint)
+    }
+    // A grant response is scan material, never credentials.
+    assert.doesNotMatch(JSON.stringify(body), /secret-password|"username"|"password"/)
+  } finally { await close(server) }
+})
+
+test("regenerating a grant replaces the outstanding one so an old QR cannot be claimed", async () => {
+  let counter = 0
+  const pairing = new MachinePairingGrants({
+    now: () => 20_000,
+    randomBytesImpl: (size) => Buffer.alloc(size, 0x20 + counter++)
+  })
+  const server = createPairingServer({
+    innerServer: http.createServer((_request, response) => { response.writeHead(500); response.end() }),
+    config: config(),
+    machine: machine(),
+    grants: pairing,
+    interfaces: { eth0: [{ family: "IPv4", internal: false, address: "192.168.1.44" }] }
+  })
+  const base = await listen(server)
+  try {
+    const issue = async () => (await (await fetch(`${base}/v1/pairing/grant`, { method: "POST", headers: authorization() })).json())
+    const firstToken = tokenFromURI((await issue()).links[0].uri)
+    const secondToken = tokenFromURI((await issue()).links[0].uri)
+    assert.notEqual(firstToken, secondToken)
+    assert.equal((await claim(base, firstToken)).status, 401)
+    assert.equal((await claim(base, secondToken)).status, 200)
+    assert.equal((await claim(base, secondToken)).status, 409)
+  } finally { await close(server) }
+})
+
+test("grant status reports pending, claimed and expired truthfully", async () => {
+  let clock = 30_000
+  let counter = 0
+  const pairing = new MachinePairingGrants({
+    now: () => clock,
+    randomBytesImpl: (size) => Buffer.alloc(size, 0x30 + counter++)
+  })
+  const server = createPairingServer({
+    innerServer: http.createServer((_request, response) => { response.writeHead(500); response.end() }),
+    config: config(),
+    machine: machine(),
+    grants: pairing,
+    interfaces: { eth0: [{ family: "IPv4", internal: false, address: "192.168.1.44" }] }
+  })
+  const base = await listen(server)
+  try {
+    const status = async () => (await (await fetch(`${base}/v1/pairing/grant`, { headers: authorization() })).json())
+    const issue = async () => (await (await fetch(`${base}/v1/pairing/grant`, { method: "POST", headers: authorization() })).json())
+
+    assert.deepEqual(await status(), { version: 1, claimed: false, expired: false, expiresAt: 30_000 + PAIRING_TTL_MS })
+    assert.deepEqual(await status(), { version: 1, claimed: false, expired: false, expiresAt: 30_000 + PAIRING_TTL_MS })
+
+    const claimedGrant = await issue()
+    assert.equal((await claim(base, tokenFromURI(claimedGrant.links[0].uri))).status, 200)
+    assert.deepEqual(await status(), { version: 1, claimed: true, expired: false, expiresAt: 30_000 + PAIRING_TTL_MS })
+
+    const expiring = await issue()
+    clock = expiring.expiresAt
+    assert.deepEqual(await status(), { version: 1, claimed: false, expired: true, expiresAt: expiring.expiresAt })
+    assert.equal((await claim(base, tokenFromURI(expiring.links[0].uri))).status, 410)
+
+    clock = expiring.expiresAt + 1
+    const reissued = await issue()
+    assert.equal(reissued.expiresAt, expiring.expiresAt + 1 + PAIRING_TTL_MS)
+    assert.equal((await claim(base, tokenFromURI(reissued.links[0].uri))).status, 200)
+  } finally { await close(server) }
+})
+
+test("a loopback-only daemon answers with an explanation instead of an unreachable QR", async () => {
+  const server = createPairingServer({
+    innerServer: http.createServer((_request, response) => { response.writeHead(500); response.end() }),
+    config: config({ host: "127.0.0.1" }),
+    machine: machine(),
+    grants: new MachinePairingGrants({
+      now: () => 40_000,
+      randomBytesImpl: (size) => Buffer.alloc(size, 0x40)
+    }),
+    interfaces: { eth0: [{ family: "IPv4", internal: false, address: "192.168.1.44" }] }
+  })
+  const base = await listen(server)
+  try {
+    const response = await fetch(`${base}/v1/pairing/grant`, { method: "POST", headers: authorization() })
+    assert.equal(response.status, 200)
+    const body = await response.json()
+    assert.equal(body.loopbackOnly, true)
+    assert.deepEqual(body.links, [])
+    assert.equal(body.expiresAt, 40_000 + PAIRING_TTL_MS)
   } finally { await close(server) }
 })

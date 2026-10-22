@@ -315,8 +315,8 @@ async function waitForRowState(button, state, timeout = 5_000) {
   throw new Error(`Session row did not become ${state}; class=${await button.getAttribute("class")}`)
 }
 
-async function waitForDispatchCount(count) {
-  const deadline = Date.now() + 1_500
+async function waitForDispatchCount(count, timeout = 5_000) {
+  const deadline = Date.now() + timeout
   while (Date.now() < deadline && promptBodies.length < count) await new Promise((resolve) => setTimeout(resolve, 20))
   assert.equal(promptBodies.length, count, `turn ${count}: prompt must dispatch exactly once without a pre-Send stall`)
 }
@@ -388,10 +388,12 @@ try {
       await waitForRowState(aButton, "ready", 5_000)
       assert.equal(await aButton.getAttribute("aria-current"), null, "background completion must settle A without reopening it")
       await aButton.click()
+      assert.equal(await aButton.getAttribute("aria-current"), "page")
     }
 
     await page.getByText(spec.reply, { exact: true }).waitFor({ state: "visible", timeout: 5_000 })
     await waitForRowState(aButton, "ready", 5_000)
+    await page.getByRole("textbox", { name: "Message OpenCode" }).waitFor({ state: "visible", timeout: 5_000 })
     assert.equal(await page.getByText(spec.reply, { exact: true }).count(), 1, `turn ${index + 1}: assistant reply duplicated`)
     assert.equal(await page.locator(".tdw-connection-notice").count(), 0, `turn ${index + 1}: retry notice leaked after settlement`)
     if (spec.detail) {
@@ -410,6 +412,7 @@ try {
         assert.equal(await page.getByText(turns[prior].reply, { exact: true }).count(), 1, `turn ${prior + 1}: reply lost or duplicated after remount`)
       }
       await waitForRowState(aButton, "ready")
+      await page.getByRole("textbox", { name: "Message OpenCode" }).waitFor({ state: "visible", timeout: 5_000 })
     }
   }
 

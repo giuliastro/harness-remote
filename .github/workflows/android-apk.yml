@@ -10,6 +10,7 @@ name: Build Android APK
 
 permissions:
   contents: write
+  actions: write
 
 jobs:
   build:
@@ -50,13 +51,9 @@ jobs:
       - name: Build web app
         run: npm run build
         working-directory: web
-      - name: Run web regression tests
-        run: npm run test:ci:baseline
-        working-directory: web
 
-      - name: Run bridge tests
-        run: npm test
-        working-directory: bridge
+      # Web regressions and bridge tests are required checks on every pull request into main, so a
+      # commit that reaches this build has already passed them.
 
       - name: Setup JDK 21
         uses: actions/setup-java@v5
@@ -239,3 +236,13 @@ jobs:
           files: ${{ steps.apk.outputs.path }}
           generate_release_notes: false
           body: ${{ steps.notes.outputs.body }}
+
+      # The release above is created with GITHUB_TOKEN, and GitHub does not start other workflows
+      # from events that token raises, so npm-publish.yml never sees its `release: published`
+      # trigger: v3.1.0 reached npm only through a manual dispatch. Dispatching is the supported
+      # exception, and the publish job skips a version already on npm, so rebuilds are harmless.
+      - name: Dispatch npm CLI publish
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run npm-publish.yml --ref main -f tag="$GITHUB_REF_NAME"

@@ -6,6 +6,7 @@ import test from "node:test"
 const read = (name) => readFileSync(new URL(name, import.meta.url), "utf8")
 const hook = read("./useDialogDismiss.ts")
 const standalone = read("./components/standalone-universal-workspace.tsx")
+const pairingDialog = read("./components/machine-pairing-dialog.tsx")
 const actions = read("./components/native-session-actions.tsx")
 const rename = read("./components/native-session-rename.tsx")
 
@@ -28,8 +29,9 @@ test("an open model popover inside a Session dialog owns Escape first", () => {
 })
 
 test("the active Session-first shell dialogs use the shared dismissal behaviour", () => {
-  assert.match(standalone, /useDialogDismiss\(dialogRef, onClose\)/)
+  assert.match(standalone, /useDialogDismiss\(dialogRef, dismiss, \{ enabled: !pairingMachine \}\)/)
   assert.match(standalone, /useDialogDismiss\(pageRef, onClose, \{ autoFocus: false \}\)/)
+  assert.match(pairingDialog, /useDialogDismiss\(dialogRef, onClose\)/)
   assert.match(actions, /useDialogDismiss\(deleteRef, close/)
   assert.equal(existsSync(new URL("./components/native-session-handoff-control.tsx", import.meta.url)), false)
 })

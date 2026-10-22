@@ -17,7 +17,8 @@ each harness.
 
 | Harness | Status | How it connects |
 |---|---|---|
-| [OpenCode](https://github.com/sst/opencode) | supported | directly to the OpenCode HTTP server |
+| [OpenCode 2](https://opencode.ai/v2/docs/) | integration validation in progress | native ACP through the `opencode2` bridge backend |
+| [OpenCode Legacy (v1)](https://opencode.ai/docs/) | supported | directly to the OpenCode v1 HTTP server |
 | [Oh My Pi (OMP)](https://omp.sh/) | supported | through the local bridge included in this repository |
 | [PI](https://pi.dev/) | supported | through the local ACP bridge and the [`@automatalabs/pi-acp`](https://www.npmjs.com/package/@automatalabs/pi-acp) adapter |
 | [Claude Code](https://code.claude.com/) | supported | through the local ACP bridge and the [`@agentclientprotocol/claude-agent-acp`](https://www.npmjs.com/package/@agentclientprotocol/claude-agent-acp) adapter |
@@ -62,9 +63,13 @@ offering a control that fails.
 - browse and monitor sessions (`idle`, `busy`, `retry`, `waiting`) — a session a harness reports as
   waiting, on a subagent for instance, reads as working rather than idle, and carries its own marker
   on a wide screen
-- open a session and read messages and progress, thinking and tool calls included, each as its own
-  step rather than folded into the reply
-- copy a message: right-click it, or long-press on a phone, for its text or its markdown
+- open a session and read messages and progress: each reply keeps the agent's work in one Activity
+  section above the answer — its own progress notes, its reasoning, and one compact row per tool call
+  that opens to show the command, the diff or the output. **Settings → Conversation activity**
+  chooses how much of it stays visible while the agent works (its latest update, all its updates,
+  every step, or just a summary line) and after it answers, and whether reasoning is shown
+- copy a message or a code block with its copy button, or select any text and copy it; in the
+  desktop app right-click offers Copy, Paste and Select all as a browser does
 - send prompts from the chat input, including a follow-up typed while the agent is still working
 - stop running work when necessary
 - pick the model a session uses
@@ -214,6 +219,9 @@ published as an installable [PWA](#progressive-web-app-pwa).
 
 ### OpenCode Server Setup
 
+This section describes **OpenCode Legacy (v1)**. The official OpenCode 2
+integration uses ACP; see [OpenCode 2 validation](docs/OPENCODE2_VALIDATION.md).
+
 Start the OpenCode server with network access and Basic Auth.
 
 macOS / Linux (bash/zsh):
@@ -313,8 +321,20 @@ Expected response:
 
 OMP sessions expose their configured model when ACP provides it, and model changes apply to subsequent prompts. Server slash commands are available: OMP advertises them over ACP, the bridge serves them at `/command`, and the app lists them under **Help → Commands**, with a separate tab for the `skill:` ones. Agent selection and VCS/diff remain unavailable.
 
-A prompt sent while the agent is still working is queued rather than refused: it appears in the conversation
-straight away and runs when the current turn ends. Stopping the session discards anything still queued.
+A prompt sent while the agent is still working is never refused; what happens to it depends on the harness's
+`midTurnPrompt` capability. Codex (`steer`) takes it into the running turn straight away, and it appears in the
+conversation with Codex's reply below it. Every other harness (`queue`) holds it until the current turn ends:
+the app shows it as a **Queued** row above the composer, and it moves into the conversation when the daemon
+starts it. The daemon marks a waiting prompt `queued` in the transcript and reports what it did with each
+prompt (`started`, `queued` or `steered`), so the app never guesses, and the same state survives switching
+Sessions, reloading the app, or a second client. Slash commands always queue. Stopping the session discards
+anything still queued.
+
+An agent can also start a turn on its own. Claude Code does this when a background command, subagent or monitor
+it was waiting on finishes: it resumes with no new prompt. The daemon adopts that turn for a session it has
+prompted. The session reads as working again, and the agent's output and tool calls arrive as a new reply.
+The turn ends after 30 seconds without output, or longer while one of its tool calls is still running. A prompt
+sent meanwhile queues behind it, and Stop cancels it like any other turn.
 
 Session titles come from the title you give a session in the app, otherwise from its first prompt; sessions created outside the app are listed with a generated `Session <id>` title when the ACP listing carries no title.
 
@@ -356,6 +376,12 @@ Native app builds need no CORS configuration. To use the app from a browser inst
 npx --yes ./bridge --port 4097 --username omp --password "…" --root "$HOME/Software" \
   --cors http://localhost:5173
 ```
+
+#### Harness diagnostics
+
+ACP adapters write all their diagnostics to stderr, because stdout carries the protocol. The bridge, the daemon and the launcher forward to the terminal only the lines that look like failures (`error`, `TypeError`, `failed`, `fatal`, `ENOENT`, …), always prefixed with the harness id, e.g. `[claude]`. Adapter traces such as Claude's `[session/replay]` timings, and its `Unexpected case:` lines for SDK events it does not recognise yet, stay hidden: the adapter skips those events and the session continues. Exit reasons and startup failures are always reported.
+
+Pass `--verbose` or set `HARNESS_REMOTE_VERBOSE=1` to forward the full stderr stream of every harness, including managed OpenCode. On the standalone bridge it also logs each granted tool permission and each handled agent request.
 
 #### Live synchronization scope
 
@@ -452,7 +478,7 @@ npx --yes ./bridge \
   --root "$HOME/Software"
 ```
 
-The `claude` backend defaults to `npx -y @agentclientprotocol/claude-agent-acp@0.75.1`.
+The `claude` backend defaults to `npx -y @agentclientprotocol/claude-agent-acp@0.84.0`.
 The version is pinned to avoid the same `notarget` issue that motivated pinning the
 PI adapter. Use `--acp-command` and repeated `--acp-arg` options to track a newer
 adapter. The first start downloads the adapter, which is why the handshake allows 90s.
@@ -518,7 +544,7 @@ npx --yes ./bridge \
   --root "$HOME/Software"
 ```
 
-The `codex` backend defaults to `npx -y @agentclientprotocol/codex-acp@1.1.14` and authenticates
+The `codex` backend defaults to `npx -y @agentclientprotocol/codex-acp@1.13.1` and authenticates
 through the adapter's ChatGPT method, so a `codex login` on the host machine is what the bridge
 uses — an `OPENAI_API_KEY` environment variable works too, but is not required and is not preferred.
 The version is pinned to avoid the same `notarget` issue that motivated pinning the PI adapter. Use

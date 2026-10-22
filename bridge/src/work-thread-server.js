@@ -94,7 +94,7 @@ export function createWorkThreadServer({ innerServer, config, controller, create
       response.writeHead(405, { Allow: allow })
       response.end()
     } catch (error) {
-      writeJSON(response, statusFor(error), { error: error instanceof Error ? error.message : String(error) })
+      writeJSON(response, statusFor(error), { error: error instanceof Error ? error.message : String(error), ...(error?.code ? { code: error.code } : {}) })
     }
   })
 }

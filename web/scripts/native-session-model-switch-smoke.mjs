@@ -581,8 +581,9 @@ try {
   // used to inherit flex:1 while also declaring a 760px grid, so on a wide Session pane the unused
   // first track pushed Model noticeably to the right even though the Harness select itself stopped at
   // 220px. Lock the visible control-to-control gap, not just a CSS token, so cascade regressions fail.
+  // On a wide pane each label sits inline before its control, so the Model group starts at its label.
   const routingHarnessBox = await routedControls.locator("label").filter({ hasText: /^Harness/ }).locator("select").boundingBox()
-  const routingModelBox = await routedControls.locator(".tdw-model-trigger").boundingBox()
+  const routingModelBox = await routedControls.locator("label.tdw-model-control").boundingBox()
   const routingGroupBox = await routedControls.boundingBox()
   assert.ok(routingHarnessBox && routingModelBox && routingGroupBox, "routing controls must have measurable desktop geometry")
   const harnessToModelGap = routingModelBox.x - (routingHarnessBox.x + routingHarnessBox.width)

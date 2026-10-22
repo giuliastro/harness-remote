@@ -22,6 +22,8 @@ test("Claude remains a first-class v3 ACP backend", () => {
   assert.equal(profile.capabilities.prompt, true)
   assert.equal(profile.capabilities.models, true)
   assert.equal(profile.capabilities.todos, true)
+  assert.equal(profile.recoverMissingSessionOnPrompt, true)
+  assert.equal(HARNESS_PROFILES.omp.recoverMissingSessionOnPrompt, undefined)
 })
 
 test("Claude public status stops reporting a finished stale turn as Working", () => {
@@ -92,7 +94,8 @@ test("machine discovery detects Claude and can select it as the daemon primary",
     pathValue,
     platform: "linux",
     exists: (candidate) => existing.has(candidate),
-    access: () => {}
+    access: () => {},
+    readVersion: () => "1.19.0"
   })
   assert.deepEqual(detected, ["claude", "codex", "opencode"])
   assert.deepEqual(resolveLaunchPlan(["--backend", "claude"], detected), {
@@ -155,6 +158,54 @@ test("Claude bare model ids are applied through the shared ACP session service",
       params: { sessionId: "claude-session", configId: "model", value: "sonnet" }
     }
   ])
+})
+
+test("Claude reloads a Session whose agent process lost its in-memory handle", async () => {
+  class RecoveringClaudeAcp extends EventEmitter {
+    constructor() {
+      super()
+      this.open = false
+      this.loads = 0
+      this.prompts = 0
+    }
+
+    async listSessions() {
+      return [{ sessionId: ACTIVITY_SESSION, cwd: process.cwd(), title: "Recoverable Claude Session", updatedAt: new Date().toISOString() }]
+    }
+
+    async request(method, params) {
+      if (method === "session/load") {
+        this.loads += 1
+        this.open = true
+        return { configOptions: [] }
+      }
+      if (method !== "session/prompt") throw new Error(`Unexpected request: ${method}`)
+      this.prompts += 1
+      if (!this.open) throw new Error("Internal error: Session not found")
+      this.emit("notification", {
+        method: "session/update",
+        params: {
+          sessionId: params.sessionId,
+          update: { sessionUpdate: "agent_message_chunk", content: { type: "text", text: `reply ${this.prompts}` } }
+        }
+      })
+      return { stopReason: "end_turn" }
+    }
+
+    notify() {}
+  }
+
+  const acp = new RecoveringClaudeAcp()
+  const service = new AcpService(acp, { recoverMissingSessionOnPrompt: true })
+  await service.promptAndWait(ACTIVITY_SESSION, "one")
+
+  acp.open = false
+  await service.promptAndWait(ACTIVITY_SESSION, "two")
+
+  assert.equal(acp.loads, 2)
+  assert.equal(acp.prompts, 3)
+  assert.deepEqual((await service.messages(ACTIVITY_SESSION)).filter((message) => message.info.role === "user").map((message) => message.parts[0].text), ["one", "two"])
+  assert.equal((await service.messages(ACTIVITY_SESSION)).at(-1).info.error, undefined)
 })
 
 test("Claude TaskDesk launch uses the same ACP service that owns visible sessions", async () => {

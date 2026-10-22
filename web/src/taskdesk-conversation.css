@@ -28,6 +28,17 @@
   letter-spacing: .05em;
 }
 
+/* A deliberate interruption is not a failure: a quiet divider-like note, not the red banner. */
+.uw-message-turn-stopped {
+  margin-top: 10px;
+  padding-top: 6px;
+  border-top: 1px solid var(--td3-border-soft);
+  color: var(--td3-muted);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: .05em;
+}
+
 /* --------------------------------------------------------------------------
    TaskDesk Work Thread conversation
    The old Native Session stylesheet deliberately stays dense for diagnostics.
@@ -37,6 +48,13 @@
 .tdw-work-thread-conversation .uw-transcript {
   padding: 22px clamp(18px, 3vw, 34px) 30px;
   scroll-padding-block: 20px;
+}
+
+/* Room for the reply under a just-sent message; sized inline by the transcript. */
+.uw-transcript-reply-room {
+  flex: none;
+  height: 0;
+  pointer-events: none;
 }
 
 .tdw-work-thread-conversation .uw-message {
@@ -211,164 +229,12 @@
   color: var(--td3-text);
 }
 
-/* Activity behaves like a compact Tool Chip until expanded. Every descendant is explicitly
-   shrinkable because long commands/reasoning are untrusted content and must never widen the chat. */
+/* Every message part is explicitly shrinkable because long content is untrusted and must never
+   widen the chat. */
 .tdw-work-thread-conversation .uw-message-parts,
-.tdw-work-thread-conversation .uw-message-content-group,
-.tdw-work-thread-conversation .uw-activity-parts,
-.tdw-work-thread-conversation .uw-reasoning,
-.tdw-work-thread-conversation .uw-tool-stack,
-.tdw-work-thread-conversation .uw-tool-card {
+.tdw-work-thread-conversation .uw-message-content-group {
   min-width: 0;
   max-width: 100%;
-}
-
-.tdw-work-thread-conversation .uw-activity-group {
-  width: min(720px, 100%);
-  margin-top: 10px;
-  overflow: hidden;
-  border-color: var(--td3-border);
-  border-radius: 11px;
-  background: var(--td3-raise-1);
-}
-
-.tdw-work-thread-conversation .uw-activity-group > summary {
-  min-width: 0;
-  grid-template-columns: 22px minmax(0, 1fr) auto;
-  min-height: 38px;
-  gap: 8px;
-  padding: 0 11px;
-}
-
-.tdw-work-thread-conversation .uw-activity-group > summary .uw-tool-title {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: 11px;
-}
-
-.tdw-work-thread-conversation .uw-activity-group > summary .uw-tool-status {
-  font-size: 10px;
-}
-
-.tdw-work-thread-conversation .uw-activity-parts {
-  width: 100%;
-  padding: 9px;
-  overflow: hidden;
-  border-top: 1px solid var(--td3-border-soft);
-  background: var(--td3-panel);
-}
-
-.tdw-work-thread-conversation .uw-activity-parts > * + * {
-  margin-top: 7px;
-}
-
-.tdw-work-thread-conversation .uw-activity-parts .uw-tool-stack {
-  width: 100%;
-  margin: 0;
-}
-
-.tdw-work-thread-conversation .uw-activity-parts .uw-tool-card {
-  width: 100%;
-  overflow: hidden;
-  background: var(--td3-raise-1);
-}
-
-.tdw-work-thread-conversation .uw-activity-parts .uw-tool-card > summary {
-  min-width: 0;
-  grid-template-columns: 22px minmax(88px, auto) minmax(0, 1fr) auto;
-  padding-inline: 9px;
-}
-
-.tdw-work-thread-conversation .uw-activity-parts .uw-tool-card summary code {
-  min-width: 0;
-  max-width: 100%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: 10px;
-}
-
-.tdw-work-thread-conversation .uw-activity-parts .uw-tool-card pre {
-  width: 100%;
-  max-width: 100%;
-  max-height: 320px;
-  padding: 10px 12px;
-  overflow: auto;
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-  word-break: break-word;
-  font-size: 11px;
-  line-height: 1.45;
-}
-
-.tdw-work-thread-conversation .uw-tool-todo-list {
-  display: grid;
-  gap: 6px;
-  padding: 9px 11px 11px;
-  border-top: 1px solid var(--td3-border-soft);
-}
-
-.tdw-work-thread-conversation .uw-tool-todo-item {
-  min-width: 0;
-  display: grid;
-  grid-template-columns: 18px minmax(0, 1fr);
-  align-items: start;
-  gap: 7px;
-  color: var(--td3-text-2);
-  font-size: 11px;
-  line-height: 1.45;
-}
-
-.tdw-work-thread-conversation .uw-tool-todo-status {
-  color: var(--td3-muted);
-  text-align: center;
-  font-weight: 800;
-}
-
-.tdw-work-thread-conversation .uw-tool-todo-item.completed {
-  color: var(--td3-muted);
-}
-
-.tdw-work-thread-conversation .uw-tool-todo-item.completed > span:last-child {
-  text-decoration: line-through;
-  text-decoration-thickness: 1px;
-}
-
-.tdw-work-thread-conversation .uw-tool-todo-item.in_progress .uw-tool-todo-status {
-  color: var(--td3-blue-text);
-}
-
-.tdw-work-thread-conversation .uw-reasoning {
-  width: 100%;
-  padding: 10px 12px;
-  overflow: hidden;
-  border: 1px solid var(--td3-border-soft);
-  border-radius: 9px;
-  background: var(--td3-raise-1);
-}
-
-.tdw-work-thread-conversation .uw-reasoning > strong {
-  display: block;
-  margin-bottom: 5px;
-  color: var(--td3-muted);
-  font-size: 10px;
-  font-weight: 800;
-  text-transform: uppercase;
-  letter-spacing: .07em;
-}
-
-.tdw-work-thread-conversation .uw-reasoning .uw-markdown {
-  font-size: 12px;
-  line-height: 1.48;
-}
-
-.tdw-work-thread-conversation .uw-reasoning .uw-markdown pre,
-.tdw-work-thread-conversation .uw-reasoning .uw-markdown code {
-  max-width: 100%;
-  overflow-wrap: anywhere;
-  word-break: break-word;
 }
 
 /* Composer aligns to exactly the same reading column as the messages. */
@@ -391,6 +257,76 @@
   flex-wrap: wrap;
   gap: 6px;
   padding: 10px 12px 0;
+}
+
+/* Queued prompts are a band of their own at the top of the composer, one line per prompt, set off
+   from the text field by a rule. Pills wrapped against the shell's rounded, clipped top edge read as
+   overlapping the input border. */
+.tdw-work-thread-conversation .uw-queued-prompts {
+  display: grid;
+  gap: 4px;
+  padding: 9px 12px 8px;
+  border-bottom: 1px solid var(--td3-border);
+  background: var(--td3-raise-1);
+}
+
+.tdw-work-thread-conversation .uw-queued-prompt {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.tdw-work-thread-conversation .uw-queued-prompt-badge {
+  flex: none;
+  padding: 1px 7px;
+  border: 1px solid var(--td3-blue-border);
+  border-radius: 6px;
+  background: var(--td3-blue-soft);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: .06em;
+  line-height: 1.6;
+  text-transform: uppercase;
+  color: var(--td3-blue-text);
+}
+
+.tdw-work-thread-conversation .uw-queued-prompt-text {
+  min-width: 0;
+  flex: 1 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--td3-text-2);
+  font-size: 12px;
+}
+
+.tdw-work-thread-conversation .uw-queued-prompt-cancel {
+  flex: none;
+  display: inline-grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  color: var(--td3-text-3);
+  background: transparent;
+  cursor: pointer;
+}
+
+.tdw-work-thread-conversation .uw-queued-prompt-cancel:hover,
+.tdw-work-thread-conversation .uw-queued-prompt-cancel:focus-visible {
+  color: var(--td3-text);
+  background: var(--td3-raise-2);
+}
+
+.tdw-work-thread-conversation .uw-queued-prompt-count {
+  flex: none;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--td3-blue-text);
+  opacity: .75;
 }
 
 .tdw-work-thread-conversation .uw-composer-attachment {

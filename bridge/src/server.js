@@ -5,6 +5,7 @@ import { selectableAcpModelValue } from "./agent-model-catalog.js"
 import { AcpPromptEchoFilter } from "./acp-prompt-echo-filter.js"
 import { AcpService } from "./acp-service.js"
 import { harnessProfile } from "./harness-profiles.js"
+import { createLiveStatusProbe, overlayLiveStatus, probeLiveStatuses } from "./live-session-status.js"
 import { allowedOrigin, applyCorsHeaders, matchesCredentials, writeJSON } from "./http-policy.js"
 
 const ATTACHMENT_MIME_TYPES = new Set(["image/png", "image/jpeg", "image/webp", "image/gif"])
@@ -30,13 +31,19 @@ export const CLAUDE_REPORTED_BUSY_STALE_MS = 360_000
  * historical Session could look "recent" forever even though Claude had no prompt in flight. For
  * Claude the live transport request is the narrow corroboration signal we actually need: if there is
  * no pending session/prompt, a leftover busy flag is stale presentation state and must read idle.
+ *
+ * `journalEvidence` is the independent observation read from Claude Code itself (its process
+ * registry, or the transcript tail on older builds) for a Session the user runs in a terminal or the
+ * desktop app. It is never forced back to idle by the missing session/prompt, because that prompt was
+ * never this bridge's to send. A live, corroborated bridge-owned turn still wins over it.
  */
-export function corroborateClaudeSessionStatus(status, sessionID, pendingRequests, _lastActivityAt, now = Date.now()) {
-  if (!status || status.type !== "busy") return status
+export function corroborateClaudeSessionStatus(status, sessionID, pendingRequests, _lastActivityAt, now = Date.now(), journalEvidence) {
+  const external = journalEvidence && (journalEvidence.type === "busy" || journalEvidence.type === "attention") ? journalEvidence : undefined
+  if (!status || status.type !== "busy") return external ?? status
   const prompts = (Array.isArray(pendingRequests) ? pendingRequests : []).filter(
     (pending) => pending?.method === "session/prompt" && pending.sessionID === sessionID
   )
-  if (prompts.length === 0) return { ...status, type: "idle" }
+  if (prompts.length === 0) return external ?? { ...status, type: "idle" }
 
   let newestProtocolActivity = 0
   for (const pending of prompts) {
@@ -44,7 +51,7 @@ export function corroborateClaudeSessionStatus(status, sessionID, pendingRequest
     newestProtocolActivity = Math.max(newestProtocolActivity, now - Math.max(0, pending.idleMs))
   }
   if (newestProtocolActivity && now - newestProtocolActivity >= CLAUDE_REPORTED_BUSY_STALE_MS) {
-    return { ...status, type: "idle" }
+    return external ?? { ...status, type: "idle" }
   }
   return status
 }
@@ -164,29 +171,50 @@ function providersResponse(models, fallbackProviderID) {
     const modelID = flat ? value : value.slice(separator + 1)
     if (!providerID || !modelID) continue
     const provider = providers.get(providerID) ?? { id: providerID, name: providerID, models: {} }
-    provider.models[modelID] = {
+    const model = provider.models[modelID] ?? {
       id: modelID,
       name: option.name ?? modelID,
       description: option.description || undefined,
       status: "active"
     }
+    if (option.variant) {
+      model.variants ??= {}
+      model.variants[option.variant] = { value: option.variantValue ?? option.variant }
+    }
+    provider.models[modelID] = model
     providers.set(providerID, provider)
     if (option.currentValue) defaults[providerID] = modelID
   }
   return { providers: [...providers.values()], default: defaults }
 }
 
-export function createBridgeServer({ config, acp, serviceOptions, machineRegistry }) {
+export function createBridgeServer({ config, acp, serviceOptions, machineRegistry, liveStatusProbe }) {
   const backend = config.backend ?? "omp"
   const profile = harnessProfile(backend)
+  // Evidence of turns this bridge is not driving (Codex thread history, Claude process registry).
+  // `null` disables it; tests inject their own probe.
+  const externalStatusProbe = liveStatusProbe === undefined
+    ? createLiveStatusProbe(profile.liveStatusSource)
+    : liveStatusProbe ?? undefined
   const serviceAcp = new AcpPromptEchoFilter(acp)
   const service = new AcpService(serviceAcp, {
     ...serviceOptions,
+    requireExistingDirectory: profile.requireExistingDirectory,
     actionProviders: profile.actionProviders,
     preferListedTitles: profile.preferListedTitles,
     nativeRenameCommand: profile.nativeRenameCommand,
     journalPageWhileOwned: profile.journalPageWhileOwned !== false,
-    modelVariantConfigIDs: profile.modelVariantConfigIDs ?? []
+    replayAuthoritative: profile.replayAuthoritative === true,
+    modelVariantConfigIDs: profile.modelVariantConfigIDs ?? [],
+    modelVariantDefaultValues: profile.modelVariantDefaultValues ?? [],
+    modelProviderID: profile.id,
+    excludedModelValuePrefixes: profile.excludedModelValuePrefixes ?? [],
+    inlineModelVariantValues: profile.inlineModelVariantValues ?? [],
+    modelProviderOrder: profile.modelProviderOrder ?? [],
+    requireAssistantResponse: profile.requireAssistantResponse === true,
+    recoverMissingSessionOnPrompt: profile.recoverMissingSessionOnPrompt === true,
+    assistantMessageIDsSeparateReplies: profile.assistantMessageIDsSeparateReplies === true,
+    midTurnPrompt: profile.capabilities?.midTurnPrompt
   })
   const hiddenSessionIDs = serviceOptions?.hiddenSessionIDs
   const liveSessionActivity = new Map()
@@ -201,27 +229,43 @@ export function createBridgeServer({ config, acp, serviceOptions, machineRegistr
       liveSessionActivity.set(event.sessionId, Date.now())
     }
   })
-  const publicSessionStatus = (sessionID, fallbackActivityAt = 0) => {
+  const publicSessionStatus = (sessionID, fallbackActivityAt = 0, evidence) => {
     const status = service.status(sessionID)
-    if (backend !== "claude") return status
+    if (backend !== "claude") return overlayLiveStatus(status, evidence)
+    // A turn Claude started on its own has no session/prompt to corroborate it; it settles itself.
+    if (service.hasAdoptedTurn(sessionID)) return overlayLiveStatus(status, evidence)
     const pendingRequests = acp.diagnostics?.()?.pendingRequests ?? []
     const lastActivityAt = Math.max(liveSessionActivity.get(sessionID) ?? 0, Number(fallbackActivityAt) || 0)
-    const corroborated = corroborateClaudeSessionStatus(status, sessionID, pendingRequests, lastActivityAt)
+    const corroborated = corroborateClaudeSessionStatus(status, sessionID, pendingRequests, lastActivityAt, Date.now(), evidence)
     // The transcript is part of the same presentation: a Session that is reported idle must not keep
     // its Activity sections on Working, which is what correcting the status alone left on screen.
     if (status?.type === "busy" && corroborated.type === "idle") service.settleReportedIdleActivity(sessionID)
     return corroborated
   }
+  // Bridge-owned busy always wins, so those Sessions need no external evidence. Claude is the
+  // exception: its busy flag can be stale and corroboration may demote it, at which point the journal
+  // evidence is exactly what decides between idle and a turn the user runs elsewhere.
+  const externalEvidence = (sessionIDs) => externalStatusProbe
+    ? probeLiveStatuses(externalStatusProbe, backend === "claude"
+      ? sessionIDs
+      : sessionIDs.filter((sessionID) => service.status(sessionID)?.type !== "busy"))
+    : Promise.resolve(new Map())
   const listVisibleSessions = async (directory) => {
     let sessions = await service.listSessions(directory)
+    // Hidden Sessions are dropped first so no journal is read for a Session nobody will see.
+    if (hiddenSessionIDs?.size) sessions = sessions.filter((session) => !hiddenSessionIDs.has(session.id))
+    const evidence = await externalEvidence(sessions.map((session) => session.id))
     if (backend === "claude") {
       sessions = sessions.map((session) => ({
         ...session,
-        status: publicSessionStatus(session.id, session.time?.updated)
+        status: publicSessionStatus(session.id, session.time?.updated, evidence.get(session.id))
       }))
+    } else if (evidence.size) {
+      sessions = sessions.map((session) => evidence.has(session.id)
+        ? { ...session, status: overlayLiveStatus(session.status, evidence.get(session.id)) }
+        : session)
     }
-    if (!hiddenSessionIDs?.size) return sessions
-    return sessions.filter((session) => !hiddenSessionIDs.has(session.id))
+    return sessions
   }
   // TaskDesk only needs index metadata to render the Sessions list and status counts. Calling
   // AcpService.listSessions here used to restore every persisted transcript snapshot into memory,
@@ -231,30 +275,37 @@ export function createBridgeServer({ config, acp, serviceOptions, machineRegistr
   // its transcript. Invalid or missing harness timestamps stay at zero instead of pretending to be
   // freshly updated on every poll.
   const listVisibleSessionMetadata = async (directory, cursor) => {
-    const [page, deletedSessionIDs] = await Promise.all([
+    const [page, deletedSessionIDs, titleOverrides] = await Promise.all([
       typeof acp.listSessionPage === "function"
         ? acp.listSessionPage(cursor)
         : cursor
           ? { sessions: [] }
           : acp.listSessions().then((sessions) => ({ sessions })),
-      service.deletedSessionIDs()
+      service.deletedSessionIDs(),
+      service.titleOverrides()
     ])
     service.rememberListedSessions(page.sessions)
+    const listedSessions = page.sessions
+      .filter((session) => !directory || sameListedDirectory(session.cwd, directory))
+      .filter((session) => !hiddenSessionIDs?.has(session.sessionId))
+      .filter((session) => !deletedSessionIDs.has(session.sessionId))
+    const owned = service.ownedSessionIndex(directory)
+    const evidence = await externalEvidence([
+      ...listedSessions.map((session) => session.sessionId),
+      ...owned.map(({ session }) => session.id)
+    ])
     const visible = new Map(
-      page.sessions
-        .filter((session) => !directory || sameListedDirectory(session.cwd, directory))
-        .filter((session) => !hiddenSessionIDs?.has(session.sessionId))
-        .filter((session) => !deletedSessionIDs.has(session.sessionId))
+      listedSessions
         .map((session) => {
           const liveUpdatedAt = liveSessionActivity.get(session.sessionId) ?? 0
           const listedUpdated = Date.parse(session.updatedAt ?? "")
           const listedTimestamp = Number.isFinite(listedUpdated) ? listedUpdated : 0
           const view = listedSessionView(
             session,
-            publicSessionStatus(session.sessionId, Math.max(liveUpdatedAt, listedTimestamp)),
+            publicSessionStatus(session.sessionId, Math.max(liveUpdatedAt, listedTimestamp), evidence.get(session.sessionId)),
             liveUpdatedAt
           )
-          return [view.id, view]
+          return [view.id, titleOverrides.has(view.id) ? { ...view, title: titleOverrides.get(view.id) } : view]
         })
     )
 
@@ -262,7 +313,7 @@ export function createBridgeServer({ config, acp, serviceOptions, machineRegistr
     // missing identity only to page one. A title override, however, must decorate whichever native
     // page contains the Session; otherwise loading its older page would overwrite the title page
     // one already supplied. No transcript snapshot is restored merely to draw either view.
-    for (const { session, titleOverride } of service.ownedSessionIndex(directory)) {
+    for (const { session, titleOverride } of owned) {
       if (hiddenSessionIDs?.has(session.id) || deletedSessionIDs.has(session.id)) continue
       const listed = visible.get(session.id)
       if (listed && titleOverride) {
@@ -270,7 +321,7 @@ export function createBridgeServer({ config, acp, serviceOptions, machineRegistr
       } else if (!cursor && !listed) {
         visible.set(session.id, {
           ...session,
-          status: publicSessionStatus(session.id, session.time?.updated)
+          status: publicSessionStatus(session.id, session.time?.updated, evidence.get(session.id))
         })
       }
     }
@@ -400,7 +451,7 @@ export function createBridgeServer({ config, acp, serviceOptions, machineRegistr
         return
       }
 
-      const sessionMatch = /^\/session\/([^/]+)(?:\/(message|prompt_async|abort|todo|diff|action|command)(?:\/([^/]+))?)?$/.exec(url.pathname)
+      const sessionMatch = /^\/session\/([^/]+)(?:\/(message|prompt_async|abort|todo|diff|action|command|queue)(?:\/([^/]+))?)?$/.exec(url.pathname)
       if (sessionMatch) {
         const [, sessionID, operation, actionID] = sessionMatch
         if (request.method === "PATCH" && !operation) {
@@ -471,6 +522,11 @@ export function createBridgeServer({ config, acp, serviceOptions, machineRegistr
           const text = argumentsText ? `/${body.command} ${argumentsText}` : `/${body.command}`
           await service.prompt(sessionID, text, modelWireName(body.model))
           writeJSON(response, 200, true)
+          return
+        }
+        if (request.method === "DELETE" && operation === "queue" && actionID) {
+          // One prompt waiting behind the running turn is withdrawn; the turn itself keeps running.
+          writeJSON(response, 200, { removed: service.unqueue(sessionID, decodeURIComponent(actionID)) })
           return
         }
         if (request.method === "POST" && operation === "abort") {

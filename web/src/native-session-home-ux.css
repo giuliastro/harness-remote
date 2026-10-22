@@ -40,34 +40,63 @@
   border-color: color-mix(in srgb, var(--td3-focus, #5b8cff) 62%, transparent);
 }
 
-.hr-native-session-row.just-finished {
-  animation: hr-native-session-finished 4.8s ease-out both;
+/* A finished Session the user has not opened yet. It stays marked until it is opened, the way an
+   unread conversation does: a blue unread dot and a full-strength title, with the green Ready kept
+   from the moment it finished. Input requests keep their own, stronger, attention treatment. */
+.hr-native-session-row.unseen {
+  background: color-mix(in srgb, var(--td3-blue-text, #5b8cff) 6%, transparent);
 }
 
-.hr-native-session-row.just-finished .hr-native-session-status {
-  color: var(--td3-green, #2da44e);
+.hr-native-session-row.unseen .hr-native-session-copy strong {
+  color: var(--td3-text, inherit);
+  font-weight: 760;
+}
+
+.hr-native-session-row.unseen .hr-native-session-copy strong::before {
+  content: "";
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  margin-inline-end: 6px;
+  border-radius: 50%;
+  vertical-align: 0.1em;
+  background: var(--td3-blue-text, #5b8cff);
+  animation: hr-native-session-unseen-in .6s ease-out;
+}
+
+.hr-native-session-row.unseen .hr-native-session-status {
+  color: var(--td3-green-text, var(--td3-green, #2da44e));
   font-weight: 700;
 }
 
-.hr-native-session-row.just-finished .hr-native-session-harness i {
-  box-shadow: 0 0 0 4px color-mix(in srgb, var(--td3-green, #2da44e) 16%, transparent);
+.hr-native-machine-metrics .hr-native-machine-ready {
+  color: var(--td3-blue-text, #5b8cff);
+  font-weight: 700;
 }
 
-@keyframes hr-native-session-finished {
-  0%, 18% {
-    border-color: color-mix(in srgb, var(--td3-green, #2da44e) 48%, transparent);
-    background: color-mix(in srgb, var(--td3-green, #2da44e) 10%, var(--tdw-card, rgba(255, 255, 255, 0.035)));
-  }
-  100% {
-    border-color: color-mix(in srgb, var(--td3-focus, #5b8cff) 42%, transparent);
-    background: color-mix(in srgb, var(--td3-focus, #5b8cff) 8%, var(--tdw-card, rgba(255, 255, 255, 0.035)));
-  }
+.hr-native-project-heading .hr-native-project-ready {
+  min-width: 16px;
+  padding: 0 5px;
+  border-radius: 999px;
+  color: #fff;
+  background: var(--td3-blue-text, #5b8cff);
+  font-size: 10px;
+  font-style: normal;
+  font-weight: 700;
+  line-height: 16px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+@keyframes hr-native-session-unseen-in {
+  0% { transform: scale(0); }
+  60% { transform: scale(1.5); }
+  100% { transform: scale(1); }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .hr-native-session-row.just-finished {
+  .hr-native-session-row.unseen .hr-native-session-copy strong::before {
     animation: none;
-    border-color: color-mix(in srgb, var(--td3-green, #2da44e) 48%, transparent);
   }
 }
 

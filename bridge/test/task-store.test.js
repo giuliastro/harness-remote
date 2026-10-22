@@ -176,3 +176,41 @@ test("setWorkspace fails loudly if the task disappeared before persistence", asy
     await rm(stateDirectory, { recursive: true, force: true })
   }
 })
+
+test("setRunState transitions active task to cancelled terminal state with finishedAt and revision increment", async () => {
+  const stateDirectory = await mkdtemp(path.join(os.tmpdir(), "harness-task-cancel-"))
+  try {
+    const project = { id: "machine-1:project", name: "repo", path: "/work/repo", kind: "git" }
+    const store = new TaskRunStore({
+      machineID: "machine-1",
+      stateDirectory,
+      idFactory: () => "task-1",
+      clock: () => "2026-08-13T14:00:00.000Z"
+    })
+    await store.create({ project, agentId: "codex", prompt: "Work to cancel" })
+    const starting = await store.setRunState("task-1", {
+      status: "starting",
+      run: { id: "run-1", agentId: "codex", startedAt: "2026-08-13T14:00:00.000Z" }
+    })
+    const running = await store.setRunState("task-1", {
+      status: "running",
+      run: { ...starting.run, sessionId: "sess-1" }
+    })
+    assert.equal(running.status, "running")
+    assert.equal(running.context.revision, 0)
+
+    const cancelled = await store.setRunState("task-1", {
+      status: "cancelled",
+      run: running.run,
+      expectedRunId: "run-1"
+    })
+    assert.equal(cancelled.status, "cancelled")
+    assert.equal(cancelled.run.status, "cancelled")
+    assert.equal(cancelled.run.finishedAt, "2026-08-13T14:00:00.000Z")
+    assert.equal(cancelled.runs[0].status, "cancelled")
+    assert.equal(cancelled.runs[0].finishedAt, "2026-08-13T14:00:00.000Z")
+    assert.equal(cancelled.context.revision, 1)
+  } finally {
+    await rm(stateDirectory, { recursive: true, force: true })
+  }
+})

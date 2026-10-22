@@ -1,5 +1,6 @@
 import { api, type NativeSessionLinkRecord } from "./api"
 import { nativeSessionDisplayTitle } from "./native-session-title"
+import { federatedSessionBucket, type FederatedSessionPresentationState } from "./native-session-federation"
 import { liveSessionIndexStatus } from "./session-index-live-state"
 import type { BackendKind, MachineAgentHost, MessageEnvelope, ModelSelection, ServerConfig, Session, SessionStatus } from "./types"
 
@@ -81,8 +82,8 @@ export type NativeSessionSurfaceTarget = {
   external: boolean
   modelsSupported: boolean
   commandsSupported?: boolean
-  /** Native metadata mutations are exposed by the owning harness contract. The chat header shows
-   * Rename/Delete only for a Session whose harness actually implements them. */
+  /** Session metadata actions supported by the owning bridge. ACP can persist a local name and
+   * hide a Session even when the native protocol has no rename/delete operation. */
   renameSupported: boolean
   deleteSupported: boolean
   model: ModelSelection | null
@@ -109,7 +110,7 @@ export type NativeSessionSurfaceTarget = {
 }
 
 function supportedBackend(value: string, fallback: BackendKind): BackendKind {
-  return value === "opencode" || value === "omp" || value === "pi" || value === "claude" || value === "codex"
+  return value === "opencode" || value === "opencode2" || value === "omp" || value === "pi" || value === "claude" || value === "codex" || value === "copilot" || value === "mimo"
     ? value
     : fallback
 }
@@ -153,7 +154,8 @@ export function nativeSessionConfig(base: ServerConfig, agent: MachineAgentHost)
 export function nativeSessionSurfaceTarget(
   machineID: string,
   base: ServerConfig,
-  record: NativeSessionRecord
+  record: NativeSessionRecord,
+  presentationState?: FederatedSessionPresentationState
 ): NativeSessionSurfaceTarget {
   const directory = record.session.directory || ""
   const ref: NativeSessionRef = {
@@ -163,6 +165,14 @@ export function nativeSessionSurfaceTarget(
     directory
   }
   const external = record.session.external === true
+  // Opening the row must retain the live activity it displays while the first transcript is read.
+  // Discovery can still contain idle from before the observed turn started (or busy after it ended).
+  const discoveredWorking = federatedSessionBucket(record.status) === "active"
+  const status = presentationState === "working" && !discoveredWorking
+    ? { type: "running" }
+    : presentationState === "ready" && discoveredWorking
+      ? { type: "idle" }
+      : record.status
   return {
     key: `${machineID}:${record.key}`,
     ref,
@@ -179,7 +189,7 @@ export function nativeSessionSurfaceTarget(
       backend: record.backend,
       agentId: record.agentId
     },
-    status: record.status,
+    status,
     external,
     modelsSupported: record.modelsSupported,
     commandsSupported: record.commandsSupported === true,
@@ -309,6 +319,54 @@ export async function discoverAgentNativeSessionPage(
       : {}
     return { records: nativeSessionRecords(agent, config, sessions, statuses) }
   }
+}
+
+/**
+ * Read through a short run of empty pages so a newly created native Session is not hidden behind
+ * stale/empty pagination entries. This deliberately keeps the same one-page semantics above and
+ * only follows cursors while every returned page is empty. The request count and wall-clock budget
+ * are bounded; when either bound is reached, the last successful page (including its cursor) is
+ * returned so the caller can offer an explicit continuation.
+ */
+export async function discoverAgentNativeSessionPageSkippingEmpty(
+  base: ServerConfig,
+  agent: MachineAgentHost,
+  cursor?: string,
+  client: NativeSessionPageReadApi = api,
+  timeoutMs = NATIVE_SESSION_DISCOVERY_BUDGET_MS
+): Promise<NativeSessionRecordPage> {
+  const maxPageRequests = 4
+  const startedAt = Date.now()
+  const requestedCursors = new Set<string>()
+  let nextCursor = cursor
+  let lastPage: NativeSessionRecordPage | undefined
+
+  for (let request = 0; request < maxPageRequests; request += 1) {
+    if (nextCursor !== undefined && requestedCursors.has(nextCursor)) break
+    const remainingMs = timeoutMs - (Date.now() - startedAt)
+    if (request > 0 && remainingMs <= 0) break
+    if (nextCursor !== undefined) requestedCursors.add(nextCursor)
+
+    try {
+      const page = await discoverAgentNativeSessionPage(
+        base,
+        agent,
+        nextCursor,
+        client,
+        request === 0 ? timeoutMs : remainingMs
+      )
+      lastPage = page
+      if (page.records.length > 0 || !page.nextCursor) return page
+      nextCursor = page.nextCursor
+    } catch (error) {
+      // The first read is the user's requested operation and should retain its normal error path.
+      // Once an empty page has succeeded, keep its cursor available for manual retry instead.
+      if (!lastPage) throw error
+      return lastPage
+    }
+  }
+
+  return lastPage ?? { records: [] }
 }
 
 /**

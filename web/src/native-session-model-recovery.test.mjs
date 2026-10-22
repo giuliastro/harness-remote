@@ -80,7 +80,7 @@ try {
   ], "model recovery must read only the exact native Session page without forcing replay")
   assert.equal(modelCalls.length, 0, "OpenCode transcript recovery must not consult a second model authority")
 
-  for (const backend of ["omp", "pi", "codex"]) {
+  for (const backend of ["opencode2", "omp", "pi", "codex", "copilot", "mimo"]) {
     pageCalls.length = 0
     modelCalls.length = 0
     const expected = {

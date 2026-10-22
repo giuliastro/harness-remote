@@ -82,9 +82,8 @@ jobs:
         run: npm run build
         working-directory: web
 
-      - name: Run web regression tests
-        run: npm run test:ci:desktop
-        working-directory: web
+      # Web regressions and bridge tests are required checks on every pull request into main, so a
+      # commit that reaches this build has already passed them.
 
       # The unit tests can only check the menu template the app builds, not that Electron accepts it.
       # Boot Electron on the desktop runners that can exercise the native menu and read it back.
@@ -92,10 +91,6 @@ jobs:
         if: runner.os == 'macOS' || runner.os == 'Windows'
         run: npm run test:desktop:menu
         working-directory: web
-
-      - name: Run bridge tests
-        run: npm test
-        working-directory: bridge
 
       - name: Build unsigned ${{ matrix.platform }} artifacts
         run: npm run ${{ matrix.script }}

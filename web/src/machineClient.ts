@@ -1,5 +1,8 @@
+import { createTranslator, type Translator } from "./i18n"
 import { Capacitor, CapacitorHttp } from "@capacitor/core"
-import { desktopRequestResult, isDesktopPlatform } from "./desktopBridge"
+import { desktopConfigurationProbe, desktopRequestResult, isDesktopPlatform } from "./desktopBridge"
+import { MachineHttpError } from "./machine-request-error"
+import { parseMachinePairingGrant, parseMachinePairingGrantStatus, type MachinePairingGrant, type MachinePairingGrantStatus } from "./machine-pairing"
 import { authHeader, hasCredentials, machineBaseUrl } from "./serverConfig"
 import type { MachineProject } from "./taskClient"
 import type { MachineSnapshot, ServerConfig } from "./types"
@@ -198,11 +201,13 @@ async function discoverBrowserMachine(config: ServerConfig): Promise<MachineSnap
  */
 export async function discoverMachine(
   config: ServerConfig,
-  options: { allowCachedOnTransportFailure?: boolean } = {}
+  options: { allowCachedOnTransportFailure?: boolean; configurationProbe?: boolean } = {}
 ): Promise<MachineSnapshot | null> {
   const allowCachedOnTransportFailure = options.allowCachedOnTransportFailure === true
   if (isDesktopPlatform()) {
-    const result = await desktopRequestResult(config, { path: "/v1/machine" })
+    const result = options.configurationProbe
+      ? await desktopConfigurationProbe(config, "/v1/machine")
+      : await desktopRequestResult(config, { path: "/v1/machine" })
     if (!result.ok) {
       if (result.error.code === "http" && noMachineStatus(result.error.status)) return null
       if (result.error.code !== "http" && allowCachedOnTransportFailure) {
@@ -243,9 +248,11 @@ export async function discoverMachine(
 }
 
 /** Read the daemon's canonical, machine-scoped Project catalog without depending on Task storage. */
-export async function listMachineProjects(config: ServerConfig): Promise<MachineProject[]> {
+export async function listMachineProjects(config: ServerConfig, options: { configurationProbe?: boolean } = {}): Promise<MachineProject[]> {
   if (isDesktopPlatform()) {
-    const result = await desktopRequestResult(config, { path: "/v1/projects" })
+    const result = options.configurationProbe
+      ? await desktopConfigurationProbe(config, "/v1/projects")
+      : await desktopRequestResult(config, { path: "/v1/projects" })
     if (!result.ok) {
       if (result.error.code !== "http") {
         const cached = recentCachedProjects(config)
@@ -358,8 +365,64 @@ export async function listApprovalDecisions(config: ServerConfig, identity: Appr
   return approvalDecisionRecords(await response.json())
 }
 
-export function selectableMachineAgents(machine: MachineSnapshot): MachineSnapshot["agents"] {
-  return machine.agents.filter((agent) => agent.state === "available" || agent.state === "configured")
+/**
+ * The machine daemon's pairing authority, spoken over whatever transport already reaches the
+ * machine: Electron main for the desktop app, CapacitorHttp on Android, fetch in a browser.
+ *
+ * Only a caller that already authenticates as this machine may request a grant, so this route adds
+ * no authority - it makes the one-time bootstrap that the terminal announces at startup issuable
+ * and inspectable on demand. The response never contains credentials; those only travel through
+ * the claim exchange the phone performs.
+ */
+async function machinePairingGrantRoute(config: ServerConfig, method: "GET" | "POST"): Promise<unknown> {
+  const path = "/v1/pairing/grant"
+  if (isDesktopPlatform()) {
+    const result = await desktopRequestResult(config, { path, method })
+    if (!result.ok) throw new MachineHttpError(result.error.message, result.error.status)
+    return result.response.data
+  }
+
+  const target = `${machineBaseUrl(config)}${path}`
+  if (Capacitor.isNativePlatform()) {
+    let response
+    try {
+      response = await CapacitorHttp.request({ url: target, method, headers: headers(config), connectTimeout: 12_000, readTimeout: 12_000 })
+    } catch { throw new Error(`Cannot reach ${config.host}:${config.port}.`) }
+    if (response.status >= 400) throw new MachineHttpError(pairingErrorDetail(response.data, response.status), response.status)
+    return response.data
+  }
+
+  let response: Response
+  try { response = await fetch(target, { method, headers: headers(config) }) }
+  catch { throw new Error(`Cannot reach ${config.host}:${config.port}.`) }
+  let body: unknown = null
+  try { body = await response.json() } catch { /* the status below carries the failure */ }
+  if (!response.ok) throw new MachineHttpError(pairingErrorDetail(body, response.status), response.status)
+  return body
+}
+
+function pairingErrorDetail(value: unknown, status: number): string {
+  if (value && typeof value === "object" && !Array.isArray(value)) {
+    const error = (value as { error?: unknown }).error
+    if (typeof error === "string" && error.trim()) return error.trim().slice(0, 1_000)
+  }
+  return status === 401
+    ? "This app is not authorized to manage this machine."
+    : `The machine rejected the pairing request with HTTP ${status}.`
+}
+
+/** Replace any outstanding pairing grant with a fresh one. The previous QR stops working at once. */
+export async function requestMachinePairingGrant(config: ServerConfig): Promise<MachinePairingGrant> {
+  const parsed = parseMachinePairingGrant(await machinePairingGrantRoute(config, "POST"))
+  if (!parsed) throw new Error("The machine returned an invalid pairing response.")
+  return parsed
+}
+
+/** Read the outstanding grant so the dialog can confirm a claim or an expiry. */
+export async function readMachinePairingGrantStatus(config: ServerConfig): Promise<MachinePairingGrantStatus> {
+  const parsed = parseMachinePairingGrantStatus(await machinePairingGrantRoute(config, "GET"))
+  if (!parsed) throw new Error("The machine returned an invalid pairing response.")
+  return parsed
 }
 
 /**
@@ -371,9 +434,9 @@ export function selectableMachineAgents(machine: MachineSnapshot): MachineSnapsh
  * problem that does not exist, and having one definition keeps the machine list, the workspace rail
  * and the harness pills from disagreeing about the same agent.
  */
-export function machineAgentStateLabel(state: string): string {
-  if (state === "available") return "Running"
-  if (state === "configured") return "Ready"
-  if (state === "unavailable") return "Unavailable"
+export function machineAgentStateLabel(state: string, t: Translator = createTranslator("en")): string {
+  if (state === "available") return t("machine.agentRunning")
+  if (state === "configured") return t("machine.agentReady")
+  if (state === "unavailable") return t("machine.agentUnavailable")
   return state
 }

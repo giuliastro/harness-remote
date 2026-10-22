@@ -21,6 +21,7 @@ const handoff = read('./native-session-handoff.ts')
 const routing = read('./native-session-routing.ts')
 const machineMigration = read('./native-session-machine-id-migration.ts')
 const standalone = read('./components/standalone-universal-workspace.tsx')
+const main = read('./main.tsx')
 const api = read('./api.ts')
 const daemon = read('../../bridge/src/machine-daemon.js')
 const daemonCli = read('../../bridge/src/daemon-cli.js')
@@ -182,5 +183,37 @@ assert.ok(standalone.includes('<NativeSessionHome'), 'Session-first navigation m
 assert.ok(standalone.includes('<NativeSessionTitle target={selected} onRenamed={handleSessionRenamed} />'), 'open Session header must own rename as an inline edit of its own heading')
 assert.ok(standalone.includes('<CommandPalette') && standalone.includes('event.key.toLowerCase() === "k"'), 'Session-first must restore the Ctrl/Cmd+K command palette')
 assert.ok(conversation.includes('uw-command-suggestions') && conversation.includes('chooseCommand'), 'the shared composer must restore keyboard-friendly slash command discovery')
+
+// The open Session header carries one identity, not two. Machine and Project already live in the
+// top-bar context path, so the eyebrow above the title keeps only the harness identity instead of
+// repeating them beside the title.
+const eyebrow = standalone.match(/<div className="hr-native-session-eyebrow">[\s\S]*?<\/div>/)?.[0] || ''
+assert.ok(eyebrow.includes('selected.agentLabel') && eyebrow.includes('selected.nativeAgent'), 'the Session eyebrow must keep the harness identity')
+assert.equal(/selectedMachine|selectedProject/.test(eyebrow), false, 'machine and Project must not be repeated beside the title; the top bar owns them')
+assert.ok(standalone.includes('selectedMachine?.name') && standalone.includes('selectedProject'), 'the top-bar context path must keep machine and Project identity')
+
+// An empty machine list is not proof the user has none: desktop resolves its local runtime after the
+// first paint. The manager must wait for that settlement, and the empty-list screen must not invite
+// the user to add a machine that is already on its way.
+assert.ok(standalone.includes('useState(machinesReady && machines.length === 0)'), 'the Machines manager must not auto-open before the machine list has settled')
+const managerOpenLine = standalone.match(/const \[managerOpen, setManagerOpen\] = useState\([^\n]*\)/)?.[0] || ''
+assert.ok(managerOpenLine.includes('machinesReady && machines.length === 0'), 'the manager initial state must require a settled machine list')
+assert.ok(standalone.includes('const machinesLoading = !machinesReady && machines.length === 0'), 'the shell must distinguish a pending machine list from a truly empty one')
+assert.ok(main.includes('machinesReady') && main.includes('machinesReady={machinesReady}'), 'the shell must be told when the machine list has settled')
+
+// Re-entering an already-working Session must not re-read the "getting started" label of the Send the
+// user watched in an earlier view. Opening the surface bumps a revision the conversation observes, so
+// the label is retired even when the phone rail kept the same Session mounted instead of remounting it.
+assert.ok(standalone.includes('const [sessionViewRevision, setSessionViewRevision] = useState(0)'), 'the workspace must track Session-surface views')
+assert.ok(standalone.includes('setSessionViewRevision((value) => value + 1)'), 'opening a Session must begin a new view')
+assert.ok(standalone.includes('surfaceViewRevision={sessionViewRevision}'), 'the opened Session must be told which view it is in')
+assert.ok(observer.includes('surfaceViewRevision?: number') && observer.includes('<WorkThreadConversation') && observer.includes('surfaceViewRevision={surfaceViewRevision}'), 'the observer must forward the view revision to the conversation')
+
+// Returning to the foreground may mean a phone slept through a turn's terminal edge. The stale
+// streamed status is dropped and the rail is told to re-read the Session index immediately.
+const foregroundHandler = standalone.match(/const onVisibility = \(\) => \{[\s\S]*?\n    \}/)?.[0] || ''
+assert.ok(foregroundHandler.includes('document.visibilityState !== "visible"'), 'only the hidden-to-visible edge may trigger a resume reset')
+assert.ok(foregroundHandler.includes('clearSessionIndexLiveStatuses()'), 'foregrounding must drop stale transient live statuses')
+assert.ok(foregroundHandler.includes('setListRevision((value) => value + 1)'), 'foregrounding must force one Session-index re-read')
 
 console.log('session-first v3-first architecture guards passed')

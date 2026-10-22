@@ -32,7 +32,8 @@ test("the working clock only ticks while a native turn is running", () => {
 
 test("an empty model catalog is a resolved native Session state, not a dead disabled control", () => {
   assert.match(picker, /const empty = !loading && models\.length === 0/)
-  assert.match(picker, /empty\s*\n\s*\? "Harness default"/)
+  // Empty catalogs can retain a known native model; rendered fallback cases have behavioral
+  // coverage in model-picker-current-model.test.mjs.
   assert.match(picker, /Chosen by the coding agent/)
   assert.doesNotMatch(picker, /disabled=\{disabled \|\| loading \|\| models\.length === 0\}/)
   assert.match(observer, /deferModelFallback/)

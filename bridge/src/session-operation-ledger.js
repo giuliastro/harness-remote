@@ -1,6 +1,5 @@
-import { randomUUID } from "node:crypto"
-import { mkdir, readFile, rename, writeFile } from "node:fs/promises"
 import path from "node:path"
+import { JsonFileStore } from "./json-file-store.js"
 
 const VERSION = 1
 const MAX_OPERATIONS = 1024
@@ -29,30 +28,33 @@ export class SessionOperationLedger {
   #machineID
   #stateDirectory
   #path
+  #store
   #loaded = false
   #operations = new Map()
-  #mutation = Promise.resolve()
 
   constructor({ machineID, stateDirectory }) {
     this.#machineID = machineID
     this.#stateDirectory = stateDirectory
     this.#path = path.join(stateDirectory, "session-operations.json")
+    this.#store = new JsonFileStore({ filePath: this.#path, stateDirectory })
   }
 
   async #load() {
     if (this.#loaded) return
     this.#loaded = true
-    try {
-      const parsed = JSON.parse(await readFile(this.#path, "utf8"))
-      if (parsed?.version !== VERSION || parsed?.machineID !== this.#machineID || !Array.isArray(parsed.operations)) return
-      for (const entry of parsed.operations) {
-        if (!entry || typeof entry !== "object") continue
-        if (!["pending", "accepted", "uncertain"].includes(entry.state)) continue
-        if (![entry.agentID, entry.sessionID, entry.clientRequestId, entry.signature].every((value) => typeof value === "string" && value)) continue
-        this.#operations.set(operationKey(entry.agentID, entry.sessionID, entry.clientRequestId), entry)
+    const parsed = await this.#store.read({
+      onCorrupt: "error",
+      onError: () => {
+        throw ledgerError("operation_ledger_unreadable", "Native Session operation ledger is unreadable")
       }
-    } catch (error) {
-      if (error?.code !== "ENOENT") throw ledgerError("operation_ledger_unreadable", "Native Session operation ledger is unreadable")
+    })
+    if (!parsed) return
+    if (parsed.version !== VERSION || parsed.machineID !== this.#machineID || !Array.isArray(parsed.operations)) return
+    for (const entry of parsed.operations) {
+      if (!entry || typeof entry !== "object") continue
+      if (!["pending", "accepted", "uncertain"].includes(entry.state)) continue
+      if (![entry.agentID, entry.sessionID, entry.clientRequestId, entry.signature].every((value) => typeof value === "string" && value)) continue
+      this.#operations.set(operationKey(entry.agentID, entry.sessionID, entry.clientRequestId), entry)
     }
   }
 
@@ -103,21 +105,15 @@ export class SessionOperationLedger {
 
   async #persist() {
     this.#trim()
-    await mkdir(this.#stateDirectory, { recursive: true })
-    const payload = JSON.stringify({
+    await this.#store.write({
       version: VERSION,
       machineID: this.#machineID,
       operations: [...this.#operations.values()]
     })
-    const temporary = `${this.#path}.${process.pid}.${randomUUID()}.tmp`
-    await writeFile(temporary, payload, { mode: 0o600 })
-    await rename(temporary, this.#path)
   }
 
   #serial(operation) {
-    const next = this.#mutation.then(operation, operation)
-    this.#mutation = next.catch(() => undefined)
-    return next
+    return this.#store.serial(operation)
   }
 
   async begin({ agentID, sessionID, clientRequestId, signature }) {
@@ -182,5 +178,64 @@ export class SessionOperationLedger {
     await this.#load()
     const entry = this.#operations.get(operationKey(agentID, sessionID, clientRequestId))
     return entry ? structuredClone(entry) : undefined
+  }
+}
+
+export async function runIdempotentMutation({
+  operationLedger,
+  identity,
+  signature,
+  dispatch,
+  reconcile
+}) {
+  const started = await operationLedger.begin({ ...identity, signature })
+  if (started.duplicate) {
+    if (started.state === "uncertain" && typeof reconcile === "function") {
+      try {
+        const recovered = await reconcile(started.entry.result)
+        if (recovered) {
+          await operationLedger.accept({ ...identity, result: recovered })
+          return { status: "accepted", duplicate: true, result: recovered }
+        }
+      } catch {
+        // Reconciliation is read-only. A temporary read failure must leave the original uncertain
+        // entry untouched rather than replaying a resource-creating mutation.
+      }
+    }
+    return { status: started.state, duplicate: true, result: started.entry.result }
+  }
+
+  let dispatched = false
+  let checkpointedResult
+  const checkpoint = async (result) => {
+    await operationLedger.accept({ ...identity, result })
+    checkpointedResult = result
+  }
+
+  try {
+    const result = await dispatch({ checkpoint })
+    dispatched = true
+    const acceptedResult = result === undefined ? checkpointedResult : result
+    if (result !== undefined || checkpointedResult === undefined) {
+      await operationLedger.accept({ ...identity, result })
+    }
+    return { status: "accepted", duplicate: false, result: acceptedResult }
+  } catch (error) {
+    if (checkpointedResult !== undefined) {
+      // Resource identity is already durable. Any later title/model/link enrichment failure cannot
+      // turn the creation back into "unknown"; retries must return this exact resource.
+      return { status: "accepted", duplicate: false, result: checkpointedResult }
+    }
+    const ambiguous = dispatched || error?.ambiguous === true
+    // Once dispatch has returned, the native resource may exist even if persisting `accepted`
+    // failed. Keep that operation uncertain so a retry can only reconcile; never delete the ledger
+    // entry and accidentally permit a second target Session.
+    await operationLedger.fail({
+      ...identity,
+      ambiguous,
+      ...(error?.recovery !== undefined ? { result: error.recovery } : {})
+    })
+    if (ambiguous) return { status: "uncertain", duplicate: false }
+    throw error
   }
 }

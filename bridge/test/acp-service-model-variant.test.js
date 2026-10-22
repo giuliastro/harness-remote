@@ -1,6 +1,7 @@
 import assert from "node:assert/strict"
 import test from "node:test"
 import { AcpService } from "../src/acp-service.js"
+import { harnessProfile } from "../src/harness-profiles.js"
 
 /**
  * A harness legitimately resets dependent controls when the model changes, so the variant must be
@@ -12,11 +13,13 @@ class RecordingAcp {
   #listeners = new Set()
   promptCapabilities = {}
   processID = 4242
-  constructor({ holdPrompt = false, models = ["openai/a", "openai/b"], currentModel = models[0] } = {}) {
+  constructor({ holdPrompt = false, models = ["openai/a", "openai/b"], currentModel = models[0], variantConfigID = "thinking", currentVariant = "off" } = {}) {
     this.holdPrompt = holdPrompt
     this.releasePrompt = undefined
     this.models = models
     this.currentModel = currentModel
+    this.variantConfigID = variantConfigID
+    this.currentVariant = currentVariant
   }
   on() { return this }
   off() { return this }
@@ -28,7 +31,7 @@ class RecordingAcp {
   #configOptions() {
     return [
       { id: "model", currentValue: this.currentModel, options: this.models.map((value) => ({ value })) },
-      { id: "thinking", currentValue: "off", options: [{ value: "off" }, { value: "high" }] }
+      { id: this.variantConfigID, currentValue: this.currentVariant, options: [{ value: this.currentVariant }, { value: "high" }] }
     ]
   }
   async request(method, params) {
@@ -47,6 +50,89 @@ class RecordingAcp {
 function configCalls(acp) {
   return acp.calls.filter(([method]) => method === "session/set_config_option").map(([, configId, value]) => `${configId}=${value}`)
 }
+
+test("a journal-less ACP session restores its native model and variant on transcript reads", async () => {
+  const acp = new RecordingAcp({ models: ["opencode/longcat-2.5-preview-free"] })
+  // Having resume available must not suppress the transcript replay without a journal source.
+  acp.sessionCapabilities = { resume: {} }
+  const service = new AcpService(acp, { modelVariantConfigIDs: ["thinking"] })
+  const page = await service.messagePage("s1")
+  assert.deepEqual(page.model, { providerID: "opencode", modelID: "longcat-2.5-preview-free", variant: "off" })
+  assert.ok(acp.calls.some(([method]) => method === "session/load"))
+  assert.equal(acp.calls.some(([method]) => method === "session/resume"), false)
+})
+
+test("OpenCode 2 omits only its declared native default variant while preserving selected effort", async () => {
+  const profile = harnessProfile("opencode2")
+  const options = {
+    modelVariantConfigIDs: profile.modelVariantConfigIDs,
+    modelVariantDefaultValues: profile.modelVariantDefaultValues
+  }
+  const defaultAcp = new RecordingAcp({ models: ["opencode/longcat-2.5-preview-free"], variantConfigID: "effort", currentVariant: "default" })
+  const defaultService = new AcpService(defaultAcp, options)
+  assert.deepEqual((await defaultService.messagePage("s1")).model, {
+    providerID: "opencode",
+    modelID: "longcat-2.5-preview-free"
+  })
+
+  const highAcp = new RecordingAcp({ models: ["opencode/longcat-2.5-preview-free"], variantConfigID: "effort", currentVariant: "high" })
+  const highService = new AcpService(highAcp, options)
+  assert.deepEqual((await highService.messagePage("s1")).model, {
+    providerID: "opencode",
+    modelID: "longcat-2.5-preview-free",
+    variant: "high"
+  })
+})
+
+test("an undeclared native default remains a literal selection for other harnesses", async () => {
+  const acp = new RecordingAcp({ models: ["openai/a"], variantConfigID: "reasoning", currentVariant: "default" })
+  const service = new AcpService(acp, { modelVariantConfigIDs: ["reasoning"] })
+  assert.deepEqual((await service.messagePage("s1")).model, {
+    providerID: "openai",
+    modelID: "a",
+    variant: "default"
+  })
+})
+
+test("MiMo inline variants use one exact native model value and survive transcript reads", async () => {
+  const acp = new RecordingAcp({ models: ["xiaomi/mimo-v2.6-flash", "xiaomi/mimo-v2.6-flash/high"] })
+  const service = new AcpService(acp, { inlineModelVariantValues: ["high"] })
+  await service.setModel("s1", "xiaomi/mimo-v2.6-flash", { configId: "model", value: "high" })
+  assert.deepEqual(configCalls(acp), ["model=xiaomi/mimo-v2.6-flash/high"])
+  assert.deepEqual((await service.messagePage("s1")).model, { providerID: "xiaomi", modelID: "mimo-v2.6-flash", variant: "high" })
+  await service.setModel("s1", "xiaomi/mimo-v2.6-flash", { configId: "model", value: "xiaomi/mimo-v2.6-flash/high" })
+  assert.equal(configCalls(acp).length, 1)
+})
+
+test("retired MiMo models and unadvertised inline variants never reach model switching", async () => {
+  const acp = new RecordingAcp({ models: ["xiaomi/mimo-v2.6-flash", "mimo/mimo-auto", "mimo/mimo-auto/high"] })
+  const service = new AcpService(acp, { excludedModelValuePrefixes: ["mimo/mimo-auto"], inlineModelVariantValues: ["high"] })
+  assert.deepEqual((await service.models("s1")).map((option) => option.value), ["xiaomi/mimo-v2.6-flash"])
+  await assert.rejects(service.setModel("s1", "mimo/mimo-auto"), /unavailable/)
+  await assert.rejects(service.setModel("s1", "xiaomi/mimo-v2.6-flash", { configId: "model", value: "high" }), /variant is not available/)
+  assert.deepEqual(configCalls(acp), [])
+})
+
+test("legacy ACP model state is switched with session/set_model", async () => {
+  const acp = new RecordingAcp()
+  const original = acp.request.bind(acp)
+  acp.request = async (method, params) => method === "session/load"
+    ? { models: { currentModelId: "one", availableModels: [{ modelId: "one" }, { modelId: "two" }] } }
+    : original(method, params)
+  const service = new AcpService(acp, { modelProviderID: "copilot" })
+  assert.deepEqual((await service.messagePage("s1")).model, { providerID: "copilot", modelID: "one" })
+  await service.setModel("s1", "copilot/two")
+  assert.ok(acp.calls.some(([method]) => method === "session/set_model"))
+  assert.deepEqual(configCalls(acp), [])
+})
+
+test("a provider cannot silently finish a prompt without the required assistant response", async () => {
+  const service = new AcpService(new RecordingAcp(), { requireAssistantResponse: true })
+  await assert.rejects(service.promptAndWait("s1", "Hello"), /without an assistant response/)
+  const messages = await service.messages("s1")
+  assert.match(messages.find((message) => message.info.error)?.info.error.message, /without an assistant response/)
+  assert.equal(service.status("s1").type, "idle")
+})
 
 test("setModel applies the model before its harness-advertised variant", async () => {
   const acp = new RecordingAcp()

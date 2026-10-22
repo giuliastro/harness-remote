@@ -229,7 +229,7 @@ responder = (url) => {
   return new Response(JSON.stringify({
     models: [{
       providerID: 'codex',
-      providerName: 'Codex CLI',
+      providerName: 'Codex',
       modelID: 'gpt-5.6-sol',
       modelName: 'GPT-5.6-Sol'
     }],
@@ -251,6 +251,13 @@ assert.equal(sent.length, 1, 'native Session model discovery must be one current
 const currentCatalogRequest = new URL(sent[0].url)
 assert.equal(currentCatalogRequest.pathname, '/v1/agents/codex/models')
 assert.equal(currentCatalogRequest.searchParams.get('sessionID'), null)
+for (const backend of ['copilot', 'mimo']) {
+  assert.deepEqual(modelCatalogConfig(claudePrimaryConfig, backend), { ...claudePrimaryConfig, backend, agentId: backend })
+  sent.length = 0
+  const catalog = await taskClient.listAgentModels(claudePrimaryConfig, backend)
+  assert.equal(catalog.models[0]?.modelID, 'gpt-5.6-sol', `${backend} must receive its own catalog`)
+  assert.equal(new URL(sent[0].url).pathname, `/v1/agents/${backend}/models`, `${backend} catalog requests must preserve exact agent routing`)
+}
 
 // --- 10. Prompt and slash-command mutations use the exact native Session transport ----------------
 sent.length = 0

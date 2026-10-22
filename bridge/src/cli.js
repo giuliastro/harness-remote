@@ -1,7 +1,9 @@
 #!/usr/bin/env node
 import path from "node:path"
 import { AcpClient } from "./acp-client.js"
+import { createAcpProviderRuntime } from "./acp-provider-runtime.js"
 import { parseConfig, usage } from "./config.js"
+import { createHarnessLogWriter } from "./harness-log.js"
 import { harnessProfile } from "./harness-profiles.js"
 import { loadMachineIdentity, MachineRegistry, trackAgentHostLifecycle } from "./machine-registry.js"
 import { createBridgeServer } from "./server.js"
@@ -32,8 +34,11 @@ if (config) {
     capabilities: profile.capabilities
   })
 
+  const providerRuntime = profile.createModelCatalog || profile.sessionListScope === "project"
+    ? await createAcpProviderRuntime({ provider: profile, launch: { command: config.acpCommand, args: config.acpArgs }, config })
+    : undefined
   const acp = trackAgentHostLifecycle(
-    new AcpClient({ command: config.acpCommand, args: config.acpArgs, permissionMode: profile.permissionMode, preferredAuthMethod: profile.authMethod }),
+    providerRuntime?.agent ?? new AcpClient({ command: config.acpCommand, args: config.acpArgs, permissionMode: profile.permissionMode, preferredAuthMethod: profile.authMethod, authenticate: profile.authenticate, environment: profile.environment }),
     machineRegistry,
     profile.id
   )
@@ -42,8 +47,9 @@ if (config) {
     acp,
     machineRegistry,
     serviceOptions: {
+      ...providerRuntime?.registration.serviceOptions,
       snapshotDirectory: path.join(config.stateDirectory, profile.id),
-      historyLoader: profile.historyLoader,
+      historyLoader: providerRuntime?.registration.serviceOptions.historyLoader ?? profile.historyLoader,
       preserveListedTimestamps: profile.preserveListedTimestamps,
       reloadOnHistoryRefresh: profile.reloadOnHistoryRefresh,
       replaySettleMs: profile.replaySettleMs,
@@ -52,13 +58,16 @@ if (config) {
   })
   let shuttingDown = false
 
-  acp.on("stderr", (line) => process.stderr.write(`[${config.backend}] ${line}\n`))
-  acp.on("permission", ({ optionId }) => {
-    process.stderr.write(`[${config.backend}] granted tool permission (${optionId ?? "none offered"})\n`)
-  })
-  acp.on("agent-request", (message) => {
-    process.stderr.write(`[${config.backend}] handled agent request: ${message.method}\n`)
-  })
+  const writeHarnessLog = createHarnessLogWriter({ verbose: config.verbose })
+  acp.on("stderr", (line) => writeHarnessLog(config.backend, line))
+  if (config.verbose) {
+    acp.on("permission", ({ optionId }) => {
+      process.stderr.write(`[${config.backend}] granted tool permission (${optionId ?? "none offered"})\n`)
+    })
+    acp.on("agent-request", (message) => {
+      process.stderr.write(`[${config.backend}] handled agent request: ${message.method}\n`)
+    })
+  }
   acp.on("exit", (error) => {
     if (!shuttingDown) process.stderr.write(`[${config.backend}] ${error.message}\n`)
   })
@@ -73,6 +82,7 @@ if (config) {
   })
 
   const shutdown = () => {
+    providerRuntime?.modelCatalog.close?.()
     if (shuttingDown) return
     shuttingDown = true
     acp.close()

@@ -57,7 +57,7 @@ test("Session list navigation groups real native Sessions by machine and Project
   assert.match(home, /collapsedMachines/)
   assert.match(home, /collapsedProjects/)
   assert.match(home, /sessionTreeRows\(group\.sessions\)/)
-  assert.match(home, /onClick=\{\(\) => \{ if \(!deleting\) open\(item\) \}\}/)
+  assert.match(home, /onClick=\{\(\) => \{\s+if \(deleting\) return\s+clearFinished\(targetKey\)\s+open\(item\)\s+\}\}/)
   assert.match(home, /disabled=\{deleting\}/)
   assert.match(attentionHome, /<NativeSessionHomeBase/, "global Attention must compose, not replace, native Session navigation")
 })

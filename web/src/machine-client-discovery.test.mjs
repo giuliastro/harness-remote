@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
-import { discoverMachine } from './machineClient.ts'
+import { discoverMachine, readMachinePairingGrantStatus, requestMachinePairingGrant } from './machineClient.ts'
+import { MachineHttpError } from './machine-request-error.ts'
 
 // Behavioral replacement for the old source-text guards in machine-payload.test.mjs. Exercise the
 // real discovery path under Vite so application imports resolve exactly as they do in the web app.
@@ -113,6 +114,73 @@ try {
   }
 } finally {
   globalThis.fetch = originalFetch
+}
+
+// Pairing grants use the same authenticated machine endpoint as every other machine call. The
+// client-side behavioral contract: authenticated POST to issue, authenticated GET to poll, parsed
+// answer or a typed HTTP error - never a silent success.
+{
+  const grantCalls = []
+  const pairingURLCandidate = `harnessremote://pair?endpoint=${encodeURIComponent('http://192.168.1.20:4097')}&token=${'a'.repeat(43)}&expires=${Date.now() + 60_000}`
+  const grantPayload = {
+    version: 1,
+    expiresAt: Date.now() + 300_000,
+    loopbackOnly: false,
+    links: [{ endpoint: 'http://192.168.1.20:4097', uri: pairingURLCandidate }]
+  }
+  const config = {
+    backend: 'opencode',
+    host: 'pairing-machine.invalid',
+    port: 4097,
+    username: 'harness',
+    password: 'secret'
+  }
+  try {
+    globalThis.fetch = async (input, init = {}) => {
+      grantCalls.push({ url: String(input), init })
+      return { status: 200, ok: true, json: async () => grantPayload }
+    }
+    const grant = await requestMachinePairingGrant(config)
+    assert.deepEqual(
+      grant,
+      { expiresAt: grantPayload.expiresAt, loopbackOnly: false, links: grantPayload.links },
+      'the issued grant is the parsed daemon answer'
+    )
+    assert.deepEqual(
+      grantCalls.map((call) => [call.url, call.init.method, call.init.headers.Authorization]),
+      [['http://pairing-machine.invalid:4097/v1/pairing/grant', 'POST', `Basic ${Buffer.from('harness:secret').toString('base64')}`]],
+      'issuing a grant must be an authenticated POST to the machine pairing route'
+    )
+
+    grantCalls.length = 0
+    globalThis.fetch = async (input, init = {}) => {
+      grantCalls.push({ url: String(input), init })
+      return { status: 200, ok: true, json: async () => ({ version: 1, expiresAt: grantPayload.expiresAt, claimed: true, expired: false }) }
+    }
+    const status = await readMachinePairingGrantStatus(config)
+    assert.deepEqual(status, { expiresAt: grantPayload.expiresAt, claimed: true, expired: false }, 'grant status must report the daemon truth')
+    assert.deepEqual(
+      grantCalls.map((call) => [call.url, call.init.method]),
+      [['http://pairing-machine.invalid:4097/v1/pairing/grant', 'GET']],
+      'status polling must be an authenticated GET to the same route'
+    )
+
+    globalThis.fetch = async () => ({ status: 401, ok: false, json: async () => ({}) })
+    await assert.rejects(
+      () => requestMachinePairingGrant(config),
+      (error) => error instanceof MachineHttpError && error.status === 401,
+      'an unauthorized grant request must surface as a machine HTTP error'
+    )
+
+    globalThis.fetch = async () => ({ status: 200, ok: true, json: async () => ({ version: 1, links: [] }) })
+    await assert.rejects(
+      () => requestMachinePairingGrant(config),
+      /invalid pairing response/,
+      'a malformed grant answer must not be treated as a usable QR'
+    )
+  } finally {
+    globalThis.fetch = originalFetch
+  }
 }
 
 console.log('machine client discovery behavioral tests passed')

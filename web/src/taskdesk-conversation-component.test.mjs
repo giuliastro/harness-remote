@@ -68,8 +68,15 @@ test("an early empty assistant envelope stays behind the shared getting-started 
   assert.match(controller, /const replyTurnID = awaitingReplyTurnID \|\| conversation\.currentTurn\?\.id \|\| null/)
   assert.match(controller, /const presentedTimeline = useMemo/)
   assert.match(controller, /message\.info\.role === "assistant"[\s\S]*!assistantMessageHasSignal\(message\)/)
-  assert.match(controller, /const preparingReply = replyPending \|\| sending/)
+  assert.match(controller, /const preparingReply = replyPending\s*\|\| \(sending && !working && !replySettling\)/)
   assert.match(controller, /sending=\{preparingReply\}/)
+  assert.match(controller, /const freshSend = \(replyPending \|\| sending\) && sentInCurrentView/, "the getting-started label needs a reply sent while the user was watching this view, not merely a live turn whose assistant envelope has not landed yet")
+  const waitingExpression = controller.match(/const waitingLabel = hasAttention[\s\S]*?is working`/)?.[0] || ""
+  assert.doesNotMatch(waitingExpression, /preparingReply/, "a Session already working when it was reopened must read 'is working', never 'is getting started'")
+  assert.match(waitingExpression, /freshSend/, "only a fresh Send may show the getting-started label")
+  assert.match(controller, /const \[sentInCurrentView, setSentInCurrentView\] = useState\(false\)/)
+  assert.match(controller, /setSending\(true\)[\s\S]*setSentInCurrentView\(true\)/)
+  assert.match(controller, /useEffect\(\(\) => \{\r?\n\s*setSentInCurrentView\(false\)\r?\n\s*\}, \[surfaceViewRevision\]\)/, "opening the Session surface again must retire the getting-started label")
   assert.doesNotMatch(controller.match(/useEffect\(\(\) => \{[\s\S]*?if \(!awaitingReplyTurnID\) return[\s\S]*?\}, \[awaitingReplyTurnID[\s\S]*?\]\)/)?.[0] || "", /conversation\.currentTurn\?\.id !== awaitingReplyTurnID/)
   assert.match(controller, /liveTurnID = \(working \|\| replySettling\)[\s\S]*currentTurnHasAssistantSignal/)
   assert.match(component, /className="uw-message uw-message-agent uw-message-pending"/)
@@ -81,7 +88,10 @@ test("machine reconnect pauses mutations and resumes reconciliation in place", (
   assert.match(controller, /interactionEnabled = true/)
   assert.match(controller, /if \(!interactionEnabled\) \{[\s\S]*setModelsLoading\(false\)/)
   assert.match(controller, /sendInFlightRef\.current[\s\S]*\|\| !interactionEnabled[\s\S]*\|\| modelBootstrapBlocked/)
-  assert.match(controller, /sendDisabled=\{!interactionEnabled \|\| working/)
+  // Mid-turn prompts keep Send enabled while the turn runs (steering or backing the queue), so the
+  // disabled flag no longer contains `working`; reconnect and attention still block it unconditionally.
+  assert.match(controller, /sendDisabled=\{!interactionEnabled \|\| hasAttention/)
+  assert.doesNotMatch(controller, /sendDisabled=\{[^}]*\bworking\b/)
   assert.match(controller, /if \(!wasEnabled && interactionEnabled\) \{[\s\S]*void reconcile\(\)/)
   assert.match(controller, /onConnectionIssueRef\.current\?\.\(\)/)
 })
@@ -109,4 +119,21 @@ test("accepted native replies keep settling after an early idle edge", () => {
 
 test("selected ACP lifecycle edges always re-read the mounted transcript", () => {
   assert.match(liveRefresh, /event\.type === "session\.updated"[\s\S]*selectedEvent[\s\S]*throttle\("message", 120, onMessage\)[\s\S]*settleAfterLifecycle\(\)/)
+})
+
+test("a live turn keeps its tail halfway up the transcript, after a Send or on opening", () => {
+  assert.match(component, /const LIVE_TAIL_POSITION = 0\.5/)
+  assert.match(component, /function sizeLiveRoom\(transcript: HTMLElement, spacer: HTMLElement\)/)
+  assert.match(component, /className="uw-transcript-reply-room" ref=\{spacerRef\}/)
+  // Sending and an already-working Session both open the room; the user scrolling up still wins.
+  assert.match(component, /liveRoomRef\.current \|\| !\(sending \|\| waiting\)\) return\s+openLiveRoom\(transcript\)\s+\}, \[loading, ready, sending, waiting\]\)/)
+  assert.match(component, /if \(event\.deltaY < 0\) nearBottomRef\.current = false/)
+  assert.doesNotMatch(component, /sizeSendAnchor|pinnedRef/)
+})
+
+test("a wide Session pane shows the outcome as a toolbar chip, a phone keeps its own row", () => {
+  assert.match(controller, /toolbarAccessory\?: ReactNode/)
+  assert.match(controller, /\{toolbarAccessory\}\s+<ConversationStatePill/)
+  assert.match(observer, /\{compactLayout \? outcomePanel : null\}/)
+  assert.match(observer, /toolbarAccessory=\{compactLayout \? undefined : outcomePanel\}/)
 })

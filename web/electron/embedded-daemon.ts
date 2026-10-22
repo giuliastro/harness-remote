@@ -2,8 +2,10 @@ import { spawn, spawnSync, type ChildProcess } from "node:child_process"
 import { randomBytes } from "node:crypto"
 import { createServer } from "node:net"
 import { join } from "node:path"
+import { homedir } from "node:os"
 
 export const EMBEDDED_DAEMON_HOST = "127.0.0.1"
+export const EMBEDDED_DAEMON_LAN_HOST = "0.0.0.0"
 export const EMBEDDED_DAEMON_PROFILE_ID = "desktop-local-runtime"
 const DEFAULT_STARTUP_TIMEOUT_MS = 30_000
 const DEFAULT_SHUTDOWN_TIMEOUT_MS = 5_000
@@ -44,6 +46,7 @@ type EmbeddedDaemonLaunchConfig = {
   port: number
   openCodePort: number
   auth: { username: string; password: string }
+  bindHost: string
 }
 
 export function embeddedDaemonEntry({ isPackaged, appPath, resourcesPath }: EmbeddedDaemonPathOptions): string {
@@ -52,13 +55,14 @@ export function embeddedDaemonEntry({ isPackaged, appPath, resourcesPath }: Embe
     : join(appPath, "..", "bridge", "src", "daemon-cli.js")
 }
 
-export function embeddedDaemonArgs(port: number, openCodePort: number, stateDirectory?: string): string[] {
+export function embeddedDaemonArgs(port: number, openCodePort: number, stateDirectory?: string, roots: readonly string[] = [homedir()], environmentRoot?: string, bindHost: string = EMBEDDED_DAEMON_HOST): string[] {
   return [
-    "--host", EMBEDDED_DAEMON_HOST,
+    "--host", bindHost,
     "--port", String(port),
     "--opencode-host", EMBEDDED_DAEMON_HOST,
     "--opencode-port", String(openCodePort),
-    ...(stateDirectory ? ["--state-dir", stateDirectory] : [])
+    ...(stateDirectory ? ["--state-dir", stateDirectory] : []),
+    ...(environmentRoot ? [] : roots.flatMap((root) => ["--root", root]))
   ]
 }
 
@@ -85,23 +89,31 @@ export async function resolveEmbeddedDaemonEnvironment(
   return environment ?? process.env
 }
 
-export async function findLoopbackPort(startPort: number, excluded: readonly number[] = [], attempts = 64): Promise<number> {
+/**
+ * Probe exactly the bind the daemon will attempt: a loopback probe would happily hand out a port
+ * that a wildcard bind cannot take because some other process already holds it on one interface.
+ */
+export async function findBindablePort(startPort: number, host: string = EMBEDDED_DAEMON_HOST, excluded: readonly number[] = [], attempts = 64): Promise<number> {
   const excludedPorts = new Set(excluded)
   for (let offset = 0; offset < attempts; offset += 1) {
     const port = startPort + offset
     if (port > 65_535) break
     if (excludedPorts.has(port)) continue
-    if (await canBindLoopback(port)) return port
+    if (await canBind(port, host)) return port
   }
-  throw new Error(`No free loopback port found from ${startPort} through ${Math.min(65_535, startPort + attempts - 1)}`)
+  throw new Error(`No free port found from ${startPort} through ${Math.min(65_535, startPort + attempts - 1)} on ${host}`)
 }
 
-function canBindLoopback(port: number): Promise<boolean> {
+export async function findLoopbackPort(startPort: number, excluded: readonly number[] = [], attempts = 64): Promise<number> {
+  return findBindablePort(startPort, EMBEDDED_DAEMON_HOST, excluded, attempts)
+}
+
+function canBind(port: number, host: string): Promise<boolean> {
   return new Promise((resolve) => {
     const probe = createServer()
     probe.unref()
     probe.once("error", () => resolve(false))
-    probe.listen(port, EMBEDDED_DAEMON_HOST, () => probe.close(() => resolve(true)))
+    probe.listen(port, host, () => probe.close(() => resolve(true)))
   })
 }
 
@@ -140,6 +152,11 @@ export class EmbeddedDaemonRuntime {
     executable?: string
     environment?: EmbeddedDaemonEnvironment
     stateDirectory?: string
+    roots?: () => readonly string[]
+    /** Opt-in LAN pairing (Settings → This computer): the daemon binds the wildcard address so a
+     *  phone on the network can reach it. Read on every launch, so a restart applies a change. The
+     *  app itself keeps talking to the endpoint over loopback, which a wildcard bind also serves. */
+    bindHost?: () => string
     startupTimeoutMs?: number
     shutdownTimeoutMs?: number
     healthCheckIntervalMs?: number
@@ -202,11 +219,15 @@ export class EmbeddedDaemonRuntime {
 
   private async launch(reuse?: EmbeddedDaemonLaunchConfig): Promise<EmbeddedDaemonReady> {
     const environment = await resolveEmbeddedDaemonEnvironment(this.options.environment)
-    const port = reuse?.port ?? await findLoopbackPort(4097)
-    const openCodePort = reuse?.openCodePort ?? await findLoopbackPort(4096, [port])
+    const bindHost = reuse?.bindHost ?? ((this.options.bindHost?.() ?? EMBEDDED_DAEMON_HOST).trim() || EMBEDDED_DAEMON_HOST)
+    const port = reuse?.port ?? await findBindablePort(4097, bindHost)
+    const openCodePort = reuse?.openCodePort ?? await findBindablePort(4096, EMBEDDED_DAEMON_HOST, [port])
     const auth = reuse?.auth ?? credentials()
-    const launchConfig = { port, openCodePort, auth }
-    const args = embeddedDaemonArgs(port, openCodePort, this.options.stateDirectory)
+    const launchConfig = { port, openCodePort, auth, bindHost }
+    // HARNESS_REMOTE_ROOT is an established override. Passing CLI roots as well would merge the
+    // environment root with the user setting, so omit them entirely when the override is present.
+    const roots = this.options.roots?.() ?? [homedir()]
+    const args = embeddedDaemonArgs(port, openCodePort, this.options.stateDirectory, roots, environment.HARNESS_REMOTE_ROOT, bindHost)
     const child = spawn(this.options.executable ?? process.execPath, [this.options.entryPath, ...args], {
       env: embeddedDaemonEnvironment(environment, auth),
       stdio: ["ignore", "pipe", "pipe"],
@@ -219,7 +240,9 @@ export class EmbeddedDaemonRuntime {
     let stderr = ""
     child.stderr?.on("data", (chunk) => { stderr = appendTail(stderr, chunk) })
 
-    const readyMarker = `Harness daemon ready at http://${EMBEDDED_DAEMON_HOST}:${port}`
+    // The daemon announces the address it was told to bind, so a LAN opt-in changes the line the
+    // launcher waits for even though the app keeps using the loopback endpoint below.
+    const readyMarker = `Harness daemon ready at http://${bindHost}:${port}`
     const startupTimeoutMs = this.options.startupTimeoutMs ?? DEFAULT_STARTUP_TIMEOUT_MS
     try {
       await new Promise<void>((resolve, reject) => {

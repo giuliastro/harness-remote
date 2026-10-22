@@ -109,8 +109,8 @@ assert.doesNotMatch(chat, /<span>Machine<\/span>/)
 assert.match(nativeObserverCss, /\.hr-control-plane \.hr-native-session-observer \.tdw-conversation-state[\s\S]*display: inline-flex !important/)
 assert.match(chat, /buildConversationTimeline/)
 assert.match(overrides, /tdw-conversation-event::before/)
-assert.match(overrides, /uw-activity-group\.uw-tool-running/)
-assert.match(read("components/taskdesk-message-content.tsx"), /status === "running" \? "Working" : status/)
+assert.match(read("activity-timeline.css"), /\.hr-activity\.is-running/)
+assert.match(read("components/activity-timeline.tsx"), /running \? t\("act\.working"\)/)
 assert.match(overrides, /prefers-reduced-motion/)
 
 // Model discovery is machine-scoped for native Sessions and must not restart on object identity churn.

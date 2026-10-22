@@ -37,6 +37,7 @@ function messageParts(content, messageID) {
  * back, with no way to tell a failure from a missing message.
  */
 function messageError(message) {
+  if (message?.role === "assistant" && message.stopReason === "aborted") return undefined
   const detail = typeof message?.errorMessage === "string" ? message.errorMessage.trim() : ""
   if (!detail) return undefined
   return { name: "HarnessTurnError", message: detail }
@@ -50,7 +51,9 @@ function messageEnvelope(record, sessionID) {
   if (typeof messageID !== "string") return undefined
   const parts = messageParts(record.message?.content, messageID)
   const error = messageError(record.message)
-  if (parts.length === 0 && !error) return undefined
+  // A Stop is journalled as an aborted reply: not an error, but the turn did not finish.
+  const interrupted = role === "assistant" && record.message?.stopReason === "aborted"
+  if (parts.length === 0 && !error && !interrupted) return undefined
   const created = Date.parse(record.timestamp ?? "")
   return {
     info: {
@@ -58,7 +61,8 @@ function messageEnvelope(record, sessionID) {
       role,
       sessionID,
       time: { created: Number.isFinite(created) ? created : Date.now() },
-      ...(error ? { error } : {})
+      ...(error ? { error } : {}),
+      ...(interrupted ? { interrupted: true } : {})
     },
     parts
   }

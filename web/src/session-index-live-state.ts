@@ -131,6 +131,20 @@ export function clearSessionIndexLiveState(
   if (deleteSessionState(endpointKey(config), sessionID)) invalidateSessionIndex()
 }
 
+/**
+ * Drop every transient busy/idle/retry status at once so the next Session-index read speaks for
+ * native truth. A foregrounded phone may have slept through the terminal edge of a long turn: its
+ * last streamed status is a bridge across a short event/index race, not a claim about a Session that
+ * finished minutes ago, and the status cache would otherwise outvote the fresh index for its grace.
+ * Terminal errors are deliberately left in place - they outlive navigation until durable truth
+ * catches up, exactly like a stream reconnect.
+ */
+export function clearSessionIndexLiveStatuses(): void {
+  if (liveStatuses.size === 0) return
+  liveStatuses.clear()
+  invalidateSessionIndex()
+}
+
 export function noteSessionIndexLiveEvent(
   config: SessionIndexConfig,
   event: LiveEvent,

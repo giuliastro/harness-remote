@@ -177,11 +177,13 @@ export class MachineDaemon {
   }
 
   close() {
+    const closing = []
     for (const entry of this.hosts.values()) {
-      entry.modelCatalog?.close?.()
-      if (entry.kind === "acp") entry.host.close?.()
-      else entry.host.stop?.("SIGTERM")
+      closing.push(entry.modelCatalog?.close?.())
+      if (entry.kind === "acp") closing.push(entry.host.close?.())
+      else closing.push(entry.host.stop?.("SIGTERM"))
     }
+    return Promise.allSettled(closing)
   }
 }
 
@@ -290,8 +292,10 @@ export function createMachineDaemonServer({
       // place that already loads configOptions, orders the model before its variant, and defers both
       // to dequeue when a turn is still running. Setting them here directly reordered the model
       // after the variant and mutated a live turn's configuration.
-      await service.prompt(sessionID, text, modelWireName(resolvedModel), acpPromptAttachments(attachments), acpModelVariant(resolvedModel))
-      return
+      // The disposition (started, queued or steered) travels back in the mutation result, so the app
+      // shows a queued prompt as waiting from the daemon's word rather than guessing from timing.
+      const outcome = await service.prompt(sessionID, text, modelWireName(resolvedModel), acpPromptAttachments(attachments), acpModelVariant(resolvedModel))
+      return outcome?.disposition ? { disposition: outcome.disposition, messageID: outcome.messageID } : undefined
     }
 
     const host = entry.host
@@ -345,8 +349,8 @@ export function createMachineDaemonServer({
     if (entry.kind === "acp") {
       const service = acpService(agentID)
       if (!service) throw daemonError("session_unavailable", `Agent ${agentID} cannot load native Sessions`)
-      await service.prompt(sessionID, text, modelWireName(resolvedModel), [], acpModelVariant(resolvedModel))
-      return
+      const outcome = await service.prompt(sessionID, text, modelWireName(resolvedModel), [], acpModelVariant(resolvedModel))
+      return outcome?.disposition ? { disposition: outcome.disposition, messageID: outcome.messageID } : undefined
     }
 
     const host = entry.host

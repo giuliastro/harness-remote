@@ -3,9 +3,12 @@ import { execFileSync, spawn } from "node:child_process"
 import fs from "node:fs"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
+import { listAcpProviderProfiles } from "../src/harness-profiles.js"
 import { verifyRealHarnessSessionDiscovery } from "./real-harness-session-discovery.mjs"
 
-export const SUPPORTED_HARNESSES = ["opencode", "codex", "claude", "omp", "pi"]
+// OpenCode Legacy runs over HTTP outside the ACP Provider Kit; every registered ACP provider joins
+// the gate automatically, so a newly shipped harness cannot skip release validation.
+export const SUPPORTED_HARNESSES = ["opencode", ...listAcpProviderProfiles().map((profile) => profile.id)]
 
 const REQUIRED_SOAK_COVERAGE = [
   "sessionCreation",

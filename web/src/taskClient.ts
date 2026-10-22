@@ -1,6 +1,7 @@
 import { Capacitor, CapacitorHttp } from "@capacitor/core"
 import { desktopRequestResult, isDesktopPlatform } from "./desktopBridge"
 import { unwrapPayload } from "./machinePayload"
+import { MachineHttpError } from "./machine-request-error"
 import { authHeader, hasCredentials, machineBaseUrl } from "./serverConfig"
 import type { AttachmentPart } from "./attachments"
 import type { BackendKind, ModelOption, ModelSelection, ServerConfig } from "./types"
@@ -181,7 +182,7 @@ function modelScopeKey(scope: AgentModelScope): string {
   return "default"
 }
 
-const AGENT_BACKENDS = new Set<BackendKind>(["opencode", "omp", "pi", "claude", "codex"])
+const AGENT_BACKENDS = new Set<BackendKind>(["opencode", "opencode2", "omp", "pi", "claude", "codex", "copilot", "mimo"])
 
 /**
  * Model membership belongs to the selected harness, not to the machine profile that happened to
@@ -313,7 +314,7 @@ async function machineRequest<T>(config: ServerConfig, path: string, options: Ta
   if (isDesktopPlatform()) {
     const result = await desktopRequestResult(config, { path, method, body: options.body })
     if (!result.ok) {
-      if (result.error.code === "http" && result.error.status === 401) throw new Error(unauthorizedDetail(config))
+      if (result.error.code === "http") throw new MachineHttpError(result.error.status === 401 ? unauthorizedDetail(config) : result.error.message, result.error.status)
       throw new Error(result.error.message)
     }
     return parseTaskPayload<T>(result.response.data, path)
@@ -336,8 +337,8 @@ async function machineRequest<T>(config: ServerConfig, path: string, options: Ta
       const detail = error instanceof Error && error.message ? ` ${error.message}` : ""
       throw new Error(`Cannot reach ${config.host}:${config.port}.${detail}`)
     }
-    if (response.status === 401) throw new Error(unauthorizedDetail(config))
-    if (response.status >= 400) throw new Error(responseDetail(response.data, `HTTP ${response.status}`))
+    if (response.status === 401) throw new MachineHttpError(unauthorizedDetail(config), response.status)
+    if (response.status >= 400) throw new MachineHttpError(responseDetail(response.data, `HTTP ${response.status}`), response.status)
     return parseTaskPayload<T>(response.data, path)
   }
 
@@ -359,11 +360,11 @@ async function machineRequest<T>(config: ServerConfig, path: string, options: Ta
   } finally {
     globalThis.clearTimeout(timer)
   }
-  if (response.status === 401) throw new Error(unauthorizedDetail(config))
+  if (response.status === 401) throw new MachineHttpError(unauthorizedDetail(config), response.status)
   if (!response.ok) {
     let detail = `HTTP ${response.status}`
     try { detail = responseDetail(await response.text(), detail) } catch { /* keep status */ }
-    throw new Error(detail)
+    throw new MachineHttpError(detail, response.status)
   }
   return parseTaskPayload<T>(await response.text(), path)
 }

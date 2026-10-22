@@ -46,3 +46,12 @@ test("the native Session conversation uses a bounded optical offset", () => {
     "the optical correction must load after the workbench rules it refines"
   )
 })
+
+test("desktop Session focus mode can reclaim static chrome without trapping mobile controls", () => {
+  assert.match(workspace, /SESSION_FOCUS_STORAGE_KEY/)
+  assert.match(workspace, /sessionFocusMode \? " session-focus-mode"/)
+  assert.match(workspace, /className="tdw-icon-button hr-session-focus-toggle"/)
+  assert.match(workspace, /aria-pressed=\{sessionFocusMode\}/)
+  assert.match(workbench, /@media \(min-width: 781px\)[\s\S]*?\.session-focus-mode \.hr-native-workspace-session-header,[\s\S]*?\.session-focus-mode \.hr-native-session-observer \.tdw-conversation-toolbar[\s\S]*?display: none;/)
+  assert.match(workbench, /@media \(max-width: 780px\)[\s\S]*?\.hr-session-focus-toggle[\s\S]*?display: none;/)
+})

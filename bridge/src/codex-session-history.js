@@ -3,6 +3,7 @@ import { open, readdir } from "node:fs/promises"
 import { homedir } from "node:os"
 import path from "node:path"
 import { scanLinesBackward } from "./backward-line-scan.js"
+import { stripAmbientContext } from "./ambient-context.js"
 
 const MODEL_CONTEXT_LOOKBACK_BYTES = 4 * 1024 * 1024
 
@@ -44,9 +45,10 @@ function messageFromRecord(sessionID, record, offset) {
   if (!role) return undefined
 
   const type = payload.type === "agent_reasoning" || completedItem?.type === "Reasoning" ? "reasoning" : "text"
-  const text = completedItem ? textFromCompletedItem(completedItem)
+  const raw = completedItem ? textFromCompletedItem(completedItem)
     : payload.type === "agent_reasoning" ? payload.text
       : payload.message
+  const text = role === "user" ? stripAmbientContext(raw) : raw
   if (typeof text !== "string" || !text) return undefined
 
   // Rollouts are append-only. A byte offset is therefore both unique inside the file and stable as
@@ -163,7 +165,7 @@ async function readCodexPage(file, sessionID, { limit = 100, before } = {}) {
  * records also hold instruction blocks Codex feeds the model, AGENTS.md, the plugin list and desktop
  * app context under the `user` role, which would surface as the user's own turns.
  */
-export function createCodexHistoryLoader(sessionRoot = path.join(homedir(), ".codex", "sessions")) {
+export function createCodexHistoryLoader(sessionRoot = path.join(process.env.CODEX_HOME || path.join(homedir(), ".codex"), "sessions")) {
   const sessionFiles = new Map()
 
   async function locateSession(sessionID) {

@@ -149,13 +149,13 @@
   .uw-machine-manager-header p,
   .uw-machine-manager .uw-manager-close { display:none!important; }
   .uw-machine-manager-body { min-width:0!important; min-height:0!important; flex:1!important; gap:7px!important; padding:8px!important; overflow-x:hidden!important; overflow-y:auto!important; }
-  .uw-machine-config-card { width:100%!important; min-width:0!important; min-height:76px!important; display:grid!important; grid-template-columns:minmax(0,1fr) auto!important; align-items:center!important; gap:10px!important; padding:10px 11px!important; border-radius:10px!important; }
-  .uw-machine-config-main { min-width:0!important; gap:2px!important; }
+  .uw-machine-config-card { width:100%!important; min-width:0!important; min-height:76px!important; display:grid!important; grid-template-columns:minmax(0,1fr)!important; grid-template-areas:"actions" "details"!important; align-items:start!important; gap:8px!important; padding:10px 11px!important; border-radius:10px!important; }
+  .uw-machine-config-main { grid-area:details!important; width:100%!important; min-width:0!important; gap:2px!important; }
   .uw-machine-config-main>strong { font-size:13px!important; }
   .uw-machine-config-main>span { font-size:11px!important; }
   .uw-machine-config-main>small { font-size:10px!important; }
   .uw-machine-harness-list { display:none!important; }
-  .uw-machine-config-actions { width:auto!important; display:flex!important; flex-wrap:nowrap!important; gap:5px!important; }
+  .uw-machine-config-actions { grid-area:actions!important; width:100%!important; min-width:0!important; display:flex!important; flex-wrap:wrap!important; align-items:center!important; gap:5px!important; }
   .uw-machine-config-actions .uw-manager-button { width:auto!important; min-width:58px!important; min-height:36px!important; padding-inline:8px!important; font-size:11px!important; }
   .uw-machine-editor { width:100%!important; min-width:0!important; padding:12px!important; border-radius:10px!important; }
   .uw-machine-editor-grid { gap:9px!important; }
@@ -173,12 +173,12 @@
   .hr-mobile-settings-page>header span,
   .hr-mobile-settings-page>header button { display:none!important; }
   .hr-mobile-settings-page>header h2 { margin:0!important; font-size:18px!important; }
-  .hr-mobile-settings-body { width:min(520px,100%)!important; margin-inline:auto!important; padding:12px!important; }
+  .hr-mobile-settings-body { width:min(560px,100%)!important; margin-inline:auto!important; padding:12px!important; }
   .hr-mobile-settings-group { border-radius:11px!important; }
   .hr-mobile-settings-group>span { padding:9px 11px 6px!important; font-size:9.5px!important; }
   .hr-mobile-settings-group label { min-height:54px!important; grid-template-columns:minmax(0,1fr) minmax(120px,auto)!important; gap:10px!important; padding:7px 11px!important; }
   .hr-mobile-settings-group label strong { font-size:13px!important; }
-  .hr-mobile-settings-group select { min-height:38px!important; max-width:170px!important; font-size:16px!important; }
+  .hr-mobile-settings-group select { min-height:38px!important; max-width:min(240px,48vw)!important; font-size:16px!important; }
   .hr-mobile-settings-group label:nth-of-type(2),
   .hr-mobile-settings-body>p { display:none!important; }
 

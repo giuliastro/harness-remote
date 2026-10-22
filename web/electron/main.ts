@@ -1,12 +1,18 @@
-import { app, BrowserWindow, Menu, Notification, nativeImage, screen, session, ipcMain, type IpcMainInvokeEvent } from "electron"
+import { app, BrowserWindow, clipboard, dialog, Menu, Notification, nativeImage, screen, session, ipcMain, type IpcMainInvokeEvent } from "electron"
 import { readFileSync, writeFileSync } from "node:fs"
+import { homedir } from "node:os"
 import { dirname, join } from "node:path"
 import { fileURLToPath, pathToFileURL } from "node:url"
+import { desktopTranslator, networkPairingDialogs, projectFolderDialogs } from "./desktop-locale.js"
+import { executeConfigurationProbe } from "./configuration-probe.js"
 import { buildApplicationMenu } from "./app-menu.js"
-import { EmbeddedDaemonRuntime, EMBEDDED_DAEMON_PROFILE_ID, embeddedDaemonEntry, type EmbeddedDaemonExit } from "./embedded-daemon.js"
+import { buildContextMenu } from "./context-menu.js"
+import { EmbeddedDaemonRuntime, EMBEDDED_DAEMON_HOST, EMBEDDED_DAEMON_LAN_HOST, EMBEDDED_DAEMON_PROFILE_ID, embeddedDaemonEntry, type EmbeddedDaemonExit } from "./embedded-daemon.js"
 import { DesktopEventTransport } from "./event-transport.js"
-import { IPC_CHANNELS, parseDesktopAttentionNotification, parseDesktopMenuTemplate } from "./ipc-contract.js"
+import { IPC_CHANNELS, parseDesktopAttentionNotification, parseDesktopMenuTemplate, type DesktopNetworkSettingsState, type DesktopProjectRootsState } from "./ipc-contract.js"
+import { NetworkSettingsStore } from "./network-settings.js"
 import { DesktopProfileError, ProfileRegistry } from "./profile-registry.js"
+import { effectiveProjectRoots, ProjectRootsError, ProjectRootsStore, validateProjectRoots } from "./project-roots.js"
 import { executeDesktopRequest } from "./request-transport.js"
 import { resolveDesktopRuntimeEnvironment } from "./shell-path.js"
 import type { DesktopAttentionNotification, DesktopCompletionNotification, DesktopEventSubscriptionOptions, DesktopLocalRuntimeState, DesktopMenuCommand, DesktopRequest } from "./ipc-contract.js"
@@ -19,6 +25,8 @@ const isWindows = process.platform === "win32"
 const isMac = process.platform === "darwin"
 const rendererEntry = join(__dirname, "../../dist/index.html")
 const profileFile = () => join(app.getPath("userData"), "desktop-profiles.json")
+const projectRootsFile = () => join(app.getPath("userData"), "desktop-project-roots.json")
+const networkSettingsFile = () => join(app.getPath("userData"), "desktop-network-settings.json")
 type SavedWindowState = {
   x?: number
   y?: number
@@ -45,10 +53,13 @@ function restoredBounds(state: SavedWindowState) {
 
 let mainWindow: BrowserWindow | undefined
 let registry: ProfileRegistry
+let projectRoots: ProjectRootsStore
+let networkSettings: NetworkSettingsStore
 let eventTransport: DesktopEventTransport
 let embeddedDaemon: EmbeddedDaemonRuntime | undefined
 let localRuntimeState: DesktopLocalRuntimeState = { status: "starting" }
 let localRuntimeStart: Promise<DesktopLocalRuntimeState> | undefined
+let runtimeRestarting = false
 let quitting = false
 
 function log(message: string): void {
@@ -133,6 +144,15 @@ function ensureLocalRuntime(): Promise<DesktopLocalRuntimeState> {
     localRuntimeStart = undefined
   })
   return localRuntimeStart
+}
+
+function projectRootsState(): DesktopProjectRootsState {
+  const override = process.env.HARNESS_REMOTE_ROOT || null
+  return { roots: effectiveProjectRoots(projectRoots.get(), override ?? undefined, homedir()), environmentOverride: override }
+}
+
+function networkSettingsState(): DesktopNetworkSettingsState {
+  return { ...networkSettings.get() }
 }
 
 /**
@@ -272,6 +292,20 @@ function createWindow(): BrowserWindow {
   })
   contents.session.setPermissionRequestHandler((_webContents, _permission, callback) => callback(false))
   contents.session.on("will-download", (event) => event.preventDefault())
+  contents.on("context-menu", (_event, params) => {
+    // The renderer owns the language preference and mirrors it onto <html lang>, so the menu reads
+    // it from there at the moment it opens instead of keeping a second copy in sync.
+    void contents.executeJavaScript("document.documentElement.lang", true)
+      .catch(() => app.getLocale())
+      .then((language: unknown) => {
+        if (window.isDestroyed()) return
+        const template = buildContextMenu(params, desktopTranslator(language, app.getLocale()), {
+          copyLink: (url) => clipboard.writeText(url),
+          inspect: isDevelopment ? () => contents.inspectElement(params.x, params.y) : undefined
+        })
+        Menu.buildFromTemplate(template).popup({ window })
+      })
+  })
   window.on("closed", () => {
     cancelWindowStateSave()
     eventTransport.closeForOwner(contents)
@@ -282,6 +316,85 @@ function createWindow(): BrowserWindow {
 }
 
 function installIPC(): void {
+  ipcMain.handle(IPC_CHANNELS.probeMachineConfiguration, async (event, profile: unknown, path: unknown, language: unknown) => {
+    ensureTrustedSender(event)
+    return executeConfigurationProbe(profile, path, typeof language === "string" ? language : app.getLocale())
+  })
+  ipcMain.handle(IPC_CHANNELS.getProjectRoots, (event) => {
+    ensureTrustedSender(event)
+    return projectRootsState()
+  })
+  ipcMain.handle(IPC_CHANNELS.chooseProjectFolder, async (event, language: unknown) => {
+    ensureTrustedSender(event)
+    const options = projectFolderDialogs(language, app.getLocale()).picker
+    try {
+      const result = mainWindow ? await dialog.showOpenDialog(mainWindow, options) : await dialog.showOpenDialog(options)
+      return { path: result.canceled ? null : result.filePaths[0] ?? null }
+    } catch {
+      return { path: null, error: desktopTranslator(language, app.getLocale())("machine.folderPickerError") }
+    }
+  })
+  ipcMain.handle(IPC_CHANNELS.setProjectRoots, async (event, value: unknown, language: unknown) => {
+    ensureTrustedSender(event)
+    const t = desktopTranslator(language, app.getLocale())
+    const failure = (key: string) => ({ ...projectRootsState(), cancelled: false, error: t(key) })
+    if (process.env.HARNESS_REMOTE_ROOT) return failure("machine.foldersControlled")
+    if (runtimeRestarting) return failure("machine.foldersBusy")
+    runtimeRestarting = true
+    try {
+      const roots = await validateProjectRoots(value)
+      if (JSON.stringify(roots) === JSON.stringify(projectRoots.get())) return { ...projectRootsState(), cancelled: false }
+      const confirmationOptions = projectFolderDialogs(language, app.getLocale()).confirmation
+      const confirmation = mainWindow
+        ? await dialog.showMessageBox(mainWindow, confirmationOptions)
+        : await dialog.showMessageBox(confirmationOptions)
+      if (confirmation.response !== 0) return { ...projectRootsState(), cancelled: true }
+      if (localRuntimeStart) await localRuntimeStart
+      await projectRoots.replace(roots)
+      clearLocalRuntimeProfile()
+      await embeddedDaemon?.stop()
+      localRuntimeState = { status: "starting" }
+      await ensureLocalRuntime()
+      return { ...projectRootsState(), cancelled: false }
+    } catch (error) {
+      return failure(error instanceof ProjectRootsError ? error.message : "settings.projectFoldersError")
+    } finally {
+      runtimeRestarting = false
+    }
+  })
+  ipcMain.handle(IPC_CHANNELS.getNetworkSettings, (event) => {
+    ensureTrustedSender(event)
+    return networkSettingsState()
+  })
+  ipcMain.handle(IPC_CHANNELS.setNetworkSettings, async (event, value: unknown, language: unknown) => {
+    ensureTrustedSender(event)
+    const t = desktopTranslator(language, app.getLocale())
+    const failure = (key: string) => ({ ...networkSettingsState(), cancelled: false, error: t(key) })
+    if (typeof value !== "boolean") return failure("machine.networkPairingError")
+    if (value === networkSettings.get().lanPairing) return { ...networkSettingsState(), cancelled: false }
+    if (runtimeRestarting) return failure("machine.runtimeBusy")
+    runtimeRestarting = true
+    try {
+      const confirmationOptions = networkPairingDialogs(language, app.getLocale(), value).confirmation
+      const confirmation = mainWindow
+        ? await dialog.showMessageBox(mainWindow, confirmationOptions)
+        : await dialog.showMessageBox(confirmationOptions)
+      if (confirmation.response !== 0) return { ...networkSettingsState(), cancelled: true }
+      if (localRuntimeStart) await localRuntimeStart
+      await networkSettings.replace({ lanPairing: value })
+      // The bind address is fixed at launch, so the only way to apply it is the same restart the
+      // project-root change performs: drop the volatile endpoint and start a fresh runtime.
+      clearLocalRuntimeProfile()
+      await embeddedDaemon?.stop()
+      localRuntimeState = { status: "starting" }
+      await ensureLocalRuntime()
+      return { ...networkSettingsState(), cancelled: false }
+    } catch {
+      return failure("machine.networkPairingError")
+    } finally {
+      runtimeRestarting = false
+    }
+  })
   ipcMain.handle(IPC_CHANNELS.replaceProfiles, async (event, profiles: unknown, revision: unknown) => {
     ensureTrustedSender(event)
     if (!Number.isSafeInteger(revision) || (revision as number) < 1) throw new Error("Profile revision is invalid")
@@ -314,6 +427,7 @@ function installIPC(): void {
   })
   ipcMain.handle(IPC_CHANNELS.retryLocalRuntime, async (event) => {
     ensureTrustedSender(event)
+    if (runtimeRestarting) return localRuntimeState
     return ensureLocalRuntime()
   })
   ipcMain.handle(IPC_CHANNELS.subscribeEvents, async (event, profileId: unknown, options: unknown) => {
@@ -352,6 +466,10 @@ async function start(): Promise<void> {
   app.setName("Harness Remote")
   registry = new ProfileRegistry(profileFile())
   await registry.load()
+  projectRoots = new ProjectRootsStore(projectRootsFile())
+  await projectRoots.load()
+  networkSettings = new NetworkSettingsStore(networkSettingsFile())
+  await networkSettings.load()
   eventTransport = new DesktopEventTransport(registry, IPC_CHANNELS)
   embeddedDaemon = new EmbeddedDaemonRuntime({
     entryPath: embeddedDaemonEntry({
@@ -364,6 +482,8 @@ async function start(): Promise<void> {
     // installed. The resolver imports PATH only and falls back to process.env on any shell failure.
     environment: () => resolveDesktopRuntimeEnvironment(),
     stateDirectory: join(app.getPath("userData"), "embedded-daemon"),
+    roots: () => effectiveProjectRoots(projectRoots.get(), process.env.HARNESS_REMOTE_ROOT, homedir()),
+    bindHost: () => networkSettings.get().lanPairing ? EMBEDDED_DAEMON_LAN_HOST : EMBEDDED_DAEMON_HOST,
     onExit: embeddedDaemonExited
   })
   installIPC()

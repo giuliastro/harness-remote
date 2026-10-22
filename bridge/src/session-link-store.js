@@ -1,6 +1,5 @@
-import { randomUUID } from "node:crypto"
-import { mkdir, readFile, rename, writeFile } from "node:fs/promises"
 import path from "node:path"
+import { JsonFileStore } from "./json-file-store.js"
 import { normalizePortableHandoffState } from "./portable-handoff-state.js"
 
 const VERSION = 1
@@ -48,14 +47,15 @@ export class SessionLinkStore {
   #machineID
   #stateDirectory
   #path
+  #store
   #loaded = false
   #links = new Map()
-  #mutation = Promise.resolve()
 
   constructor({ machineID, stateDirectory }) {
     this.#machineID = machineID
     this.#stateDirectory = stateDirectory
     this.#path = path.join(stateDirectory, "session-links.json")
+    this.#store = new JsonFileStore({ filePath: this.#path, stateDirectory })
   }
 
   #isLocalLink(source, target) {
@@ -65,51 +65,36 @@ export class SessionLinkStore {
   async #load() {
     if (this.#loaded) return
     this.#loaded = true
-    try {
-      const parsed = JSON.parse(await readFile(this.#path, "utf8"))
-      if (parsed?.version !== VERSION || parsed?.machineID !== this.#machineID || !Array.isArray(parsed.links)) return
-      for (const link of parsed.links) {
-        if (!link || typeof link !== "object" || link.type !== "handoff") continue
-        if (!validIdentity(link.source) || !validIdentity(link.target)) continue
-        if (!this.#isLocalLink(link.source, link.target)) continue
-        let portableState
-        try { portableState = normalizePortableHandoffState(link.portableState) } catch { portableState = undefined }
-        const normalized = {
-          type: "handoff",
-          source: link.source,
-          target: link.target,
-          createdAt: link.createdAt,
-          ...(typeof link.transferredContext === "string" && link.transferredContext ? { transferredContext: link.transferredContext } : {}),
-          ...(portableState ? { portableState } : {})
-        }
-        this.#links.set(linkKey(link.source, link.target), normalized)
+    const parsed = await this.#store.read()
+    if (parsed?.version !== VERSION || parsed?.machineID !== this.#machineID || !Array.isArray(parsed.links)) return
+    for (const link of parsed.links) {
+      if (!link || typeof link !== "object" || link.type !== "handoff") continue
+      if (!validIdentity(link.source) || !validIdentity(link.target)) continue
+      if (!this.#isLocalLink(link.source, link.target)) continue
+      let portableState
+      try { portableState = normalizePortableHandoffState(link.portableState) } catch { portableState = undefined }
+      const normalized = {
+        type: "handoff",
+        source: link.source,
+        target: link.target,
+        createdAt: link.createdAt,
+        ...(typeof link.transferredContext === "string" && link.transferredContext ? { transferredContext: link.transferredContext } : {}),
+        ...(portableState ? { portableState } : {})
       }
-    } catch (error) {
-      if (error?.code === "ENOENT") return
-      if (error instanceof SyntaxError) {
-        const backup = `${this.#path}.corrupt-${Date.now()}`
-        await rename(this.#path, backup)
-        return
-      }
-      throw error
+      this.#links.set(linkKey(link.source, link.target), normalized)
     }
   }
 
   async #persist() {
-    await mkdir(this.#stateDirectory, { recursive: true })
-    const temporary = `${this.#path}.${process.pid}.${randomUUID()}.tmp`
-    await writeFile(temporary, JSON.stringify({
+    await this.#store.write({
       version: VERSION,
       machineID: this.#machineID,
       links: [...this.#links.values()]
-    }), { mode: 0o600 })
-    await rename(temporary, this.#path)
+    })
   }
 
   #serial(operation) {
-    const next = this.#mutation.then(operation, operation)
-    this.#mutation = next.catch(() => undefined)
-    return next
+    return this.#store.serial(operation)
   }
 
   async addHandoff({ source, target, createdAt = new Date().toISOString(), transferredContext, portableState }) {

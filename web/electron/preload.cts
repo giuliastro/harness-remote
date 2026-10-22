@@ -10,8 +10,13 @@ import type {
   DesktopLocalRuntimeState,
   DesktopMenuCommand,
   DesktopMenuTemplate,
+  DesktopNetworkSettingsState,
+  DesktopNetworkSettingsUpdate,
   DesktopProfile,
   DesktopProfileSyncResult,
+  DesktopProjectFolderChoice,
+  DesktopProjectRootsState,
+  DesktopProjectRootsUpdate,
   DesktopRequest,
   DesktopRequestResult
 } from "./ipc-contract.js" with { "resolution-mode": "import" }
@@ -24,6 +29,12 @@ const IPC_CHANNELS = Object.freeze({
   unsubscribeEvents: "desktop:events:unsubscribe",
   getLocalRuntime: "desktop:runtime:local:get",
   retryLocalRuntime: "desktop:runtime:local:retry",
+  probeMachineConfiguration: "desktop:machine-configuration:probe",
+  getProjectRoots: "desktop:project-roots:get",
+  chooseProjectFolder: "desktop:project-roots:choose",
+  setProjectRoots: "desktop:project-roots:set",
+  getNetworkSettings: "desktop:network:get",
+  setNetworkSettings: "desktop:network:set",
   notifyCompletion: "desktop:completion:notify",
   notifyAttention: "desktop:attention:notify",
   attentionActivated: "desktop:attention:activated",
@@ -71,6 +82,24 @@ const harnessDesktop = Object.freeze({
   },
   retryLocalRuntime(): Promise<DesktopLocalRuntimeState> {
     return ipcRenderer.invoke(IPC_CHANNELS.retryLocalRuntime)
+  },
+  probeMachineConfiguration(profile: DesktopProfile, path: "/v1/machine" | "/v1/projects", language?: string): Promise<DesktopRequestResult> {
+    return ipcRenderer.invoke(IPC_CHANNELS.probeMachineConfiguration, profile, path, language)
+  },
+  getProjectRoots(): Promise<DesktopProjectRootsState> {
+    return ipcRenderer.invoke(IPC_CHANNELS.getProjectRoots)
+  },
+  chooseProjectFolder(language?: string): Promise<DesktopProjectFolderChoice> {
+    return ipcRenderer.invoke(IPC_CHANNELS.chooseProjectFolder, language)
+  },
+  setProjectRoots(roots: string[], language?: string): Promise<DesktopProjectRootsUpdate> {
+    return ipcRenderer.invoke(IPC_CHANNELS.setProjectRoots, roots, language)
+  },
+  getNetworkSettings(): Promise<DesktopNetworkSettingsState> {
+    return ipcRenderer.invoke(IPC_CHANNELS.getNetworkSettings)
+  },
+  setNetworkSettings(lanPairing: boolean, language?: string): Promise<DesktopNetworkSettingsUpdate> {
+    return ipcRenderer.invoke(IPC_CHANNELS.setNetworkSettings, lanPairing, language)
   },
   async subscribeEvents(
     profileId: string,

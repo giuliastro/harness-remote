@@ -211,6 +211,39 @@ test('request routing selects an agent inside the approved root machine profile'
   })).error.code, 'invalid-payload')
 })
 
+test('OpenCode 2 desktop profiles validate and route requests to the selected ACP agent', async () => {
+  const opencode2 = { ...localProfile, backend: 'opencode2', agentId: 'opencode2' }
+  assert.deepEqual(validateDesktopProfile(opencode2), opencode2)
+  const directory = await mkdtemp(join(tmpdir(), 'harness-remote-opencode2-'))
+  const registry = new ProfileRegistry(join(directory, 'profiles.json'))
+  await registry.replace([opencode2])
+  assert.deepEqual(registry.get(opencode2.id), opencode2)
+
+  const routed = await executeDesktopRequest(registry.get(opencode2.id), { path: '/echo/session' })
+  assert.deepEqual(routed.response.data, {
+    url: '/v1/agents/opencode2/echo/session',
+    backend: 'opencode2'
+  })
+  await rm(directory, { recursive: true, force: true })
+})
+
+test('Copilot and MiMo desktop profiles retain independent identities and exact HTTP routes', async () => {
+  for (const backend of ['copilot', 'mimo']) {
+    const scoped = { ...localProfile, id: `test-${backend}`, backend, agentId: backend }
+    assert.deepEqual(validateDesktopProfile(scoped), scoped)
+    const directory = await mkdtemp(join(tmpdir(), `harness-remote-${backend}-`))
+    const registry = new ProfileRegistry(join(directory, 'profiles.json'))
+    await registry.replace([scoped])
+    assert.deepEqual(registry.get(scoped.id), scoped)
+    const routed = await executeDesktopRequest(registry.get(scoped.id), { path: '/echo/session' })
+    assert.deepEqual(routed.response.data, {
+      url: `/v1/agents/${backend}/echo/session`,
+      backend
+    })
+    await rm(directory, { recursive: true, force: true })
+  }
+})
+
 test('HTTP errors expose status without matching prose', async () => {
   const missing = await executeDesktopRequest(localProfile, { path: '/missing' })
   assert.equal(missing.error.code, 'http')

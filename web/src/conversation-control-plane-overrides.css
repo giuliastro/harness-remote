@@ -69,30 +69,6 @@
   box-shadow: 0 0 0 3px var(--td3-blue-soft);
 }
 
-/* Once native reasoning/tool/text exists, the preparatory row disappears. The Activity header then
-   becomes the single live indicator, so work never looks stalled and no second status is added. */
-.hr-control-plane .tdw-work-thread-conversation .uw-activity-group.uw-tool-running > summary {
-  background: var(--td3-blue-soft-2);
-}
-
-.hr-control-plane .tdw-work-thread-conversation .uw-activity-group.uw-tool-running > summary .uw-tool-icon {
-  color: var(--td3-blue-text);
-  animation: hr-activity-working 1.25s ease-in-out infinite;
-}
-
-/* The label itself now comes from the component; only its emphasis belongs here. */
-.hr-control-plane .tdw-work-thread-conversation .uw-activity-group.uw-tool-running > summary .uw-tool-status {
-  color: var(--td3-blue-text);
-  font-size: 10px;
-  font-weight: 750;
-  letter-spacing: .01em;
-}
-
-@keyframes hr-activity-working {
-  0%, 100% { opacity: .48; transform: scale(.88); }
-  50% { opacity: 1; transform: scale(1.06); }
-}
-
 /* Mobile equivalent of the sidebar's Conversation filters, which are display:none below 780px. */
 .hr-filter-chips { display: none; }
 
@@ -136,8 +112,7 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .hr-control-plane:has(.tdw-presence-dot.loading) .hr-welcome > p::after,
-  .hr-control-plane .tdw-work-thread-conversation .uw-activity-group.uw-tool-running > summary .uw-tool-icon {
+  .hr-control-plane:has(.tdw-presence-dot.loading) .hr-welcome > p::after {
     animation: none;
     opacity: 1;
     transform: none;
@@ -546,9 +521,10 @@
   }
 
   .hr-mobile-settings-group select {
-    max-width: 180px;
+    max-width: 240px;
     min-height: 40px;
-    padding-inline: 9px;
+    padding-left: 9px;
+    padding-right: 1.75rem;
     border: 1px solid var(--td3-border);
     border-radius: 9px;
     color: var(--td3-text);

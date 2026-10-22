@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react"
 import { ChevronDownIcon } from "../Icons"
-import type { ModelOption } from "../types"
+import type { ModelOption, ModelSelection } from "../types"
 import "../model-picker.css"
 
 type Props = {
@@ -13,6 +13,8 @@ type Props = {
   compact?: boolean
   /** Shown instead of the placeholder when discovery finished without a usable catalog. */
   unavailableHint?: string
+  /** Read-only identity recovered from the current native session; never added to the catalog. */
+  currentModel?: ModelSelection | null
 }
 
 export type ModelGroup = {
@@ -74,6 +76,10 @@ export function groupModels(models: ModelOption[]): ModelGroup[] {
       options
     }
   }).sort((left, right) => {
+    const priority = (group: ModelGroup) => group.options.find((option) => Number.isFinite(option.sortPriority))?.sortPriority
+    const leftPriority = priority(left) ?? Number.POSITIVE_INFINITY
+    const rightPriority = priority(right) ?? Number.POSITIVE_INFINITY
+    if (leftPriority !== rightPriority) return leftPriority - rightPriority
     const leftDefault = left.options.some((option) => option.isDefault) ? 0 : 1
     const rightDefault = right.options.some((option) => option.isDefault) ? 0 : 1
     if (leftDefault !== rightDefault) return leftDefault - rightDefault
@@ -108,7 +114,7 @@ function ModelBadges({ group }: { group: ModelGroup }) {
   )
 }
 
-export function ModelPicker({ models, value, onChange, disabled = false, loading = false, placeholder = "Choose model", compact = false, unavailableHint }: Props) {
+export function ModelPicker({ models, value, onChange, disabled = false, loading = false, placeholder = "Choose model", compact = false, unavailableHint, currentModel }: Props) {
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState("")
   const [freeOnly, setFreeOnly] = useState(false)
@@ -120,6 +126,11 @@ export function ModelPicker({ models, value, onChange, disabled = false, loading
     [groups]
   )
   const selected = models.find((model) => modelOptionKey(model) === value)
+  // A native session can report its current model even after that model disappears from the live
+  // catalog. Show that identity only while it is still the current selection (or the picker has no
+  // selectable value); it remains read-only and can never be sent as an unverified catalog choice.
+  const nativeCurrent = currentModel && (!value || modelOptionKey(currentModel) === value) ? currentModel : null
+  const displayModel = selected || nativeCurrent
 
   const filtered = useMemo(() => filterModelGroups(groups, query, freeOnly), [freeOnly, groups, query])
   const visibleGroups = useMemo(() => filtered.slice(0, MAX_VISIBLE_MODEL_GROUPS), [filtered])
@@ -168,12 +179,15 @@ export function ModelPicker({ models, value, onChange, disabled = false, loading
   // catalog is empty the conversation still starts — on the harness-native default — so say that
   // instead of leaving a dead dropdown with no explanation.
   const empty = !loading && models.length === 0
-  const hint = unavailableHint || "No model catalog is available for this coding agent. The harness default will be used."
+  const hint = nativeCurrent
+    ? "This native session's current model is known, but it is unavailable in the current model catalog and cannot be selected."
+    : unavailableHint || "No model catalog is available for this coding agent. The harness default will be used."
+  const displayModelName = selected?.modelName || nativeCurrent?.modelID
   const triggerLabel = loading
     ? "Loading models…"
     : empty
-      ? "Harness default"
-      : selected?.modelName || selected?.modelID || placeholder
+      ? displayModelName || "Harness default"
+      : displayModelName || placeholder
 
   return (
     <div className={`tdw-model-picker${compact ? " compact" : ""}${open ? " open" : ""}${empty ? " unavailable" : ""}`} ref={rootRef}>
@@ -190,9 +204,9 @@ export function ModelPicker({ models, value, onChange, disabled = false, loading
         aria-expanded={open}
       >
         <span className="tdw-model-trigger-copy">
-          <strong>{triggerLabel}</strong>
-          {!loading && selected ? <small>{selected.providerName || selected.providerID}{selected.variant ? ` · ${selected.variant}` : ""}</small> : null}
-          {empty ? <small>Chosen by the coding agent</small> : null}
+          <strong>{triggerLabel}{!loading && !selected && nativeCurrent?.variant ? ` · ${nativeCurrent.variant}` : ""}</strong>
+          {!loading && Boolean(displayModel) ? <small>{selected?.providerName || displayModel?.providerID}{displayModel?.variant ? ` · ${displayModel.variant}` : ""}</small> : null}
+          {empty ? <small>{nativeCurrent ? "Current native model · unavailable in catalog" : "Chosen by the coding agent"}</small> : null}
         </span>
         <span className="tdw-model-chevron" aria-hidden="true"><ChevronDownIcon size={13} /></span>
       </button>

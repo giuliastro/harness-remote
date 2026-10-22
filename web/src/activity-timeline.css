@@ -1,0 +1,650 @@
+/* A turn's Activity: one summary line, and below it as much of the agent's work as the reader asked
+ * for. Rendered by `components/activity-timeline.tsx`.
+ *
+ * The hierarchy this sheet exists to express, from loudest to quietest:
+ *   1. the agent's notes - its own account of what it is doing, set as prose;
+ *   2. the summary line - what happened, in one row, always visible;
+ *   3. tool rows - one line each, quiet unless they failed or are still running;
+ *   4. reasoning - one muted line until opened.
+ *
+ * Colour means status only (working / done / failed), never the kind of tool: the kind is the glyph.
+ * Every colour is a `--td3-*` token so Light and Dark both hold. Loaded after the older conversation
+ * sheets; it styles only `hr-act*` classes, so it neither depends on nor fights them.
+ */
+
+.hr-activity {
+  width: min(760px, 100%);
+  min-width: 0;
+  max-width: 100%;
+  margin: 10px 0 4px;
+  border: 1px solid var(--td3-border-soft);
+  border-radius: 12px;
+  background: var(--td3-raise-1);
+  color: var(--td3-text-2);
+}
+
+.hr-activity + .uw-message-content-group {
+  margin-top: 12px;
+}
+
+/* ------------------------------------------------------------------ header */
+
+.hr-activity-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  padding-right: 6px;
+  border-radius: 11px;
+}
+
+/* Open, the header rides along at the top of the transcript: a long section would otherwise put its
+   only collapse control a screen or more above the reader. */
+.hr-activity.is-open > .hr-activity-head {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  border-bottom: 1px solid var(--td3-border-soft);
+  border-radius: 11px 11px 0 0;
+  background: var(--td3-raise-1);
+}
+
+.hr-activity-toggle {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
+  min-height: 38px;
+  padding: 0 6px 0 11px;
+  border: 0;
+  border-radius: inherit;
+  color: inherit;
+  background: transparent;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.hr-activity-toggle:disabled {
+  cursor: default;
+}
+
+.hr-activity-toggle:focus-visible,
+.hr-act-tool-row:focus-visible,
+.hr-act-thought-row:focus-visible,
+.hr-act-chip:focus-visible,
+.hr-activity-all:focus-visible,
+.hr-activity-foot:focus-visible,
+.hr-act-more:focus-visible {
+  outline: 2px solid var(--td3-focus);
+  outline-offset: -2px;
+}
+
+.hr-activity-title {
+  flex: none;
+  color: var(--td3-text);
+  font-size: 13px;
+  font-weight: 650;
+  white-space: nowrap;
+}
+
+.hr-activity-step,
+.hr-activity-counts {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--td3-muted);
+  font-size: 12.5px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.hr-activity-step::before,
+.hr-activity-counts::before {
+  content: "·";
+  margin-right: 9px;
+  color: var(--td3-muted-2);
+}
+
+.hr-activity-fill {
+  flex: 1;
+}
+
+/* The live header is often the only thing moving on screen while a turn works. */
+.hr-activity.is-running .hr-activity-title {
+  background: linear-gradient(90deg, var(--td3-text-3) 20%, var(--td3-text) 42%, var(--td3-text-3) 64%);
+  background-size: 220% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: hr-act-sweep 2.4s linear infinite;
+}
+
+.hr-activity.is-running .hr-activity-head .hr-act-duration {
+  color: var(--td3-blue-text);
+}
+
+.hr-activity-all {
+  flex: none;
+  min-height: 26px;
+  padding: 0 9px;
+  border: 1px solid var(--td3-border-soft);
+  border-radius: 7px;
+  color: var(--td3-muted);
+  background: transparent;
+  font: inherit;
+  font-size: 11.5px;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.hr-activity-all:hover {
+  color: var(--td3-text);
+  border-color: var(--td3-border);
+}
+
+.hr-activity-foot {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: 100%;
+  min-height: 32px;
+  border: 0;
+  border-top: 1px solid var(--td3-border-soft);
+  border-radius: 0 0 11px 11px;
+  color: var(--td3-muted);
+  background: transparent;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.hr-activity-foot:hover {
+  color: var(--td3-text);
+  background: var(--td3-control-hover);
+}
+
+.hr-activity-foot .hr-act-chevron {
+  transform: rotate(180deg);
+}
+
+/* ------------------------------------------------------ shared small parts */
+
+.hr-act-glyph {
+  display: inline-grid;
+  flex: none;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  color: var(--td3-muted);
+  background: var(--td3-raise-3);
+}
+
+.hr-act-glyph.is-completed {
+  color: var(--td3-green-text);
+  background: var(--td3-green-soft);
+}
+
+.hr-act-glyph.is-error {
+  color: var(--td3-red-text);
+  background: var(--td3-red-soft);
+}
+
+.hr-act-glyph.is-running {
+  background: transparent;
+}
+
+.hr-act-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.hr-act-spinner {
+  display: inline-block;
+  flex: none;
+  width: 12px;
+  height: 12px;
+  border: 2px solid var(--td3-blue-border-soft);
+  border-top-color: var(--td3-blue-text);
+  border-radius: 50%;
+  animation: hr-act-spin .8s linear infinite;
+}
+
+.hr-act-chevron {
+  display: inline-grid;
+  flex: none;
+  place-items: center;
+  width: 16px;
+  color: var(--td3-muted-2);
+  transition: transform .16s ease;
+}
+
+.hr-activity.is-open > .hr-activity-head .hr-act-chevron,
+.hr-act-tool.is-open > .hr-act-tool-row .hr-act-chevron,
+.hr-act-thought.is-open > .hr-act-thought-row .hr-act-chevron {
+  transform: rotate(180deg);
+}
+
+.hr-act-duration {
+  flex: none;
+  color: var(--td3-muted-2);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.hr-act-badge {
+  flex: none;
+  padding: 1px 7px;
+  border-radius: 999px;
+  color: var(--td3-muted);
+  background: var(--td3-raise-3);
+  font-size: 10.5px;
+  font-weight: 650;
+  white-space: nowrap;
+}
+
+.hr-act-badge.is-error {
+  color: var(--td3-red-text);
+  background: var(--td3-red-soft);
+}
+
+.hr-act-kind {
+  display: inline-grid;
+  flex: none;
+  place-items: center;
+  width: 18px;
+  color: var(--td3-muted);
+}
+
+/* Only the kinds that change the machine get an accent: "this wrote something" is worth a glance,
+   "this read something" is not. */
+.hr-act-tool.kind-edit .hr-act-kind,
+.hr-act-tool.kind-run .hr-act-kind {
+  color: var(--td3-attention-text);
+}
+
+/* ---------------------------------------------------------------- timeline */
+
+.hr-act-timeline {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 4px;
+  min-width: 0;
+  padding: 8px 8px 10px;
+}
+
+/* The agent's notes are the point of the section: full-contrast prose, set apart from the final
+   answer only by size and a quiet rule. */
+.hr-act-note {
+  min-width: 0;
+  margin: 4px 4px 4px 9px;
+  padding-left: 12px;
+  border-left: 2px solid var(--td3-blue-border-soft);
+}
+
+.hr-activity .hr-act-note .uw-markdown {
+  color: var(--td3-text);
+  font-size: 14px;
+  line-height: 1.55;
+}
+
+/* `styles.css` mutes every bare <p> app-wide; inside Activity the paragraph takes the block's colour. */
+.hr-activity .uw-markdown :is(p, li) {
+  color: inherit;
+}
+
+.hr-activity .hr-act-note .uw-markdown > :first-child {
+  margin-top: 0;
+}
+
+.hr-activity .hr-act-note .uw-markdown > :last-child {
+  margin-bottom: 0;
+}
+
+.hr-act-steps {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  min-width: 0;
+}
+
+/* Grid items default to their content's width, and a tool row's content is a command line that
+   can be thousands of characters long: without these the row widens the whole transcript. */
+.hr-act-timeline > *,
+.hr-act-steps > *,
+.hr-act-highlights > *,
+.hr-act-tool,
+.hr-act-thought {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.hr-act-tool-row,
+.hr-act-thought-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+  min-height: 30px;
+  padding: 0 6px;
+  border: 0;
+  border-radius: 7px;
+  color: inherit;
+  background: transparent;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.hr-act-tool-row:hover:not(:disabled),
+.hr-act-thought-row:hover:not(:disabled) {
+  background: var(--td3-control-hover);
+}
+
+.hr-act-tool-row:disabled,
+.hr-act-thought-row:disabled {
+  cursor: default;
+}
+
+.hr-act-tool-label {
+  display: flex;
+  flex: 1;
+  align-items: baseline;
+  gap: 7px;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.hr-act-tool-verb {
+  flex: none;
+  color: var(--td3-text-2);
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+.hr-act-tool-target {
+  min-width: 0;
+  overflow: hidden;
+  padding: 0;
+  color: var(--td3-muted);
+  background: none;
+  font-size: 12px;
+  text-overflow: ellipsis;
+}
+
+.hr-act-tool.is-running .hr-act-tool-verb {
+  color: var(--td3-blue-text);
+}
+
+.hr-act-tool.is-error .hr-act-tool-verb {
+  color: var(--td3-red-text);
+}
+
+.hr-act-tool-error {
+  margin: -2px 6px 4px 32px;
+  overflow: hidden;
+  color: var(--td3-red-text);
+  font-size: 11.5px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.hr-act-tool-body {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  margin: 2px 4px 8px 32px;
+}
+
+.hr-act-tool-body .uw-code-block {
+  position: relative;
+  min-width: 0;
+}
+
+.hr-activity .hr-act-pre {
+  max-width: 100%;
+  max-height: 320px;
+  margin: 0;
+  padding: 9px 11px;
+  overflow: auto;
+  border: 1px solid var(--td3-border-soft);
+  border-radius: 8px;
+  color: var(--td3-text-2);
+  background: var(--td3-sunken);
+  font-size: 11.5px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.hr-activity .hr-act-input {
+  color: var(--td3-text);
+}
+
+.hr-activity .hr-act-output.is-error {
+  border-color: var(--td3-red-border);
+}
+
+.hr-act-diff .is-del {
+  color: var(--td3-red-text);
+}
+
+.hr-act-diff .is-add {
+  color: var(--td3-green-text);
+}
+
+.hr-act-truncated {
+  margin: 4px 0 0;
+  color: var(--td3-muted);
+  font-size: 11px;
+}
+
+.hr-act-more {
+  justify-self: start;
+  min-height: 26px;
+  margin: 0 0 2px 32px;
+  padding: 0 9px;
+  border: 1px dashed var(--td3-border);
+  border-radius: 7px;
+  color: var(--td3-muted);
+  background: transparent;
+  font: inherit;
+  font-size: 11.5px;
+  cursor: pointer;
+}
+
+.hr-act-more:hover {
+  color: var(--td3-text);
+}
+
+.hr-act-todos {
+  display: grid;
+  gap: 5px;
+  padding: 8px 10px;
+  border: 1px solid var(--td3-border-soft);
+  border-radius: 8px;
+  background: var(--td3-sunken);
+}
+
+.hr-act-todo {
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr);
+  gap: 6px;
+  color: var(--td3-text-2);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.hr-act-todo > :first-child {
+  color: var(--td3-muted);
+  text-align: center;
+}
+
+.hr-act-todo.is-completed {
+  color: var(--td3-muted);
+}
+
+.hr-act-todo.is-completed > :last-child {
+  text-decoration: line-through;
+}
+
+.hr-act-todo.is-in_progress > :first-child {
+  color: var(--td3-blue-text);
+}
+
+/* --------------------------------------------------------------- reasoning */
+
+.hr-act-thought-label {
+  flex: none;
+  color: var(--td3-muted);
+  font-size: 12.5px;
+  font-weight: 600;
+  font-style: italic;
+}
+
+.hr-act-thought-row > span:nth-child(3) {
+  flex: 1;
+  min-width: 0;
+}
+
+.hr-act-thought-preview {
+  overflow: hidden;
+  color: var(--td3-muted-2);
+  font-size: 12px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.hr-act-thought.is-running .hr-act-thought-label {
+  color: var(--td3-blue-text);
+}
+
+.hr-act-thought-body {
+  min-width: 0;
+  margin: 2px 4px 8px 32px;
+  padding-left: 11px;
+  border-left: 2px solid var(--td3-border);
+}
+
+.hr-activity .hr-act-thought-body .uw-markdown {
+  color: var(--td3-text-3);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+/* --------------------------------------------- collapsed: highlights, latest */
+
+.hr-act-highlights {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 6px;
+  min-width: 0;
+  padding: 2px 8px 10px;
+}
+
+.hr-act-chip {
+  display: inline-flex;
+  justify-self: start;
+  align-items: center;
+  gap: 6px;
+  min-height: 24px;
+  margin-left: 9px;
+  padding: 0 10px 0 6px;
+  border: 1px solid var(--td3-border-soft);
+  border-radius: 999px;
+  color: var(--td3-muted);
+  background: transparent;
+  font: inherit;
+  font-size: 11.5px;
+  cursor: pointer;
+}
+
+.hr-act-chip:hover {
+  color: var(--td3-text);
+  border-color: var(--td3-border);
+}
+
+
+/* The latest update grows from the bottom while it streams, so the clip keeps its newest lines and
+   fades the oldest ones out at the top. */
+.hr-act-latest {
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  max-height: 10.5em;
+  overflow: hidden;
+  padding: 0 8px 10px;
+}
+
+.hr-act-latest.is-clipped {
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0, black 2.4em);
+  mask-image: linear-gradient(to bottom, transparent 0, black 2.4em);
+}
+
+.hr-act-latest .hr-act-note {
+  flex: none;
+}
+
+/* ------------------------------------------------------------------- touch */
+
+@media (pointer: coarse) {
+  .hr-activity-toggle {
+    min-height: 44px;
+  }
+
+  .hr-act-tool-row,
+  .hr-act-thought-row,
+  .hr-activity-foot {
+    min-height: 40px;
+  }
+
+  .hr-activity-all {
+    min-height: 34px;
+  }
+}
+
+@media (max-width: 600px) {
+  .hr-activity-counts {
+    display: none;
+  }
+
+  .hr-act-tool-body,
+  .hr-act-thought-body {
+    margin-left: 10px;
+  }
+
+  .hr-act-tool-error {
+    margin-left: 10px;
+  }
+}
+
+/* ------------------------------------------------------------------ motion */
+
+@keyframes hr-act-sweep {
+  from { background-position: 120% 0; }
+  to { background-position: -120% 0; }
+}
+
+@keyframes hr-act-spin {
+  to { transform: rotate(360deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hr-activity.is-running .hr-activity-title,
+  .hr-act-spinner {
+    animation: none;
+  }
+
+  .hr-act-chevron {
+    transition: none;
+  }
+}

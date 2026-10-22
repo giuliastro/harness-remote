@@ -3,7 +3,7 @@ import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import path from "node:path"
 import test from "node:test"
-import { SessionOperationLedger } from "../src/session-operation-ledger.js"
+import { SessionOperationLedger, runIdempotentMutation } from "../src/session-operation-ledger.js"
 
 function input(overrides = {}) {
   return {
@@ -141,6 +141,167 @@ test("safe pre-dispatch failure removes the pending record while ambiguous failu
     await ledger.begin(uncertain)
     await ledger.fail({ agentID: uncertain.agentID, sessionID: uncertain.sessionID, clientRequestId: uncertain.clientRequestId, ambiguous: true })
     assert.equal((await ledger.get(uncertain)).state, "uncertain")
+  } finally {
+    await rm(stateDirectory, { recursive: true, force: true })
+  }
+})
+
+test("runIdempotentMutation executes dispatch and deduplicates retries", async () => {
+  const stateDirectory = await mkdtemp(path.join(tmpdir(), "harness-session-helper-"))
+  try {
+    const ledger = new SessionOperationLedger({ machineID: "machine-1", stateDirectory })
+    const opIdentity = { agentID: "codex", sessionID: "native-1", clientRequestId: "req-1" }
+    let dispatchCalls = 0
+    const first = await runIdempotentMutation({
+      operationLedger: ledger,
+      identity: opIdentity,
+      signature: "sig-1",
+      dispatch: async () => {
+        dispatchCalls += 1
+        return { value: 42 }
+      }
+    })
+    assert.equal(first.status, "accepted")
+    assert.equal(first.duplicate, false)
+    assert.deepEqual(first.result, { value: 42 })
+    assert.equal(dispatchCalls, 1)
+
+    const retry = await runIdempotentMutation({
+      operationLedger: ledger,
+      identity: opIdentity,
+      signature: "sig-1",
+      dispatch: async () => {
+        dispatchCalls += 1
+        return { value: 99 }
+      }
+    })
+    assert.equal(retry.status, "accepted")
+    assert.equal(retry.duplicate, true)
+    assert.deepEqual(retry.result, { value: 42 })
+    assert.equal(dispatchCalls, 1)
+  } finally {
+    await rm(stateDirectory, { recursive: true, force: true })
+  }
+})
+
+test("runIdempotentMutation reconciles uncertain operations on retry", async () => {
+  const stateDirectory = await mkdtemp(path.join(tmpdir(), "harness-session-reconcile-"))
+  try {
+    const ledger = new SessionOperationLedger({ machineID: "machine-1", stateDirectory })
+    const opIdentity = { agentID: "codex", sessionID: "native-1", clientRequestId: "req-rec" }
+
+    const failed = await runIdempotentMutation({
+      operationLedger: ledger,
+      identity: opIdentity,
+      signature: "sig-rec",
+      dispatch: async () => {
+        const error = new Error("Ambiguous network timeout")
+        error.ambiguous = true
+        error.recovery = { candidateID: "target-123" }
+        throw error
+      }
+    })
+    assert.equal(failed.status, "uncertain")
+    assert.equal(failed.duplicate, false)
+
+    let reconciledCalls = 0
+    const recovered = await runIdempotentMutation({
+      operationLedger: ledger,
+      identity: opIdentity,
+      signature: "sig-rec",
+      reconcile: async (recovery) => {
+        reconciledCalls += 1
+        assert.deepEqual(recovery, { candidateID: "target-123" })
+        return { targetID: recovery.candidateID, status: "confirmed" }
+      },
+      dispatch: async () => {
+        assert.fail("dispatch should not be called when reconciling duplicate")
+      }
+    })
+    assert.equal(recovered.status, "accepted")
+    assert.equal(recovered.duplicate, true)
+    assert.deepEqual(recovered.result, { targetID: "target-123", status: "confirmed" })
+    assert.equal(reconciledCalls, 1)
+
+    const stored = await ledger.get(opIdentity)
+    assert.equal(stored.state, "accepted")
+    assert.deepEqual(stored.result, { targetID: "target-123", status: "confirmed" })
+  } finally {
+    await rm(stateDirectory, { recursive: true, force: true })
+  }
+})
+
+test("runIdempotentMutation preserves checkpoint() if dispatch fails afterward", async () => {
+  const stateDirectory = await mkdtemp(path.join(tmpdir(), "harness-session-checkpoint-"))
+  try {
+    const ledger = new SessionOperationLedger({ machineID: "machine-1", stateDirectory })
+    const opIdentity = { agentID: "codex", sessionID: "native-1", clientRequestId: "req-cp" }
+
+    const first = await runIdempotentMutation({
+      operationLedger: ledger,
+      identity: opIdentity,
+      signature: "sig-cp",
+      dispatch: async ({ checkpoint }) => {
+        await checkpoint({ createdID: "resource-99" })
+        throw new Error("Post-checkpoint naming error")
+      }
+    })
+    assert.equal(first.status, "accepted")
+    assert.equal(first.duplicate, false)
+    assert.deepEqual(first.result, { createdID: "resource-99" })
+
+    const retry = await runIdempotentMutation({
+      operationLedger: ledger,
+      identity: opIdentity,
+      signature: "sig-cp",
+      dispatch: async () => {
+        assert.fail("dispatch should not run on duplicate")
+      }
+    })
+    assert.equal(retry.status, "accepted")
+    assert.equal(retry.duplicate, true)
+    assert.deepEqual(retry.result, { createdID: "resource-99" })
+  } finally {
+    await rm(stateDirectory, { recursive: true, force: true })
+  }
+})
+
+test("runIdempotentMutation rethrows safe pre-dispatch errors and detects signature conflicts", async () => {
+  const stateDirectory = await mkdtemp(path.join(tmpdir(), "harness-session-errors-"))
+  try {
+    const ledger = new SessionOperationLedger({ machineID: "machine-1", stateDirectory })
+    const opIdentity = { agentID: "codex", sessionID: "native-1", clientRequestId: "req-safe" }
+
+    await assert.rejects(
+      () => runIdempotentMutation({
+        operationLedger: ledger,
+        identity: opIdentity,
+        signature: "sig-1",
+        dispatch: async () => {
+          throw new Error("Pre-dispatch validation failed")
+        }
+      }),
+      /Pre-dispatch validation failed/
+    )
+    assert.equal(await ledger.get(opIdentity), undefined)
+
+    const accepted = await runIdempotentMutation({
+      operationLedger: ledger,
+      identity: opIdentity,
+      signature: "sig-1",
+      dispatch: async () => ({ ok: true })
+    })
+    assert.equal(accepted.status, "accepted")
+
+    await assert.rejects(
+      () => runIdempotentMutation({
+        operationLedger: ledger,
+        identity: opIdentity,
+        signature: "sig-CONFLICT",
+        dispatch: async () => ({ ok: false })
+      }),
+      (error) => error?.code === "idempotency_conflict"
+    )
   } finally {
     await rm(stateDirectory, { recursive: true, force: true })
   }

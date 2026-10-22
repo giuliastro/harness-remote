@@ -1,11 +1,14 @@
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react"
+import { memo, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react"
 import { api } from "../api"
 import type { AttachmentPart } from "../attachments"
 import { createCoalescedTailRefresh } from "../coalesced-tail-refresh"
 import type { ConversationController } from "../conversation-controller"
 import { conversationTurnSessionID, conversationTurns, type ConversationRuntime, type ConversationTurn } from "../conversation-runtime"
+import { midTurnPromptPolicy, messageRowText, type QueuedPromptEntry } from "../mid-turn-policy"
 import { mergeLatestMessagePage, prependOlderMessagePage } from "../message-pages"
-import type { NativeSessionRouteContinueInput, NativeSessionRouteMachine } from "../native-session-routing"
+import { isMachineTransportFailure as isTransportFailure } from "../machine-request-error"
+import { provenCopilotAutoDefault, shouldClearDeferredCatalogDefault } from "../native-session-model"
+import { nativeSessionRouteChanged, type NativeSessionRouteContinueInput, type NativeSessionRouteMachine } from "../native-session-routing"
 import type { SavedServerProfile } from "../serverProfiles"
 import { taskClient, type AgentModelScope } from "../taskClient"
 import { startTaskDeskSessionLiveRefresh } from "../taskdesk-session-live-refresh"
@@ -47,6 +50,7 @@ const HARNESS_ICON_FILES: Record<string, string> = {
   codex: "codex.svg",
   claude: "claude.svg",
   opencode: "opencode.svg",
+  opencode2: "opencode.svg",
   omp: "omp.svg",
   pi: "pi.svg"
 }
@@ -94,6 +98,12 @@ type Props = {
   controller: ConversationController
   /** A background native recovery read must rehydrate the mounted transcript, not only runtime state. */
   transcriptRefreshToken?: number
+  /**
+   * Bumped every time the user explicitly opens this Session surface. A Session that stays mounted
+   * behind the mobile rail (or is re-opened while already selected) must not keep re-reading the
+   * "getting started" state of a Send it made in a previous view: the turn is already working.
+   */
+  surfaceViewRevision?: number
   /** Backend mutations/catalog reads pause while the owning machine is reconnecting. */
   interactionEnabled?: boolean
   /** Surface a Session-scoped transport failure to the machine runtime immediately. */
@@ -103,11 +113,8 @@ type Props = {
     machines: NativeSessionRouteMachine[]
     onContinue: (input: NativeSessionRouteContinueInput) => Promise<void>
   }
-}
-
-function isTransportFailure(reason: unknown): boolean {
-  const message = reason instanceof Error ? reason.message : String(reason)
-  return /cannot reach|timed out|network|connection|failed to fetch/i.test(message)
+  /** Session-level context that shares the toolbar row instead of claiming a row of its own. */
+  toolbarAccessory?: ReactNode
 }
 
 function assistantMessageHasSignal(message: WorkThreadMessage): boolean {
@@ -124,7 +131,7 @@ function assistantMessageHasSignal(message: WorkThreadMessage): boolean {
 }
 
 function supportedBackend(value: string, fallback: BackendKind): BackendKind {
-  return value === "opencode" || value === "omp" || value === "pi" || value === "claude" || value === "codex"
+  return value === "opencode" || value === "opencode2" || value === "omp" || value === "pi" || value === "claude" || value === "codex" || value === "copilot" || value === "mimo"
     ? value
     : fallback
 }
@@ -162,6 +169,17 @@ function isActive(conversation: ConversationRuntime): boolean {
 
 function modelKey(model?: ModelSelection | null): string {
   return model ? modelOptionKey(model as ModelOption) : ""
+}
+
+export function modelForCurrentDestination(
+  model: ModelSelection | null,
+  current: { agentID: string; backend?: string },
+  destination: { agentID: string; backend?: string },
+  sameMachine: boolean
+): ModelSelection | null {
+  return model && sameMachine && current.agentID === destination.agentID && current.backend === destination.backend
+    ? model
+    : null
 }
 
 function lastModelForAgent(conversation: ConversationRuntime, agentID: string): ModelSelection | null {
@@ -249,7 +267,7 @@ function conversationOutcome(status: string): { state: "attention" | "stopped"; 
   return null
 }
 
-function ConversationStatePill({
+export function ConversationStatePill({
   working,
   attention,
   workingLabel,
@@ -323,9 +341,11 @@ export function WorkThreadConversation({
   deferModelFallback = false,
   controller,
   transcriptRefreshToken = 0,
+  surfaceViewRevision = 0,
   interactionEnabled = true,
   onConnectionIssue,
-  routing
+  routing,
+  toolbarAccessory
 }: Props) {
   const draftStorageKey = `${DRAFT_STORAGE_PREFIX}${conversation.id}`
   const initialAgentID = agentForTurn(conversation, conversation.currentTurn)
@@ -342,6 +362,10 @@ export function WorkThreadConversation({
   // OpenCode can acknowledge quickly and publish an empty assistant envelope before React commits
   // the transient `sending` frame. The user must still see the same pending row as every harness.
   const [replyPending, setReplyPending] = useState(false)
+  // Whether the reply currently being prepared was requested from *this* view of the Session. A Send
+  // made before the user navigated away must not keep labelling the live turn "getting started" when
+  // they come back; only a Send made while they are watching may.
+  const [sentInCurrentView, setSentInCurrentView] = useState(false)
   // The prompt that has been sent but is not yet in the transcript, with the turn that was current
   // when it was sent. See `visibleTimeline`.
   const [pendingPrompt, setPendingPrompt] = useState<OptimisticPrompt | null>(null)
@@ -369,6 +393,7 @@ export function WorkThreadConversation({
   const draftRef = useRef(draft)
   draftRef.current = draft
   const targetAgentIDRef = useRef(targetAgentID)
+  const routeSelectionTouchedRef = useRef(false)
   const observedConversationModelKeyRef = useRef(initialModelKey)
   const modelSelectionTouchedRef = useRef(false)
   const sendInFlightRef = useRef(false)
@@ -403,7 +428,19 @@ export function WorkThreadConversation({
   const selectedRouteMachine = routing?.machines.find((machine) => machine.machineID === targetMachineID)
   const destinationAgents = routing ? (selectedRouteMachine?.agents || []) : agents
   const destinationConfig = selectedRouteMachine?.config || baseConfig
-  const routeChanged = Boolean(routing && targetAgentID !== currentAgentID)
+  const destinationAgent = destinationAgents.find((agent) => agent.id === targetAgentID)
+  const currentModelForPicker = modelForCurrentDestination(
+    lastModelForAgent(conversation, currentAgentID),
+    { agentID: currentAgentID, backend: currentAgent?.backend },
+    { agentID: targetAgentID, backend: destinationAgent?.backend },
+    !routing || targetMachineID === routing.currentMachineID
+  )
+  const routeChanged = nativeSessionRouteChanged(
+    routing,
+    routeSelectionTouchedRef.current,
+    targetAgentID,
+    currentAgentID
+  )
   const routeAgentLabel = agentLabel(destinationAgents, targetAgentID)
   const routingSignature = routing
     ? routing.machines.map((machine) => `${machine.machineID}:${machine.agents.map((agent) => `${agent.id}:${agent.backend}`).join(",")}`).join("|")
@@ -450,8 +487,10 @@ export function WorkThreadConversation({
     setPendingPrompt(null)
     setAwaitingReplyTurnID(null)
     setReplyPending(false)
+    setSentInCurrentView(false)
     setTargetMachineID(routing?.currentMachineID || "")
     setTargetAgentID(currentAgentID)
+    routeSelectionTouchedRef.current = false
     setTargetModelKey(currentConversationModelKey)
     observedConversationModelKeyRef.current = currentConversationModelKey
     modelSelectionTouchedRef.current = false
@@ -461,10 +500,18 @@ export function WorkThreadConversation({
     reconcileInFlightRef.current = false
   }, [conversation.id, routing?.currentMachineID])
 
+  // Re-opening the Session surface retires the "getting started" label for good: it belongs to the
+  // moment of a Send the user was watching, not to a turn that was already running when they returned.
+  // The pending bubble itself is unaffected - it stays honest about the live turn.
+  useEffect(() => {
+    setSentInCurrentView(false)
+  }, [surfaceViewRevision])
+
   useEffect(() => {
     if (currentAgentID !== targetAgentIDRef.current && conversation.currentTurn?.id) {
       const nextModelKey = modelKey(conversation.currentTurn.model ?? lastModelForAgent(conversation, currentAgentID))
       setTargetAgentID(currentAgentID)
+      routeSelectionTouchedRef.current = false
       setTargetModelKey(nextModelKey)
       observedConversationModelKeyRef.current = nextModelKey
       modelSelectionTouchedRef.current = false
@@ -527,9 +574,18 @@ export function WorkThreadConversation({
     () => Object.fromEntries(Object.entries(feeds).map(([session, feed]) => [session, feed.messages])),
     [feeds]
   )
+  // A queued prompt is not part of the conversation until it starts (see queuedPrompts), so its row
+  // stays out of the turn timeline; it is the strip above the composer instead.
+  const conversationMessages = useMemo(
+    () => Object.fromEntries(Object.entries(messagesBySession).map(([session, messages]) => [
+      session,
+      messages.some((message) => message.info.queued === true) ? messages.filter((message) => message.info.queued !== true) : messages
+    ])),
+    [messagesBySession]
+  )
   const timeline = useMemo(
-    () => buildConversationTimeline(conversation, messagesBySession, agentsByID),
-    [conversationSignature, messagesBySession, agentsByID]
+    () => buildConversationTimeline(conversation, conversationMessages, agentsByID),
+    [conversationSignature, conversationMessages, agentsByID]
   )
 
   /**
@@ -568,6 +624,27 @@ export function WorkThreadConversation({
   useEffect(() => {
     if (settledPrompt) setPendingPrompt(null)
   }, [settledPrompt])
+
+  /**
+   * Prompts the daemon holds behind the running turn, read from the transcript: their rows carry
+   * `info.queued` until the daemon starts them. Being the daemon's own record, it is the same after a
+   * remount, a reload or on another client, and nothing has to be matched by text. A stale row a
+   * merged page might retain cannot outlive the turn, because nothing is queued once nothing runs.
+   */
+  // Prompts withdrawn with their × that the next transcript read has not dropped yet.
+  const [withdrawnPrompts, setWithdrawnPrompts] = useState<ReadonlySet<string>>(() => new Set())
+  const queuedPrompts = useMemo<QueuedPromptEntry[]>(() => {
+    if (!working) return []
+    return Object.values(messagesBySession).flat()
+      .filter((message) => message.info.role === "user" && message.info.queued === true && !withdrawnPrompts.has(message.info.id))
+      .map((message) => ({
+        id: message.info.id,
+        text: messageRowText(message),
+        attachmentCount: message.parts.filter((part) => part.type === "file" || part.type === "image").length,
+        queuedAt: Number(message.info.time?.created) || 0
+      }))
+      .sort((left, right) => left.queuedAt - right.queuedAt)
+  }, [messagesBySession, working, withdrawnPrompts])
 
   const uncertainDeliverySettled = Boolean(
     uncertainDelivery
@@ -669,7 +746,7 @@ export function WorkThreadConversation({
         setFeeds((current) => {
           const existing = current[session]
           if (!existing) return { ...current, [session]: { messages: page.messages, before: page.before, hasMore: page.hasMore } }
-          const messages = mergeLatestMessagePage(existing.messages, page.messages)
+          const messages = mergeLatestMessagePage(existing.messages, page.messages, { complete: !page.hasMore })
           const hasMore = existing.hasMore || page.hasMore
           const before = existing.before || page.before
           if (messages === existing.messages && hasMore === existing.hasMore && before === existing.before) return current
@@ -817,7 +894,7 @@ export function WorkThreadConversation({
       const mayUseCatalogDefault = !deferModelFallback || routeChanged || !latestHasUserPrompt
       const fallback = mayUseCatalogDefault
         ? catalog.models.find((model) => model.isDefault) || catalog.models[0]
-        : undefined
+        : latestHasUserPrompt ? provenCopilotAutoDefault(destinationAgent?.backend, catalog.models) || undefined : undefined
       const chosen = catalog.models.find((model) => modelKey(model) === priorKey) || fallback
       setTargetModelKey((currentKey) => {
         if (modelSelectionTouchedRef.current && catalog.models.some((model) => modelKey(model) === currentKey)) return currentKey
@@ -839,10 +916,18 @@ export function WorkThreadConversation({
   // Do not re-read the catalog just for that transition: drop only the untouched provisional default
   // and leave explicit user choices and verified native model metadata alone.
   useEffect(() => {
-    if (!deferModelFallback || routeChanged || !conversationHasUserPrompt || currentConversationModelKey) return
-    if (modelSelectionTouchedRef.current) return
+    if (!shouldClearDeferredCatalogDefault({
+      deferModelFallback,
+      routeChanged,
+      hasUserPrompt: conversationHasUserPrompt,
+      currentModelKey: currentConversationModelKey,
+      selectionTouched: modelSelectionTouchedRef.current,
+      selectedModelKey: targetModelKey,
+      models,
+      backend: destinationAgent?.backend
+    })) return
     setTargetModelKey("")
-  }, [deferModelFallback, routeChanged, conversationHasUserPrompt, currentConversationModelKey])
+  }, [deferModelFallback, routeChanged, conversationHasUserPrompt, currentConversationModelKey, models, targetModelKey, destinationAgent?.backend])
 
   // Only a model verified by the current live catalog is sent explicitly. A null selection is
   // intentional: the controller distinguishes it from an omitted field, which means reuse the
@@ -894,32 +979,51 @@ export function WorkThreadConversation({
     const slashCommand = slashMatch && matchedCommand
       ? { name: matchedCommand.name, arguments: (slashMatch[2] || "").trim() }
       : undefined
+    // The previous prompt counts as running from the moment it was accepted, including the
+    // "getting started" stretch before its first reply arrives.
+    const busySinceOpen = working || replySettling || replyPending
     if (
       (!text && !promptAttachments.length)
       || sending
-      || working
-      || replySettling
       || sendInFlightRef.current
       || !interactionEnabled
       || modelBootstrapBlocked
+      || hasAttention
     ) return
+    if (busySinceOpen) {
+      // Queueing or steering a cross-route handoff behind a running turn has no single owner for the
+      // next turn, so route changes keep waiting until this one finishes.
+      if (routeChanged) return
+      // Attachments only prompt must run as its own turn on every harness, so it keeps waiting.
+      if (!text.trim()) return
+    }
     sendInFlightRef.current = true
     setSending(true)
-    setReplyPending(true)
+    setSentInCurrentView(true)
     setError(null)
     setDraft("")
-    const optimisticPrompt: OptimisticPrompt = {
-      text,
-      priorTurnID: conversationRef.current.currentTurn?.id ?? null,
-      attachments: promptAttachments
+    const priorTurnID = conversationRef.current.currentTurn?.id ?? null
+    const optimisticPrompt: OptimisticPrompt = { text, priorTurnID, attachments: promptAttachments }
+    // From idle a reply is certainly coming, so the prompt and its pending reply show at once. Mid-turn
+    // the daemon decides whether the prompt starts, waits in its queue or joins the live turn, and only
+    // its answer says which - so nothing stands in for this prompt until it has answered. Guessing
+    // from the harness policy here is what used to draw a second "getting started" for a turn that
+    // had not begun.
+    let midTurn = busySinceOpen
+    const presentOptimistically = (show: boolean) => {
+      setReplyPending(show)
+      setPendingPrompt(show ? optimisticPrompt : null)
     }
-    setPendingPrompt(optimisticPrompt)
+    if (!midTurn) presentOptimistically(true)
     setUncertainDelivery(null)
     try {
       const latest = await controller.refreshConversation(baseConfig, conversation.id)
-      if (isActive(latest)) {
+      if (isActive(latest) && !midTurn) {
+        // Another client or an external writer is running a turn: the daemon will queue or steer this
+        // prompt like any other mid-turn send.
         onConversationUpdateRef.current(latest)
-        throw new Error(`${agentLabel(agentsRef.current, agentForTurn(latest, latest.currentTurn))} is still working. Stop it or wait for the reply before sending another message.`)
+        midTurn = true
+        presentOptimistically(false)
       }
       const selectedModelValue = selectedModel
         ? { providerID: selectedModel.providerID, modelID: selectedModel.modelID, variant: selectedModel.variant }
@@ -948,12 +1052,28 @@ export function WorkThreadConversation({
         })
         localStorage.removeItem(draftStorageKey)
         setAttachments([])
-        onConversationUpdateRef.current(next)
-        conversationRef.current = next
-        setAwaitingReplyTurnID(next.currentTurn?.id ?? null)
         modelSelectionTouchedRef.current = false
-        await refreshCurrentTail(next)
-        void refreshAttention(next)
+        // A new current turn means the prompt started (or joined the live turn as one of its own);
+        // an unchanged one means the daemon queued it, and its row shows as the queued strip.
+        const startedTurn = Boolean(next.currentTurn?.id && next.currentTurn.id !== priorTurnID)
+        if (startedTurn) {
+          onConversationUpdateRef.current(next)
+          conversationRef.current = next
+          setAwaitingReplyTurnID(next.currentTurn?.id ?? null)
+          if (midTurn) setReplyPending(true)
+          // The tail refresh is coalesced: while a turn streams, every event extends the same drain,
+          // so awaiting it held this Send "in flight" for as long as the turn kept writing - the
+          // composer stayed locked until the reply ended, which is why a prompt typed meanwhile was
+          // only delivered after it and never queued, and a live reply read "getting started". The
+          // read is only started; the optimistic row already shows the prompt and its pending reply.
+          void refreshCurrentTail(next)
+          void refreshAttention(next)
+        } else {
+          if (!midTurn) presentOptimistically(false)
+          // The queued row is already in the daemon transcript; reading the tail shows it as queued.
+          // Not awaited, for the same reason as above: the running turn keeps that read draining.
+          void refreshCurrentTail(next)
+        }
       }
     } catch (reason) {
       const transportFailure = isTransportFailure(reason)
@@ -965,15 +1085,34 @@ export function WorkThreadConversation({
       }
       // The prompt goes back to the composer, so it must also stop standing in for a turn that was
       // never accepted. If transport made acceptance ambiguous, the transcript reconciliation above
-      // clears this restored draft only after the exact native turn becomes authoritative.
-      setPendingPrompt(null)
-      setReplyPending(false)
-      setDraft((current) => text ? (current ? `${text}\n${current}` : text) : current)
+      // clears this restored draft only after the exact native turn becomes authoritative. A mid-turn
+      // send presented nothing, and the running turn's own pending state is not this send's to clear.
+      if (!midTurn) presentOptimistically(false)
+      setDraft((current) => text ? (current ? `${text}
+${current}` : text) : current)
       setAttachments(promptAttachments)
       setError(reason instanceof Error ? reason.message : String(reason))
     } finally {
       sendInFlightRef.current = false
       setSending(false)
+    }
+  }
+
+  /** Withdraw one queued prompt. The running turn is not touched; Stop is what ends it. */
+  async function cancelQueuedPrompt(messageID: string) {
+    if (!controller.cancelQueuedPrompt || !interactionEnabled) return
+    setWithdrawnPrompts((current) => new Set(current).add(messageID))
+    try {
+      await controller.cancelQueuedPrompt(baseConfig, conversation.id, messageID)
+      void refreshCurrentTail()
+    } catch (reason) {
+      if (isTransportFailure(reason)) onConnectionIssueRef.current?.()
+      setWithdrawnPrompts((current) => {
+        const next = new Set(current)
+        next.delete(messageID)
+        return next
+      })
+      setError(reason instanceof Error ? reason.message : String(reason))
     }
   }
 
@@ -1002,7 +1141,25 @@ export function WorkThreadConversation({
   const attachmentsSupported = !routeChanged && attachmentAgent?.capabilities?.attachments === true
   const routeBlockedByAttachments = routeChanged && attachments.length > 0
   const hasAttention = questions.length > 0 || permissions.length > 0
-  const preparingReply = replyPending || sending || ((working || replySettling) && !currentTurnHasAssistantSignal)
+  // "Getting started" only belongs to a reply this client sent while the user was watching this view
+  // of the Session. Returning to a Session that is already working - a re-opened OpenCode turn whose
+  // assistant envelope has not landed yet - also enters the preparing state, but it has long since
+  // started, so it must read "is working" instead.
+  const freshSend = (replyPending || sending) && sentInCurrentView
+  // A send made while a turn runs is not a reply getting started: the daemon may queue it, and the
+  // running turn keeps its own state until a new turn actually begins (see send). Counting that
+  // in-flight request here flashed "getting started" over a reply that was already streaming.
+  // Reopening a running Session reads its transcript first; until it is loaded the running reply is
+  // simply not known yet, so it must not be presented as a turn "getting started".
+  const preparingReply = replyPending
+    || (sending && !working && !replySettling)
+    || (!loading && (working || replySettling) && !currentTurnHasAssistantSignal)
+  // While a turn runs, only a Send that is itself still in flight blocks the next one: the harness
+  // steers or queues every further prompt. That includes the "getting started" stretch: the daemon
+  // accepted the previous prompt before replyPending was set, so the turn is already running there.
+  // Gating on preparingReply instead locked the composer until the first reply arrived (or until a
+  // remount dropped that local state), and again as soon as a prompt was queued.
+  const midTurnSendAllowed = (working || replySettling || replyPending) && !sending
   const pendingAgentLabel = (replyPending || sending) ? agentLabel(destinationAgents, targetAgentID) : currentLabel
   // The pending bubble is the reply that is coming, so it wears the identity of the agent that is
   // about to answer rather than the one that answered last.
@@ -1025,11 +1182,11 @@ export function WorkThreadConversation({
 
   const waitingLabel = hasAttention
     ? "Waiting for your input"
-    : preparingReply
+    : freshSend
       ? `${pendingAgentLabel} is getting started`
       : `${currentLabel} is working`
   const conversationStateLabel = modelBootstrapBlocked
-    ? modelsLoading ? "Loading models" : "Waiting for model catalog"
+    ? modelsLoading ? "Loading models" : modelError ? "Model catalog unavailable" : "Waiting for model catalog"
     : waitingLabel
 
   /**
@@ -1058,6 +1215,7 @@ export function WorkThreadConversation({
             <select value={targetAgentID} disabled={!interactionEnabled || working || replyPending || sending || modelBootstrapBlocked || destinationAgents.length === 0} onChange={(event) => {
               modelGeneration.current += 1
               modelSelectionTouchedRef.current = false
+              routeSelectionTouchedRef.current = event.target.value !== currentAgentID
               setModels([])
               setModelError(null)
               setTargetModelKey("")
@@ -1068,14 +1226,15 @@ export function WorkThreadConversation({
           </label>
           <label className="tdw-model-control">
             <span>Model</span>
-            <ModelPicker compact models={models} value={targetModelKey} onChange={(value) => {
+            <ModelPicker compact models={models} value={targetModelKey} currentModel={currentModelForPicker} onChange={(value) => {
               modelSelectionTouchedRef.current = true
               setTargetModelKey(value)
             }} disabled={!interactionEnabled || working || replyPending || sending || modelsLoading || !targetAgentID} loading={modelsLoading} placeholder={modelBootstrapBlocked ? (modelError ? "Model unavailable" : "Loading models…") : deferModelFallback ? "Harness default" : undefined} unavailableHint={modelError || undefined} />
             {modelError ? <small className="tdw-field-note" title={modelError}>Model catalog unavailable. Sending is paused until a model can be verified.</small> : null}
           </label>
         </div>
-        <ConversationStatePill working={working || replyPending || sending || replySettling || modelBootstrapBlocked} attention={hasAttention} workingLabel={conversationStateLabel} startedAt={sending ? undefined : conversation.currentTurn?.startedAt} status={conversation.status} detail={conversation.error?.message || undefined} />
+        {toolbarAccessory}
+        <ConversationStatePill working={working || replyPending || sending || replySettling || modelBootstrapBlocked} attention={hasAttention} workingLabel={conversationStateLabel} startedAt={sending || modelBootstrapBlocked ? undefined : conversation.currentTurn?.startedAt} status={conversation.status} detail={conversation.error?.message || undefined} />
       </div>
 
       {routeChanged ? (
@@ -1127,21 +1286,28 @@ export function WorkThreadConversation({
         onAttachmentError={setError}
         onSend={send}
         sending={preparingReply}
-        sendDisabled={!interactionEnabled || working || replySettling || hasAttention || routeBlockedByAttachments || modelBootstrapBlocked}
+        canSendWhileWaiting={midTurnSendAllowed && !routeChanged}
+        sendDisabled={!interactionEnabled || hasAttention || routeBlockedByAttachments || modelBootstrapBlocked}
         composerDisabled={!interactionEnabled || modelBootstrapBlocked}
         onStop={working && interactionEnabled ? stop : undefined}
         stopping={stopping}
         placeholder={`Message ${agentLabel(destinationAgents, targetAgentID)}…`}
         emptyText="Start the conversation. You can continue with another coding agent at any time."
         transcriptError={transcriptError || undefined}
+        queuedPrompts={queuedPrompts}
+        onCancelQueuedPrompt={controller.cancelQueuedPrompt && interactionEnabled ? cancelQueuedPrompt : undefined}
         footerHint={hasAttention
           ? "Your input is required before the agent can continue"
           : modelBootstrapBlocked
             ? modelsLoading ? "Loading available models…" : "A verified model is required before sending"
             : working
-              ? "The agent is working on your last message"
+              ? midTurnPromptPolicy(attachmentAgent) === "steer"
+                ? "New messages are delivered live into the running task"
+                : "New messages are queued and start when the current reply finishes"
               : replySettling
-                ? "Waiting for the completed reply to become available…"
+                ? midTurnPromptPolicy(attachmentAgent) === "steer"
+                  ? "New messages are delivered live into the running task"
+                  : "Waiting for the completed reply to become available…"
                 : undefined}
         renderMessage={(message) => {
           const activity = activityForMessage(message as WorkThreadMessage)

@@ -11,7 +11,7 @@ import { useTranslator } from "../useTranslator"
  * Keeping it in the sidebar heading meant the most consequential Session action was detached from
  * the Session it acts on: the button appeared next to New Session, changed meaning with every
  * selection, and was invisible while the phone showed only the chat. It now lives in the chat
- * header of the open Session and mutates the real native Session through its owning harness.
+ * header of the open Session. ACP hides it in Harness Remote; native HTTP deletes it in the harness.
  *
  * Rename is not here. It edits one string that the header already displays, so it is an inline edit
  * of that heading (`native-session-rename.tsx`) rather than a second panel that hides it.
@@ -94,7 +94,7 @@ export function NativeSessionActions({ target, onDeleteStarted, onDeleteFailed, 
           <div className="hr-session-action-heading">
             <div>
               <strong>{t("sf.deleteSessionTitle", { title: target.title })}</strong>
-              <small>{t("sf.deleteSubtitle", { agent: target.agentLabel })}</small>
+              <small>{t(target.transport === "acp" ? "sf.hideSessionSubtitle" : "sf.deleteSubtitle", { agent: target.agentLabel })}</small>
             </div>
             <button type="button" className="tdw-icon-button" data-dismiss="session-actions" onClick={close} disabled={busy} aria-label={t("sf.closeDelete")}>×</button>
           </div>

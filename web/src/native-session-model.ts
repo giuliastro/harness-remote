@@ -1,6 +1,6 @@
 import { api } from "./api"
 import type { NativeSessionSurfaceTarget } from "./native-session-discovery"
-import type { MessageEnvelope, ModelSelection } from "./types"
+import type { MessageEnvelope, ModelOption, ModelSelection } from "./types"
 
 type NativeMessageInfo = MessageEnvelope["info"] & {
   model?: {
@@ -32,6 +32,36 @@ export function sameModel(left?: ModelSelection | null, right?: ModelSelection |
   if (!left && !right) return true
   if (!left || !right) return false
   return left.providerID === right.providerID && left.modelID === right.modelID && (left.variant || "") === (right.variant || "")
+}
+
+/**
+ * Copilot can expose a single `auto` entry even though a native Session has no recoverable model
+ * metadata yet. That exact catalog shape proves the harness default that will be used, so it is
+ * safe to show/select while preserving the normal metadata-first rule for every other harness.
+ */
+export function provenCopilotAutoDefault(backend: string | undefined, models: ModelOption[]): ModelOption | null {
+  if (backend !== "copilot" || models.length !== 1) return null
+  const [model] = models
+  return model.providerID === "copilot" && model.modelID === "auto" && model.isDefault === true
+    ? model
+    : null
+}
+
+export function shouldClearDeferredCatalogDefault(input: {
+  deferModelFallback: boolean
+  routeChanged: boolean
+  hasUserPrompt: boolean
+  currentModelKey: string | null
+  selectionTouched: boolean
+  selectedModelKey: string
+  models: ModelOption[]
+  backend?: string
+}): boolean {
+  if (!input.deferModelFallback || input.routeChanged || !input.hasUserPrompt || input.currentModelKey) return false
+  if (input.selectionTouched) return false
+  const copilotAuto = provenCopilotAutoDefault(input.backend, input.models)
+  if (copilotAuto && input.selectedModelKey === `${copilotAuto.providerID}|${copilotAuto.modelID}|${copilotAuto.variant || ""}`) return false
+  return true
 }
 
 function userMessageModel(info: NativeMessageInfo): ModelSelection | null {
@@ -101,7 +131,7 @@ export function lastNativeMessageModel(messages: MessageEnvelope[]): ModelSelect
   return null
 }
 
-const PAGE_MODEL_BACKENDS = new Set(["omp", "pi", "codex"])
+const PAGE_MODEL_BACKENDS = new Set(["opencode2", "omp", "pi", "codex", "copilot", "mimo"])
 
 /**
  * Recover the last model from native Session state without persisting a second Harness Remote model.

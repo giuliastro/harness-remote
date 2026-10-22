@@ -10,7 +10,9 @@ const { ProfileRegistry } = await import('../dist-electron/electron/profile-regi
 const { IPC_CHANNELS } = await import('../dist-electron/electron/ipc-contract.js')
 
 const messages = []
+const requests = []
 const server = createServer((_request, response) => {
+  requests.push({ url: _request.url, backend: _request.headers['x-harness-backend'] })
   response.writeHead(200, { 'content-type': 'text/event-stream' })
   response.write(': heartbeat\r\n\r\n')
   response.write('event: update\ndata: {"type":"session.')
@@ -86,4 +88,34 @@ test('desktop SSE forwards split frames, parse errors, and one closed status', a
   transport.unsubscribe(owner, subscriptionId)
   transport.unsubscribe(owner, subscriptionId)
   assert.equal(messages.filter((message) => message.kind === 'status' && message.status.type === 'closed').length, 1)
+})
+
+test('OpenCode 2 desktop SSE keeps its backend and agent route through profile validation', async () => {
+  messages.length = 0
+  requests.length = 0
+  const opencode2 = { ...profile, id: 'events-opencode2', backend: 'opencode2', agentId: 'opencode2' }
+  await registry.replace([opencode2], 4)
+  assert.deepEqual(registry.get(opencode2.id), opencode2)
+
+  const { subscriptionId } = await transport.subscribe(owner, opencode2.id, { scope: 'global' })
+  await waitFor(() => messages.some((message) => message.kind === 'event'))
+  assert.deepEqual(requests[0], {
+    url: '/global/event',
+    backend: 'opencode2'
+  })
+  transport.unsubscribe(owner, subscriptionId)
+})
+
+test('Copilot and MiMo desktop SSE preserve their independent backend routes', async () => {
+  for (const backend of ['copilot', 'mimo']) {
+    messages.length = 0
+    requests.length = 0
+    const scoped = { ...profile, id: `events-${backend}`, backend, agentId: backend }
+    await registry.replace([scoped], backend === 'copilot' ? 5 : 6)
+    assert.deepEqual(registry.get(scoped.id), scoped)
+    const { subscriptionId } = await transport.subscribe(owner, scoped.id, { scope: 'global' })
+    await waitFor(() => messages.some((message) => message.kind === 'event'))
+    assert.deepEqual(requests[0], { url: '/global/event', backend })
+    transport.unsubscribe(owner, subscriptionId)
+  }
 })

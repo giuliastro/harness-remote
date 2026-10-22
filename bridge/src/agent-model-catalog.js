@@ -69,6 +69,104 @@ function dedupeModels(models) {
   })
 }
 
+export function modelValueIsExcluded(value, prefixes = []) {
+  if (typeof value !== "string") return false
+  return prefixes.some((prefix) => value === prefix || value.startsWith(`${prefix}/`))
+}
+
+export function splitInlineAcpModelVariant(value, option, variantValues = []) {
+  if (typeof value !== "string" || !variantValues.length) return undefined
+  const boundary = value.lastIndexOf("/")
+  if (boundary <= 0) return undefined
+  const variant = value.slice(boundary + 1)
+  const modelValue = value.slice(0, boundary)
+  if (!variantValues.includes(variant)) return undefined
+  if (!option?.options?.some((candidate) => candidate?.value === modelValue)) return undefined
+  return { modelValue, variant, variantValue: value }
+}
+
+/** Convert either modern ACP config options or the legacy session model list to model options. */
+export function modelConfigOptionFromSessionResponse(response) {
+  const options = Array.isArray(response?.configOptions) ? response.configOptions : []
+  if (options.some((option) => option?.id === "model")) return options
+  const models = response?.models
+  if (!Array.isArray(models?.availableModels)) return options
+  return [...options, {
+    id: "model",
+    currentValue: models.currentModelId,
+    options: models.availableModels.flatMap((model) => {
+      if (!model || typeof model.modelId !== "string" || !model.modelId) return []
+      return [{
+        value: model.modelId,
+        ...(typeof model.name === "string" ? { name: model.name } : {}),
+        ...(typeof model.description === "string" ? { description: model.description } : {})
+      }]
+    })
+  }]
+}
+
+/** Resolve a normalized catalog selection back to the exact value accepted by ACP. */
+export function modelValueForSelection(model, option, fallbackProviderID) {
+  if (!model || !option || !Array.isArray(option.options)) return undefined
+  if (model.variant) {
+    return typeof model.variantValue === "string"
+      && option.options.some((candidate) => candidate?.value === model.variantValue)
+      ? model.variantValue
+      : undefined
+  }
+  const wanted = model.providerID === fallbackProviderID ? model.modelID : `${model.providerID}/${model.modelID}`
+  return option.options.find((candidate) =>
+    typeof candidate?.value === "string"
+      && selectableAcpModelValue(candidate.value, option, fallbackProviderID) === wanted
+  )?.value
+}
+
+/**
+ * Some adapters flatten one model and its reasoning choices into sibling values such as
+ * `provider/model`, `provider/model/low`, `provider/model/high`. Normalize these as one model.
+ */
+export function normalizedAcpModelCandidates(option, excludedValuePrefixes = [], inlineVariantValues = [], providerOrder = []) {
+  if (!option || !Array.isArray(option.options)) return []
+  const groups = new Map()
+  for (const candidate of option.options) {
+    if (typeof candidate?.value !== "string" || !candidate.value || candidate.disabled === true) continue
+    if (modelValueIsExcluded(candidate.value, excludedValuePrefixes)) continue
+    const inline = splitInlineAcpModelVariant(candidate.value, option, inlineVariantValues)
+    const modelValue = inline?.modelValue ?? candidate.value
+    const group = groups.get(modelValue) ?? { base: undefined, variants: [], index: groups.size }
+    if (inline) group.variants.push({ candidate, ...inline })
+    else group.base = candidate
+    groups.set(modelValue, group)
+  }
+  const rank = (modelValue) => {
+    const providerID = modelValue.slice(0, modelValue.indexOf("/"))
+    const index = providerOrder.indexOf(providerID)
+    return index < 0 ? undefined : index
+  }
+  return [...groups.entries()]
+    .filter(([, group]) => group.base)
+    .sort(([left, a], [right, b]) =>
+      (rank(left) ?? Number.MAX_SAFE_INTEGER) - (rank(right) ?? Number.MAX_SAFE_INTEGER) || a.index - b.index
+    )
+    .flatMap(([modelValue, group]) => {
+      const priority = rank(modelValue)
+      const base = {
+        ...group.base,
+        currentValue: option.currentValue === modelValue,
+        ...(Number.isFinite(priority) ? { sortPriority: priority } : {})
+      }
+      return [base, ...group.variants.map(({ candidate, variant, variantValue }) => ({
+        ...candidate,
+        value: modelValue,
+        name: group.base.name ?? modelValue,
+        variant,
+        variantValue,
+        currentValue: option.currentValue === variantValue,
+        ...(Number.isFinite(priority) ? { sortPriority: priority } : {})
+      }))]
+    })
+}
+
 export function selectableAcpModelValue(value, option, providerID) {
   if (providerID !== "claude" || !/^claude-[a-z0-9._-]+\[1m\]$/i.test(value)) return value
   const bare = value.replace(/\[1m\]$/i, "")
@@ -95,14 +193,22 @@ function modelFromConfigCandidate(candidate, option, fallbackProviderID) {
     description: candidate.description || undefined,
     status: typeof candidate.status === "string" ? candidate.status : undefined,
     isFree: typeof candidate.free === "boolean" ? candidate.free : typeof candidate.isFree === "boolean" ? candidate.isFree : undefined,
-    isDefault: selectableValue === selectableAcpModelValue(option.currentValue, option, fallbackProviderID)
+    isDefault: typeof candidate.currentValue === "boolean"
+      ? candidate.currentValue
+      : selectableValue === selectableAcpModelValue(option.currentValue, option, fallbackProviderID),
+    ...(candidate.variant ? {
+      variant: candidate.variant,
+      variantConfigId: "model",
+      variantValue: candidate.variantValue
+    } : {}),
+    ...(Number.isFinite(candidate.sortPriority) ? { sortPriority: candidate.sortPriority } : {})
   }
 }
 
-export function modelsFromConfigOptions(configOptions, fallbackProviderID) {
+export function modelsFromConfigOptions(configOptions, fallbackProviderID, excludedValuePrefixes = [], { inlineVariantValues = [], providerOrder = [] } = {}) {
   const option = configOptions?.find((item) => item?.id === "model")
   if (!option || !Array.isArray(option.options)) return []
-  return dedupeModels(option.options.flatMap((candidate) => {
+  return dedupeModels(normalizedAcpModelCandidates(option, excludedValuePrefixes, inlineVariantValues, providerOrder).flatMap((candidate) => {
     const model = modelFromConfigCandidate(candidate, option, fallbackProviderID)
     return model ? [model] : []
   }))
@@ -166,7 +272,7 @@ function catalogAge(refreshedAt) {
   return Number.isFinite(value) ? Math.max(0, Date.now() - value) : null
 }
 
-class CachedCatalog {
+export class CachedCatalog {
   cache = []
   refreshedAt = null
   lastAttemptAt = null
@@ -221,19 +327,37 @@ class CachedCatalog {
 }
 
 export class AcpAgentModelCatalog extends CachedCatalog {
-  constructor({ agent, agentID, directory, stateDirectory, timeoutMs = ACP_MODEL_CATALOG_TIMEOUT_MS, variantConfigIDs = [] }) {
+  constructor({
+    agent,
+    agentID,
+    directory,
+    stateDirectory,
+    timeoutMs = ACP_MODEL_CATALOG_TIMEOUT_MS,
+    variantConfigIDs = [],
+    excludedModelValuePrefixes = [],
+    inlineModelVariantValues = [],
+    modelProviderOrder = [],
+    cleanupSession,
+    releaseAfterRefresh = false
+  }) {
     super()
     this.agent = agent
     this.agentID = agentID
     this.directory = directory
     this.timeoutMs = timeoutMs
     this.variantConfigIDs = [...new Set(variantConfigIDs.filter((value) => typeof value === "string" && value))]
+    this.excludedModelValuePrefixes = [...new Set(excludedModelValuePrefixes)]
+    this.inlineModelVariantValues = [...new Set(inlineModelVariantValues)]
+    this.modelProviderOrder = [...new Set(modelProviderOrder)]
+    this.cleanupSession = typeof cleanupSession === "function" ? cleanupSession : undefined
+    this.releaseAfterRefresh = releaseAfterRefresh
     this.stateFile = path.join(stateDirectory, `model-catalog-${agentID}.json`)
     this.sessionID = undefined
     this.stateLoaded = false
     this.hiddenSessionIDs = new Set()
     this.phase = "idle"
     this.variantProbe = { total: 0, completed: 0, incomplete: false, lastError: null }
+    this.cleanupError = null
     this.onAgentExit = (error) => {
       this.lastError = error instanceof Error ? error.message : String(error ?? "adapter exited")
       this.sessionID = undefined
@@ -293,7 +417,7 @@ export class AcpAgentModelCatalog extends CachedCatalog {
     this.sessionID = created.sessionId
     this.hiddenSessionIDs.add(created.sessionId)
     await this.#saveState()
-    return created.configOptions
+    return modelConfigOptionFromSessionResponse(created)
   }
 
   async #refreshOptions(deadline) {
@@ -310,14 +434,22 @@ export class AcpAgentModelCatalog extends CachedCatalog {
   }
 
   async #probeVariants(configOptions, catalogDeadline) {
-    const baseModels = modelsFromConfigOptions(configOptions, this.agentID)
+    const baseModels = modelsFromConfigOptions(configOptions, this.agentID, this.excludedModelValuePrefixes, {
+      inlineVariantValues: this.inlineModelVariantValues,
+      providerOrder: this.modelProviderOrder
+    })
     const modelOption = configOptions?.find((item) => item?.id === "model")
     if (!baseModels.length || !this.variantConfigIDs.length || !this.sessionID || !modelOption || !Array.isArray(modelOption.options)) {
       this.variantProbe = { total: 0, completed: 0, incomplete: false, lastError: null }
       return baseModels
     }
 
-    const candidates = modelOption.options.filter((candidate) => modelFromConfigCandidate(candidate, modelOption, this.agentID))
+    const candidates = normalizedAcpModelCandidates(
+      modelOption,
+      this.excludedModelValuePrefixes,
+      this.inlineModelVariantValues,
+      this.modelProviderOrder
+    ).filter((candidate) => !candidate.variant && modelFromConfigCandidate(candidate, modelOption, this.agentID))
     const originalModel = modelOption.currentValue
     const ordered = [...candidates].sort((left, right) => {
       if (left?.value === originalModel) return -1
@@ -384,17 +516,43 @@ export class AcpAgentModelCatalog extends CachedCatalog {
     this.variantProbe = { total: 0, completed: 0, incomplete: false, lastError: null }
     try {
       const options = await this.#refreshOptions(deadline)
-      const baseModels = modelsFromConfigOptions(options, this.agentID)
+      const baseModels = modelsFromConfigOptions(options, this.agentID, this.excludedModelValuePrefixes, {
+        inlineVariantValues: this.inlineModelVariantValues,
+        providerOrder: this.modelProviderOrder
+      })
       if (!baseModels.length) throw new Error(`Agent ${this.agentID} did not advertise any models`)
       this.phase = "probing-variants"
       // Base membership is the required result. Variant enrichment is bounded and may stop early;
       // a slow optional reasoning control must never make an otherwise valid catalog unusable.
       const models = await this.#probeVariants(options, deadline)
       this.phase = "ready"
+      // Save the successful catalog snapshot before best-effort deletion of this prompt-less
+      // technical Session. Cleanup failures are diagnostics and must not discard the snapshot.
       return this.remember(models)
     } catch (error) {
       this.phase = "error"
       throw error
+    } finally {
+      if (this.releaseAfterRefresh) await this.agent.close?.()
+      await this.#cleanupTechnicalSession()
+    }
+  }
+
+  async #cleanupTechnicalSession() {
+    const sessionID = this.sessionID
+    if (!this.cleanupSession || !sessionID) return
+    try {
+      await this.cleanupSession({ sessionID, directory: this.directory })
+      this.hiddenSessionIDs.delete(sessionID)
+      this.sessionID = undefined
+      this.cleanupError = null
+      try {
+        await this.#saveState()
+      } catch (error) {
+        this.cleanupError = error instanceof Error ? error.message : String(error)
+      }
+    } catch (error) {
+      this.cleanupError = error instanceof Error ? error.message : String(error)
     }
   }
 
@@ -429,12 +587,13 @@ export class AcpAgentModelCatalog extends CachedCatalog {
       variantProbe: { ...this.variantProbe },
       adapterProcess: this.agent.diagnostics?.() ?? { processID: this.agent.processID },
       technicalSessionPersisted: Boolean(this.sessionID),
+      cleanupError: this.cleanupError,
       variantConfigIDs: this.variantConfigIDs
     }
   }
   close() {
     this.agent.off?.("exit", this.onAgentExit)
-    this.agent.close?.()
+    return this.agent.close?.()
   }
 }
 

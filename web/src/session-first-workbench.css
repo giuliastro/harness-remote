@@ -98,14 +98,32 @@
 }
 
 .hr-native-workspace-list {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
   border-right-color: var(--td3-border-soft);
   background: var(--td3-panel);
-  scrollbar-gutter: stable;
 }
 
 .hr-native-home {
-  min-height: 100%;
-  padding: 0 10px 24px;
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  padding: 0 10px;
+}
+
+.hr-native-home-controls {
+  flex: none;
+}
+
+.hr-native-home-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
+  scrollbar-gutter: stable;
+  padding-bottom: 24px;
 }
 
 .hr-native-home-heading {
@@ -301,20 +319,28 @@
   pointer-events: none;
 }
 
+.hr-native-scope > svg:last-child {
+  grid-column: 3;
+}
+
 .hr-native-scope select {
+  position: absolute;
+  inset: 0;
   width: 100%;
   min-width: 0;
   height: 100%;
-  padding: 0;
+  min-height: 0;
+  padding: 0 27px;
   border: 0;
   outline: 0;
   appearance: none;
   -webkit-appearance: none;
   color: var(--td3-text-2);
-  /* `taskdesk-workthreads.css` pins `background-color` on every select with `!important` so the
-     native option popover stays themed, and that wins here. The chip is painted with the same
-     `--td3-control`, so the select's own fill lands seamlessly inside it. */
-  background: transparent;
+  /* `taskdesk-workthreads.css` pins a control fill on native selects with `!important` so their
+     option popovers stay themed. Keep the closed select transparent over the chip, while its
+     options retain the shared themed surface. */
+  background-color: transparent !important;
+  background-image: none;
   font: inherit;
   font-size: 10.5px;
   font-weight: 600;
@@ -1349,8 +1375,8 @@
 .hr-session-settings-page {
   position: relative;
   inset: auto;
-  width: min(520px, calc(100vw - 36px));
-  max-height: min(620px, calc(100dvh - 36px));
+  width: min(600px, calc(100vw - 36px));
+  max-height: min(700px, calc(100dvh - 36px));
   display: flex !important;
   flex-direction: column;
   overflow: hidden;
@@ -1439,14 +1465,126 @@
 
 .hr-session-settings-page .hr-mobile-settings-group select {
   min-height: 40px;
-  max-width: 190px;
-  padding-inline: 9px;
+  max-width: 300px;
+  /* The base `select` rule draws the chevron with background-image and reserves padding for it.
+     `padding-inline` and the `background` shorthand both erased that, so the control read as a plain
+     box. Keep the reserved right padding and set only the background color. */
+  padding-left: 9px;
+  padding-right: 1.75rem;
   border: 1px solid var(--td3-border);
   border-radius: 8px;
   color: var(--td3-text);
-  background: var(--td3-control);
+  background-color: var(--td3-control);
   font: inherit;
   font-size: 14px;
+}
+
+/* A checkbox is the one control in a settings row that must not fill its column: it sits at the
+   end of the row like a switch, at a size you can hit with a thumb. */
+.hr-session-settings-page .hr-mobile-settings-group label input[type="checkbox"] {
+  justify-self: end;
+  width: 18px;
+  height: 18px;
+  margin: 0;
+}
+
+.hr-session-settings-page .hr-mobile-settings-group > p[role="alert"] {
+  color: var(--td3-red-text, inherit);
+}
+
+.uw-machine-overview {
+  display: grid;
+  gap: 12px;
+}
+
+.uw-machine-overview[hidden],
+.uw-machine-manager-footer[hidden] {
+  display: none !important;
+}
+
+.uw-machine-folder-summary {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+  margin-top: 10px;
+}
+
+.uw-machine-section-label {
+  font-size: 11px !important;
+  font-weight: 650;
+  color: var(--td3-muted);
+}
+
+.uw-machine-folder-summary ul {
+  display: grid;
+  gap: 5px;
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  min-width: 0;
+}
+
+.uw-machine-folder-summary code {
+  font-size: 12px;
+  overflow-wrap: anywhere;
+  color: var(--td3-text);
+}
+
+.uw-machine-editor input[readonly] {
+  color: var(--td3-muted);
+}
+
+.uw-machine-editor .uw-machine-folder-summary > .uw-machine-section-label {
+  display: none;
+}
+
+.hr-machine-project-roots {
+  min-width: 0;
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px solid var(--td3-border);
+}
+
+.hr-machine-project-roots h3 {
+  margin: 0;
+  font-size: 14px;
+}
+
+.hr-machine-project-roots > p,
+.uw-machine-project-roots-note {
+  margin: 8px 0;
+  color: var(--td3-muted);
+  font-size: 12px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.hr-machine-project-roots .hr-project-roots-list {
+  display: grid;
+  gap: 7px;
+  margin: 12px 0;
+  padding: 0;
+  list-style: none;
+}
+
+.hr-machine-project-roots .hr-project-roots-list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-width: 0;
+}
+
+.hr-machine-project-roots .hr-project-roots-list code {
+  overflow-wrap: anywhere;
+  color: var(--td3-text);
+  font-size: 12px;
+}
+
+.hr-session-settings-page .hr-mobile-settings-group > p {
+  margin: 8px 11px;
+  color: var(--td3-muted);
+  font-size: 12px;
 }
 
 .hr-session-settings-page .hr-mobile-settings-body > p {
@@ -1455,6 +1593,12 @@
   color: var(--td3-muted);
   font-size: 11px;
   line-height: 1.5;
+}
+
+/* The caption belongs to the group above it. When a second card follows, it needs its own breath
+   before it instead of sitting flush against the sentence. */
+.hr-session-settings-page .hr-mobile-settings-body > p + .hr-mobile-settings-group {
+  margin-top: 14px;
 }
 
 .hr-session-settings-page > footer {
@@ -1470,6 +1614,139 @@
   padding: 6px 14px;
   border-bottom-color: var(--td3-border-soft);
   background: var(--td3-chrome);
+}
+
+@media (min-width: 781px) {
+  .hr-native-workspace.session-focus-mode .hr-native-workspace-session-header,
+  .hr-native-workspace.session-focus-mode .hr-native-session-observer .tdw-conversation-toolbar {
+    display: none;
+  }
+
+  .hr-session-focus-toggle[aria-pressed="true"] {
+    color: var(--td3-blue-text);
+    border-color: var(--td3-blue-border);
+    background: var(--td3-blue-soft);
+  }
+}
+
+@media (max-width: 780px) {
+  .hr-session-focus-toggle {
+    display: none;
+  }
+}
+
+/* Session chrome on a wide pane: one row of identity, one row of controls.
+ *
+ * Header, outcome and harness/model used to stack four lines of chrome - eyebrow, title, directory,
+ * outcome, labelled pickers - above a transcript that is the reason the pane exists. The title now
+ * leads a single row with its machine/project path beside it, the directory moves to the heading's
+ * tooltip, the outcome is a chip in the toolbar (see native-session-outcome.css) and the picker
+ * labels sit inline. The phone layout is the complement of this query and keeps its own rows. */
+@media (min-width: 781px) and (not ((pointer: coarse) and (max-height: 640px))) {
+  .hr-native-workspace .hr-native-workspace-session-header {
+    min-height: 0;
+    padding: 6px 16px;
+  }
+
+  .hr-native-workspace .hr-native-session-heading {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .hr-native-workspace .hr-native-session-heading > .hr-native-session-title {
+    order: -1;
+    flex: 0 1 auto;
+    min-width: 120px;
+    margin: 0;
+    font-size: 15px;
+  }
+
+  /* As a shrinkable flex item the heading is sized from its content, and the button's negative
+     start margin made that 7px narrower than the button: every title was clipped by an ellipsis.
+     The heading takes the optical pull instead, so it measures the whole button. */
+  .hr-native-workspace .hr-native-session-heading > .hr-native-session-title:not(.editing) {
+    margin-inline-start: -7px;
+  }
+
+  .hr-native-workspace .hr-native-session-heading > .hr-native-session-title:not(.editing) .hr-native-session-title-button {
+    margin-inline-start: 0;
+  }
+
+  .hr-native-workspace .hr-native-session-heading > .hr-native-session-title.editing {
+    flex: 1 1 auto;
+  }
+
+  /* Narrower panes let the path wrap under the title; beside it, it has to stay one clipped line. */
+  .hr-native-workspace .hr-native-session-heading > .hr-native-session-eyebrow {
+    flex: 0 100 auto;
+    flex-wrap: nowrap;
+    overflow: hidden;
+    white-space: nowrap;
+  }
+
+  .hr-native-workspace .hr-native-session-heading > small {
+    display: none;
+  }
+
+  /* The stat chips do not wrap and are end-aligned, so a squeezed group overflowed leftwards across
+     the title. The group keeps its size; the Session id gives way first, then the title. */
+  .hr-native-workspace .hr-native-workspace-session-actions {
+    min-width: min-content;
+  }
+
+  .hr-native-workspace .hr-native-workspace-session-actions .hr-native-session-stats {
+    flex: none;
+  }
+
+  .hr-native-workspace .hr-native-workspace-session-actions > code {
+    min-width: 72px;
+    flex: 0 1 auto;
+  }
+
+  /* `work-thread-detail.css` turns the toolbar into a column below 980px. Here that made the routed
+     group's 588px flex-basis a height, and a half-screen window lost most of the pane to one row of
+     pickers. The row stays one row: the pickers and the outcome chip share the shrinking. */
+  .hr-native-workspace .hr-native-session-observer .tdw-conversation-toolbar {
+    min-height: 40px;
+    flex-direction: row;
+    align-items: center;
+    padding: 4px 14px;
+  }
+
+  .hr-native-workspace .hr-native-session-observer .tdw-agent-control.routed {
+    flex: 0 1 588px;
+    grid-template-columns: minmax(120px, 220px) minmax(150px, 360px);
+  }
+
+  .hr-native-workspace .hr-native-session-observer .hr-native-outcome.compact {
+    min-width: 96px;
+  }
+
+  .hr-native-workspace .hr-native-session-observer .tdw-conversation-state {
+    position: static;
+    margin: 0;
+  }
+
+  .hr-native-workspace .hr-native-session-observer .tdw-agent-control.routed > label {
+    flex-direction: row;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .hr-native-workspace .hr-native-session-observer .tdw-agent-control.routed > label > span {
+    flex: none;
+  }
+
+  .hr-native-workspace .hr-native-session-observer .tdw-agent-control.routed > label > :not(span) {
+    min-width: 0;
+    flex: 1 1 auto;
+  }
+
+  .hr-native-workspace .hr-native-session-observer .tdw-agent-control select,
+  .hr-native-workspace .hr-native-session-observer .tdw-model-trigger {
+    min-height: 30px;
+  }
 }
 
 .hr-native-session-observer .tdw-model-control {
@@ -1540,8 +1817,9 @@
   background: transparent;
 }
 
+/* The bottom inset is the breathing room between the live tail and the composer. */
 .hr-native-session-observer .uw-transcript {
-  padding: 18px var(--hrsf-gutter) 24px;
+  padding: 18px var(--hrsf-gutter) 36px;
   background: transparent;
 }
 
@@ -1618,22 +1896,6 @@
   background: var(--td3-blue-soft);
 }
 
-/* Activity is a section of the reply, not a footnote to it. Capping it at 760px inside an 880px
-   column left it visibly narrower than the prose, the tables and the code blocks stacked directly
-   above and below it - the one element in the transcript that did not reach the column's edge. */
-.hr-native-session-observer .uw-activity-group {
-  width: 100%;
-  margin-top: 8px;
-  border-color: var(--td3-border-soft);
-  border-radius: 8px;
-  background: var(--td3-raise-1);
-}
-
-.hr-native-session-observer .uw-activity-group > summary {
-  min-height: 34px;
-  padding-inline: 9px;
-}
-
 /* `taskdesk-conversation.css` states the rule this surface never implemented: only block prose is
    held to the reading measure, while tables, code blocks and diffs take the full body width. Nothing
    granted them that width, so a shrink-to-fit table rendered at 391px - narrower than the 588px
@@ -1681,12 +1943,6 @@
 
 .hr-native-session-observer .uw-markdown > table tr:last-child td {
   border-bottom: 0;
-}
-
-.hr-native-session-observer .uw-reasoning {
-  border-color: var(--td3-border-soft);
-  border-radius: 7px;
-  background: var(--td3-panel);
 }
 
 .hr-native-session-observer .uw-composer-shell {
@@ -1770,6 +2026,10 @@
 
   .hr-native-workspace-body {
     grid-template-columns: 1fr;
+  }
+
+  .hr-native-workspace-list {
+    padding-bottom: var(--hr-mobile-nav-height);
   }
 
   .hr-rail-resizer {
@@ -1912,7 +2172,7 @@
   }
 
   .hr-session-settings-page .hr-mobile-settings-body {
-    width: min(520px, 100%) !important;
+    width: min(560px, 100%) !important;
     margin-inline: auto !important;
     padding: 12px !important;
   }
@@ -2271,6 +2531,7 @@
 }
 
 .uw-machine-config-main {
+  flex: 1;
   min-width: 0;
   display: flex;
   flex-direction: column;

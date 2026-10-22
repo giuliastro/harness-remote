@@ -9,6 +9,7 @@ globalThis.localStorage ??= {
 }
 
 const { api } = await import('./api.ts')
+const { mergeLatestMessagePage } = await import('./message-pages.ts')
 const {
   nativeSessionIsWorking,
   registerNativeSessionV3Adapter,
@@ -127,6 +128,77 @@ test('PI stabilization fails closed when repeated identical messages are ambiguo
     ids(stabilizePiTailMessageIDs(oneLiveAnswer, repeatedJournalAnswers)),
     ['journal-a1', 'journal-a2'],
     'multiple new messages with the same semantic key must remain distinct'
+  )
+})
+
+test('PI progressive assistant ids merge a live prefix into the complete journal answer', () => {
+  const live = [
+    textMessage('live-user', 'user', 'What is the result?'),
+    textMessage('live-assistant', 'assistant', 'PI-FREE')
+  ]
+  const journal = [
+    textMessage('journal-user', 'user', 'What is the result?'),
+    textMessage('journal-assistant', 'assistant', 'PI-FREE-ROUTER-UI-VERIFIED')
+  ]
+
+  const stabilized = stabilizePiTailMessageIDs(live, journal)
+  assert.deepEqual(ids(stabilized), ['live-user', 'live-assistant'])
+  assert.equal(stabilized[1].parts[0].messageID, 'live-assistant')
+
+  const feed = mergeLatestMessagePage(live, stabilized)
+  assert.equal(feed.filter((message) => message.info.role === 'assistant').length, 1)
+  assert.equal(feed.find((message) => message.info.role === 'assistant').parts[0].text, 'PI-FREE-ROUTER-UI-VERIFIED')
+
+  const staleJournal = [
+    textMessage('journal-user', 'user', 'What is the result?'),
+    textMessage('journal-assistant', 'assistant', 'PI-FREE')
+  ]
+  const stale = stabilizePiTailMessageIDs(stabilized, staleJournal)
+  const caughtUp = mergeLatestMessagePage(feed, stale)
+  assert.equal(caughtUp.filter((message) => message.info.role === 'assistant').length, 1)
+  assert.equal(caughtUp.find((message) => message.info.role === 'assistant').parts[0].text, 'PI-FREE-ROUTER-UI-VERIFIED')
+})
+
+test('PI progressive assistant identity requires one anchored, unambiguous turn', () => {
+  const liveAssistant = textMessage('live-assistant', 'assistant', 'PI-FREE')
+  const longerAssistant = textMessage('journal-assistant', 'assistant', 'PI-FREE-ROUTER-UI-VERIFIED')
+
+  assert.deepEqual(
+    ids(stabilizePiTailMessageIDs([liveAssistant], [longerAssistant])),
+    ['journal-assistant'],
+    'assistant text without a preceding user anchor cannot use progressive matching'
+  )
+
+  assert.deepEqual(
+    ids(stabilizePiTailMessageIDs(
+      [textMessage('live-user', 'user', 'First turn'), liveAssistant],
+      [textMessage('journal-user', 'user', 'Different turn'), longerAssistant]
+    )),
+    ['journal-user', 'journal-assistant'],
+    'different user identities must not share a progressive assistant match'
+  )
+
+  assert.deepEqual(
+    ids(stabilizePiTailMessageIDs(
+      [textMessage('live-user', 'user', 'Same turn'), liveAssistant],
+      [textMessage('journal-user', 'user', 'Same turn'), textMessage('journal-assistant', 'assistant', 'A genuinely different answer')]
+    )),
+    ['live-user', 'journal-assistant'],
+    'divergent assistant text must retain its native identity'
+  )
+
+  const ambiguousNext = [
+    textMessage('journal-user', 'user', 'Same turn'),
+    longerAssistant,
+    textMessage('journal-tool-result', 'assistant', 'A second assistant envelope')
+  ]
+  assert.deepEqual(
+    ids(stabilizePiTailMessageIDs(
+      [textMessage('live-user', 'user', 'Same turn'), liveAssistant],
+      ambiguousNext
+    )),
+    ['live-user', 'journal-assistant', 'journal-tool-result'],
+    'multiple assistant envelopes in a turn make progressive identity ambiguous'
   )
 })
 

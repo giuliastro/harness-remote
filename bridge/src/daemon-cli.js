@@ -1,16 +1,18 @@
 #!/usr/bin/env node
 import path from "node:path"
-import { AcpClient } from "./acp-client.js"
-import { AcpAgentModelCatalog, HttpAgentModelCatalog } from "./agent-model-catalog.js"
+import { HttpAgentModelCatalog } from "./agent-model-catalog.js"
+import { createAcpProviderRuntime, resolveAcpProviderIDs, resolveAcpProviderLaunch } from "./acp-provider-runtime.js"
 import { ApprovalDecisionStore } from "./approval-decision-store.js"
 import { createApprovalDecisionServer } from "./approval-decision-server.js"
 import { parseConfig, usage as bridgeUsage } from "./config.js"
-import { acpHarnessCapabilityContract, openCodeCapabilityContract } from "./harness-capability-contract.js"
-import { harnessProfile, resolveAcpLaunch } from "./harness-profiles.js"
+import { openCodeCapabilityContract } from "./harness-capability-contract.js"
+import { createHarnessLogWriter } from "./harness-log.js"
+import { harnessProfile } from "./harness-profiles.js"
 import { canListen, canListenForBind, harnessPortUnavailableMessage, resolveLaunchPlan } from "./launcher.js"
 import { loadMachineIdentity } from "./machine-registry.js"
 import { MachineDaemon, createMachineDaemonServer } from "./machine-daemon.js"
-import { ManagedOpenCodeHost } from "./opencode-host.js"
+import { internalServerCredentials, ManagedOpenCodeHost } from "./opencode-host.js"
+import { resolveOpenCodeCommand } from "./opencode-discovery.js"
 
 function requireValue(args, index, option) {
   const value = args[index + 1]
@@ -95,6 +97,11 @@ export async function ensureHarnessPortAvailable({ port, host, canListenImpl = c
   throw new Error(harnessPortUnavailableMessage(port, host))
 }
 
+export function resolveManagedOpenCodeOptions(parsed, plan, { resolve = resolveOpenCodeCommand, explicitCommand = false } = {}) {
+  const openCode = parsed.openCode && (explicitCommand || plan.detected.includes("opencode"))
+  return { ...parsed, openCode, openCodeCommand: openCode && !explicitCommand ? resolve(1) ?? parsed.openCodeCommand : parsed.openCodeCommand }
+}
+
 async function main() {
   let parsed
   try {
@@ -105,11 +112,16 @@ async function main() {
     return
   }
 
-  const { config, openCode, openCodeCommand, openCodeHost, openCodePort, openCodeTimeout } = parsed
+  const { config } = parsed
   if (config.help) {
     process.stdout.write(`${daemonUsage()}\n`)
     return
   }
+
+  const plan = resolveLaunchPlan(process.argv.slice(2))
+  const { openCode, openCodeCommand, openCodeHost, openCodePort, openCodeTimeout } = resolveManagedOpenCodeOptions(parsed, plan, {
+    explicitCommand: process.argv.includes("--opencode-command") || process.env.HARNESS_REMOTE_OPENCODE_COMMAND !== undefined
+  })
 
   if (openCode && openCodePort === config.port) {
     throw new Error(`OpenCode port ${openCodePort} conflicts with the Harness daemon port`)
@@ -119,56 +131,20 @@ async function main() {
 
   const identity = await loadMachineIdentity(config.stateDirectory)
   const daemon = new MachineDaemon(identity)
-  const plan = resolveLaunchPlan(process.argv.slice(2))
-  const acpBackends = [...new Set([...plan.detected.filter((backend) => backend !== "opencode"), config.backend])]
   const primaryProfile = harnessProfile(config.backend)
   const acpHosts = new Map()
-  for (const backend of acpBackends) {
-    const profile = harnessProfile(backend)
-    const launch = backend === config.backend
-      ? { command: config.acpCommand, args: config.acpArgs }
-      : resolveAcpLaunch(profile)
-    const agentConfig = { ...config, backend: profile.id, acpCommand: launch.command, acpArgs: launch.args }
-    const acp = new AcpClient({
-      command: launch.command,
-      args: launch.args,
-      permissionMode: profile.permissionMode,
-      preferredAuthMethod: profile.authMethod
+  const writeHarnessLog = createHarnessLogWriter({ verbose: config.verbose })
+  for (const providerID of resolveAcpProviderIDs(plan.detected, config.backend)) {
+    const provider = harnessProfile(providerID)
+    const launch = resolveAcpProviderLaunch(provider, {
+      primary: provider.id === config.backend,
+      config
     })
-    // Model discovery owns a separate ACP connection so its prompt-less technical Session cannot
-    // interfere with user-facing Session ownership. Membership and options come from the running
-    // adapter itself; do not spawn a second native harness process to filter the same catalog.
-    const modelCatalog = new AcpAgentModelCatalog({
-      agent: new AcpClient({ command: launch.command, args: launch.args, permissionMode: profile.permissionMode, preferredAuthMethod: profile.authMethod }),
-      agentID: profile.id,
-      directory: config.roots?.[0] ?? process.cwd(),
-      stateDirectory: config.stateDirectory,
-      variantConfigIDs: profile.modelVariantConfigIDs
-    })
-    // Load persisted technical-session ids before the server starts, so they never leak into lists.
-    await modelCatalog.preloadState()
-    daemon.registerAcpHost({
-      id: profile.id,
-      label: profile.label,
-      backend: profile.id,
-      capabilities: profile.capabilities,
-      contract: acpHarnessCapabilityContract(profile),
-      agent: acp,
-      modelCatalog,
-      bridgeConfig: agentConfig,
-      serviceOptions: {
-        snapshotDirectory: path.join(config.stateDirectory, profile.id),
-        historyLoader: profile.historyLoader,
-        preserveListedTimestamps: profile.preserveListedTimestamps,
-        hiddenSessionIDs: modelCatalog.hiddenSessionIDs,
-        reloadOnHistoryRefresh: profile.reloadOnHistoryRefresh,
-        replaySettleMs: profile.replaySettleMs,
-        promptSettleMs: profile.promptSettleMs
-      }
-    })
-    acpHosts.set(profile.id, acp)
-    acp.on("stderr", (line) => process.stderr.write(`[${profile.id}] ${line}\n`))
-    acp.on("exit", (error) => process.stderr.write(`[${profile.id}] ${error.message}\n`))
+    const runtime = await createAcpProviderRuntime({ provider, launch, config })
+    const acp = daemon.registerAcpHost(runtime.registration)
+    acpHosts.set(provider.id, acp)
+    acp.on("stderr", (line) => writeHarnessLog(provider.id, line))
+    acp.on("exit", (error) => process.stderr.write(`[${provider.id}] ${error.message}\n`))
   }
   const acp = acpHosts.get(primaryProfile.id)
   if (!acp) throw new Error(`Primary harness ${primaryProfile.id} was not detected`)
@@ -178,11 +154,12 @@ async function main() {
       command: openCodeCommand,
       host: openCodeHost,
       port: openCodePort,
-      username: config.username,
-      password: config.password,
+      // Only this daemon talks to managed OpenCode, and OpenCode exposes its server password to every
+      // tool command it runs: it gets credentials of its own, never the gateway's.
+      ...internalServerCredentials(),
       startTimeoutMs: openCodeTimeout
     })
-    managedOpenCode.on("stderr", (line) => process.stderr.write(`[opencode] ${line}\n`))
+    managedOpenCode.on("stderr", (line) => writeHarnessLog("opencode", line))
     const openCodeModels = new HttpAgentModelCatalog({ host: managedOpenCode, agentID: "opencode" })
     // OpenCode is intentionally lazy like the ACP harnesses. Starting its Bun server during daemon
     // boot used resources before the user selected it and also surfaced upstream GlobalBus listener
@@ -190,7 +167,7 @@ async function main() {
     // first use through the host's idempotent start() path.
     daemon.registerManagedHttpHost({
       id: "opencode",
-      label: "OpenCode",
+      label: "OpenCode Legacy",
       backend: "opencode",
       // These are native OpenCode HTTP primitives, not Session-first inventions. Advertising the
       // complete native subset is also what lets the global Attention index stay authoritative:
@@ -220,8 +197,9 @@ async function main() {
     config,
     primaryAcp: acp,
     serviceOptions: {
+      ...daemon.hostEntry(primaryProfile.id).serviceOptions,
       snapshotDirectory: path.join(config.stateDirectory, primaryProfile.id),
-      historyLoader: primaryProfile.historyLoader,
+      historyLoader: daemon.hostEntry(primaryProfile.id).serviceOptions.historyLoader,
       preserveListedTimestamps: primaryProfile.preserveListedTimestamps,
       hiddenSessionIDs: daemon.hostEntry(primaryProfile.id).modelCatalog.hiddenSessionIDs,
       reloadOnHistoryRefresh: primaryProfile.reloadOnHistoryRefresh,
@@ -267,8 +245,8 @@ async function main() {
   const shutdown = () => {
     if (shuttingDown) return
     shuttingDown = true
-    daemon.close()
-    server.close(() => process.exit(0))
+    const closing = daemon.close()
+    server.close(() => { void closing.then(() => process.exit(0)) })
     setTimeout(() => process.exit(1), 5_000).unref()
   }
   process.on("SIGINT", shutdown)

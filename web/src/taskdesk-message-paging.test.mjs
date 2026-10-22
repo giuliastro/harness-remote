@@ -95,3 +95,17 @@ test("Session conversation exposes bounded older-history loading without snappin
   assert.match(historyStyles, /\.uw-history-load/)
   assert.match(historyStyles, /overflow-anchor: none/)
 })
+
+test("a message first seen between two known ones lands at its page position, not at the end", () => {
+  // The running reply first appears after a queued prompt is already known; the daemon lists it
+  // above that prompt, and the merged feed must keep that order.
+  const prompt = message("prompt-1")
+  const queued = message("queued-2")
+  const reply = message("reply-1")
+  const merged = mergeLatestMessagePage([prompt, queued], [prompt, reply, queued])
+  assert.deepEqual(merged.map((item) => item.info.id), ["prompt-1", "reply-1", "queued-2"])
+
+  const older = message("older-0")
+  const withHistory = mergeLatestMessagePage([prompt, queued], [older, prompt, queued])
+  assert.deepEqual(withHistory.map((item) => item.info.id), ["older-0", "prompt-1", "queued-2"], "a new first row goes before the first known one")
+})

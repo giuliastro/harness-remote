@@ -131,6 +131,53 @@
   margin: 0;
 }
 
+/* Chip in the conversation toolbar. The section stays static so the detail anchors to the toolbar,
+   which is positioned, the same way the model popover does. */
+.hr-native-outcome.compact {
+  position: static;
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: min(420px, 45%);
+  margin: 0 0 0 auto;
+  border-radius: 999px;
+  overflow: visible;
+}
+
+.hr-native-outcome.compact .hr-native-outcome-toggle {
+  min-height: 28px;
+  display: flex;
+  gap: 6px;
+  padding: 3px 10px;
+  border-radius: inherit;
+}
+
+.hr-native-outcome.compact .hr-native-outcome-title {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.hr-native-outcome.compact .hr-native-outcome-summary {
+  font-size: 10.5px;
+}
+
+.hr-native-outcome.compact .hr-native-outcome-body {
+  position: absolute;
+  z-index: 40;
+  top: calc(100% + 5px);
+  right: 14px;
+  width: min(560px, calc(100% - 28px));
+  max-height: min(420px, 60vh);
+  overflow: auto;
+  border: 1px solid var(--td3-border, rgba(127, 127, 127, 0.24));
+  border-radius: 12px;
+  background: var(--td3-panel-2, var(--tdw-panel, #1b1d22));
+  box-shadow: var(--td3-shadow-panel, 0 16px 38px rgba(0, 0, 0, 0.2));
+}
+
 @media (max-width: 620px) {
   .hr-native-outcome-toggle {
     grid-template-columns: minmax(0, 1fr) auto;

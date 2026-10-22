@@ -3,6 +3,8 @@ import { readFileSync } from "node:fs"
 import test from "node:test"
 
 const source = readFileSync(new URL("./components/taskdesk-message-content.tsx", import.meta.url), "utf8")
+const activityModel = readFileSync(new URL("./activity-model.ts", import.meta.url), "utf8")
+const activityStyles = readFileSync(new URL("./activity-timeline.css", import.meta.url), "utf8")
 const styles = readFileSync(new URL("./taskdesk-conversation.css", import.meta.url), "utf8")
 const baseStyles = readFileSync(new URL("./conversation-base.css", import.meta.url), "utf8")
 
@@ -50,7 +52,7 @@ test("provider diagnostics are compacted only after a structured error exists", 
 })
 
 test("OpenCode protocol bookkeeping never leaks into the visible chat", () => {
-  assert.match(source, /INTERNAL_PROTOCOL_PARTS = new Set\(\["step-start", "step-finish", "snapshot", "patch"\]\)/)
+  assert.match(activityModel, /INTERNAL_PROTOCOL_PARTS = new Set\(\["step-start", "step-finish", "snapshot", "patch"\]\)/)
   assert.match(source, /if \(isInternalProtocolPart\(part\)\) return false/)
 })
 
@@ -70,7 +72,7 @@ test("a later real final answer suppresses a stale transport or intermediate str
 })
 
 test("Activity-to-answer rhythm and fallback protocol parts stay visually contained", () => {
-  assert.match(baseStyles, /\.tdw-work-thread-conversation \.uw-activity-group \+ \.uw-message-content-group \{[\s\S]*?margin-top: 10px;/)
+  assert.match(activityStyles, /\.hr-activity \+ \.uw-message-content-group \{[\s\S]*?margin-top: 12px;/)
   assert.match(baseStyles, /\.uw-unsupported-part \{[\s\S]*?max-width: 100%;[\s\S]*?overflow-wrap: anywhere;/)
   assert.match(baseStyles, /\.tdw-work-thread-conversation \.uw-message-turn-error \{[\s\S]*?overflow-wrap: anywhere;/)
 })

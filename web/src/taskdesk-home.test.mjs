@@ -78,15 +78,18 @@ test("Session-first workspace keeps machines projects harness filters models and
   assert.match(observer, /deferModelFallback/)
 })
 
-test("desktop-owned local machine stays visible but cannot be edited or removed", () => {
+test("desktop-owned local machine protects its connection and exposes its project folder settings", () => {
   const standalone = read("./components/standalone-universal-workspace.tsx")
 
   assert.match(standalone, /isDesktopLocalMachine/)
   assert.match(standalone, /const runtimeOwned = isDesktopLocalMachine\(machine\)/)
   assert.match(standalone, /data-runtime-owned=\{runtimeOwned \|\| undefined\}/)
-  assert.match(standalone, /Managed by Harness Remote/)
+  assert.match(standalone, /t\("machine\.managedByApp"\)/)
+  assert.match(standalone, /data-machine-edit/)
+  assert.match(standalone, /<MachineFolderSummary folders=\{machineFolders\[machine\.id\]\}/)
+  assert.match(standalone, /<MachineEditor key=\{draft\.id\} machine=\{draft\}/)
   assert.match(standalone, /if \(isDesktopLocalMachine\(machine\)\) return[\s\S]*const remove = \(machine: WorkspaceMachine\) => \{[\s\S]*if \(isDesktopLocalMachine\(machine\)\) return/)
-  assert.match(standalone, /\{!runtimeOwned \? \([\s\S]*setEditingID\(machine\.id\)[\s\S]*setConfirmRemoveID\(machine\.id\)[\s\S]*\) : null\}/)
+  assert.match(standalone, /\{!runtimeOwned \? \([\s\S]*setConfirmRemoveID\(machine\.id\)[\s\S]*\) : null\}/)
   assert.match(standalone, /state === "offline" \? <button[^>]*data-machine-retry/, 'runtime-owned machines must keep the normal health retry action')
 })
 
@@ -126,8 +129,9 @@ test("Session chat keeps bounded paging live events attention Stop and startup f
   const chat = read("./components/work-thread-conversation.tsx")
   const shared = read("./components/taskdesk-conversation.tsx")
   const parts = read("./conversation-parts.ts")
-  const overrides = read("./conversation-control-plane-overrides.css")
-  const messageContent = read("./components/taskdesk-message-content.tsx")
+  const activityCss = read("./activity-timeline.css")
+  const activityView = read("./components/activity-timeline.tsx")
+  const i18n = read("./i18n.ts")
   const attentionHome = read("./components/native-session-home-attention.tsx")
 
   assert.match(chat, /INITIAL_PAGE_SIZE = 200/)
@@ -146,8 +150,9 @@ test("Session chat keeps bounded paging live events attention Stop and startup f
   assert.match(shared, /sending \|\| \(waiting && showWaitingIndicator\)/)
   assert.match(parts, /if \(forceRunning\) return "running"/)
   assert.doesNotMatch(parts, /state\?\.status === "error"\)\) return "error"/)
-  assert.match(overrides, /uw-activity-group\.uw-tool-running/)
-  assert.match(messageContent, /status === "running" \? "Working" : status/)
+  assert.match(activityCss, /\.hr-activity\.is-running/)
+  assert.match(activityView, /running \? t\("act\.working"\)/)
+  assert.match(i18n, /'act\.working': 'Working'/)
 })
 
 test("Session UI preserves stable autoscroll memoized rows and mobile keyboard behavior", () => {

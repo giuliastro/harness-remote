@@ -107,29 +107,37 @@ export function createFetchOpenCodeEventSubscription(options: FetchEventSubscrip
   let reconnectTimer: TimerID | undefined
   let reconnectDelayMs = initialDelayMs
   let closed = false
-  let observedBackground = false
+  let observedBackground = !isVisible()
 
   const publishStatus = (status: EventStreamStatus) => options.onStatus?.(status)
   const scheduleReconnect = () => {
-    if (closed || reconnectTimer !== undefined) return
+    if (closed || !isVisible() || reconnectTimer !== undefined) return
     const delayMs = reconnectDelayMs
     reconnectDelayMs = Math.min(maxDelayMs, reconnectDelayMs * 2)
     publishStatus({ type: "reconnecting", delayMs })
     reconnectTimer = setTimeout(() => {
       reconnectTimer = undefined
+      if (!isVisible()) return
       connect()
     }, delayMs)
   }
 
   const connect = async () => {
-    if (closed) return
+    if (closed || !isVisible()) return
     const currentController = new AbortController()
     controller = currentController
+    const isCurrent = () => !closed && controller === currentController && isVisible()
     try {
       const response = await fetchFn(options.url, {
         headers: { Accept: "text/event-stream", ...options.headers },
         signal: currentController.signal
       })
+      // Some fetch implementations or test doubles may resolve after abort. Dispose of that
+      // response before it can publish a stale connected state or start reading events.
+      if (!isCurrent()) {
+        await response.body?.cancel().catch(() => undefined)
+        return
+      }
       if (!response.ok || !response.body) throw new Error(`HTTP ${response.status}`)
       const contentType = response.headers.get("content-type") ?? ""
       if (!contentType.toLowerCase().includes("text/event-stream")) {
@@ -159,10 +167,11 @@ export function createFetchOpenCodeEventSubscription(options: FetchEventSubscrip
         }, stallTimeoutMs)
       }
       try {
-        while (!closed && controller === currentController) {
+        while (isCurrent()) {
           armStall()
           const { done, value } = await reader.read()
           disarmStall()
+          if (!isCurrent()) break
           if (done) break
           buffer += decoder.decode(value, { stream: true })
           let boundary = buffer.search(/\r?\n\r?\n/)
@@ -170,7 +179,7 @@ export function createFetchOpenCodeEventSubscription(options: FetchEventSubscrip
             const frame = buffer.slice(0, boundary)
             buffer = buffer.slice(boundary).replace(/^\r?\n\r?\n/, "")
             const event = parseSSEFrame(frame)
-            if (event?.ok) options.onEvent(event)
+            if (event?.ok && isCurrent()) options.onEvent(event)
             if (event && !event.ok) publishStatus({ type: "parse-error", data: event.raw })
             boundary = buffer.search(/\r?\n\r?\n/)
           }
@@ -179,13 +188,13 @@ export function createFetchOpenCodeEventSubscription(options: FetchEventSubscrip
         disarmStall()
       }
     } catch (error) {
-      if (!closed && controller === currentController && !(error instanceof DOMException && error.name === "AbortError")) {
+      if (isCurrent() && !(error instanceof DOMException && error.name === "AbortError")) {
         const message = errorMessage(error)
         publishStatus({ type: "connection-error", error: message })
         logger(`OpenCode SSE connection failed: ${message}`)
       }
     }
-    if (!closed && controller === currentController) scheduleReconnect()
+    if (!closed && controller === currentController && isVisible()) scheduleReconnect()
   }
 
   // Browser timers and TCP reads can both be frozen while a tab, display, or laptop is suspended.
@@ -203,9 +212,18 @@ export function createFetchOpenCodeEventSubscription(options: FetchEventSubscrip
     staleController?.abort()
     void connect()
   }
+  const suspendWhileHidden = () => {
+    if (reconnectTimer !== undefined) clearTimeout(reconnectTimer)
+    reconnectTimer = undefined
+    const staleController = controller
+    controller = undefined
+    staleController?.abort()
+    publishStatus({ type: "closed" })
+  }
   const onVisibilityChange = () => {
     if (!isVisible()) {
       observedBackground = true
+      suspendWhileHidden()
       return
     }
     if (!observedBackground) return
@@ -214,11 +232,17 @@ export function createFetchOpenCodeEventSubscription(options: FetchEventSubscrip
   }
   const onPageShow = (event: Event) => {
     const persisted = Boolean((event as PageTransitionEvent).persisted)
+    if (!isVisible()) {
+      if (persisted) observedBackground = true
+      return
+    }
     if (!persisted && !observedBackground) return
     observedBackground = false
     reconnectAfterWake()
   }
-  const onOnline = () => reconnectAfterWake()
+  const onOnline = () => {
+    if (isVisible()) reconnectAfterWake()
+  }
   visibilityTarget?.addEventListener("visibilitychange", onVisibilityChange)
   networkTarget?.addEventListener("pageshow", onPageShow)
   networkTarget?.addEventListener("online", onOnline)

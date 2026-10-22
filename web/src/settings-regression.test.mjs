@@ -12,6 +12,7 @@ const preferences = read('./appPreferences.ts')
 const serverConfig = read('./serverConfig.ts')
 const desktopRequestTransport = read('../electron/request-transport.ts')
 const desktopEventTransport = read('../electron/event-transport.ts')
+const workbench = read('./session-first-workbench.css')
 
 // 3.0 starts from machine-level configuration and the Session-first product shell.
 assert.match(main, /loadWorkspaceMachines/)
@@ -27,7 +28,7 @@ assert.doesNotMatch(standalone, /machines\.length === 0 \? "new" : null/, 'async
 assert.match(standalone, /onClick=\{\(\) => \{ setCompletionMachineName\(null\); setEditingID\("new"\) \}\}/, 'new-machine fields must open only after the explicit Add machine action and leave completion mode')
 assert.match(standalone, /machines\.length === 0 && editingID !== "new"[\s\S]*t\("sf\.scanMachineQR"\)[\s\S]*t\("sf\.addManually"\)/, 'first-run Machines must offer QR pairing first and manual setup separately')
 assert.match(standalone, /createWorkspaceMachine\(\)/, 'the manager must provide a new machine draft')
-assert.match(standalone, /discoverMachine\(nextMachine\(\)\.config\)/, 'Test connection must discover the daemon before save')
+assert.match(standalone, /discoverMachine\(nextMachine\(\)\.config, \{ configurationProbe: true \}\)/, 'Test connection must discover the daemon before save')
 assert.match(standalone, /t\("sf\.connectedTo", \{ name: snapshot\.machine\.name, count \}\)/, 'successful discovery must identify the connected machine')
 assert.match(standalone, /onPersist\(\[\.\.\.machines, machine\]\)/, 'adding a machine must persist it in the machine collection')
 assert.match(standalone, /onPersist\(machines\.map/, 'editing a machine must replace that machine without rebuilding profiles')
@@ -40,8 +41,8 @@ assert.match(standalone, /placeholder="192\.168\.1\.20 or localhost"/)
 assert.match(standalone, /Number\(port\) >= 1 && Number\(port\) <= 65_535/)
 assert.match(standalone, /autoComplete="username"/)
 assert.match(standalone, /autoComplete="current-password"/)
-assert.match(standalone, /disabled=\{!valid \|\| testing\}/, 'Test connection must not run with an invalid endpoint')
-assert.match(standalone, /disabled=\{!valid\}/, 'Save must not accept an invalid machine endpoint')
+assert.match(standalone, /disabled=\{!valid \|\| testing \|\| busy\}/, 'Test connection must not run with an invalid endpoint')
+assert.match(standalone, /disabled=\{!valid \|\| busy/, 'Save must not accept an invalid machine endpoint')
 
 // Appearance and language settings belong to the Session-first shell.
 assert.match(standalone, /function MobileSettingsPage/)
@@ -54,6 +55,14 @@ assert.match(standalone, /<option value="light">\{t\("settings\.themeLight"\)\}<
 assert.match(standalone, /<option value="dark">\{t\("settings\.themeDark"\)\}<\/option>/)
 assert.match(preferences, /export function installAppPreferences/)
 assert.match(main, /installAppPreferences\(\)/, 'preferences must be installed before the product shell renders')
+
+// Phone pairing (the embedded daemon's LAN exposure) is an app-level setting next to the other app
+// settings. It renders only where a desktop bridge answers, applies through the main process with
+// no save step, and the machine editor must not carry it.
+assert.match(standalone, /function MobileSettingsPage[\s\S]*data-settings-network-pairing/)
+assert.match(standalone, /if \(!cancelled && state\) setNetwork\(\{ lanPairing: state\.lanPairing \}\)/, 'a missing bridge hides the section instead of explaining it')
+assert.match(standalone, /setDesktopNetworkSettings\(enabled\)[\s\S]{0,200}setNetwork\(\{ lanPairing: result\.lanPairing \}\)/, 'the toggle re-syncs from the answer the main process applied')
+assert.match(workbench, /\.hr-mobile-settings-group label input\[type="checkbox"\] \{\r?\n\s*justify-self: end;/, 'the toggle must sit at the end of its settings row, not fill the column')
 
 // One machine discovers coding agents and native Sessions. New work is created as a real native Session.
 assert.match(machineClient, /export async function discoverMachine/)

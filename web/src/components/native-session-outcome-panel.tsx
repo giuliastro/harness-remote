@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react"
 import { api } from "../api"
 import type { ConversationRuntime } from "../conversation-runtime"
 import { listMachineProjects } from "../machineClient"
+import { isMachineTransportFailure as connectionFailure } from "../machine-request-error"
 import { resolveSourceSessionProject } from "../cross-machine-route-projects"
 import type { NativeSessionSurfaceTarget } from "../native-session-discovery"
 import {
@@ -24,6 +25,8 @@ type Props = {
   working: boolean
   interactionEnabled?: boolean
   onConnectionIssue?: () => void
+  /** A chip in the conversation toolbar whose detail opens as a popover, instead of its own row. */
+  compact?: boolean
 }
 
 type ProjectOutcomeView = {
@@ -40,10 +43,6 @@ type AttentionLoad = {
   questions?: number
   permissions?: number
   connectionIssue: boolean
-}
-
-function connectionFailure(reason: unknown): boolean {
-  return /cannot reach|timed out|network|connection|failed to fetch/i.test(reason instanceof Error ? reason.message : String(reason))
 }
 
 function fileStatus(file: MachineProjectOutcomeFile): string {
@@ -99,16 +98,35 @@ export function NativeSessionOutcomePanel({
   conversation,
   working,
   interactionEnabled = true,
-  onConnectionIssue
+  onConnectionIssue,
+  compact = false
 }: Props) {
   const [view, setView] = useState<OutcomeView | null>(null)
   const [expanded, setExpanded] = useState(false)
   const generationRef = useRef(0)
+  const sectionRef = useRef<HTMLElement>(null)
 
   useEffect(() => {
     setView(null)
     setExpanded(false)
   }, [target.key])
+
+  // A popover has to be dismissible the way every other popover is: outside the chip, or Escape.
+  useEffect(() => {
+    if (!compact || !expanded) return
+    const onPointerDown = (event: PointerEvent) => {
+      if (!sectionRef.current?.contains(event.target as Node)) setExpanded(false)
+    }
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setExpanded(false)
+    }
+    document.addEventListener("pointerdown", onPointerDown)
+    document.addEventListener("keydown", onKeyDown)
+    return () => {
+      document.removeEventListener("pointerdown", onPointerDown)
+      document.removeEventListener("keydown", onKeyDown)
+    }
+  }, [compact, expanded])
 
   useEffect(() => {
     if (!interactionEnabled || working) {
@@ -174,17 +192,19 @@ export function NativeSessionOutcomePanel({
     total !== undefined ? `${total} changed ${total === 1 ? "file" : "files"}` : undefined,
     diffSummary ? `+${diffSummary.insertions} / −${diffSummary.deletions}` : undefined
   ].filter(Boolean).join(" · ")
+  const heading = outcome ? "Project outcome" : "Session outcome"
 
   return (
-    <section className="hr-native-outcome" aria-label="Session outcome">
+    <section ref={sectionRef} className={`hr-native-outcome${compact ? " compact" : ""}`} aria-label="Session outcome">
       <button
         type="button"
         className="hr-native-outcome-toggle"
         aria-expanded={expanded}
+        title={compact ? [heading, projectName, summary].filter(Boolean).join(" — ") : undefined}
         onClick={() => setExpanded((current) => !current)}
       >
         <span className="hr-native-outcome-title">
-          <strong>{outcome ? "Project outcome" : "Session outcome"}</strong>
+          <strong>{heading}</strong>
           {projectName ? <small>{projectName}</small> : null}
         </span>
         <span className={`hr-native-outcome-summary ${outcome?.dirty === true ? "dirty" : outcome?.dirty === false ? "clean" : "unverified"}`}>

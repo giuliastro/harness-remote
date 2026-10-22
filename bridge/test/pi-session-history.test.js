@@ -180,6 +180,52 @@ test("PI journal stays authoritative after an ACP load when a provider error was
     "opening PI via ACP for models must not replace the journal with a partial replay")
 })
 
+test("PI history treats only native aborted assistant messages as cancellations", async () => {
+  const { root, sessionID, file, project } = await fixture()
+  const records = [
+    { type: "session", version: 3, id: sessionID, parentId: null, timestamp: "2026-08-18T10:00:00.000Z", cwd: project },
+    { type: "message", id: "u1", parentId: sessionID, timestamp: "2026-08-18T10:00:01.000Z", message: { role: "user", content: [{ type: "text", text: "First prompt" }] } },
+    { type: "message", id: "cancel-empty", parentId: "u1", timestamp: "2026-08-18T10:00:02.000Z", message: { role: "assistant", content: [], stopReason: "aborted", errorMessage: "Request aborted" } },
+    { type: "message", id: "cancel-partial", parentId: "cancel-empty", timestamp: "2026-08-18T10:00:03.000Z", message: { role: "assistant", content: [{ type: "thinking", thinking: "Partial reasoning" }, { type: "text", text: "Partial answer" }], stopReason: "aborted", errorMessage: "Request aborted" } },
+    { type: "message", id: "u2", parentId: "cancel-partial", timestamp: "2026-08-18T10:00:04.000Z", message: { role: "user", content: [{ type: "text", text: "Follow-up" }] } },
+    { type: "message", id: "failure", parentId: "u2", timestamp: "2026-08-18T10:00:05.000Z", message: { role: "assistant", content: [], stopReason: "error", errorMessage: "Request aborted" } },
+    { type: "thinking_level_change", id: "level", parentId: "failure", timestamp: "2026-08-18T10:00:06.000Z", thinkingLevel: "high" },
+    { type: "message", id: "a3", parentId: "level", timestamp: "2026-08-18T10:00:07.000Z", message: { role: "assistant", provider: "openrouter", model: "qwen/qwen3.8-27b:free", content: [{ type: "text", text: "Follow-up answer" }], stopReason: "stop" } }
+  ]
+  await writeFile(file, records.map((record) => JSON.stringify(record)).join("\n") + "\n")
+
+  const loader = createPiHistoryLoader(root)
+  const full = await loader(sessionID)
+  assert.deepEqual(full.map((message) => message.info.id), ["u1", "cancel-empty", "cancel-partial", "u2", "failure", "a3"])
+  assert.deepEqual(visible(full), [
+    { role: "user", text: "First prompt" },
+    { role: "assistant", text: "" },
+    { role: "assistant", text: "Partial reasoningPartial answer" },
+    { role: "user", text: "Follow-up" },
+    { role: "assistant", text: "" },
+    { role: "assistant", text: "Follow-up answer" }
+  ])
+  assert.deepEqual(full.map((message) => message.info.interrupted === true), [false, true, true, false, false, false],
+    "a Stop is kept as a neutral interruption, even when it produced no output yet")
+  assert.equal(full[2].info.error, undefined, "aborted partial output remains history without a failed-turn marker")
+  assert.deepEqual(full[4].info.error, { name: "HarnessTurnError", message: "Request aborted" },
+    "an error stop remains a failure even when its provider text says request aborted")
+
+  const pageGroups = []
+  let page = await loader.page(sessionID, { limit: 2 })
+  assert.deepEqual(page.model, { providerID: "openrouter", modelID: "qwen/qwen3.8-27b:free", variant: "high" })
+  while (true) {
+    pageGroups.push(page.messages)
+    if (!page.before) break
+    page = await loader.page(sessionID, { limit: 2, before: page.before })
+  }
+  const pages = pageGroups.reverse().flat()
+  assert.deepEqual(pages.map((message) => message.info.id), full.map((message) => message.info.id),
+    "paged history must retain the same branch while traversing the skipped empty cancellation")
+  assert.equal(pages.find((message) => message.info.id === "cancel-partial").info.error, undefined)
+  assert.deepEqual(pages.find((message) => message.info.id === "failure").info.error, full[4].info.error)
+})
+
 test("PI journal rename appends the same session_info record PI list/resume uses", async () => {
   const { root, sessionID, file } = await fixture()
   const loader = createPiHistoryLoader(root)
@@ -189,6 +235,56 @@ test("PI journal rename appends the same session_info record PI list/resume uses
   assert.equal(renamed.type, "session_info")
   assert.equal(renamed.name, "Renamed from Harness Remote")
   assert.equal(renamed.parentId, "n1")
+})
+
+test("PI live paging never unions a partial ACP answer with an already flushed journal answer", async () => {
+  const sessionID = "pi-live-progress"
+  const envelope = (id, role, text) => ({
+    info: { id, role, sessionID, time: { created: Date.now() } },
+    parts: [{ id: `${id}:text`, messageID: id, type: "text", text }]
+  })
+  let persisted = []
+  const history = async () => persisted
+  history.authoritativeHistory = true
+  let finishTurn
+  class StreamingPi extends EventEmitter {
+    async start() {}
+    async listSessions() { return [{ sessionId: sessionID, cwd: "/sandbox" }] }
+    async request(method) {
+      if (method === "session/load") return {}
+      if (method === "session/prompt") return new Promise((resolve) => { finishTurn = resolve })
+      throw new Error(`Unexpected method ${method}`)
+    }
+    chunk(text) {
+      this.emit("notification", { method: "session/update", params: { sessionId: sessionID,
+        update: { sessionUpdate: "agent_message_chunk", messageId: "acp-live", content: { type: "text", text } } } })
+    }
+  }
+  const acp = new StreamingPi()
+  const service = new AcpService(acp, { historyLoader: history })
+  await service.prompt(sessionID, "Test the response")
+  acp.chunk("PI-FREE")
+  persisted = [
+    envelope("journal-user", "user", "Test the response"),
+    envelope("journal-assistant", "assistant", "PI-FREE-ROUTER-UI-VERIFIED")
+  ]
+  const streamed = await service.messagePage(sessionID)
+  assert.deepEqual(visible(streamed.messages), [
+    { role: "user", text: "Test the response" },
+    { role: "assistant", text: "PI-FREE" }
+  ])
+  acp.chunk("-ROUTER-UI-VERIFIED")
+  const completed = await service.messagePage(sessionID)
+  assert.deepEqual(visible(completed.messages), [
+    { role: "user", text: "Test the response" },
+    { role: "assistant", text: "PI-FREE-ROUTER-UI-VERIFIED" }
+  ])
+  assert.equal(completed.messages[1].info.id, "acp-live")
+  finishTurn({ stopReason: "end_turn" })
+  await new Promise((resolve) => setImmediate(resolve))
+  const journal = await service.messagePage(sessionID)
+  assert.deepEqual(visible(journal.messages), visible(persisted))
+  assert.equal(journal.messages[1].info.id, "journal-assistant")
 })
 
 class StrictPiAcp extends EventEmitter {

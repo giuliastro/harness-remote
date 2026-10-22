@@ -1,8 +1,9 @@
 import { randomUUID } from "node:crypto"
-import { mkdir, readFile, rename, unlink, writeFile } from "node:fs/promises"
+import { mkdir, readFile, rename, stat, unlink, writeFile } from "node:fs/promises"
 import path from "node:path"
-import { selectableAcpModelValue } from "./agent-model-catalog.js"
+import { selectableAcpModelValue, modelConfigOptionFromSessionResponse, modelValueIsExcluded, normalizedAcpModelCandidates, splitInlineAcpModelVariant } from "./agent-model-catalog.js"
 import { TranscriptCache } from "./transcript-cache.js"
+import { stripAmbientContext } from "./ambient-context.js"
 import {
   listExtensionActions,
   loadExtensionActionState,
@@ -24,6 +25,51 @@ export function sameDirectory(left, right) {
   }
   return normalize(left) === normalize(right)
 }
+
+function missingAcpSession(error) {
+  if (error?.code === "session_unavailable") return true
+  const message = error instanceof Error ? error.message : String(error ?? "")
+  return /\bsession\b.{0,180}\b(not found|unknown|unavailable|does not exist|no longer exists)\b/i.test(message)
+}
+
+/**
+ * The adapter method that takes new input while a turn is running. Codex's official adapter
+ * documents `_session/steering` as "delivers a steering prompt to the session: injects it into the
+ * live turn when there is one, otherwise starts a new turn", and responding `{outcome:
+ * "injected"}` or `{outcome: "startedNewTurn"}` resolves that request. A plain `session/prompt`
+ * sent while a turn is running is not a supported alternative: it replaces the session's tracked
+ * active prompt, which can make the adapter interrupt the late-started turn it was still holding.
+ */
+const STEERING_METHOD = "_session/steering"
+
+const MID_TURN_PROMPT_POLICIES = new Set(["queue", "steer"])
+
+/** A prompt that opens with a slash is a harness command, and those must run as their own turn. */
+const SLASH_PROMPT = /^\/[^\s/]/
+
+/**
+ * An adopted steering turn made the adapter itself start a turn without a session/prompt response
+ * this bridge could await, so only its own stream proves it ended. Settle it after this much
+ * streamed silence; the same generation guard `#settleTurn` applies to normal turns also lets a
+ * later session/prompt or Stop supersede the sweep.
+ */
+const STEER_ADOPT_SETTLE_IDLE_MS = 90_000
+const STEER_ADOPT_SWEEP_INTERVAL_MS = 10_000
+
+/**
+ * Claude Code wakes its model on its own when a background command, subagent or monitor finishes,
+ * and the adapter streams that turn with no session/prompt behind it. Such a turn is adopted the
+ * same way as a steering turn, but settles sooner: it is usually a short report. A tool call it
+ * still has running holds it open, up to the hard cap.
+ */
+const AGENT_TURN_SETTLE_IDLE_MS = 30_000
+const AGENT_TURN_RUNNING_TOOL_CAP_MS = 10 * 60_000
+/**
+ * Zero-drain adapters deliver the tail of a turn just after its session/prompt response. Output
+ * that close to the end still belongs to the turn that ended, not to one the agent started.
+ */
+const AGENT_TURN_GRACE_MS = 2_000
+
 function sessionView(session, status = "idle", title = session.title, external = false) {
   return {
     id: session.sessionId,
@@ -81,6 +127,60 @@ function messageSignature(message) {
   // Visible text + terminal error is the stable identity across those two representations.
   const error = message?.info?.error?.message ? `\u0000${message.info.error.message}` : ""
   return `${message?.info?.role ?? ""}\u0000${visibleMessageText(message)}${error}`
+}
+
+/**
+ * Keep replayed creation times in transcript order.
+ *
+ * A replay mixes two clocks: messages this bridge already knew keep their recorded time, while
+ * the ones ACP replays without a timestamp are stamped with the moment of the reload. Clients order
+ * turns by that time, so a user-role message first seen on replay — Claude Code's interruption
+ * marker, written mid-turn and never streamed live — moved past every later prompt and appeared at
+ * the bottom of a Session that had finished normally. Walking backward, a message may not claim the
+ * time of the message after it or a later one; known times are never moved forward. A moved time is
+ * strictly earlier, because clients break equal times by id, which says nothing about order.
+ */
+export function chronologicalReplay(messages) {
+  let ceiling = Number.POSITIVE_INFINITY
+  const ordered = new Array(messages.length)
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index]
+    const created = Number(message?.info?.time?.created)
+    if (!Number.isFinite(created) || created <= 0) {
+      ordered[index] = message
+      continue
+    }
+    if (created >= ceiling) {
+      ceiling -= 1
+      ordered[index] = { ...message, info: { ...message.info, time: { ...message.info.time, created: ceiling } } }
+      continue
+    }
+    ordered[index] = message
+    ceiling = created
+  }
+  return ordered
+}
+
+function authoritativeReplay(previous, replayed) {
+  // ACP replay can omit timestamps and mint fresh ids. Retain known identities for unchanged
+  // occurrences, while the native replay alone decides content, membership and order.
+  const priorBySignature = new Map()
+  for (const message of previous) {
+    const signature = messageSignature(message)
+    const matches = priorBySignature.get(signature) ?? []
+    matches.push(message)
+    priorBySignature.set(signature, matches)
+  }
+  return replayed.map((message) => {
+    const prior = priorBySignature.get(messageSignature(message))?.shift()
+    if (!prior) return message
+    return {
+      ...message,
+      // A live Stop is recorded only here; a harness that journals no interruption must not erase it.
+      info: { ...message.info, id: prior.info.id, time: prior.info.time, ...(prior.info.interrupted ? { interrupted: true } : {}) },
+      parts: message.parts.map((part) => ({ ...part, ...(part.messageID ? { messageID: prior.info.id } : {}) }))
+    }
+  })
 }
 
 function isConsecutiveAssistantDuplicate(previous, next) {
@@ -337,6 +437,38 @@ export function isHarnessInjectedText(text) {
   return HARNESS_INJECTED_BLOCK.test(text)
 }
 
+/**
+ * Claude Code records a cancelled turn as a plain user-role marker: for a Stop, and for a message
+ * sent while a turn was running. Shown as is, it reads as text the user typed. It is a fact about the
+ * turn before it, so the transcript carries it as `info.interrupted` on that turn's reply instead -
+ * the same flag a live Stop and the OMP/PI journal aborts produce. Matched exactly, so a message that
+ * quotes the marker stays an ordinary message.
+ */
+const INTERRUPTION_MARKER = /^\s*\[Request interrupted by user(?: for tool use)?\]\s*$/
+
+export function isInterruptionMarker(text) {
+  return INTERRUPTION_MARKER.test(text)
+}
+
+/** Flag the reply of the newest turn as interrupted, adding an empty reply when it had none yet. */
+export function markLatestTurnInterrupted(messages, sessionID, created = Date.now()) {
+  let lastUser = -1
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    if (messages[index]?.info?.role === "user") {
+      lastUser = index
+      break
+    }
+  }
+  if (lastUser < 0) return false
+  for (let index = messages.length - 1; index > lastUser; index -= 1) {
+    if (messages[index]?.info?.role !== "assistant") continue
+    messages[index] = { ...messages[index], info: { ...messages[index].info, interrupted: true } }
+    return true
+  }
+  messages.push({ info: { id: randomUUID(), role: "assistant", sessionID, time: { created }, interrupted: true }, parts: [] })
+  return true
+}
+
 /** The two tool-call states that mean "still running" on the wire and in the transcript. */
 const UNSETTLED_TOOL_STATUSES = new Set(["pending", "running"])
 
@@ -412,7 +544,9 @@ export class AcpService {
       this.#transientFailureMessageIDs.delete(sessionID)
       this.#chunkMessageIDs.delete(`${sessionID}:user`)
       this.#chunkMessageIDs.delete(`${sessionID}:assistant`)
+      this.#chunkSourceIDs.delete(sessionID)
       this.#turnGenerations.delete(sessionID)
+      this.#turnSettledAt.delete(sessionID)
       this.#cancelledSessions.delete(sessionID)
       this.#promptedSessions.delete(sessionID)
       this.#queues.delete(sessionID)
@@ -423,6 +557,7 @@ export class AcpService {
   })
   #todos = new Map()
   #configOptions = new Map()
+  #modelSwitchMethods = new Map()
   #commandCatalogs = new Map()
   #commandCatalogWaiters = new Map()
   #actionStates = new Map()
@@ -438,6 +573,9 @@ export class AcpService {
   #acpOpenSessions = new Set()
   #promptAcknowledgements = new Map()
   #titles = new Map()
+  #titleIndexLoaded = false
+  #titleIndexLoading
+  #titleIndexWrite = Promise.resolve()
   #deletedSessions = new Set()
   #deletedSessionIndexLoaded = false
   #deletedSessionIndexWrite = Promise.resolve()
@@ -445,6 +583,16 @@ export class AcpService {
   #active = new Set()
   #listeners = new Set()
   #turnGenerations = new Map()
+  // Turns the adapter runs without a session/prompt this bridge awaits: a steering prompt it started
+  // as a turn of its own (see `#steerPrompt`), or a turn the agent started itself (see
+  // `#adoptAgentTurn`). Only their own stream going silent ends them.
+  #adoptedTurns = new Map()
+  #adoptedTurnSweep
+  #turnSettledAt = new Map()
+  #agentTurnSettleIdleMs
+  #agentTurnGraceMs
+  #promptGates = new Map()
+  #midTurnPrompt
   #cancelledSessions = new Set()
   #promptedSessions = new Set()
   #chunkMessageIDs = new Map()
@@ -452,7 +600,7 @@ export class AcpService {
   // has flushed its terminal assistant error. These ids keep only that short-lived bridge copy alive.
   #transientFailureMessageIDs = new Map()
   #snapshotDirectory
-  #restoredSnapshots = new Set()
+  #restoredSnapshots = new Map()
   #dirtySnapshots = new Set()
   #dirtyStart = new Map()
   #snapshotWrites = new Map()
@@ -464,7 +612,27 @@ export class AcpService {
   #preferListedTitles
   #nativeRenameCommand
   #journalPageWhileOwned
+  #replayAuthoritative
+  #replayUserChunksAreMessages
+  #refreshSessionListOnRead
   #modelVariantConfigIDs
+  #modelVariantDefaultValues
+  #modelProviderID
+  #excludedModelValuePrefixes
+  #inlineModelVariantValues
+  #modelProviderOrder
+  #requireAssistantResponse
+  #requireExistingDirectory
+  #recoverMissingSessionOnPrompt
+  #assistantMessageIDsSeparateReplies
+  // The adapter's own message id behind the text most recently streamed into each live reply.
+  #chunkSourceIDs = new Map()
+  #turnResponseObserved = new Set()
+  #fallbackModelCatalog
+  #fallbackModelSelectionMethod
+  #fallbackModelCommand
+  #modelCommandReplies = new Map()
+  #fallbackModelSelections = new Map()
   constructor(acp, {
     snapshotDirectory,
     historyLoader,
@@ -490,12 +658,42 @@ export class AcpService {
      * replies - which is what made a second turn look blank until the conversation was reopened.
      */
     journalPageWhileOwned = true,
+    /** A complete native ACP replay replaces cached partial turns rather than merging them. */
+    replayAuthoritative = false,
+    /** Copilot 1.0.97 replays one complete user message per notification, without message ids. */
+    replayUserChunksAreMessages = false,
+    /** Project-scoped indexes are paged separately; reads can use Sessions already observed there. */
+    refreshSessionListOnRead = true,
     /**
      * Config-option ids this harness uses for the reasoning variant that belongs to a model.
      * Only used to report the Session's current selection; a variant is still applied against an
      * id the running adapter actually advertised.
      */
     modelVariantConfigIDs = [],
+    modelVariantDefaultValues = [],
+    modelProviderID,
+    excludedModelValuePrefixes = [],
+    inlineModelVariantValues = [],
+    modelProviderOrder = [],
+    requireAssistantResponse = false,
+    requireExistingDirectory = false,
+    recoverMissingSessionOnPrompt = false,
+    /**
+     * Whether a change of the adapter's `messageId` between live assistant chunks starts a new reply
+     * paragraph. Claude stamps every chunk with the API message it belongs to, so a change marks a
+     * reply that follows another with no tool call between them - the reply a resumed turn sends
+     * after the one that said it would wait. PI mints a new id per fragment, so it must not opt in.
+     */
+    assistantMessageIDsSeparateReplies = false,
+    /** Transport policy for a prompt that arrives while a turn is still running. */
+    midTurnPrompt = "queue",
+    /** Streamed silence after which a turn the agent started on its own is settled. */
+    agentTurnSettleIdleMs = AGENT_TURN_SETTLE_IDLE_MS,
+    /** How long after a turn ends its adapter's output still counts as that turn's tail. */
+    agentTurnGraceMs = AGENT_TURN_GRACE_MS,
+    fallbackModelCatalog,
+    fallbackModelSelectionMethod,
+    fallbackModelCommand,
     actionProviders = []
   } = {}) {
     this.#acp = acp
@@ -508,9 +706,40 @@ export class AcpService {
     this.#preferListedTitles = preferListedTitles
     this.#nativeRenameCommand = nativeRenameCommand
     this.#journalPageWhileOwned = journalPageWhileOwned
+    this.#replayAuthoritative = replayAuthoritative
+    this.#replayUserChunksAreMessages = replayUserChunksAreMessages
+    this.#refreshSessionListOnRead = refreshSessionListOnRead
     this.#modelVariantConfigIDs = modelVariantConfigIDs
+    this.#modelVariantDefaultValues = modelVariantDefaultValues
+    this.#modelProviderID = modelProviderID
+    this.#excludedModelValuePrefixes = excludedModelValuePrefixes
+    this.#inlineModelVariantValues = inlineModelVariantValues
+    this.#modelProviderOrder = modelProviderOrder
+    this.#requireAssistantResponse = requireAssistantResponse
+    this.#requireExistingDirectory = requireExistingDirectory
+    this.#recoverMissingSessionOnPrompt = recoverMissingSessionOnPrompt
+    this.#assistantMessageIDsSeparateReplies = assistantMessageIDsSeparateReplies
+    this.#midTurnPrompt = MID_TURN_PROMPT_POLICIES.has(midTurnPrompt) ? midTurnPrompt : "queue"
+    this.#agentTurnSettleIdleMs = agentTurnSettleIdleMs
+    this.#agentTurnGraceMs = agentTurnGraceMs
+    this.#fallbackModelCatalog = fallbackModelCatalog
+    this.#fallbackModelSelectionMethod = fallbackModelSelectionMethod
+    this.#fallbackModelCommand = fallbackModelCommand
     this.#actionProviders = actionProviders
     acp.on("notification", (notification) => this.#handleNotification(notification))
+    acp.on("sessions-closed", (sessionIDs) => this.#forgetOpenSessions(sessionIDs))
+    // An adapter that exits takes every Session it had open with it. Still counting them as loaded
+    // sent the next prompt to a process that had never seen the Session, and the reload that its
+    // "Session not found" then forced ran in the middle of that turn.
+    acp.on?.("exit", () => this.#forgetOpenSessions([...this.#acpOpenSessions, ...this.#loaded]))
+  }
+
+  #forgetOpenSessions(sessionIDs) {
+    for (const sessionID of sessionIDs) {
+      this.#loaded.delete(sessionID)
+      this.#acpOpenSessions.delete(sessionID)
+      this.#configOptions.delete(sessionID)
+    }
   }
 
   subscribe(listener) {
@@ -534,6 +763,7 @@ export class AcpService {
 
   async listSessions(directory) {
     await this.#restoreDeletedSessionIndex()
+    await this.#restoreTitleIndex()
     const sessions = await this.#refreshSessions()
     await Promise.all(sessions.map((session) => this.#restoreSnapshot(session.sessionId)))
     return sessions
@@ -593,10 +823,11 @@ export class AcpService {
   }
 
   async createSession({ directory, title, model }) {
+    await this.#restoreTitleIndex()
     await this.#acp.start()
     const result = await this.#acp.request("session/new", { cwd: directory, mcpServers: [] })
     this.#acpOpenSessions.add(result.sessionId)
-    this.#rememberConfigOptions(result.sessionId, result.configOptions)
+    this.#rememberSessionConfiguration(result.sessionId, result)
     const session = {
       sessionId: result.sessionId,
       cwd: directory,
@@ -614,6 +845,7 @@ export class AcpService {
     if (title) {
       this.#titles.set(session.sessionId, title)
       await this.#applyNativeSessionName(session.sessionId, title)
+      await this.#persistTitleIndex()
     }
     if (model) await this.setModel(session.sessionId, model)
     this.#emit("session.created", session.sessionId)
@@ -671,6 +903,7 @@ export class AcpService {
   }
 
   async renameSession(sessionID, title) {
+    await this.#restoreTitleIndex()
     const normalized = title.trim().replace(/\s+/g, " ")
     if (!normalized) throw new Error("A session title is required")
     await this.#requireSession(sessionID)
@@ -690,6 +923,7 @@ export class AcpService {
       this.#actionStates.delete(sessionID)
       this.#authoritativeActionStates.delete(sessionID)
       this.#titles.delete(sessionID)
+      await this.#persistTitleIndex()
       await this.#refreshSessions()
       const session = this.#sessions.get(sessionID)
       if (!session) throw new Error("Harness session not found after rename")
@@ -706,6 +940,7 @@ export class AcpService {
     if (await this.#nativeRenameAvailable(sessionID)) {
       await this.#sendNativeSessionName(sessionID, normalized)
       this.#titles.delete(sessionID)
+      await this.#persistTitleIndex()
       await this.#refreshSessions()
       const session = this.#sessions.get(sessionID)
       if (!session) throw new Error("Harness session not found after rename")
@@ -720,6 +955,7 @@ export class AcpService {
     }
 
     this.#titles.set(sessionID, normalized)
+    await this.#persistTitleIndex()
     this.#persistSnapshot(sessionID)
     this.#emit("session.updated", sessionID)
     return sessionView(
@@ -787,6 +1023,7 @@ export class AcpService {
       if (!await this.#nativeRenameAvailable(sessionID)) return
       await this.#sendNativeSessionName(sessionID, title)
       this.#titles.delete(sessionID)
+      await this.#persistTitleIndex()
       await this.#refreshSessions()
     } catch {
       this.#titles.set(sessionID, title)
@@ -794,6 +1031,7 @@ export class AcpService {
   }
 
   async deleteSession(sessionID) {
+    await this.#restoreTitleIndex()
     // A Session deleted by a pre-index Harness Remote may already carry deleted:true only in its
     // per-Session snapshot. Restoring that snapshot must migrate the tombstone into the lightweight
     // deletion index instead of failing before the index can be written. This keeps DELETE
@@ -813,6 +1051,7 @@ export class AcpService {
     this.#messages.delete(sessionID)
     this.#todos.delete(sessionID)
     this.#titles.delete(sessionID)
+    await this.#persistTitleIndex()
     this.#configOptions.delete(sessionID)
     this.#commandCatalogs.delete(sessionID)
     for (const resolve of this.#commandCatalogWaiters.get(sessionID) ?? []) resolve()
@@ -827,6 +1066,9 @@ export class AcpService {
     this.#chunkMessageIDs.delete(`${sessionID}:user`)
     this.#chunkMessageIDs.delete(`${sessionID}:assistant`)
     this.#turnGenerations.delete(sessionID)
+    this.#turnSettledAt.delete(sessionID)
+    this.#chunkSourceIDs.delete(sessionID)
+    this.#discardAdoptedTurn(sessionID)
     this.#cancelledSessions.delete(sessionID)
     this.#promptedSessions.delete(sessionID)
     this.#queues.delete(sessionID)
@@ -840,7 +1082,7 @@ export class AcpService {
   }
 
   async messages(sessionID, refresh = false) {
-    await this.#refreshSessions()
+    if (this.#refreshSessionListOnRead || !this.#sessions.has(sessionID)) await this.#refreshSessions()
     await this.#restoreSnapshot(sessionID)
     if (this.#historyLoader?.authoritativeHistory) {
       try {
@@ -869,8 +1111,12 @@ export class AcpService {
           cachedMessages,
           this.#transientFailureMessageIDs.get(sessionID)
         )
+        // A live PI turn already has a complete history seed plus its ACP stream. Its journal can
+        // publish the final answer before the remaining ACP chunks drain, under different ids.
+        // Unioning those sources makes both a partial and complete answer visible and can append
+        // later deltas onto the journal copy. Keep the stream alone until this turn settles.
         const messages = this.#isBusy(sessionID)
-          ? mergeFragmentedPiSnapshot(mergeExternalHistory(persistedMessages, cachedMessages))
+          ? cachedMessages
           // Idle normally means "journal only". The one exception is a live provider failure the
           // journal has not flushed yet; keep that exact failed turn until the persisted copy exists.
           : pendingFailureTurn.length
@@ -910,7 +1156,15 @@ export class AcpService {
         }
         if (pageOptions) {
           const page = await this.#historyLoader.page(sessionID, pageOptions)
-          if (page && Array.isArray(page.messages)) return page
+          if (page && Array.isArray(page.messages)) {
+            // Native exports can carry the same default-effort sentinel as ACP config options.
+            // Normalize both read paths before the UI restores a model for the next prompt.
+            if (this.#modelVariantDefaultValues.includes(page.model?.variant)) {
+              const { variant, ...model } = page.model
+              return { ...page, model }
+            }
+            return page
+          }
         }
       } catch {
         this.#emit("session.error", sessionID, { message: "Harness session history page could not be read" })
@@ -955,20 +1209,26 @@ export class AcpService {
    * provider reports nothing here rather than inventing one.
    */
   #configuredModelSelection(sessionID) {
-    if (this.#journalPageWhileOwned) return undefined
+    // A native journal, when present and used for paging, supplies its own model authority.
+    // Journal-less ACP providers such as OpenCode 2 must expose session/load's config model.
+    if (this.#historyLoader && this.#journalPageWhileOwned) return undefined
     const options = this.#configOptions.get(sessionID)
-    const current = options?.find((item) => item.id === "model")?.currentValue
-    if (typeof current !== "string") return undefined
+    const option = options?.find((item) => item.id === "model")
+    const wireValue = option?.currentValue
+    const inline = splitInlineAcpModelVariant(wireValue, option, this.#inlineModelVariantValues)
+    const current = inline?.modelValue ?? wireValue
+    if (typeof current !== "string") return this.#fallbackModelSelections.get(sessionID)
     const separator = current.indexOf("/")
-    if (separator <= 0 || separator === current.length - 1) return undefined
+    if (separator <= 0 && !this.#modelProviderID || separator === current.length - 1) return undefined
     // The reasoning variant belongs to the selection: reporting the model without it would let the
     // app carry the next turn on with the variant silently dropped.
-    const variant = this.#modelVariantConfigIDs
+    const selectedVariant = inline?.variant ?? this.#modelVariantConfigIDs
       .map((configId) => options?.find((item) => item.id === configId)?.currentValue)
       .find((value) => typeof value === "string" && value)
+    const variant = this.#modelVariantDefaultValues.includes(selectedVariant) ? undefined : selectedVariant
     return {
-      providerID: current.slice(0, separator),
-      modelID: current.slice(separator + 1),
+      providerID: separator > 0 ? current.slice(0, separator) : this.#modelProviderID,
+      modelID: separator > 0 ? current.slice(separator + 1) : current,
       ...(variant ? { variant } : {})
     }
   }
@@ -985,7 +1245,7 @@ export class AcpService {
   }
 
   async todos(sessionID) {
-    await this.#refreshSessions()
+    if (this.#refreshSessionListOnRead || !this.#sessions.has(sessionID)) await this.#refreshSessions()
     await this.#restoreSnapshot(sessionID)
     if (this.#historyLoader && !this.#ownedSessions.has(sessionID)) return []
     await this.#load(sessionID)
@@ -995,7 +1255,12 @@ export class AcpService {
   async models(sessionID) {
     await this.#loadForConfigOptions(sessionID)
     const option = this.#configOptions.get(sessionID)?.find((item) => item.id === "model")
-    return option?.options?.map((candidate) => ({ ...candidate, currentValue: candidate.value === option.currentValue })) ?? []
+    if (!option && this.#fallbackModelCatalog) {
+      const selected = this.#fallbackModelSelections.get(sessionID)
+      const result = await this.#fallbackModelCatalog.list({ allowStale: false })
+      return result.models.map((model) => ({ ...model, value: model.modelID, name: model.modelName, currentValue: selected?.modelID === model.modelID }))
+    }
+    return normalizedAcpModelCandidates(option, this.#excludedModelValuePrefixes, this.#inlineModelVariantValues, this.#modelProviderOrder)
   }
 
   async actions(sessionID) {
@@ -1139,8 +1404,47 @@ export class AcpService {
    * against a Session whose options have not been loaded yet.
    */
   async setModel(sessionID, model, variant) {
+    return this.#withNativeSession(sessionID, () => this.#applyModel(sessionID, model, variant))
+  }
+
+  async #applyModel(sessionID, model, variant) {
     await this.#loadForConfigOptions(sessionID)
     const option = this.#configOptions.get(sessionID)?.find((item) => item.id === "model")
+    if (!option && this.#fallbackModelCatalog && this.#fallbackModelSelectionMethod) {
+      if (variant?.value) throw new Error("This harness does not advertise per-session model variants")
+      const prefix = `${this.#modelProviderID}/`
+      const modelID = model.startsWith(prefix) ? model.slice(prefix.length) : model
+      const resolved = await this.#fallbackModelCatalog.resolve({ providerID: this.#modelProviderID, modelID })
+      if (this.#fallbackModelCommand) {
+        if (!/^[A-Za-z0-9][A-Za-z0-9._:/-]*$/.test(resolved.modelID)) throw new Error("Invalid native model identifier")
+        const commands = await this.commands(sessionID)
+        if (!commands.some((command) => command.name === this.#fallbackModelCommand)) {
+          throw new Error("The harness does not advertise its native model-selection command")
+        }
+        const reply = { chunks: [], configurationUpdated: false }
+        this.#modelCommandReplies.set(sessionID, reply)
+        try {
+          const result = await this.#acp.request("session/prompt", {
+            sessionId: sessionID,
+            prompt: [{ type: "text", text: `/${this.#fallbackModelCommand} ${resolved.modelID}` }]
+          })
+          const text = reply.chunks.join("").trim()
+          // Copilot sends an acknowledgement when changing models. An already selected model
+          // produces only config_option_update and end_turn, as observed with CLI 1.0.97.
+          const unchanged = !text && reply.configurationUpdated && result?.stopReason === "end_turn"
+          if (!/Model changed to:/i.test(text) && !unchanged) throw new Error(text || "The harness did not confirm the selected model")
+        } finally {
+          this.#modelCommandReplies.delete(sessionID)
+        }
+      } else {
+        await this.#acp.request(this.#fallbackModelSelectionMethod, { sessionId: sessionID, modelId: resolved.modelID })
+      }
+      // This is the last choice explicitly made in Harness Remote. Apply it again before each
+      // continuation because this ACP server does not report its native current model.
+      this.#fallbackModelSelections.set(sessionID, { providerID: resolved.providerID, modelID: resolved.modelID })
+      this.#persistSnapshot(sessionID)
+      return
+    }
     // The app addresses models as `provider/model` because that is what OpenCode's API does, but a
     // harness whose ids carry no provider — Claude Code's `sonnet`, `opus[1m]` — is shown under the
     // backend's name to keep it consistent. Resolve against what the agent actually offered rather
@@ -1148,27 +1452,46 @@ export class AcpService {
     const separator = model.indexOf("/")
     const providerID = separator > 0 ? model.slice(0, separator) : ""
     const modelID = separator > 0 ? model.slice(separator + 1) : model
-    const value = option?.options?.find((candidate) => candidate.value === model)?.value
+    let value = option?.options?.find((candidate) => candidate.value === model)?.value
       ?? option?.options?.find((candidate) => candidate.value === modelID)?.value
       ?? option?.options?.find((candidate) => selectableAcpModelValue(candidate.value, option, providerID) === modelID)?.value
     if (!value) throw new Error(`Harness model is not available: ${model}`)
+    if (modelValueIsExcluded(value, this.#excludedModelValuePrefixes)) {
+      const error = new Error(`Harness model is unavailable: ${model}`)
+      error.code = "model_unavailable"
+      throw error
+    }
+    const inlineVariant = variant?.configId === "model" && this.#inlineModelVariantValues.length > 0
+    if (inlineVariant) {
+      const candidate = option.options.find((item) => item.value === variant.value || item.value === `${value}/${variant.value}`)
+      const selected = splitInlineAcpModelVariant(candidate?.value, option, this.#inlineModelVariantValues)
+      if (!selected || selected.modelValue !== value) {
+        const error = new Error(`Harness model variant is not available: ${variant.value}`)
+        error.code = "model_variant_unavailable"
+        throw error
+      }
+      value = selected.variantValue
+    }
     // Continuing on the model the Session already holds is not a model change. Sending it anyway
     // made every prompt mutate the Session's configuration, which a harness is entitled to journal
     // and to announce - so simply carrying on read as though the user had switched models.
     if (option?.currentValue === value) {
-      await this.#setModelVariant(sessionID, variant)
+      if (!inlineVariant) await this.#setModelVariant(sessionID, variant)
       return
     }
-    const changed = await this.#acp.request("session/set_config_option", { sessionId: sessionID, configId: "model", value })
+    const method = this.#modelSwitchMethods.get(sessionID) ?? "session/set_config_option"
+    const changed = await this.#acp.request(method, method === "session/set_model"
+      ? { sessionId: sessionID, modelId: value }
+      : { sessionId: sessionID, configId: "model", value })
     // Adopt the options the adapter reports for the model it now holds. A harness whose dependent
     // controls differ per model - PI advertises a different thinkingLevel range for each one, from a
     // single `off` up to `max` - otherwise leaves this Session describing the previous model, so the
     // variant about to be applied would be checked against the wrong set of values.
-    if (Array.isArray(changed?.configOptions)) this.#rememberConfigOptions(sessionID, changed.configOptions)
+    this.#rememberSessionConfiguration(sessionID, changed)
     const current = this.#configOptions.get(sessionID)?.find((item) => item.id === "model")
     if (current) current.currentValue = value
     else option.currentValue = value
-    await this.#setModelVariant(sessionID, variant)
+    if (!inlineVariant) await this.#setModelVariant(sessionID, variant)
   }
 
   /**
@@ -1195,11 +1518,44 @@ export class AcpService {
   }
 
   /**
-   * ACP accepts one turn per session at a time, so a prompt sent while the agent is
-   * still working is queued rather than rejected. It is recorded straight away, which
-   * is what makes it visible in the conversation while it waits.
+   * ACP accepts one turn per session at a time, so a prompt sent while the agent is still working
+   * follows the harness's mid-turn policy: Codex forwards it into the live turn, where its official
+   * adapter documents the injection, while every other harness queues it. It is recorded straight
+   * away in every case; a queued prompt carries `info.queued` until it starts.
+   *
+   * Resolves with what happened to the prompt, so a client never has to infer it:
+   * `{ disposition: "started" | "queued" | "steered", messageID }`.
    */
   async prompt(sessionID, text, model, attachments = [], variant) {
+    return this.#serializePrompt(sessionID, () =>
+      this.#withNativeSession(sessionID, () => this.#prompt(sessionID, text, model, attachments, variant)))
+  }
+
+  /**
+   * One prompt enters a session at a time. A turn only reads as active once its model is applied and
+   * `#startTurn` runs, so a second prompt arriving during the first one's load or model switch saw an
+   * idle session and started a parallel session/prompt: OMP then ran both, the bridge tracked only
+   * the later one, and the earlier reply was left hanging until the Session was reopened. Waiting here
+   * lets the second prompt find the first turn active and take the queue or steering path.
+   */
+  #serializePrompt(sessionID, operation) {
+    const previous = this.#promptGates.get(sessionID) ?? Promise.resolve()
+    const run = previous.then(operation)
+    const gate = run.then(() => {}, () => {})
+    this.#promptGates.set(sessionID, gate)
+    void gate.then(() => {
+      if (this.#promptGates.get(sessionID) === gate) this.#promptGates.delete(sessionID)
+    })
+    return run
+  }
+
+  async #withNativeSession(sessionID, operation) {
+    if (typeof this.#acp.withSession !== "function") return operation()
+    if (!this.#sessions.has(sessionID)) await this.#refreshSessions()
+    return this.#acp.withSession(sessionID, this.#sessions.get(sessionID)?.cwd, operation)
+  }
+
+  async #prompt(sessionID, text, model, attachments, variant) {
     // Refuse before touching the session: an agent that never advertised image support
     // would reject the block mid-turn, which reads as a failed prompt rather than a
     // rejected attachment.
@@ -1218,17 +1574,29 @@ export class AcpService {
     } else {
       await this.#load(sessionID)
     }
+    await this.#requireSessionDirectory(this.#sessions.get(sessionID))
     this.#resetActionsForSessionChange(sessionID)
-    if (this.#active.has(sessionID)) {
-      const messageID = this.#recordPrompt(sessionID, text, attachments)
+    // A non-empty queue without an active turn is a queued prompt applying its model before it
+    // starts; a new prompt waits behind it rather than overtaking it.
+    if (this.#active.has(sessionID) || this.#queues.get(sessionID)?.length) {
+      if (this.#active.has(sessionID) && this.#midTurnPrompt === "steer" && !SLASH_PROMPT.test(text)) {
+        // A harness that documents taking input while working gets the prompt immediately instead of
+        // the queue. Slash commands must run as their own turn, so they keep the queue even here.
+        return this.#steerPrompt(sessionID, text, attachments, variant)
+      }
+      // Not acknowledged yet: the running turn may still echo its own prompt, and this one reaches
+      // the harness only when it is dequeued (see #startTurn).
+      const messageID = this.#recordPrompt(sessionID, text, attachments, { queued: true })
       const queue = this.#queues.get(sessionID) ?? []
       queue.push({ text, model, messageID, attachments, variant })
       this.#queues.set(sessionID, queue)
       this.#emit("session.updated", sessionID)
-      return
+      return { disposition: "queued", messageID }
     }
-    if (model) await this.setModel(sessionID, model, variant)
-    this.#startTurn(sessionID, text, false, attachments)
+    const savedModel = this.#fallbackModelSelections.get(sessionID)
+    const selection = model ?? (savedModel ? `${savedModel.providerID}/${savedModel.modelID}` : undefined)
+    if (selection) await this.setModel(sessionID, selection, variant)
+    return { disposition: "started", messageID: this.#startTurn(sessionID, text, false, attachments) }
   }
 
   /** Start a prompt through the session service and resolve only when that turn becomes idle. */
@@ -1257,50 +1625,250 @@ export class AcpService {
     })
   }
 
+  /** Returns the id of the recorded prompt when this call records it. */
   #startTurn(sessionID, text, recorded = false, attachments = []) {
     // From the first turn this bridge runs, its own stream is the live record for the session, the
     // same way taking ownership of an external session stops the journal being re-read for it.
     this.#adoptedSessions.delete(sessionID)
+    // A regular turn reclaims the session from any steering adoption that raced its end.
+    this.#discardAdoptedTurn(sessionID)
     const generation = (this.#turnGenerations.get(sessionID) ?? 0) + 1
     this.#turnGenerations.set(sessionID, generation)
     this.#cancelledSessions.delete(sessionID)
     this.#promptedSessions.add(sessionID)
-    if (!recorded) this.#recordPrompt(sessionID, text, attachments)
+    this.#turnResponseObserved.delete(sessionID)
+    const messageID = recorded ? undefined : this.#recordPrompt(sessionID, text, attachments)
+    if (recorded) this.#promptAcknowledgements.set(sessionID, { text, received: "" })
     this.#active.add(sessionID)
     this.#chunkMessageIDs.delete(`${sessionID}:assistant`)
     this.#emit("session.updated", sessionID)
-    void this.#acp.request("session/prompt", {
+    void this.#requestPromptWithRecovery(sessionID, {
       sessionId: sessionID,
-      prompt: [
-        ...(text ? [{ type: "text", text }] : []),
-        ...attachments.map((attachment) => ({ type: "image", mimeType: attachment.mime, data: attachment.data }))
-      ]
-    }, 300_000).catch((error) => {
+      prompt: this.#promptBlocks(text, attachments)
+    }).then(async (result) => {
+      if (this.#requireAssistantResponse && !this.#turnResponseObserved.has(sessionID)) {
+        await new Promise((resolve) => setTimeout(resolve, this.#promptSettleMs || 50))
+      }
+      if (this.#requireAssistantResponse && this.#turnGenerations.get(sessionID) === generation
+        && result?.stopReason === "end_turn" && !this.#turnResponseObserved.has(sessionID)) {
+        throw new Error("The harness completed the turn without an assistant response. Check that the selected model and provider are available.")
+      }
+    }).catch((error) => {
       if (this.#turnGenerations.get(sessionID) === generation) {
         this.#recordTurnFailure(sessionID, error.message)
         this.#emit("session.error", sessionID, { message: error.message })
       }
-    }).finally(async () => {
-      if (this.#turnGenerations.get(sessionID) !== generation) return
-      // PI can write the JSON-RPC response before its final session/update notification. Do not
-      // clear #active until that tiny transport tail has drained: #handleNotification deliberately
-      // accepts those chunks, and otherwise they arrive after #settleActivity has already run.
-      if (this.#promptSettleMs > 0) {
-        await new Promise((resolve) => setTimeout(resolve, this.#promptSettleMs))
-      }
-      if (this.#turnGenerations.get(sessionID) !== generation) return
-      this.#active.delete(sessionID)
-      // Older adapters intentionally deliver assistant chunks after their RPC response, so their
-      // historical zero-drain behavior must stay permissive. PI opts into a real drain window above;
-      // once it closes, an even later chunk belongs to a subsequent native lifecycle, not this turn.
-      if (this.#promptSettleMs > 0) this.#promptedSessions.delete(sessionID)
-      this.#chunkMessageIDs.delete(`${sessionID}:assistant`)
-      // The turn is over, so no activity it started is still running, whatever the adapter said.
-      this.#settleActivity(sessionID)
-      this.#emit("session.updated", sessionID)
-      this.#persistSnapshot(sessionID)
-      void this.#runNextQueued(sessionID)
+    }).finally(() => {
+      void this.#settleTurn(sessionID, generation)
     })
+    return messageID
+  }
+
+  #promptBlocks(text, attachments) {
+    return [
+      ...(text ? [{ type: "text", text }] : []),
+      ...attachments.map((attachment) => ({ type: "image", mimeType: attachment.mime, data: attachment.data }))
+    ]
+  }
+
+  /**
+   * Shared turn teardown, keyed by the turn generation so a superseded turn can never clear the
+   * state of the turn that replaced it. Runs after every session/prompt response and after an
+   * adopted steering turn settles.
+   */
+  async #settleTurn(sessionID, generation) {
+    if (this.#turnGenerations.get(sessionID) !== generation) return
+    // PI can write the JSON-RPC response before its final session/update notification. Do not
+    // clear #active until that tiny transport tail has drained: #handleNotification deliberately
+    // accepts those chunks, and otherwise they arrive after #settleActivity has already run.
+    if (this.#promptSettleMs > 0) {
+      await new Promise((resolve) => setTimeout(resolve, this.#promptSettleMs))
+    }
+    if (this.#turnGenerations.get(sessionID) !== generation) return
+    this.#active.delete(sessionID)
+    this.#turnSettledAt.set(sessionID, Date.now())
+    this.#turnResponseObserved.delete(sessionID)
+    // Older adapters intentionally deliver assistant chunks after their RPC response, so their
+    // historical zero-drain behavior must stay permissive. PI opts into a real drain window above;
+    // once it closes, an even later chunk belongs to a subsequent native lifecycle, not this turn.
+    if (this.#promptSettleMs > 0) this.#promptedSessions.delete(sessionID)
+    this.#chunkMessageIDs.delete(`${sessionID}:assistant`)
+    // The turn is over, so no activity it started is still running, whatever the adapter said.
+    this.#settleActivity(sessionID)
+    this.#emit("session.updated", sessionID)
+    this.#persistSnapshot(sessionID)
+    void this.#runNextQueued(sessionID)
+  }
+
+  /**
+   * Forward a prompt into the harness's live turn. Recorded first, like every prompt, so the
+   * conversation shows what the user wrote regardless of what the adapter does with it next:
+   *
+   * - `{outcome: "injected"}`: the content joined the live turn. That turn's own session/prompt
+   *   response still owns turn end, so nothing here may settle the session.
+   * - `{outcome: "startedNewTurn"}`: the previous turn drained while the steering request was in
+   *   flight, and the adapter started this prompt as a turn of its own. The steering response
+   *   resolved at turn start rather than turn end, so the session re-enters turn state here to keep
+   *   streaming tool calls and text recorded, and the adopted turn settles from its own silence.
+   * - error: an adapter that predates steering refuses the method, and an adapter can refuse the
+   *   input itself. The recorded prompt then joins the ordinary queue - the message id stays, so
+   *   nothing is redelivered twice.
+   */
+  async #steerPrompt(sessionID, text, attachments, variant) {
+    const messageID = this.#recordPrompt(sessionID, text, attachments)
+    this.#emit("session.updated", sessionID)
+    const generationAtSteer = this.#turnGenerations.get(sessionID)
+    let result = null
+    try {
+      result = await this.#acp.request(STEERING_METHOD, {
+        sessionId: sessionID,
+        prompt: this.#promptBlocks(text, attachments)
+      }, 300_000)
+    } catch (error) {
+      if (this.#active.has(sessionID)) {
+        const queue = this.#queues.get(sessionID) ?? []
+        queue.push({ text, model: undefined, messageID, attachments, variant })
+        this.#queues.set(sessionID, queue)
+        this.#setPromptQueued(sessionID, messageID, true)
+        this.#emit("session.updated", sessionID)
+        return { disposition: "queued", messageID }
+      }
+      // The live turn ended underneath the failed steering request. Keep the recorded message (it
+      // now reads as the newest user turn of an idle session) and replay it as a regular turn.
+      this.#startTurn(sessionID, text, true, attachments)
+      return { disposition: "started", messageID }
+    }
+    if (result?.outcome !== "startedNewTurn") {
+      // The live turn now answers the steered prompt, so whatever it streams next belongs after that
+      // recorded user row. Appending it to the reply already open above the row left the steered
+      // prompt with no answer of its own, and the client kept waiting for one until the turn ended.
+      this.#chunkMessageIDs.delete(`${sessionID}:assistant`)
+      return { disposition: "steered", messageID }
+    }
+    // The adapter answers startedNewTurn only after the previous prompt completed, but that prompt's
+    // session/prompt response can still be on its way here. Waiting for its teardown to be registered
+    // was a race; the generation is what decides instead. Unchanged since the steering request, the
+    // turn being replaced is the one that just ended, and bumping the generation below makes its late
+    // teardown a no-op. A Stop or another turn started meanwhile changed it, and owns the session.
+    if (this.#turnGenerations.get(sessionID) !== generationAtSteer) return { disposition: "steered", messageID }
+    const generation = (this.#turnGenerations.get(sessionID) ?? 0) + 1
+    this.#turnGenerations.set(sessionID, generation)
+    this.#active.add(sessionID)
+    this.#promptedSessions.add(sessionID)
+    this.#chunkMessageIDs.delete(`${sessionID}:assistant`)
+    this.#adoptedTurns.set(sessionID, { generation, lastStreamAt: Date.now(), idleMs: STEER_ADOPT_SETTLE_IDLE_MS })
+    this.#emit("session.updated", sessionID)
+    this.#startAdoptedTurnSweep()
+    // The adapter ran the prompt as a turn of its own, which is what a client must show.
+    return { disposition: "started", messageID }
+  }
+
+  /**
+   * Whether live output for an idle Session opens a turn the agent started on its own.
+   *
+   * Only a Session this bridge has run a turn in qualifies: its adapter process is the one whose
+   * background work just finished. A Stop is definitive, and output arriving right after a turn
+   * ended is that turn's transport tail (see AGENT_TURN_GRACE_MS), so neither opens a turn.
+   */
+  #opensAgentTurn(sessionID) {
+    if (this.#active.has(sessionID) || this.#cancelledSessions.has(sessionID)) return false
+    if (!this.#turnGenerations.has(sessionID)) return false
+    if (this.#historyLoader && !this.#ownedSessions.has(sessionID)) return false
+    return Date.now() - (this.#turnSettledAt.get(sessionID) ?? 0) >= this.#agentTurnGraceMs
+  }
+
+  /**
+   * Take over a turn the agent started without a prompt from this bridge, typically Claude Code
+   * resuming after a background command or subagent it was waiting on finished. It reads busy and
+   * records its output as a new reply until its own stream goes silent; a prompt or a Stop that
+   * arrives meanwhile is handled exactly as during any other turn.
+   */
+  #adoptAgentTurn(sessionID) {
+    const generation = (this.#turnGenerations.get(sessionID) ?? 0) + 1
+    this.#turnGenerations.set(sessionID, generation)
+    this.#active.add(sessionID)
+    this.#promptedSessions.add(sessionID)
+    this.#chunkMessageIDs.delete(`${sessionID}:assistant`)
+    this.#adoptedTurns.set(sessionID, {
+      generation,
+      startedAt: Date.now(),
+      lastStreamAt: Date.now(),
+      idleMs: this.#agentTurnSettleIdleMs,
+      holdForRunningTools: true
+    })
+    this.#emit("session.updated", sessionID)
+    this.#startAdoptedTurnSweep()
+  }
+
+  /** Whether the Session's current turn is one the adapter runs without a pending session/prompt. */
+  hasAdoptedTurn(sessionID) {
+    return this.#adoptedTurns.has(sessionID)
+  }
+
+  /** A tool call the adopted turn opened that has not reported an end yet. */
+  #adoptedTurnHasRunningTool(sessionID, adoption) {
+    return (this.#messages.get(sessionID) ?? []).some((message) => message.info.role === "assistant"
+      && message.parts.some((part) => part.type === "tool"
+        && ["pending", "running"].includes(part.state?.status)
+        && (part.state.time?.start ?? 0) >= adoption.startedAt))
+  }
+
+  /** Stop tracking an adopted turn. A later regular turn or Stop owns the teardown. */
+  #discardAdoptedTurn(sessionID) {
+    this.#adoptedTurns.delete(sessionID)
+    if (this.#adoptedTurns.size === 0 && this.#adoptedTurnSweep) {
+      clearInterval(this.#adoptedTurnSweep)
+      this.#adoptedTurnSweep = undefined
+    }
+  }
+
+  /**
+   * Settles adopted turns that went silent. A codex turn can outlive the steering response by
+   * minutes, so the last stream time - refreshed by every live session/update for that session - is
+   * the only signal this bridge has that the turn finished.
+   */
+  #startAdoptedTurnSweep() {
+    if (this.#adoptedTurnSweep) return
+    this.#adoptedTurnSweep = setInterval(() => {
+      const now = Date.now()
+      for (const [sessionID, adoption] of this.#adoptedTurns) {
+        const idle = now - adoption.lastStreamAt
+        if (idle < adoption.idleMs) continue
+        if (adoption.holdForRunningTools && idle < AGENT_TURN_RUNNING_TOOL_CAP_MS
+          && this.#adoptedTurnHasRunningTool(sessionID, adoption)) continue
+        this.#adoptedTurns.delete(sessionID)
+        void this.#settleTurn(sessionID, adoption.generation)
+      }
+      if (this.#adoptedTurns.size === 0) {
+        clearInterval(this.#adoptedTurnSweep)
+        this.#adoptedTurnSweep = undefined
+      }
+    }, Math.min(STEER_ADOPT_SWEEP_INTERVAL_MS, Math.max(10, Math.floor(this.#agentTurnSettleIdleMs / 3))))
+    // A daemon process must not be kept alive by bookkeeping that only exists to close a race.
+    this.#adoptedTurnSweep.unref?.()
+  }
+
+  async #requestPromptWithRecovery(sessionID, params) {
+    try {
+      return await this.#acp.request("session/prompt", params, 300_000)
+    } catch (error) {
+      if (!this.#recoverMissingSessionOnPrompt || !missingAcpSession(error)) throw error
+      // The replay below rebuilds the transcript from what the harness stored, which does not yet
+      // include this turn's prompt: the adapter refused it. Keep the turn as recorded, and start its
+      // reply in a message of its own rather than in the last one the replay produced.
+      const messages = this.#messages.get(sessionID) ?? []
+      const promptIndex = messages.findLastIndex((message) => message.info.role === "user")
+      const turn = promptIndex >= 0 ? messages.slice(promptIndex) : []
+      this.#forgetOpenSessions([sessionID])
+      await this.#load(sessionID, true)
+      const replayed = this.#messages.get(sessionID) ?? []
+      const replayedIDs = new Set(replayed.map((message) => message.info.id))
+      this.#messages.set(sessionID, [...replayed, ...turn.filter((message) => !replayedIDs.has(message.info.id))])
+      this.#chunkMessageIDs.delete(`${sessionID}:user`)
+      this.#chunkMessageIDs.delete(`${sessionID}:assistant`)
+      this.#emit("message.updated", sessionID)
+      return this.#acp.request("session/prompt", params, 300_000)
+    }
   }
 
   /**
@@ -1335,14 +1903,27 @@ export class AcpService {
   async #runNextQueued(sessionID) {
     const queue = this.#queues.get(sessionID)
     if (!queue?.length) return
-    const next = queue.shift()
-    if (!queue.length) this.#queues.delete(sessionID)
+    // The entry stays queued while its model is applied, so the session keeps reading busy through
+    // that switch. Shifting first opened an idle gap between the two turns: a client polling status
+    // saw the conversation finish, and a prompt arriving then jumped ahead of the queued one.
+    const next = queue[0]
+    const dequeue = () => {
+      queue.shift()
+      if (!queue.length) this.#queues.delete(sessionID)
+    }
     // The model is applied on dequeue: doing it on enqueue would switch the model
     // underneath the turn that was still running.
-    if (next.model) {
+    const savedModel = this.#fallbackModelSelections.get(sessionID)
+    const selection = next.model ?? (savedModel ? `${savedModel.providerID}/${savedModel.modelID}` : undefined)
+    if (selection) {
       try {
-        await this.setModel(sessionID, next.model, next.variant)
+        await this.setModel(sessionID, selection, next.variant)
       } catch (error) {
+        // A Stop during the switch discarded the queue; an unqueue removed just this prompt.
+        if (this.#queues.get(sessionID)?.[0] !== next) return this.#resumeQueue(sessionID)
+        dequeue()
+        // No longer waiting: it is a turn now, one that failed before it could start.
+        this.#setPromptQueued(sessionID, next.messageID, false)
         // The queued user prompt was already recorded when it was enqueued. A model switch refusal
         // terminates that turn; never run it on the previous model after telling the client it failed.
         this.#recordTurnFailure(sessionID, error.message)
@@ -1353,7 +1934,37 @@ export class AcpService {
         return
       }
     }
+    if (this.#queues.get(sessionID)?.[0] !== next) return this.#resumeQueue(sessionID)
+    dequeue()
+    this.#setPromptQueued(sessionID, next.messageID, false)
     this.#startTurn(sessionID, next.text, true, next.attachments ?? [])
+  }
+
+  /**
+   * The prompt being started was removed while its model switched. After a Stop nothing is queued
+   * and this is a no-op; after an unqueue the prompts behind it still have to run.
+   */
+  #resumeQueue(sessionID) {
+    if (!this.#active.has(sessionID)) void this.#runNextQueued(sessionID)
+  }
+
+  /**
+   * Drop one prompt still waiting in the queue, together with its recorded row. The running turn and
+   * the rest of the queue are untouched. Returns whether the prompt was still waiting: one that has
+   * already started is a turn, which only a Stop ends.
+   */
+  unqueue(sessionID, messageID) {
+    const queue = this.#queues.get(sessionID)
+    const index = queue ? queue.findIndex((entry) => entry.messageID === messageID) : -1
+    if (index < 0) return false
+    queue.splice(index, 1)
+    if (!queue.length) this.#queues.delete(sessionID)
+    const messages = this.#messages.get(sessionID)
+    if (messages) this.#messages.set(sessionID, messages.filter((message) => message.info.id !== messageID))
+    this.#emit("message.updated", sessionID)
+    this.#emit("session.updated", sessionID)
+    this.#persistSnapshot(sessionID)
+    return true
   }
 
   /** Cancelling drops anything still queued, including the messages recorded for it. */
@@ -1361,6 +1972,8 @@ export class AcpService {
     if (this.#historyLoader && !this.#ownedSessions.has(sessionID)) {
       throw new Error("This session is not active in the app")
     }
+    // A Stop also ends any adopted steering turn: the harness cancel is definitive either way.
+    this.#discardAdoptedTurn(sessionID)
     const queue = this.#queues.get(sessionID)
     if (queue?.length) {
       const discarded = new Set(queue.map((entry) => entry.messageID))
@@ -1371,12 +1984,20 @@ export class AcpService {
       }
       this.#emit("message.updated", sessionID)
     }
+    const wasActive = this.#active.has(sessionID)
     this.#turnGenerations.set(sessionID, (this.#turnGenerations.get(sessionID) ?? 0) + 1)
     this.#cancelledSessions.add(sessionID)
+    this.#turnResponseObserved.delete(sessionID)
     this.#active.delete(sessionID)
     this.#chunkMessageIDs.delete(`${sessionID}:assistant`)
     // A cancelled turn gets no closing tool_call_update at all, so settle before it is published.
     this.#settleActivity(sessionID)
+    // Live, the Stop is the only record of the interruption; replay reads it back from the harness.
+    if (wasActive) {
+      const messages = this.#messages.get(sessionID) ?? []
+      this.#messages.set(sessionID, messages)
+      if (markLatestTurnInterrupted(messages, sessionID)) this.#emit("message.updated", sessionID)
+    }
     this.#acp.notify("session/cancel", { sessionId: sessionID })
     this.#emit("session.updated", sessionID)
     this.#persistSnapshot(sessionID)
@@ -1391,6 +2012,7 @@ export class AcpService {
       await Promise.all(this.#snapshotWrites.values())
     }
     await this.#deletedSessionIndexWrite
+    await this.#titleIndexWrite
   }
 
   /**
@@ -1403,6 +2025,55 @@ export class AcpService {
   async deletedSessionIDs() {
     await this.#restoreDeletedSessionIndex()
     return new Set(this.#deletedSessions)
+  }
+
+  /** Persistent bridge-local names for lightweight index reads. */
+  async titleOverrides() {
+    await this.#restoreTitleIndex()
+    return new Map(this.#titles)
+  }
+
+  #titleIndexPath() {
+    return path.join(this.#snapshotDirectory, "session-titles.json")
+  }
+
+  async #restoreTitleIndex() {
+    if (this.#titleIndexLoading) return this.#titleIndexLoading
+    if (!this.#snapshotDirectory || this.#titleIndexLoaded) return
+    const loading = this.#readTitleIndex()
+    this.#titleIndexLoading = loading
+    try { await loading } finally { this.#titleIndexLoading = undefined }
+  }
+
+  async #readTitleIndex() {
+    this.#titleIndexLoaded = true
+    try {
+      const state = JSON.parse(await readFile(this.#titleIndexPath(), "utf8"))
+      if (state?.version !== 1 || !state.titles || typeof state.titles !== "object" || Array.isArray(state.titles)) return
+      for (const [sessionID, title] of Object.entries(state.titles)) {
+        if (sessionID && typeof title === "string" && title) this.#titles.set(sessionID, title)
+      }
+    } catch (error) {
+      if (error?.code !== "ENOENT") {
+        this.#titleIndexLoaded = false
+        throw error
+      }
+    }
+  }
+
+  async #persistTitleIndex() {
+    if (!this.#snapshotDirectory) return
+    const previous = this.#titleIndexWrite
+    const writing = previous.catch(() => undefined).then(async () => {
+      await mkdir(this.#snapshotDirectory, { recursive: true })
+      const target = this.#titleIndexPath()
+      const temporary = `${target}.${process.pid}.${randomUUID()}.tmp`
+      const titles = Object.fromEntries([...this.#titles.entries()].sort(([left], [right]) => left.localeCompare(right)))
+      await writeFile(temporary, JSON.stringify({ version: 1, titles }), { mode: 0o600 })
+      await rename(temporary, target)
+    })
+    this.#titleIndexWrite = writing
+    await writing
   }
 
   #deletedSessionIndexPath() {
@@ -1449,20 +2120,41 @@ export class AcpService {
     return path.join(this.#snapshotDirectory, `${name}.json`)
   }
 
-  async #restoreSnapshot(sessionID) {
-    if (!this.#snapshotDirectory || this.#restoredSnapshots.has(sessionID)) return
-    this.#restoredSnapshots.add(sessionID)
+  /**
+   * Every caller waits for the same read. At startup the Session list reads every snapshot at once,
+   * so a long Session's file can still be in flight when that Session is opened; returning early
+   * there let the load clear the transcript and start its replay, and the read then landed on top
+   * of it. The rest of the replay was merged into the old transcript: its text doubled onto the
+   * messages it already had, and the turns that open with a tool call piled up at the end as one
+   * Activity with no reply.
+   */
+  #restoreSnapshot(sessionID) {
+    if (!this.#snapshotDirectory) return Promise.resolve()
+    let restoring = this.#restoredSnapshots.get(sessionID)
+    if (!restoring) {
+      restoring = this.#readSnapshot(sessionID)
+      this.#restoredSnapshots.set(sessionID, restoring)
+    }
+    return restoring
+  }
+
+  async #readSnapshot(sessionID) {
+    await this.#restoreTitleIndex()
     try {
       const snapshot = JSON.parse(await readFile(this.#snapshotPath(sessionID), "utf8"))
       if (snapshot?.version !== 1) return
       // A freshly created Session is already loaded in this process. Its first snapshot can still
       // contain the empty pre-prompt transcript while a real prompt has since been recorded in
       // memory; restoring that stale file here would erase the visible user turn. Snapshots only
-      // seed a Session that has not been loaded yet (restart or cache eviction).
-      if (!this.#loaded.has(sessionID) && Array.isArray(snapshot.messages)) {
+      // seed a Session that has not been loaded yet (restart or cache eviction), and never one
+      // whose replay is already rebuilding it.
+      if (!this.#loaded.has(sessionID) && !this.#replaying.has(sessionID) && Array.isArray(snapshot.messages)) {
         const fragmented = mergeFragmentedPiSnapshot(snapshot.messages)
+          // A prompt still queued when the snapshot was written never reached the harness, and the
+          // queue it waited in did not survive the restart: restored, it would read as queued forever.
+          .filter((message) => message?.info?.queued !== true)
         const restored = healPoisonedSnapshot(fragmented)
-        if (restored.length !== fragmented.length) {
+        if (restored.length !== snapshot.messages.length) {
           this.#dirtySnapshots.add(sessionID)
           this.#dirtyStart.set(sessionID, Date.now())
         }
@@ -1476,7 +2168,11 @@ export class AcpService {
         this.#messages.set(sessionID, restored)
       }
       if (Array.isArray(snapshot.todos)) this.#todos.set(sessionID, snapshot.todos)
-      if (!this.#preferListedTitles && typeof snapshot.title === "string" && snapshot.title) this.#titles.set(sessionID, snapshot.title)
+      if (this.#fallbackModelCatalog && typeof snapshot.selectedModel?.modelID === "string"
+        && snapshot.selectedModel.providerID === this.#modelProviderID) {
+        this.#fallbackModelSelections.set(sessionID, snapshot.selectedModel)
+      }
+      if (!this.#preferListedTitles && !this.#titles.has(sessionID) && typeof snapshot.title === "string" && snapshot.title) this.#titles.set(sessionID, snapshot.title)
       if (snapshot?.deleted === true) this.#deletedSessions.add(sessionID)
     } catch (error) {
       if (error?.code !== "ENOENT") this.#emit("session.error", sessionID, { message: "Stored session snapshot is unreadable" })
@@ -1521,6 +2217,7 @@ export class AcpService {
           messages: journalOwnsTranscript ? [] : healedMessages,
           todos: this.#todos.get(sessionID) ?? [],
           title: this.#titleFor(sessionID),
+          ...(this.#fallbackModelCatalog ? { selectedModel: this.#fallbackModelSelections.get(sessionID) } : {}),
           deleted: this.#deletedSessions.has(sessionID)
         })
         const target = this.#snapshotPath(sessionID)
@@ -1594,7 +2291,7 @@ export class AcpService {
 
   async #requireSession(sessionID) {
     await this.#restoreDeletedSessionIndex()
-    await this.#refreshSessions()
+    if (this.#refreshSessionListOnRead || !this.#sessions.has(sessionID)) await this.#refreshSessions()
     await this.#restoreSnapshot(sessionID)
     if (this.#deletedSessions.has(sessionID) || !this.#sessions.has(sessionID)) {
       throw new Error("Harness session not found")
@@ -1703,6 +2400,10 @@ export class AcpService {
         }
       }
     }
+    // A single adapter process is not restarted by a request on its own, and the one that opened
+    // this Session may have exited since. A project-scoped client starts its own process per request.
+    await this.#requireSessionDirectory(session)
+    if (typeof this.#acp.withSession !== "function") await this.#acp.start?.()
     if (await this.#openWithoutReplay(sessionID, session)) return
     this.#replaying.add(sessionID)
     this.#messages.set(sessionID, [])
@@ -1720,9 +2421,11 @@ export class AcpService {
       if (this.#replaySettleMs > 0) {
         await new Promise((resolve) => setTimeout(resolve, this.#replaySettleMs))
       }
-      this.#rememberConfigOptions(sessionID, result.configOptions)
+      this.#rememberSessionConfiguration(sessionID, result)
       const replayedMessages = mergeFragmentedPiSnapshot(this.#messages.get(sessionID) ?? [])
-      this.#messages.set(sessionID, replaceHistory ? replayedMessages : mergeReplay(previousMessages, replayedMessages))
+      this.#messages.set(sessionID, chronologicalReplay(this.#replayAuthoritative
+        ? authoritativeReplay(previousMessages, replayedMessages)
+        : replaceHistory ? replayedMessages : mergeReplay(previousMessages, replayedMessages)))
       // Replayed history is finished work by definition, and the adapter does not always close the
       // tool calls in it. Settling before the signature check keeps the restored (already settled)
       // snapshot and this replay comparable, so an unchanged history still reads as unchanged.
@@ -1755,6 +2458,15 @@ export class AcpService {
     return this.#historyLoader?.authoritativeHistory !== true && !this.#journalPageWhileOwned
   }
 
+  async #requireSessionDirectory(session) {
+    if (!this.#requireExistingDirectory) return
+    try {
+      if (!(await stat(session.cwd)).isDirectory()) throw new Error("Not a directory")
+    } catch (error) {
+      throw new Error(`Session project directory is missing or inaccessible: ${session.cwd}. History is still available; restore the directory before continuing this Session.`, { cause: error })
+    }
+  }
+
   /**
    * Open one stored Session on the ACP connection without asking for its transcript back.
    *
@@ -1778,7 +2490,7 @@ export class AcpService {
       300_000
     )
     this.#acpOpenSessions.add(sessionID)
-    this.#rememberConfigOptions(sessionID, result?.configOptions)
+    this.#rememberSessionConfiguration(sessionID, result)
     this.#loaded.add(sessionID)
     this.#persistSnapshot(sessionID)
     return true
@@ -1800,16 +2512,48 @@ export class AcpService {
     return this.#sessionListing
   }
 
+  #rememberSessionConfiguration(sessionID, result) {
+    if (Array.isArray(result?.configOptions) || result?.models) {
+      this.#rememberConfigOptions(sessionID, modelConfigOptionFromSessionResponse(result))
+      this.#modelSwitchMethods.set(sessionID, Array.isArray(result?.models?.availableModels)
+        && !result?.configOptions?.some((option) => option.id === "model") ? "session/set_model" : "session/set_config_option")
+    }
+  }
+
   #rememberConfigOptions(sessionID, configOptions) {
     if (Array.isArray(configOptions)) this.#configOptions.set(sessionID, configOptions)
   }
 
-  #recordPrompt(sessionID, text, attachments = []) {
+  /**
+   * A queued prompt is recorded the moment it is accepted, so its user row can reach the transcript
+   * before the running turn has streamed anything. That turn's reply still belongs above the queued
+   * rows: appended after them it read as the queued prompt's answer, so the client settled the queued
+   * prompt early and showed both prompts stacked with no reply between them.
+   */
+  #insertLiveMessage(sessionID, messages, message, replaying) {
+    const queue = !replaying && message.info.role === "assistant" ? this.#queues.get(sessionID) : undefined
+    if (queue?.length) {
+      const queuedIDs = new Set(queue.map((entry) => entry.messageID))
+      const index = messages.findIndex((item) => queuedIDs.has(item.info.id))
+      if (index >= 0) {
+        messages.splice(index, 0, message)
+        return
+      }
+    }
+    messages.push(message)
+  }
+
+  /**
+   * Record a user prompt in the live transcript. A queued prompt is marked `info.queued` until it is
+   * dequeued: that flag is the one authority clients read to show it as waiting rather than as a turn
+   * of the conversation, so it survives remounts and is the same for every client of this bridge.
+   */
+  #recordPrompt(sessionID, text, attachments = [], { queued = false } = {}) {
     const messageID = randomUUID()
     const messages = this.#messages.get(sessionID) ?? []
     this.#messages.set(sessionID, messages)
     messages.push({
-      info: { id: messageID, role: "user", sessionID, time: { created: Date.now() } },
+      info: { id: messageID, role: "user", sessionID, time: { created: Date.now() }, ...(queued ? { queued: true } : {}) },
       parts: [
         { id: `${messageID}:text`, type: "text", text },
         ...attachments.map((attachment, index) => ({
@@ -1821,10 +2565,23 @@ export class AcpService {
         }))
       ]
     })
-    this.#promptAcknowledgements.set(sessionID, { text, received: "" })
+    // The acknowledgement suppresses the harness echoing this prompt back. A queued prompt sets it
+    // on dequeue instead: set here, it replaced the running turn's and let that echo through as a
+    // duplicate user row below the queued one.
+    if (!queued) this.#promptAcknowledgements.set(sessionID, { text, received: "" })
     this.#emit("message.updated", sessionID)
     this.#persistSnapshot(sessionID)
     return messageID
+  }
+
+  /** Mark a recorded prompt as waiting in the queue, or as no longer waiting once it is dequeued. */
+  #setPromptQueued(sessionID, messageID, queued) {
+    const message = this.#messages.get(sessionID)?.find((item) => item.info.id === messageID)
+    if (!message) return
+    if (queued) message.info.queued = true
+    else delete message.info.queued
+    this.#emit("message.updated", sessionID)
+    this.#persistSnapshot(sessionID)
   }
 
   /**
@@ -1860,8 +2617,26 @@ export class AcpService {
   #handleNotification({ method, params }) {
     if (method !== "session/update" || !params?.sessionId || !params.update) return
     const { sessionId, update } = params
+    const modelReply = this.#modelCommandReplies.get(sessionId)
+    if (update.sessionUpdate === "config_option_update" && Array.isArray(update.configOptions)) {
+      if (modelReply) modelReply.configurationUpdated = true
+      this.#rememberConfigOptions(sessionId, update.configOptions)
+      return
+    }
+    if (modelReply && ["agent_message_chunk", "user_message_chunk", "agent_thought_chunk"].includes(update.sessionUpdate)) {
+      if (update.sessionUpdate === "agent_message_chunk" && typeof update.content?.text === "string") modelReply.chunks.push(update.content.text)
+      return
+    }
     const replaying = this.#replaying.has(sessionId)
     const session = this.#sessions.get(sessionId)
+    if (!replaying) {
+      const adoption = this.#adoptedTurns.get(sessionId)
+      if (adoption) adoption.lastStreamAt = Date.now()
+      const agentOutput = update.sessionUpdate === "tool_call"
+        || ((update.sessionUpdate === "agent_message_chunk" || update.sessionUpdate === "agent_thought_chunk")
+          && update.content?.type === "text" && Boolean(update.content.text))
+      if (agentOutput && this.#opensAgentTurn(sessionId)) this.#adoptAgentTurn(sessionId)
+    }
     if (update.sessionUpdate === "available_commands_update") {
       const commands = Array.isArray(update.availableCommands)
         ? update.availableCommands.filter((command) => typeof command?.name === "string")
@@ -1898,7 +2673,7 @@ export class AcpService {
           info: { id: messageID, role: "assistant", sessionID: sessionId, time: { created: Date.now() } },
           parts: []
         }
-        messages.push(message)
+        this.#insertLiveMessage(sessionId, messages, message, replaying)
       }
       // A reasoning part is closed by the part that follows it, but only the message-chunk path did
       // that: reasoning followed by a tool call — Claude's normal shape — stayed open forever, which
@@ -1911,8 +2686,13 @@ export class AcpService {
         id: update.toolCallId,
         messageID,
         type: "tool",
-        tool: update._meta?.toolName ?? update.title,
+        // Claude's adapter names the tool under its own namespace; without it the tool name fell back
+        // to the title, which for a shell call is the command line itself.
+        tool: update._meta?.toolName ?? update._meta?.claudeCode?.toolName ?? update.title,
         callID: update.toolCallId,
+        // ACP's own classification (read, edit, execute, search, fetch, think, ...): the client
+        // labels calls by it instead of guessing from tool names.
+        kind: typeof update.kind === "string" ? update.kind : undefined,
         state: {
           status: update.status === "in_progress" ? "running" : update.status,
           input: update.rawInput,
@@ -1931,7 +2711,13 @@ export class AcpService {
       const output = update.rawOutput ?? update.content
         ?.flatMap((item) => item.type === "content" && item.content?.type === "text" ? [item.content.text] : [])
         .join("")
-      tool.state.status = update.status === "in_progress" ? "running" : update.status === "failed" ? "error" : update.status
+      // An update carries only the fields that changed. The input and title in particular often
+      // arrive here rather than on the opening tool_call, and an update without a status must not
+      // erase the one the call already has.
+      if (update.status) tool.state.status = update.status === "in_progress" ? "running" : update.status === "failed" ? "error" : update.status
+      if (update.rawInput && typeof update.rawInput === "object") tool.state.input = update.rawInput
+      if (typeof update.title === "string" && update.title) tool.state.title = update.title
+      if (typeof update.kind === "string") tool.kind = update.kind
       if (output) tool.state.output = typeof output === "string" ? output : JSON.stringify(output)
       if (tool.state.time && ["completed", "error"].includes(tool.state.status)) tool.state.time.end = Date.now()
       if (!replaying) this.#emit("message.updated", sessionId)
@@ -1956,16 +2742,31 @@ export class AcpService {
       : undefined
     if (!image && (update.content?.type !== "text" || !update.content.text)) return
     const role = update.sessionUpdate === "user_message_chunk" ? "user" : "assistant"
+    if (!replaying && role === "assistant" && !thought && (image || update.content.text?.trim())) {
+      this.#turnResponseObserved.add(sessionId)
+    }
     const partType = thought ? "reasoning" : image ? "file" : "text"
     // Acknowledgements only suppress a live echo of the prompt we just recorded;
     if (role === "assistant" && !replaying && this.#cancelledSessions.has(sessionId)) return
     if (role === "assistant" && !replaying && !this.#active.has(sessionId) && !this.#promptedSessions.has(sessionId)) return
     if (role === "user" && !replaying && this.#isAcknowledgedPromptChunk(sessionId, update.content.text)) return
     if (role === "user" && !image && isHarnessInjectedText(update.content.text)) return
+    if (role === "user" && !image && isInterruptionMarker(update.content.text)) {
+      const messages = this.#messages.get(sessionId) ?? []
+      this.#messages.set(sessionId, messages)
+      markLatestTurnInterrupted(messages, sessionId)
+      // Whatever the adapter sends next belongs to a new reply, not to the interrupted one.
+      this.#chunkMessageIDs.delete(`${sessionId}:assistant`)
+      if (!replaying) this.#emit("message.updated", sessionId)
+      return
+    }
+    // The Codex desktop app wraps the request in its UI state; session/load replays it that way.
+    const text = role === "user" && !image ? stripAmbientContext(update.content.text) : update.content?.text
     if (!replaying && session) session.updatedAt = new Date().toISOString()
     const counterpartKey = `${sessionId}:${role === "user" ? "assistant" : "user"}`
     this.#chunkMessageIDs.delete(counterpartKey)
     const chunkKey = `${sessionId}:${role}`
+    if (replaying && role === "user" && this.#replayUserChunksAreMessages) this.#chunkMessageIDs.delete(chunkKey)
     // PI sends a new message id for every streaming fragment. During a live turn the bridge's
     // id is authoritative, so all adjacent fragments remain one Markdown message. Replay keeps
     // adapter ids because it reconstructs historical conversation boundaries.
@@ -1981,12 +2782,19 @@ export class AcpService {
         info: { id: messageID, role, sessionID: sessionId, time: { created: Date.now() } },
         parts: []
       }
-      messages.push(message)
+      this.#insertLiveMessage(sessionId, messages, message, replaying)
     }
     const previous = message.parts.at(-1)
     const now = Date.now()
     if (previous?.type === "reasoning" && partType !== "reasoning" && previous.time && !previous.time.end) {
       previous.time.end = now
+    }
+    // Two replies streamed back to back are two paragraphs, not one run-on sentence.
+    let continuesPrevious = previous?.type === partType
+    if (!replaying && role === "assistant" && this.#assistantMessageIDsSeparateReplies && typeof update.messageId === "string") {
+      const source = this.#chunkSourceIDs.get(sessionId)
+      if (continuesPrevious && source && source !== update.messageId) continuesPrevious = false
+      this.#chunkSourceIDs.set(sessionId, update.messageId)
     }
     if (image) {
       message.parts.push({
@@ -1996,14 +2804,14 @@ export class AcpService {
         mime: image.mime,
         url: `data:${image.mime};base64,${image.data}`
       })
-    } else if (previous?.type === partType) {
-      previous.text += update.content.text
+    } else if (continuesPrevious) {
+      previous.text += text
     } else {
       message.parts.push({
         id: `${messageID}:${partType}:${message.parts.length}`,
         messageID,
         type: partType,
-        text: update.content.text,
+        text,
         ...(partType === "reasoning" ? { time: { start: now } } : {})
       })
     }

@@ -1,6 +1,7 @@
 import { Capacitor, CapacitorHttp } from "@capacitor/core"
 import { desktopRequest, isDesktopPlatform } from "./desktopBridge"
 import { normalizeNativeResponseData } from "./nativeResponse"
+import { MachineHttpError } from "./machine-request-error"
 import { streamURL } from "./opencode-events"
 import { authHeader, baseUrl, hasCredentials, isValidServerConfig, routingHeaders } from "./serverConfig"
 import type { AttachmentPart } from "./attachments"
@@ -196,8 +197,8 @@ async function requestWithHeaders<T>(config: ServerConfig, path: string, options
     }
 
     if (response.status >= 400) {
-      if (response.status === 401) throw new Error(responseDetail(response.data) || unauthorizedDetail(config))
-      throw new Error(responseDetail(response.data) || `HTTP ${response.status}`)
+      if (response.status === 401) throw new MachineHttpError(responseDetail(response.data) || unauthorizedDetail(config), response.status)
+      throw new MachineHttpError(responseDetail(response.data) || `HTTP ${response.status}`, response.status)
     }
 
     const responseHeaders = normalizeHeaders(response.headers)
@@ -238,7 +239,7 @@ async function requestWithHeaders<T>(config: ServerConfig, path: string, options
       const body = await response.text()
       detail = responseDetail(body) ?? detail
     } catch {}
-    throw new Error(detail)
+    throw new MachineHttpError(detail, response.status)
   }
 
   const responseHeaders = normalizeHeaders(Object.fromEntries(response.headers.entries()))
@@ -398,6 +399,11 @@ export const api = {
 
   deleteSession(config: ServerConfig, id: string, directory?: string) {
     return request<boolean>(config, withDirectory(`/session/${id}`, directory), { method: "DELETE" })
+  },
+
+  /** Withdraw one prompt the daemon still holds behind the running turn; the turn keeps running. */
+  cancelQueuedPrompt(config: ServerConfig, id: string, messageID: string, directory?: string) {
+    return request<{ removed: boolean }>(config, withDirectory(`/session/${id}/queue/${encodeURIComponent(messageID)}`, directory), { method: "DELETE" })
   },
 
   async loadMessagePage(config: ServerConfig, sessionID: string, directory?: string, before?: string, limit = 100, refreshHistory = false): Promise<MessagePage> {

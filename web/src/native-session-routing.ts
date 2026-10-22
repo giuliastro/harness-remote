@@ -33,6 +33,19 @@ export type NativeSessionRouteContinueInput = {
   confirmedProjectContinuity?: boolean
 }
 
+/**
+ * A route is a user action, not an inference from transient conversation metadata. Keep ordinary
+ * Sends on the Session that is open until the Harness selector has explicitly been changed.
+ */
+export function nativeSessionRouteChanged(
+  routing: { currentMachineID: string } | undefined,
+  routeSelectionTouched: boolean,
+  targetAgentID: string,
+  currentAgentID: string
+): boolean {
+  return Boolean(routing && routeSelectionTouched && targetAgentID && targetAgentID !== currentAgentID)
+}
+
 type PendingRouteContinue = {
   agentID: string
   createdAt: number
@@ -108,7 +121,7 @@ function targetRecord(source: NativeSessionSurfaceTarget, ref: NativeSessionRef,
     key: `${agent.id}:${ref.sessionID}`,
     agentId: agent.id,
     agentLabel: agent.label || agent.id,
-    backend: agent.backend === "omp" || agent.backend === "pi" || agent.backend === "claude" || agent.backend === "codex"
+    backend: agent.backend === "opencode" || agent.backend === "opencode2" || agent.backend === "omp" || agent.backend === "pi" || agent.backend === "claude" || agent.backend === "codex" || agent.backend === "copilot" || agent.backend === "mimo"
       ? agent.backend
       : "opencode",
     transport: agent.transport,

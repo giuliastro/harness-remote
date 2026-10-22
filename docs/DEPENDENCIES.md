@@ -137,7 +137,7 @@ party entirely.
 ### Claude Code — ACP over stdio, via the official adapter
 
 - **Adapter:** [`@agentclientprotocol/claude-agent-acp`](https://www.npmjs.com/package/@agentclientprotocol/claude-agent-acp),
-  which wraps the Claude Agent SDK and speaks ACP over stdio. **Pinned to `0.75.1`** in
+  which wraps the Claude Agent SDK and speaks ACP over stdio. **Pinned to `0.84.0`** in
   `bridge/src/harness-profiles.js`.
 - **Authentication:** the host must already have `claude login` credentials or
   `ANTHROPIC_API_KEY` available to the adapter. The bridge does not manage Claude credentials.
@@ -170,14 +170,17 @@ an Activity section in a finished conversation reads `Working` for good, snapsho
 shapes, and whether session visibility or image capability changes. The app intentionally does not
 expose agent selection, server slash commands or VCS/diff for this backend.
 
-### Codex CLI — ACP over stdio, via the official adapter
+### Codex — ACP over stdio, via the official adapter
 
 - **Adapter:** [`@agentclientprotocol/codex-acp`](https://www.npmjs.com/package/@agentclientprotocol/codex-acp),
-  published by the Agent Client Protocol project, MIT. **Pinned to `1.1.14`** in
+  published by the Agent Client Protocol project, MIT. **Pinned to `1.13.1`** in
   `bridge/src/harness-profiles.js`.
 - **The adapter embeds `@openai/codex`**, so no separate Codex installation is needed on the host —
-  but credentials still come from `codex login` (ChatGPT account) or an `OPENAI_API_KEY` in the
-  bridge process environment.
+  but its optional native binary dependency must be present. Discovery first honors `CODEX_PATH`,
+  then a working `codex` on PATH, then known Codex/ChatGPT desktop bundle paths on Linux/macOS.
+  The discovered binary is passed to the adapter as `CODEX_PATH`. Credentials come from the native
+  cached account or configured provider credentials; signing in to ChatGPT alone does not prove
+  that the Codex runtime has a usable account.
 - **Pinned for the same reason as PI and Claude:** an unpinned `npx -y` default fails live with
   `notarget` when a release outruns its own tarball in the registry.
 
@@ -187,14 +190,14 @@ read from a spec:**
 | Assumption | What breaks if it changes |
 |---|---|
 | `session/list` enumerates every Codex thread on the machine | the session list empties |
-| Rollouts stay at `~/.codex/sessions/<yyyy>/<mm>/<dd>/rollout-<timestamp>-<sessionId>.jsonl` | `createCodexHistoryLoader` finds nothing and every session Codex holds open shows as empty |
+| Rollouts stay at `${CODEX_HOME:-~/.codex}/sessions/<yyyy>/<mm>/<dd>/rollout-<timestamp>-<sessionId>.jsonl` | `createCodexHistoryLoader` finds nothing and every session Codex holds open shows as empty |
 | A rollout records the turns the user saw as `event_msg` records. Current rollouts use `item_completed` with `UserMessage.content[type=text]`, `AgentMessage.content[type=Text]`, and `Reasoning.summary_text`; legacy rollouts use `user_message.message`, `agent_message.message`, and `agent_reasoning.text` | the transcript of an externally-held session goes empty, or starts showing the instruction blocks Codex feeds the model, which `response_item` carries under the `user` role |
 | Model config option ids are bare (`gpt-5.2`), not `provider/model` | covered by the same bare-id handling the Claude Code backend proved; if ids gain a provider prefix they still parse, under that provider name |
 | `reasoning_effort` and `mode` config options are advertised but not exposed | they stay invisible in the app; no crash, just unused surface |
 | `plan` / `plan_update` notifications carry entries addressed as `{content, status, priority}` | todo updates stop rendering |
 | `available_commands_update` exposes slash commands | the app's custom `/commands` picker goes empty |
 | ACP permissions requests are auto-answered with `allow` (`permissionMode: "allow"`) | if the adapter asks and no answer were sent, tool calls would hang; granting is the deliberate policy |
-| `api-key` is advertised before `chat-gpt`. The profile prefers `chat-gpt` so a `codex login` is honoured | the bridge would pick `api-key`, demand `CODEX_API_KEY`/`OPENAI_API_KEY`, and fail at inference; an env-var API key deliberately still works if set |
+| Adapter 1.13.1 checks the cached account on operations; explicitly calling `authenticate` at discovery can refresh tokens and open browser login | Codex disables that startup RPC to reuse the native account. Missing authentication must still fail visibly on operations; `chat-gpt` remains the declared method |
 
 **One writer per thread.** Codex takes a writer lock for as long as a client keeps a thread open —
 `~/.codex/thread-writer-locks/<sessionId>.lock` — and `session/load` answers
@@ -211,6 +214,15 @@ holding the thread.
 
 **Watch:** the embedded `@openai/codex` version (it decides which models and modes exist), the
 rollout record shape, and any new `sessionUpdate` / notification shape.
+
+### OpenCode 2 — native default effort
+
+Observed with OpenCode 2.0.11: both ACP session config and native session export may report
+`default` as the selected effort even when it is absent from selectable model variants. Restoring
+that value as an explicit variant makes the next prompt fail catalog validation after reopening.
+The OpenCode 2 profile declares `modelVariantDefaultValues: ["default"]`; `AcpService` normalizes
+it to the base model in both read paths. Actual variants such as `high` remain explicit, and unknown
+variants are still rejected. Recheck config and export restoration together when this contract changes.
 
 ## App and packaging
 

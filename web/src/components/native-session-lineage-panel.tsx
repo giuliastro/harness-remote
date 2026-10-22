@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react"
 import { api } from "../api"
+import { isMachineTransportFailure as transportFailure } from "../machine-request-error"
 import type { NativeSessionSurfaceTarget } from "../native-session-discovery"
 import { nativeSessionLineage, type NativeSessionLineageEntry } from "../native-session-lineage"
 import type { NativeSessionRouteMachine } from "../native-session-routing"
@@ -14,10 +15,6 @@ type Props = {
 
 function machineConfig(config: ServerConfig): ServerConfig {
   return { ...config, agentId: undefined }
-}
-
-function transportFailure(reason: unknown): boolean {
-  return /cannot reach|timed out|network|connection|failed to fetch/i.test(reason instanceof Error ? reason.message : String(reason))
 }
 
 function formatTime(value: string): string {

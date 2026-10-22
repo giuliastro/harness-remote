@@ -323,3 +323,155 @@ test("reconciliation adopts an ACP task session and keeps an unconfirmable ACP r
     details: { title: "Fix it", prompt: "Fix it" }
   }])
 })
+
+test("cancel refuses an unknown task", async () => {
+  const controller = new TaskRunController({
+    taskStore: { async get() { return null } },
+    taskLauncher: { async abort() {} }
+  })
+  await assert.rejects(() => controller.cancel("missing-task"), /Unknown task: missing-task/)
+})
+
+test("cancel returns unchanged task when not active", async () => {
+  const current = draft({ status: "completed" })
+  let abortCalled = false
+  const controller = new TaskRunController({
+    taskStore: { async get() { return structuredClone(current) } },
+    taskLauncher: { async abort() { abortCalled = true } }
+  })
+  const result = await controller.cancel("task-1")
+  assert.equal(result.status, "completed")
+  assert.equal(abortCalled, false)
+})
+
+test("cancel aborts native run and persists cancelled status", async () => {
+  let current = draft({
+    status: "running",
+    run: { id: "run-1", sessionId: "session-1", agentId: "codex" }
+  })
+  let aborted = false
+  const calls = []
+  const controller = new TaskRunController({
+    taskStore: {
+      async get() { return structuredClone(current) },
+      async setRunState(_id, update) {
+        calls.push(["setRunState", update.status, update.run?.id])
+        current = { ...current, status: update.status, run: { ...current.run, status: update.status } }
+        return structuredClone(current)
+      }
+    },
+    taskLauncher: {
+      async abort(task) {
+        aborted = true
+        calls.push(["abort", task.run.sessionId])
+      }
+    }
+  })
+
+  const result = await controller.cancel("task-1")
+  assert.equal(aborted, true)
+  assert.equal(result.status, "cancelled")
+  assert.deepEqual(calls, [
+    ["abort", "session-1"],
+    ["setRunState", "cancelled", "run-1"]
+  ])
+})
+
+test("cancel does not persist cancelled if launcher abort throws", async () => {
+  let current = draft({
+    status: "running",
+    run: { id: "run-1", sessionId: "session-1", agentId: "codex" }
+  })
+  let setRunStateCalled = false
+  const controller = new TaskRunController({
+    taskStore: {
+      async get() { return structuredClone(current) },
+      async setRunState() { setRunStateCalled = true }
+    },
+    taskLauncher: {
+      async abort() { throw new Error("adapter crashed") }
+    }
+  })
+
+  await assert.rejects(() => controller.cancel("task-1"), /adapter crashed/)
+  assert.equal(setRunStateCalled, false)
+  assert.equal(current.status, "running")
+})
+
+test("cancel refuses a skipped native abort when an active task has a session id", async () => {
+  const current = draft({
+    status: "running",
+    run: { id: "run-1", sessionId: "session-1", agentId: "codex" }
+  })
+  let persisted = false
+  const controller = new TaskRunController({
+    taskStore: {
+      async get() { return structuredClone(current) },
+      async setRunState() { persisted = true }
+    },
+    taskLauncher: { async abort() { return false } }
+  })
+
+  await assert.rejects(() => controller.cancel("task-1"), (error) => error.code === "native_abort_unconfirmed")
+  assert.equal(persisted, false)
+  assert.equal(current.status, "running")
+})
+
+test("cancel active task without sessionId persists cancelled without aborting native session", async () => {
+  let current = draft({
+    status: "starting",
+    run: { id: "run-1", agentId: "codex" }
+  })
+  const calls = []
+  const controller = new TaskRunController({
+    taskStore: {
+      async get() { return structuredClone(current) },
+      async setRunState(_id, update) {
+        calls.push(["setRunState", update.status, update.run?.id])
+        current = { ...current, status: update.status, run: { ...current.run, status: update.status } }
+        return structuredClone(current)
+      }
+    },
+    taskLauncher: {
+      async abort(task) {
+        calls.push(["abort", task.run?.sessionId ?? null])
+        return false
+      }
+    }
+  })
+
+  const result = await controller.cancel("task-1")
+  assert.equal(result.status, "cancelled")
+  assert.deepEqual(calls, [
+    ["abort", null],
+    ["setRunState", "cancelled", "run-1"]
+  ])
+})
+
+test("cancel returns early without overwrite if task completes concurrently during abort", async () => {
+  let current = draft({
+    status: "running",
+    run: { id: "run-1", sessionId: "session-1", agentId: "codex" }
+  })
+  let setRunStateCalled = false
+  const controller = new TaskRunController({
+    taskStore: {
+      async get() { return structuredClone(current) },
+      async setRunState() { setRunStateCalled = true }
+    },
+    taskLauncher: {
+      async abort() {
+        // Concurrent turn completion occurs while abort is in flight
+        current = {
+          ...current,
+          status: "completed",
+          run: { ...current.run, status: "completed", finishedAt: "2026-08-13T18:05:00.000Z" }
+        }
+      }
+    }
+  })
+
+  const result = await controller.cancel("task-1")
+  assert.equal(result.status, "completed")
+  assert.equal(setRunStateCalled, false)
+})

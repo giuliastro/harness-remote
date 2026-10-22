@@ -106,3 +106,38 @@ test("two separate turns with identical user text remain two real prompts", asyn
     .map(textOf)
   assert.deepEqual(userPrompts, ["Same text", "Same text"])
 })
+
+test("a closed session releases its prompt echo so a replayed history message passes through", async () => {
+  const acp = new DuplicatePromptEchoAcp()
+  const filter = new AcpPromptEchoFilter(acp, { tailMs: 10 })
+  const service = new AcpService(filter)
+  const session = await service.createSession({ directory: process.cwd(), title: "Project eviction regression" })
+  const forwarded = []
+  const lifecycle = []
+  filter.on("notification", (event) => forwarded.push(event))
+  filter.on("sessions-closed", (sessionIDs) => lifecycle.push(sessionIDs))
+
+  await service.promptAndWait(session.id, "Continue the task")
+  assert.equal(forwarded.filter((notification) =>
+    notification.params?.update?.sessionUpdate === "user_message_chunk"
+  ).length, 0, "the active prompt echo is filtered")
+
+  acp.emit("sessions-closed", ["session-1"])
+  assert.deepEqual(lifecycle, [["session-1"]], "the lifecycle event is forwarded")
+
+  const historicalReplay = {
+    method: "session/update",
+    params: {
+      sessionId: "session-1",
+      update: {
+        sessionUpdate: "user_message_chunk",
+        messageId: "history-replay-1",
+        content: { type: "text", text: "Continue the task" }
+      }
+    }
+  }
+  acp.emit("notification", historicalReplay)
+
+  assert.ok(forwarded.includes(historicalReplay),
+    "the replayed historical message is no longer mistaken for an echo")
+})

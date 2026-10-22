@@ -7,7 +7,7 @@ const MAX_TIMEOUT_MS = 300_000
 const METHODS = new Set(["GET", "POST", "PATCH", "DELETE"])
 const MAX_PATH_LENGTH = 8192
 const MAX_REQUEST_BODY_BYTES = 2 * 1024 * 1024
-const ROUTE_BACKENDS = new Set<DesktopProfile["backend"]>(["opencode", "omp", "pi", "claude", "codex"])
+const ROUTE_BACKENDS = new Set<DesktopProfile["backend"]>(["opencode", "opencode2", "omp", "pi", "claude", "codex", "copilot", "mimo"])
 const MAX_AGENT_ID_LENGTH = 128
 
 function transportError(code: Exclude<DesktopRequestResult, { ok: true }>["error"]["code"], message: string, status?: number): DesktopRequestResult {

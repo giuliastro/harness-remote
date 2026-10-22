@@ -9,6 +9,7 @@ import {
   type EventStreamStatus
 } from "./opencode-events"
 import { noteSessionIndexLiveEvent, noteSessionIndexStreamConnected } from "./session-index-live-state"
+import { createSharedBrowserEventSubscriptions } from "./shared-browser-event-stream"
 import type { ServerConfig } from "./types"
 
 export type TaskDeskLiveEvent = {
@@ -22,6 +23,7 @@ export type TaskDeskLiveEvent = {
 }
 
 type Subscription = { close(): void }
+const browserStreams = createSharedBrowserEventSubscriptions(createFetchOpenCodeEventSubscription)
 
 function text(value: unknown): string | undefined {
   return typeof value === "string" && value.trim() ? value.trim() : undefined
@@ -146,7 +148,7 @@ export function subscribeTaskDeskLiveEvents({
     })
   }
 
-  return createFetchOpenCodeEventSubscription({
+  return browserStreams.subscribe({
     url: stream.url,
     headers: stream.headers,
     onEvent: (event) => emit(event.name, event.data),

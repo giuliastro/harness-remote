@@ -355,4 +355,25 @@ export class TaskRunController {
     // Only explicit Advanced mode=resume is strict about requiring the old native Session.
     return this.launch(taskID, { ...options, prompt: text, agentId: agentID, reuseSession })
   }
+
+  async cancel(taskID) {
+    await this.#awaitReconciliation()
+    let task = await this.taskStore.get(taskID)
+    if (!task) throw taskLaunchError("unknown_task", `Unknown task: ${taskID}`)
+    if (!["starting", "running"].includes(task.status)) return task
+
+    const sessionID = task.run?.sessionId || task.run?.sessionID
+    const aborted = await this.taskLauncher.abort(task)
+    task = await this.taskStore.get(taskID) ?? task
+    if (!["starting", "running"].includes(task.status)) return task
+    if (sessionID && aborted === false) {
+      throw taskLaunchError("native_abort_unconfirmed", "Cannot cancel task: native session abort was not confirmed")
+    }
+
+    return this.taskStore.setRunState(taskID, {
+      status: "cancelled",
+      run: task.run,
+      expectedRunId: task.run?.id
+    })
+  }
 }

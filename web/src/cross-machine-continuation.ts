@@ -146,7 +146,7 @@ function machineConfig(config: ServerConfig): ServerConfig {
 }
 
 function supportedBackend(value: string | undefined, fallback: BackendKind): BackendKind {
-  return value === "opencode" || value === "omp" || value === "pi" || value === "claude" || value === "codex"
+  return value === "opencode" || value === "opencode2" || value === "omp" || value === "pi" || value === "claude" || value === "codex" || value === "copilot" || value === "mimo"
     ? value
     : fallback
 }

@@ -8,14 +8,20 @@ assert.equal(normalizeLanguage('zh-CN'), 'zh-CN')
 assert.equal(normalizeLanguage('zh-Hans'), 'zh-CN')
 assert.equal(normalizeLanguage('zh'), 'zh-CN')
 assert.equal(normalizeLanguage('zh-HK'), 'zh-TW')
+assert.equal(normalizeLanguage('pt'), 'pt-BR')
+assert.equal(normalizeLanguage('pt-BR'), 'pt-BR')
+assert.equal(normalizeLanguage('pt_BR'), 'pt-BR')
+assert.equal(normalizeLanguage('pt-PT'), 'pt-BR')
 assert.equal(normalizeLanguage('fr'), 'en')
 assert.ok(languageOptions.some((language) => language.code === 'zh-TW'))
 assert.ok(languageOptions.some((language) => language.code === 'zh-CN'))
+assert.ok(languageOptions.some((language) => language.code === 'pt-BR'))
 
 const en = createTranslator('en')
 const it = createTranslator('it')
 const zh = createTranslator('zh-TW')
 const zhCN = createTranslator('zh-CN')
+const ptBR = createTranslator('pt-BR')
 
 assert.equal(en('sessions.title'), 'Sessions')
 assert.equal(it('sessions.title'), 'Sessioni')
@@ -42,10 +48,11 @@ const languageMarkers = [
   ['en', '  en: {'],
   ['it', '  it: {'],
   ['zh-TW', "  'zh-TW': {"],
-  ['zh-CN', "  'zh-CN': {"]
+  ['zh-CN', "  'zh-CN': {"],
+  ['pt-BR', "  'pt-BR': {"]
 ]
 const languageStarts = Object.fromEntries(languageMarkers.map(([code, marker]) => [code, source.indexOf(marker)]))
-const languageEnd = source.indexOf('\n  }\n}\n\nexport const languageOptions', languageStarts['zh-CN']) + 4
+const languageEnd = source.indexOf('\n  }\n}\n\nexport const languageOptions', languageStarts['pt-BR']) + 4
 const keysFor = (code, nextCode) => {
   const start = languageStarts[code]
   const end = nextCode ? languageStarts[nextCode] : languageEnd
@@ -54,7 +61,7 @@ const keysFor = (code, nextCode) => {
     .filter((key) => !languageMarkers.some(([language]) => language === key))
 }
 const englishKeys = keysFor('en', 'it')
-for (const [code, nextCode] of [['it', 'zh-TW'], ['zh-TW', 'zh-CN'], ['zh-CN', null]]) {
+for (const [code, nextCode] of [['it', 'zh-TW'], ['zh-TW', 'zh-CN'], ['zh-CN', 'pt-BR'], ['pt-BR', null]]) {
   const translated = new Set(keysFor(code, nextCode))
   const missing = englishKeys.filter((key) => !translated.has(key))
   assert.deepEqual(missing, [], `${code} must translate every English i18n key`)
@@ -69,7 +76,12 @@ assert.equal(zhCN('detail.attachImage'), '附加图片')
 
 // Unknown keys should remain visible during development instead of rendering blank UI.
 assert.equal(en('missing.key'), 'missing.key')
-assert.equal(en('detail.opencode'), '🤖 OpenCode')
+assert.equal(en('detail.opencode'), '🤖 OpenCode Legacy')
+assert.equal(en('detail.opencode2'), '🤖 OpenCode 2')
+assert.equal(en('detail.copilot'), '🤖 GitHub Copilot CLI')
+assert.equal(en('detail.mimo'), '🤖 MiMo Code')
+assert.equal(it('connect.harness.copilot'), 'Connessione a GitHub Copilot CLI tramite bridge ACP.')
+assert.equal(zh('connect.harness.mimo'), '透過 ACP bridge 連線到 MiMo Code。')
 assert.equal(it('detail.changedFilesTitle'), 'File modificati')
 assert.equal(zh('detail.changedFilesTitle'), '已變更檔案')
 assert.equal(en('detail.linesAddedDeleted', { additions: 3, deletions: 1 }), '+3 lines · -1 lines')
@@ -88,6 +100,9 @@ assert.equal(en('action.preparingTool', { tool: 'write' }), 'Preparing write')
 assert.equal(it('action.preparingTool', { tool: 'write' }), 'Preparazione di write')
 assert.equal(zh('action.preparingTool', { tool: 'write' }), '正在準備 write')
 assert.equal(zhCN('sessions.title'), '会话')
+assert.equal(ptBR('sessions.title'), 'Sessões')
+assert.equal(ptBR('sf.scanAnotherMachine'), 'Escanear outra máquina')
+assert.equal(ptBR('action.preparingTool', { tool: 'write' }), 'Preparando write')
 assert.equal(zhCN('session.deleteTitle'), '删除会话？')
 assert.equal(zhCN('detail.changedFilesTitle'), '已更改文件')
 assert.equal(zhCN('settings.themeSystem'), '跟随系统')

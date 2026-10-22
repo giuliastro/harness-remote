@@ -355,7 +355,6 @@ export function NativeSessionHome(props: Props) {
       || left.item.sessionID.localeCompare(right.item.sessionID)
     ), [scopes])
 
-  const counts = useMemo(() => attentionInboxCounts(inbox.map((entry) => entry.item)), [inbox])
   const inboxSessionKeys = useMemo<ReadonlySet<string>>(() => new Set(
     inbox.map((entry) => sessionKey(entry.target, entry.item.sessionID))
   ), [inbox])
@@ -363,25 +362,14 @@ export function NativeSessionHome(props: Props) {
     () => mergedAttentionSessionCount(baseAttentionKeys, inboxSessionKeys),
     [baseAttentionKeys, inboxSessionKeys]
   )
-  const incomplete = Object.values(scopes).some((scope) => !scope.index.complete)
-
   useEffect(() => {
     props.onAttentionCountChange?.(totalAttentionCount)
   }, [props.onAttentionCountChange, totalAttentionCount])
 
-  return (
+  const attentionInbox = (
     <>
-      {inbox.length || incomplete ? (
-        <section className="hr-native-attention-inbox" aria-label="Attention Inbox" aria-live="polite">
-          <div className="hr-native-attention-heading">
-            <span className="hr-native-attention-title"><strong>Attention</strong><small>{counts.total} pending</small></span>
-            <span className="hr-native-attention-counts" aria-label="Attention summary">
-              {counts.authorization ? <small className="authorization" title="Authorization required">{counts.authorization} auth</small> : null}
-              {counts.recoverable ? <small className="recoverable" title="Needs input or recoverable attention">{counts.recoverable} input</small> : null}
-              {counts.rejected ? <small className="rejected" title="Rejected or fail-closed">{counts.rejected} rejected</small> : null}
-              {incomplete ? <em title="One or more attention endpoints could not be refreshed.">Some status may be stale</em> : null}
-            </span>
-          </div>
+      {inbox.length || openError ? (
+        <section className="hr-native-attention-inbox" aria-label="Session attention" aria-live="polite">
           {inbox.length ? (
             <div className="hr-native-attention-list">
               {inbox.map((entry) => {
@@ -418,13 +406,16 @@ export function NativeSessionHome(props: Props) {
           {openError ? <div className="hr-native-attention-error" role="alert">{openError}</div> : null}
         </section>
       ) : null}
-      <NativeSessionHomeBase
-        {...props}
-        attentionSessionKeys={inboxSessionKeys}
-        onAttentionCountChange={() => {}}
-        onAttentionKeysChange={setBaseAttentionKeys}
-        onOpen={rememberAndOpen}
-      />
     </>
+  )
+  return (
+    <NativeSessionHomeBase
+      {...props}
+      attentionInbox={attentionInbox}
+      attentionSessionKeys={inboxSessionKeys}
+      onAttentionCountChange={() => {}}
+      onAttentionKeysChange={setBaseAttentionKeys}
+      onOpen={rememberAndOpen}
+    />
   )
 }

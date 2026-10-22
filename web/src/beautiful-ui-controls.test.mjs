@@ -9,7 +9,9 @@ const read = (name) => readFileSync(path.join(here, name), "utf8").replace(/\r\n
 
 const css = read("beautiful-ui-controls.css")
 const cssRules = css.replace(/\/\*[\s\S]*?\*\//g, "")
-const renderer = read("components/taskdesk-message-content.tsx")
+const timeline = read("components/activity-timeline.tsx")
+const model = read("activity-model.ts")
+const activityCss = read("activity-timeline.css")
 const attention = read("components/work-thread-attention.tsx")
 const main = read("main.tsx")
 
@@ -39,49 +41,37 @@ test("every animation is unwound for prefers-reduced-motion", () => {
   for (const match of cssRules.matchAll(/animation: (bui-[a-z-]+)/g)) {
     assert.ok(guard.includes(match[1]) || guard.includes("animation: none"), `${match[1]} is not unwound`)
   }
-  // The sweep paints the title with a transparent text-fill. Switching the animation off without
-  // restoring the fill would leave an invisible header, which is worse than the motion.
-  assert.match(guard, /-webkit-text-fill-color: currentcolor/)
 })
 
 test("a tool call reports its kind, its cost and a readable outcome", () => {
-  assert.match(renderer, /function toolKind\(tool: string \| undefined\): ToolKind/)
-  assert.match(renderer, /bui-tool bui-tool-\$\{kind\}/)
-  assert.match(renderer, /const duration = formatDuration\(state\?\.time\)/)
+  assert.match(model, /export function toolKind\(part: MessagePart\): ToolKind/)
+  assert.match(timeline, /kind-\$\{description\.kind\}/)
+  assert.match(timeline, /const duration = formatSpan\(spanMs\(\[part\]\)\)/)
   // The protocol words used to reach the screen unchanged: "completed", "error", "running".
-  assert.match(renderer, /function toolStatusLabel\(status: string\): string/)
-  assert.doesNotMatch(renderer, /"no result" : status/)
+  assert.match(timeline, /t\("act\.status\.failed"\)/)
+  assert.match(timeline, /t\("act\.status\.incomplete"\)/)
+  assert.doesNotMatch(timeline, /"no result" : status/)
 
   // Every kind the component can produce needs a glyph, and the two that mutate state are the only
   // ones the stylesheet accents - colour stays reserved for status.
-  const kinds = [...renderer.matchAll(/^  (read|edit|run|search|web|task|tool):/gm)].map((m) => m[1])
-  assert.ok(kinds.length >= 7, `only ${kinds.length} tool kinds are declared`)
+  const kinds = ["read", "edit", "run", "search", "web", "task", "todo", "tool"]
   // Real SVG components, not unicode characters: a borrowed glyph inherits text metrics and renders
   // as a different shape per platform - on Android, as a box.
-  for (const kind of kinds) assert.match(renderer, new RegExp(`${kind}: [A-Z][A-Za-z]*Icon`), `${kind} has no icon`)
-  assert.match(renderer, /function ToolStatusIcon\(\{ status \}: \{ status: string \}\)/)
-  assert.doesNotMatch(renderer, /TOOL_KIND_GLYPH/)
-  assert.match(cssRules, /\.bui-tool-edit > summary \.bui-tool-kind,\n\.bui-tool-run > summary \.bui-tool-kind/)
+  for (const kind of kinds) assert.match(timeline, new RegExp(`${kind}: [A-Z][A-Za-z]*Icon`), `${kind} has no icon`)
+  assert.match(timeline, /function StatusGlyph\(\{ status \}: \{ status: string \}\)/)
+  assert.doesNotMatch(timeline, /TOOL_KIND_GLYPH/)
+  assert.match(activityCss, /\.hr-act-tool\.kind-edit \.hr-act-kind,\n\.hr-act-tool\.kind-run \.hr-act-kind/)
 })
 
 test("a sub-second call and a missing timestamp show no clock at all", () => {
   // A "0.4s" on every row is noise, and a harness that reports seconds where the type says
   // milliseconds would otherwise render a duration measured in decades.
-  assert.match(renderer, /if \(!Number\.isFinite\(ms\) \|\| ms < 1_000 \|\| ms > 86_400_000\) return ""/)
-  assert.match(renderer, /if \(seconds < 2 \|\| seconds > 86_400\) return ""/)
+  assert.match(model, /if \(ms === undefined \|\| !Number\.isFinite\(ms\) \|\| ms < 1_000\) return ""/)
+  assert.match(model, /return ms >= 0 && ms <= 86_400_000 \? ms : undefined/)
+  assert.match(timeline, /return ms > 86_400_000 \? "" : formatSpan\(Math\.max\(0, ms\) < 2_000 \? undefined : ms\)/)
   // The clock is fed by the harness's own part timestamps, not by when this component mounted.
-  assert.match(renderer, /function activityStartedAt\(group: ActivityGroupValue\)/)
-  assert.match(renderer, /part\.state\?\.time\?\.start \?\? part\.time\?\.start/)
-})
-
-test("the summary keeps the column count its grids are laid out by", () => {
-  // universal-workspace.css and taskdesk-conversation.css both size these summaries with an explicit
-  // grid-template-columns. Duration and status therefore share one cell; a fifth child would drop
-  // the status under the command at exactly the widths phones use.
-  assert.match(renderer, /<span className="bui-tool-meta">/)
-  const meta = renderer.match(/<span className="bui-tool-meta">[\s\S]*?<\/span>\n\s*<\/span>/g) || []
-  assert.equal(meta.length, 2, "both the tool card and the activity header wrap their meta cell")
-  assert.match(cssRules, /\.bui-tool-meta,\n\.bui-activity > summary \.bui-tool-meta \{/)
+  assert.match(model, /export function startedAt\(parts: MessagePart\[\]\)/)
+  assert.match(model, /part\.type === "tool" \? part\.state\?\.time \?\? \{\} : part\.time \?\? \{\}/)
 })
 
 test("the approval card stays actionable with a thumb", () => {
@@ -116,7 +106,7 @@ test("aria semantics survive the restyle", () => {
   assert.match(attention, /aria-live="polite"/)
   assert.match(attention, /aria-pressed=\{selected\.includes\(option\.label\)\}/)
   assert.match(attention, /<i className="bui-approval-dot" aria-hidden="true" \/>/)
-  assert.match(renderer, /<span className="bui-tool-kind" aria-hidden="true">/)
+  assert.match(timeline, /<span className="hr-act-kind" aria-hidden="true">/)
 })
 
 test("the dev preview loads exactly the stylesheets the app loads", () => {

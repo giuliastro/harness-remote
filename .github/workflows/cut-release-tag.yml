@@ -45,7 +45,9 @@ jobs:
             git config user.name "github-actions[bot]"
             git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
             git log -1 --format=%B "$GITHUB_SHA" > "$RUNNER_TEMP/release-tag-message.txt"
-            git tag -a "$TAG" -F "$RUNNER_TEMP/release-tag-message.txt" "$GITHUB_SHA"
+            # Verbatim: the default cleanup drops every line starting with '#', which is every Markdown
+            # heading in the release notes (v3.3.0 was published without its section titles).
+            git tag -a "$TAG" -F "$RUNNER_TEMP/release-tag-message.txt" --cleanup=verbatim "$GITHUB_SHA"
             git push origin "refs/tags/$TAG"
           fi
 

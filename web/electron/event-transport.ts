@@ -18,7 +18,7 @@ const MAX_RECONNECT_MS = 30_000
 const STALL_TIMEOUT_MS = 30_000
 const MAX_DIRECTORY_LENGTH = 4096
 const MAX_AGENT_ID_LENGTH = 128
-const EVENT_BACKENDS = new Set<DesktopProfile["backend"]>(["opencode", "omp", "pi", "claude", "codex"])
+const EVENT_BACKENDS = new Set<DesktopProfile["backend"]>(["opencode", "opencode2", "omp", "pi", "claude", "codex", "copilot", "mimo"])
 
 type ChannelNames = typeof IPC_CHANNELS
 

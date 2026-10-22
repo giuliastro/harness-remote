@@ -304,6 +304,8 @@ try {
   await send.click()
   await page.getByText(REPLY, { exact: true }).waitFor({ state: "visible", timeout: 12_000 })
   await outcomePanel.getByText(/Needs authorization · feature\/outcome-review · Dirty · 2 changed files/).waitFor({ state: "visible", timeout: 12_000 })
+  // On a wide pane the detail is a popover, and clicking Send outside it closed it.
+  if (await outcomePanel.getByRole("button").getAttribute("aria-expanded") !== "true") await outcomePanel.getByRole("button").click()
   await outcomePanel.getByText("src/after.ts", { exact: true }).waitFor({ state: "visible" })
   await outcomePanel.getByText(/1 target-side authorization request is pending/i).waitFor({ state: "visible" })
 

@@ -6,6 +6,7 @@ import {
   LIVE_SESSION_STATUS_GRACE_MS,
   clearSessionIndexLiveError,
   clearSessionIndexLiveState,
+  clearSessionIndexLiveStatuses,
   liveSessionIndexError,
   liveSessionIndexStatus,
   noteSessionIndexLiveEvent,
@@ -267,4 +268,25 @@ test("durable controller transitions can retire stale event authority explicitly
   assert.equal(liveSessionIndexError(base, sessionID), undefined)
   assert.equal(liveSessionIndexStatus(base, sessionID), undefined)
   assert.equal(sessionIndexInvalidationRevision(), beforeSettlement + 1, "durable terminal reconciliation must retire both status and error bridges")
+})
+
+test("a foregrounded surface drops every transient status without retiring a terminal error", () => {
+  const foreground = { ...base, agentId: "foreground" }
+  noteSessionIndexLiveEvent(foreground, { type: "session.status", sessionID: "ses_resume_busy", status: "busy" })
+  noteSessionIndexLiveEvent(foreground, { type: "session.error", sessionID: "ses_resume_error", errorMessage: "terminal failure" })
+  assert.deepEqual(liveSessionIndexStatus(foreground, "ses_resume_busy"), { type: "busy" })
+
+  const before = sessionIndexInvalidationRevision()
+  clearSessionIndexLiveStatuses()
+  assert.equal(
+    liveSessionIndexStatus(foreground, "ses_resume_busy"),
+    undefined,
+    "resume must drop the stale busy bridge so the fresh Session index speaks for native truth"
+  )
+  assert.equal(
+    liveSessionIndexError(foreground, "ses_resume_error"),
+    "terminal failure",
+    "a terminal error must survive a resume until durable transcript truth catches up"
+  )
+  assert.equal(sessionIndexInvalidationRevision(), before + 1, "dropping resume statuses must invalidate the rail once")
 })
