@@ -45,7 +45,9 @@ async function withTemp(prefix, run) {
   try {
     return await run(directory)
   } finally {
-    await rm(directory, { recursive: true, force: true })
+    // A Session snapshot can still be landing just after the server closed; on Windows that makes
+    // the recursive delete fail with ENOTEMPTY or EBUSY, so retry rather than fail the test.
+    await rm(directory, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 })
   }
 }
 
