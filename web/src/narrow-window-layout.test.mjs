@@ -37,9 +37,9 @@ test("on a narrow window the machine actions move to a footer below the details"
   assert.match(machineCss, /@media \(max-width: 780px\)[\s\S]*grid-template-areas: "details" "actions" !important/)
   assert.match(machineCss, /\.uw-machine-config-actions \{[^}]*border-top: 1px solid var\(--td3-border\)/)
   assert.match(machineCss, /\.uw-machine-folder-summary \{[^}]*border-top: 1px solid var\(--td3-border\)/)
-  // The phone sheet that put the actions first is overridden only because this one loads later.
-  assert.ok(importIndex("machine-card-layout.css") > importIndex("v3-mobile-workspace-switcher-polish.css"))
-  assert.ok(importIndex("machine-card-layout.css") > importIndex("v3-mobile-product-parity.css"))
+  // The phone rules that put the actions first (now folded into v3-mobile.css) are overridden only
+  // because this sheet loads later.
+  assert.ok(importIndex("machine-card-layout.css") > importIndex("v3-mobile.css"))
 })
 
 test("the narrow Session header puts the back arrow and title on one row with a secondary line", () => {
