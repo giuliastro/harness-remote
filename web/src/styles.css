@@ -773,3 +773,16 @@ summary,
 .palette-list {
   overscroll-behavior: contain;
 }
+
+/* The command palette is portalled to <body> so it sits above every page (Machines, Settings and
+   their modals), whichever screen opened it. */
+body > .palette-backdrop {
+  z-index: 1300;
+}
+
+/* Arrow/Enter/Esc hints mean nothing without a keyboard. */
+@media (pointer: coarse) {
+  .palette-footer {
+    display: none;
+  }
+}

@@ -238,6 +238,13 @@ type TranslationKey =
   | 'command.focusComposer'
   | 'command.stopAgent'
   | 'command.commandPalette'
+  | 'palette.placeholder'
+  | 'palette.empty'
+  | 'palette.navigate'
+  | 'palette.run'
+  | 'palette.close'
+  | 'palette.groupWorkspace'
+  | 'palette.groupSessions'
   | 'command.searchSessions'
   | 'command.toggleInspector'
   | 'command.openHelp'
@@ -939,6 +946,13 @@ const translations: Record<LanguageCode, Partial<Record<TranslationKey, string>>
     'command.focusComposer': 'Focus prompt',
     'command.stopAgent': 'Stop agent',
     'command.commandPalette': 'Commands',
+    'palette.placeholder': 'Type a command…',
+    'palette.empty': 'No matching commands',
+    'palette.navigate': 'navigate',
+    'palette.run': 'run',
+    'palette.close': 'close',
+    'palette.groupWorkspace': 'Workspace',
+    'palette.groupSessions': 'Sessions',
     'command.searchSessions': 'Search sessions',
     'command.toggleInspector': 'Toggle inspector',
     'command.openHelp': 'Open help',
@@ -1573,6 +1587,13 @@ const translations: Record<LanguageCode, Partial<Record<TranslationKey, string>>
     'command.focusComposer': 'Vai al prompt',
     'command.stopAgent': 'Interrompi agente',
     'command.commandPalette': 'Comandi',
+    'palette.placeholder': 'Digita un comando…',
+    'palette.empty': 'Nessun comando corrispondente',
+    'palette.navigate': 'naviga',
+    'palette.run': 'esegui',
+    'palette.close': 'chiudi',
+    'palette.groupWorkspace': 'Area di lavoro',
+    'palette.groupSessions': 'Sessioni',
     'command.searchSessions': 'Cerca sessioni',
     'command.toggleInspector': 'Mostra o nascondi inspector',
     'command.openHelp': 'Apri aiuto',
@@ -2140,6 +2161,13 @@ const translations: Record<LanguageCode, Partial<Record<TranslationKey, string>>
     'command.focusComposer': '聚焦提示輸入框',
     'command.stopAgent': '停止代理',
     'command.commandPalette': '命令',
+    'palette.placeholder': '輸入指令…',
+    'palette.empty': '沒有符合的指令',
+    'palette.navigate': '瀏覽',
+    'palette.run': '執行',
+    'palette.close': '關閉',
+    'palette.groupWorkspace': '工作區',
+    'palette.groupSessions': '工作階段',
     'command.searchSessions': '搜尋工作階段',
     'command.toggleInspector': '切換檢查器',
     'command.openHelp': '開啟說明',
@@ -2774,6 +2802,13 @@ const translations: Record<LanguageCode, Partial<Record<TranslationKey, string>>
     'command.focusComposer': '聚焦输入框',
     'command.stopAgent': '停止代理',
     'command.commandPalette': '命令',
+    'palette.placeholder': '输入命令…',
+    'palette.empty': '没有匹配的命令',
+    'palette.navigate': '浏览',
+    'palette.run': '运行',
+    'palette.close': '关闭',
+    'palette.groupWorkspace': '工作区',
+    'palette.groupSessions': '会话',
     'command.searchSessions': '搜索会话',
     'command.toggleInspector': '切换检查器',
     'command.openHelp': '打开帮助',

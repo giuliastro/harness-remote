@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react"
+import { createPortal } from "react-dom"
 import { App as CapacitorApp } from "@capacitor/app"
 import { api } from "../api"
 import {
@@ -1167,28 +1168,28 @@ function NativeSessionsWorkspace({
   const paletteCommands = useMemo<PaletteCommand[]>(() => [
     {
       id: "machines",
-      group: "Workspace",
+      group: t("palette.groupWorkspace"),
       label: t("sf.machines"),
       keywords: "server machine hosts",
       run: onManageMachines
     },
     {
       id: "settings",
-      group: "Workspace",
+      group: t("palette.groupWorkspace"),
       label: t("nav.settings"),
       keywords: "preferences appearance language",
       run: onManageSettings
     },
     {
       id: "refresh",
-      group: "Sessions",
+      group: t("palette.groupSessions"),
       label: t("sf.refresh"),
       keywords: "reload refresh sessions",
       run: requestRefresh
     },
     ...(selected ? [{
       id: "back-to-sessions",
-      group: "Sessions",
+      group: t("palette.groupSessions"),
       label: t("sf.backToSessions"),
       keywords: "close current session list",
       run: () => setMobileDetailOpen(false)
@@ -1210,7 +1211,7 @@ function NativeSessionsWorkspace({
             {t("sf.machineCount", { online: onlineCount, total: machines.length })}
           </span>
           <button type="button" className="tdw-button secondary tdw-machines-button" onClick={onManageMachines}><ServerIcon size={15} /> {t("sf.machines")}</button>
-          <button type="button" className="palette-hint" onClick={() => setPaletteOpen(true)} title="Command palette"><span>⌘K</span></button>
+          <button type="button" className="palette-hint" onClick={() => setPaletteOpen(true)} title={t("command.commandPalette")} aria-label={t("command.commandPalette")}><span>⌘K</span></button>
           {selected ? (
             <button
               type="button"
@@ -1420,16 +1421,19 @@ function NativeSessionsWorkspace({
           )}
         </main>
       </div>
-      {paletteOpen ? (
+      {/* Portalled to <body>: inside the workspace's stacking context the Machines and Settings pages
+          (z-index 200+) covered the palette, so it opened invisibly from those screens. */}
+      {paletteOpen ? createPortal(
         <CommandPalette
           commands={paletteCommands}
-          placeholder="Type a command…"
-          emptyLabel="No matching commands"
-          navigateHint="navigate"
-          runHint="run"
-          closeHint="close"
+          placeholder={t("palette.placeholder")}
+          emptyLabel={t("palette.empty")}
+          navigateHint={t("palette.navigate")}
+          runHint={t("palette.run")}
+          closeHint={t("palette.close")}
           onClose={() => setPaletteOpen(false)}
-        />
+        />,
+        document.body
       ) : null}
     </section>
   )
