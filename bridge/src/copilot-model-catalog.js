@@ -83,6 +83,9 @@ export class CopilotSdkClient extends EventEmitter {
       this.#stderr = `${this.#stderr}${Buffer.isBuffer(chunk) ? chunk.toString("utf8") : String(chunk)}`.slice(-STDERR_KEPT_CHARS)
     })
     child.on("error", (error) => this.#handleExit(new Error(`Copilot CLI process failed: ${errorMessage(error)}`)))
+    // Same as AcpClient: a CLI that starts and exits at once turns the next stdin write into EPIPE,
+    // which must not reach the process as an uncaught stream error.
+    child.stdin?.on?.("error", () => {})
     child.on("exit", (code, signal) => {
       this.#handleExit(new Error(`Copilot CLI exited (${code ?? "unknown"}${signal ? `, ${signal}` : ""})`))
     })
