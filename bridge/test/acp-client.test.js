@@ -451,3 +451,29 @@ test("Codex discovers native sessions without triggering interactive authenticat
     assert.equal(sent.includes("authenticate"), false)
   } finally { await client.close() }
 })
+
+test("an adapter whose stdin fails with EPIPE rejects the request without crashing the daemon", async () => {
+  // A configured harness whose CLI is not installed exits at once: writing the handshake to its
+  // stdin fails with EPIPE, and the stream also emits "error". Unhandled, that error crashed the
+  // whole bridge process (systemd then restarted it, and phones saw the machine go offline).
+  const client = new AcpClient({
+    spawnProcess: () => {
+      const child = new FakeChild(() => {})
+      const stdin = new EventEmitter()
+      stdin.writable = true
+      stdin.write = (_line, callback) => {
+        setImmediate(() => {
+          const error = Object.assign(new Error("write EPIPE"), { code: "EPIPE" })
+          callback?.(error)
+          stdin.emit("error", error)
+          child.emit("exit", 127, null)
+        })
+        return false
+      }
+      child.stdin = stdin
+      return child
+    }
+  })
+  await assert.rejects(client.start(), /EPIPE|exited/)
+  client.close()
+})

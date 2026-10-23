@@ -173,6 +173,10 @@ export class AcpClient extends EventEmitter {
       this.#stderrPartial = pending.pop() ?? ""
       for (const line of pending) this.emit("stderr", line)
     })
+    // Writing to an adapter that has already exited (a CLI that is not installed exits at once)
+    // fails with EPIPE on its stdin. The write callback rejects that request and the exit handler
+    // reports the adapter; without a listener the stream error would crash the whole daemon.
+    child.stdin?.on?.("error", () => {})
     child.on("error", (error) => this.#handleExit(error, child))
     child.on("exit", (code, signal) => {
       if (this.#child !== child) return
