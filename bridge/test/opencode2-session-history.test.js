@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { EventEmitter } from 'node:events'
 import { spawnSync } from 'node:child_process'
 import test from 'node:test'
-import { mkdtemp, rm } from 'node:fs/promises'
+import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { createOpenCode2HistoryLoader } from '../src/opencode2-session-history.js'
@@ -169,4 +169,39 @@ test('reads of different Sessions export independently', async () => {
   })
   await Promise.all([loader('ses_one'), loader('ses_two')])
   assert.deepEqual(started.sort(), ['ses_one', 'ses_two'])
+})
+
+test('a structured tool failure is normalized to the message the transcript renders', async () => {
+  const failed = structuredClone(exported)
+  failed.messages[2].content.push({
+    type: 'tool', id: 'edit-call', name: 'edit',
+    state: {
+      status: 'error',
+      input: { filePath: 'bridge/src/harness-profiles.js', oldString: 'missing', newString: 'x' },
+      error: { type: 'tool.execution', message: 'Could not find oldString in bridge/src/harness-profiles.js.' }
+    },
+    time: { created: 3, completed: 4 }
+  })
+  const loader = createOpenCode2HistoryLoader({ runExport: async () => failed })
+  const page = await loader.page('ses_test')
+  const toolPart = page.messages[1].parts.at(-1)
+  assert.equal(toolPart.tool, 'edit')
+  assert.equal(toolPart.state.status, 'error')
+  assert.equal(toolPart.state.error, 'Could not find oldString in bridge/src/harness-profiles.js.')
+  assert.equal(typeof toolPart.state.error, 'string')
+})
+
+test('reads a large export completely from the child process', async () => {
+  const directory = await mkdtemp(path.join(tmpdir(), 'opencode2-large-export-'))
+  try {
+    const script = path.join(directory, 'exporter.mjs')
+    const text = 'x'.repeat(2 * 1024 * 1024)
+    await writeFile(script, `process.stdout.write(JSON.stringify({ info: { id: process.argv[5] }, messages: [{ id: 'u1', type: 'user', text: ${JSON.stringify(text)}, files: [] }] }))\n`)
+    const loader = createOpenCode2HistoryLoader({ command: process.execPath, args: [script, 'acp'] })
+    const messages = await loader('ses_large')
+    assert.equal(messages.length, 1)
+    assert.equal(messages[0].parts[0].text.length, text.length)
+  } finally {
+    await rm(directory, { recursive: true, force: true })
+  }
 })

@@ -121,8 +121,36 @@ function inputString(input: Record<string, unknown>, keys: string[]): string {
   return ""
 }
 
-function firstLine(value: string): string {
-  const line = value.split(/\r?\n/).find((candidate) => candidate.trim()) ?? ""
+/**
+ * Harnesses do not agree on the shape of a failure: a sentence, an `Error`, an argv array, or a
+ * provider envelope such as `{ type: "tool.execution", message: "..." }`. Presentation needs one
+ * string, and assuming it was already a string is what called `.split()` on an object and let a
+ * single failed tool call take the whole app down through the global error boundary.
+ */
+export function textValue(value: unknown): string {
+  if (typeof value === "string") return value
+  if (value === null || value === undefined) return ""
+  if (value instanceof Error) return value.message
+  if (Array.isArray(value)) return value.map(textValue).filter(Boolean).join("\n")
+  if (typeof value === "object") {
+    const record = value as {
+      message?: unknown
+      data?: { message?: unknown }
+      type?: unknown
+      name?: unknown
+    }
+    const nested = textValue(record.message)
+      || textValue(record.data?.message)
+      || textValue(record.type)
+      || textValue(record.name)
+    if (nested) return nested
+    try { return JSON.stringify(value) } catch { return String(value) }
+  }
+  return String(value)
+}
+
+function firstLine(value: unknown): string {
+  const line = textValue(value).split(/\r?\n/).find((candidate) => candidate.trim()) ?? ""
   return line.trim()
 }
 

@@ -1,7 +1,7 @@
 import { memo, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react"
 import {
   buildActivityTimeline, currentStep, describeTool, formatSpan, isThoughtRunning, latestNote, spanMs, startedAt,
-  summarizeActivity, toolKind, toolStatus, type ActivityItem, type ToolKind
+  summarizeActivity, textValue, toolKind, toolStatus, type ActivityItem, type ToolKind
 } from "../activity-model"
 import type { ActivityPreferences } from "../activity-preferences"
 import type { ConversationPartGroup } from "../conversation-parts"
@@ -53,8 +53,8 @@ function toolVerb(t: Translator, kind: ToolKind, live: boolean, name: string): s
   return t(`act.verb.${kind}.${live ? "live" : "done"}`)
 }
 
-function firstLine(value: string): string {
-  return (value.split(/\r?\n/).find((line) => line.trim()) ?? "").trim()
+function firstLine(value: unknown): string {
+  return (textValue(value).split(/\r?\n/).find((line) => line.trim()) ?? "").trim()
 }
 
 function useElapsed(since: number | undefined, running: boolean): string {
@@ -140,12 +140,13 @@ function ToolRow({ part, command }: { part: MessagePart; command: DetailCommand 
   useDetailCommand(command, setOpen)
 
   const input = (state?.input && typeof state.input === "object" ? state.input : {}) as Record<string, unknown>
-  const output = state?.error || state?.output || ""
+  const error = textValue(state?.error)
+  const output = error || textValue(state?.output)
   const todos = description.kind === "todo" ? parseTodos(input.todos) : null
   const showInput = !description.command && !description.edit && !todos
     && ["tool", "task", "web", "search"].includes(description.kind) && Object.keys(input).length > 0
   const hasBody = Boolean(output || todos || description.command || description.edit || showInput)
-  const errorLine = status === "error" ? firstLine(state?.error || output) : ""
+  const errorLine = status === "error" ? firstLine(output) : ""
   const duration = formatSpan(spanMs([part]))
   const KindIcon = KIND_ICON[description.kind]
   const label = description.titleOnly

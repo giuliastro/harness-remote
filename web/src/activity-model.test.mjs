@@ -1,7 +1,8 @@
 import assert from "node:assert/strict"
+import { readFileSync } from "node:fs"
 import test from "node:test"
 import {
-  buildActivityTimeline, currentStep, describeTool, formatSpan, latestNote, summarizeActivity, toolKind
+  buildActivityTimeline, currentStep, describeTool, formatSpan, latestNote, summarizeActivity, textValue, toolKind
 } from "./activity-model.ts"
 
 const tool = (id, extra) => ({ id, type: "tool", ...extra })
@@ -96,4 +97,25 @@ test("durations stay quiet below a second", () => {
   assert.equal(formatSpan(42_000), "42s")
   assert.equal(formatSpan(134_000), "2m 14s")
   assert.equal(formatSpan(120_000), "2m")
+})
+
+test("a structured harness failure becomes its message instead of reaching a string method", () => {
+  // OpenCode 2 exports a failed edit as `{ type: "tool.execution", message: "..." }`.
+  assert.equal(
+    textValue({ type: "tool.execution", message: "Could not find oldString in bridge/src/harness-profiles.js." }),
+    "Could not find oldString in bridge/src/harness-profiles.js."
+  )
+  assert.equal(textValue({ data: { message: "nested provider detail" } }), "nested provider detail")
+  assert.equal(textValue([{ message: "first" }, "second"]), "first\nsecond")
+  assert.equal(textValue(new Error("boom")), "boom")
+  assert.equal(textValue(undefined), "")
+  assert.equal(textValue({}), "{}")
+  assert.equal(textValue(42), "42")
+})
+
+test("the Activity tool row coerces a harness error before rendering it", () => {
+  const source = readFileSync(new URL("./components/activity-timeline.tsx", import.meta.url), "utf8")
+  assert.match(source, /const error = textValue\(state\?\.error\)/)
+  assert.match(source, /const output = error \|\| textValue\(state\?\.output\)/)
+  assert.doesNotMatch(source, /const output = state\?\.error \|\| state\?\.output/)
 })

@@ -14,6 +14,27 @@ function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms))
 }
 
+/**
+ * OpenCode 2 exports a failed tool call's error as a structured envelope
+ * (`{ type: "tool.execution", message: "..." }`), while the transcript contract every client
+ * renders is a plain sentence. Passing the object through made the Activity row call `.split()` on
+ * it, which the global error boundary escalated to a blank "could not start" screen. Normalize at
+ * the boundary: a reader needs the message, not the provider's envelope.
+ */
+function toolErrorText(error) {
+  if (typeof error === "string") return error
+  if (error === null || error === undefined) return undefined
+  if (error instanceof Error) return error.message
+  if (Array.isArray(error)) return error.map(toolErrorText).filter(Boolean).join("\n") || undefined
+  if (typeof error === "object") {
+    const message = [error.message, error.data?.message, error.type, error.name]
+      .find((value) => typeof value === "string" && value.trim())
+    if (message) return message.trim()
+    try { return JSON.stringify(error) } catch { return String(error) }
+  }
+  return String(error)
+}
+
 function partFromContent(part, messageID, index) {
   const base = { id: `${messageID}:part:${index}`, messageID, type: part.type }
   if (part.type === "text" || part.type === "reasoning") return {
@@ -25,6 +46,7 @@ function partFromContent(part, messageID, index) {
     state: {
       ...part.state,
       output: part.state?.content?.filter((item) => item.type === "text").map((item) => item.text).join("\n"),
+      error: toolErrorText(part.state?.error),
       ...(part.time ? { time: { start: part.time.ran ?? part.time.created, end: part.time.completed } } : {})
     }
   }
@@ -61,6 +83,7 @@ export function createOpenCode2HistoryLoader({ command = "opencode2", args = ["a
       shim ? ["/d", "/s", "/c", command, ...exportArgs] : exportArgs,
       { stdio: ["ignore", "pipe", "pipe"], windowsHide: true }))
     let output = ""
+    let outputBytes = 0
     const timer = setTimeout(() => {
       child.kill()
       const error = new Error("OpenCode 2 history export timed out")
@@ -70,7 +93,12 @@ export function createOpenCode2HistoryLoader({ command = "opencode2", args = ["a
     child.stdout.setEncoding("utf8")
     child.stdout.on("data", (chunk) => {
       output += chunk
-      if (Buffer.byteLength(output) > MAX_EXPORT_BYTES) {
+      // Measure each chunk, never the accumulated string. Re-encoding a multi-megabyte export on
+      // every chunk is O(total) work per read, and the slow reader is enough to make OpenCode's
+      // exporter return a document cut off mid-value with exit 0 - the "invalid history export"
+      // this loader used to retry three times and still fail.
+      outputBytes += Buffer.byteLength(chunk)
+      if (outputBytes > MAX_EXPORT_BYTES) {
         child.kill()
         const error = new Error("OpenCode 2 history export exceeds 64 MiB")
         error.nonRetryable = true
