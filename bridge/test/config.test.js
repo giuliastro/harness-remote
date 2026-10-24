@@ -96,6 +96,16 @@ test("prefers generic environment names while retaining OMP aliases", () => {
   assert.equal(legacy.port, 4902)
 })
 
+test("accepts Session lifecycle overrides without changing other providers", () => {
+  assert.deepEqual(parseConfig([], {
+    HARNESS_REMOTE_IDLE_UNLOAD_MS: "0",
+    HARNESS_REMOTE_MAX_LOADED_SESSIONS: "2"
+  }).sessionLifecycle, { idleUnloadMs: 0, maxLoadedSessions: 2 })
+  assert.equal(parseConfig([], {}).sessionLifecycle, undefined)
+  assert.throws(() => parseConfig([], { HARNESS_REMOTE_IDLE_UNLOAD_MS: "-1" }), /non-negative integer/)
+  assert.throws(() => parseConfig([], { HARNESS_REMOTE_MAX_LOADED_SESSIONS: "1.5" }), /non-negative integer/)
+})
+
 test("allows session snapshot storage to be relocated", () => {
   assert.equal(parseConfig(["--state-dir", "/tmp/harness-state"], {}).stateDirectory, "/tmp/harness-state")
   assert.equal(parseConfig([], { HARNESS_REMOTE_STATE_DIR: "/tmp/env-state" }).stateDirectory, "/tmp/env-state")

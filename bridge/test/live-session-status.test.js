@@ -12,6 +12,7 @@ import {
   claudeTranscriptRecordState,
   createClaudeTranscriptStatusProbe,
   createClaudeLiveStatusProbe,
+  createClaudeSessionIdleGuard,
   createCodexLiveStatusProbe,
   readClaudeSessionRegistry,
   overlayLiveStatus,
@@ -257,6 +258,23 @@ test("Claude process registry: live processes only, and any busy process makes t
   })
 })
 
+test("Claude idle guard permits only an explicit idle registry entry", async () => {
+  await withTemp("hr-claude-idle-guard-", async (registryDir) => {
+    let clock = 0
+    const guard = createClaudeSessionIdleGuard({ registryDir, isAlive: () => true, now: () => clock })
+    assert.equal(await guard("unknown"), false, "a missing registry entry is not proof of idleness")
+
+    await writeRegistryEntry(registryDir, 301, { sessionId: "idle", status: "idle" })
+    await writeRegistryEntry(registryDir, 302, { sessionId: "busy", status: "busy" })
+    clock = 3_000
+    assert.equal(await guard("idle"), true)
+    assert.equal(await guard("busy"), false)
+
+    const missing = createClaudeSessionIdleGuard({ registryDir: path.join(registryDir, "missing") })
+    assert.equal(await missing("idle"), false, "an old Claude build without the registry must keep Sessions open")
+  })
+})
+
 test("Claude probe: the registry is authoritative where it exists; the transcript is only a fallback", async () => {
   await withTemp("hr-claude-live-", async (root) => {
     const projectsRoot = path.join(root, "projects")
@@ -331,6 +349,8 @@ test("harness contracts declare where live status comes from", () => {
   assert.equal(acpHarnessCapabilityContract(harnessProfile("claude")).sessions.liveStatus, "native-runtime-state")
   assert.equal(acpHarnessCapabilityContract(harnessProfile("omp")).sessions.liveStatus, "bridge-owned-only")
   assert.equal(acpHarnessCapabilityContract(harnessProfile("pi")).sessions.liveStatus, "bridge-owned-only")
+  assert.equal(harnessProfile("claude").sessionLifecycle.idleUnloadGuard, "claude-session-registry")
+  assert.equal(harnessProfile("omp").sessionLifecycle, undefined)
 })
 
 class StatusFakeAcp extends EventEmitter {

@@ -5,7 +5,7 @@ import { selectableAcpModelValue } from "./agent-model-catalog.js"
 import { AcpPromptEchoFilter } from "./acp-prompt-echo-filter.js"
 import { AcpService } from "./acp-service.js"
 import { harnessProfile } from "./harness-profiles.js"
-import { createLiveStatusProbe, overlayLiveStatus, probeLiveStatuses } from "./live-session-status.js"
+import { createClaudeSessionIdleGuard, createLiveStatusProbe, overlayLiveStatus, probeLiveStatuses } from "./live-session-status.js"
 import { insideRoot } from "./project-catalog.js"
 import { allowedOrigin, applyCorsHeaders, matchesCredentials, guardRequestHandler, writeJSON } from "./http-policy.js"
 
@@ -198,8 +198,21 @@ export function createBridgeServer({ config, acp, serviceOptions, machineRegistr
     ? createLiveStatusProbe(profile.liveStatusSource)
     : liveStatusProbe ?? undefined
   const serviceAcp = new AcpPromptEchoFilter(acp)
+  const lifecycle = profile.sessionLifecycle
+  const idleUnloadMs = lifecycle
+    ? config.sessionLifecycle?.idleUnloadMs ?? lifecycle.idleUnloadMs ?? 0
+    : 0
+  const maxLoadedSessions = lifecycle
+    ? config.sessionLifecycle?.maxLoadedSessions ?? lifecycle.maxLoadedSessions ?? 0
+    : 0
+  const canUnloadIdleSession = lifecycle?.idleUnloadGuard === "claude-session-registry"
+    ? createClaudeSessionIdleGuard()
+    : undefined
   const service = new AcpService(serviceAcp, {
     ...serviceOptions,
+    idleUnloadMs,
+    maxLoadedSessions,
+    canUnloadIdleSession,
     requireExistingDirectory: profile.requireExistingDirectory,
     actionProviders: profile.actionProviders,
     preferListedTitles: profile.preferListedTitles,

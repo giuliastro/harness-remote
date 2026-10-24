@@ -72,7 +72,7 @@ The shared contract defines outcomes, not one universal provider algorithm.
 - **OMP** keeps native active-branch authority and its journal/live reconciliation rules. It must not infer an abandoned sibling when authoritative branch state is required.
 - **PI** keeps live-to-journal identity stabilization so persisted history replaces, rather than duplicates, the transient ACP representation.
 - **Codex** keeps its own native transcript/model/session-history semantics and delayed persistence handling.
-- **Claude Code** keeps its stream/session semantics, provider-specific bridge tests and mounted-browser convergence coverage for completion, terminal provider failure and recovery without a final SSE event.
+- **Claude Code** keeps its stream/session semantics, provider-specific bridge tests and mounted-browser convergence coverage for completion, terminal provider failure and recovery without a final SSE event. A loaded Session may be closed after an idle timeout or above the open-Session cap, but only when Claude Code's own process registry reports it `idle`; the next prompt or read reloads it from the native transcript without duplicating history.
 
 Do not move these differences into generic UI conditionals simply to make implementations look uniform. Share only invariants that are genuinely common.
 

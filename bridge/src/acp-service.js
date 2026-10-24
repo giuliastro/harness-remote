@@ -596,6 +596,18 @@ export class AcpService {
   #cancelledSessions = new Set()
   #promptedSessions = new Set()
   #chunkMessageIDs = new Map()
+  // Native Sessions hold a harness process (and, for Claude Code, its MCP servers) for as long as
+  // the adapter keeps them open. Track when each one was last touched so idle ones can be closed
+  // and reopened transparently on the next prompt.
+  #lastActivity = new Map()
+  #idleUnloadMs = 0
+  #maxLoadedSessions = 0
+  #canUnloadIdleSession
+  #idleUnloadSweepMs
+  #lifecycleTimer
+  #unloading = new Map()
+  #unloads = 0
+  #unloadFailures = 0
   // PI's journal is authoritative, but a provider rejection can be emitted by ACP before the journal
   // has flushed its terminal assistant error. These ids keep only that short-lived bridge copy alive.
   #transientFailureMessageIDs = new Map()
@@ -694,7 +706,22 @@ export class AcpService {
     fallbackModelCatalog,
     fallbackModelSelectionMethod,
     fallbackModelCommand,
-    actionProviders = []
+    actionProviders = [],
+    /**
+     * Close a native Session that has been idle for this long. `0` disables idle unloading.
+     *
+     * The close is only background resource management: the transcript stays in the snapshot cache
+     * and the next prompt or read loads the Session again through the harness. A harness whose
+     * background work is not observable must supply `canUnloadIdleSession`, which is consulted
+     * before every close; without it idle unloading stays disabled.
+     */
+    idleUnloadMs = 0,
+    /** Keep at most this many native Sessions open, closing the least recently used idle ones. */
+    maxLoadedSessions = 0,
+    /** Return true only when the harness itself reports no work still running for the Session. */
+    canUnloadIdleSession,
+    /** How often the idle/LRU sweep runs. Defaults to a minute, bounded to the configured idle time. */
+    idleUnloadSweepMs
   } = {}) {
     this.#acp = acp
     this.#snapshotDirectory = snapshotDirectory
@@ -726,6 +753,19 @@ export class AcpService {
     this.#fallbackModelSelectionMethod = fallbackModelSelectionMethod
     this.#fallbackModelCommand = fallbackModelCommand
     this.#actionProviders = actionProviders
+    this.#idleUnloadMs = Number.isFinite(idleUnloadMs) && idleUnloadMs > 0 ? idleUnloadMs : 0
+    this.#maxLoadedSessions = Number.isInteger(maxLoadedSessions) && maxLoadedSessions > 0 ? maxLoadedSessions : 0
+    // Closing a Session whose background work we cannot observe would kill work the user meant to
+    // keep running, so both policies are inert unless the harness supplies that evidence.
+    this.#canUnloadIdleSession = typeof canUnloadIdleSession === "function" ? canUnloadIdleSession : undefined
+    if (!this.#canUnloadIdleSession) {
+      this.#idleUnloadMs = 0
+      this.#maxLoadedSessions = 0
+    }
+    this.#idleUnloadSweepMs = Number.isFinite(idleUnloadSweepMs) && idleUnloadSweepMs > 0
+      ? idleUnloadSweepMs
+      : Math.max(1_000, Math.min(60_000, this.#idleUnloadMs || 30_000))
+    if (this.#idleUnloadMs > 0 || this.#maxLoadedSessions > 0) this.#startLifecycleSweep()
     acp.on("notification", (notification) => this.#handleNotification(notification))
     acp.on("sessions-closed", (sessionIDs) => this.#forgetOpenSessions(sessionIDs))
     // An adapter that exits takes every Session it had open with it. Still counting them as loaded
@@ -742,6 +782,123 @@ export class AcpService {
     }
   }
 
+  /** Stop the idle/LRU sweep. The adapter close path owns the native Sessions themselves. */
+  dispose() {
+    if (this.#lifecycleTimer) clearInterval(this.#lifecycleTimer)
+    this.#lifecycleTimer = undefined
+  }
+
+  #startLifecycleSweep() {
+    if (this.#lifecycleTimer) return
+    this.#lifecycleTimer = setInterval(() => {
+      void this.sweepIdleSessions().catch(() => {})
+    }, this.#idleUnloadSweepMs)
+    // Resource management must never be the reason a CLI process stays alive.
+    this.#lifecycleTimer.unref?.()
+  }
+
+  #touchSession(sessionID, at = Date.now()) {
+    if (!sessionID) return
+    const previous = this.#lastActivity.get(sessionID) ?? 0
+    if (at > previous) this.#lastActivity.set(sessionID, at)
+  }
+
+  /**
+   * Close native Sessions that are safe to reopen later.
+   *
+   * Idle time alone is not enough: a harness may still be running a background shell, subagent or
+   * monitor after its last visible turn. `canUnloadIdleSession` is the harness-specific proof that
+   * nothing is in flight, and the service refuses the close without it. The configured cap is
+   * therefore a soft cap: when every open Session is busy or unproven, it is exceeded rather than
+   * killing work.
+   */
+  async sweepIdleSessions({ now = Date.now(), protect = [] } = {}) {
+    if (!this.#canUnloadIdleSession) return []
+    // Ordering data is only meaningful for Sessions the adapter still holds; deleting one or
+    // reading a Session that was never loaded must not grow this map for the process lifetime.
+    for (const sessionID of this.#lastActivity.keys()) {
+      if (!this.#acpOpenSessions.has(sessionID)) this.#lastActivity.delete(sessionID)
+    }
+    const protectedSessions = new Set(protect)
+    const closed = []
+    const candidates = () => [...this.#acpOpenSessions]
+      .filter((sessionID) => !protectedSessions.has(sessionID))
+      .map((sessionID) => ({ sessionID, lastActivity: this.#lastActivity.get(sessionID) ?? now }))
+      .sort((left, right) => left.lastActivity - right.lastActivity)
+
+    if (this.#idleUnloadMs > 0) {
+      for (const { sessionID, lastActivity } of candidates()) {
+        if (now - lastActivity < this.#idleUnloadMs) break
+        if (await this.#unloadSession(sessionID)) closed.push(sessionID)
+      }
+    }
+    while (this.#maxLoadedSessions > 0 && this.#acpOpenSessions.size > this.#maxLoadedSessions) {
+      const next = candidates()[0]
+      if (!next || !await this.#unloadSession(next.sessionID)) break
+      closed.push(next.sessionID)
+    }
+    return closed
+  }
+
+  #enforceLoadedSessionLimit(protect) {
+    if (!this.#maxLoadedSessions || this.#acpOpenSessions.size <= this.#maxLoadedSessions) return
+    void this.sweepIdleSessions({ protect: protect ? [protect] : [] }).catch(() => {})
+  }
+
+  /**
+   * Whether anything is using a native Session right now. Re-checked after the asynchronous idle
+   * guard, because a prompt can arrive while the harness is being asked whether the Session is free.
+   */
+  #sessionHasWork(sessionID) {
+    if (this.#isBusy(sessionID)) return true
+    if (this.#loads.has(sessionID) || this.#replaying.has(sessionID) || this.#promptGates.has(sessionID)) return true
+    const pending = this.#acp.diagnostics?.()?.pendingRequests
+    return Array.isArray(pending) && pending.some((request) => request?.sessionID === sessionID)
+  }
+
+  async #unloadSession(sessionID) {
+    if (this.#unloading.has(sessionID)) return false
+    if (!this.#acpOpenSessions.has(sessionID) && !this.#loaded.has(sessionID)) return false
+    if (this.#sessionHasWork(sessionID)) return false
+    // Register the close before its first await so a prompt that arrives meanwhile waits for it
+    // instead of talking to a Session the adapter is closing.
+    const operation = this.#closeIdleSession(sessionID)
+    this.#unloading.set(sessionID, operation)
+    try {
+      return await operation
+    } finally {
+      if (this.#unloading.get(sessionID) === operation) this.#unloading.delete(sessionID)
+    }
+  }
+
+  async #closeIdleSession(sessionID) {
+    let safe = false
+    try {
+      safe = Boolean(await this.#canUnloadIdleSession(sessionID))
+    } catch {
+      safe = false
+    }
+    if (!safe || this.#sessionHasWork(sessionID)) return false
+
+    if (this.#acpOpenSessions.has(sessionID)) {
+      try {
+        await this.#acp.request("session/close", { sessionId: sessionID })
+      } catch (error) {
+        // The adapter already forgot this Session (for example after its own process loss); there
+        // is nothing left to release, so dropping the bridge's bookkeeping is the correct outcome.
+        if (!/session not found/i.test(error?.message ?? "")) {
+          this.#unloadFailures += 1
+          return false
+        }
+      }
+    }
+    this.#forgetOpenSessions([sessionID])
+    this.#lastActivity.delete(sessionID)
+    this.#unloads += 1
+    this.#persistSnapshot(sessionID)
+    return true
+  }
+
   subscribe(listener) {
     this.#listeners.add(listener)
     return () => this.#listeners.delete(listener)
@@ -755,6 +912,14 @@ export class AcpService {
       inFlightLoads: this.#loads.size,
       snapshotWrites: this.#snapshotWrites.size,
       subscribers: this.#listeners.size,
+      openNativeSessions: this.#acpOpenSessions.size,
+      idleUnload: {
+        enabled: Boolean(this.#canUnloadIdleSession),
+        idleMs: this.#idleUnloadMs,
+        maxLoadedSessions: this.#maxLoadedSessions,
+        unloads: this.#unloads,
+        failures: this.#unloadFailures
+      },
       // How this harness resolves history. A loader that walks a session tree reports how often it
       // has had to, which is what makes "opening Sessions gets slower" measurable rather than felt.
       ...(this.#historyLoader?.diagnostics ? { history: this.#historyLoader.diagnostics() } : {})
@@ -850,6 +1015,7 @@ export class AcpService {
     if (model) await this.setModel(session.sessionId, model)
     this.#emit("session.created", session.sessionId)
     this.#persistSnapshot(session.sessionId)
+    this.#enforceLoadedSessionLimit(session.sessionId)
     return sessionView(session, "idle", this.#titleFor(session.sessionId))
   }
 
@@ -866,6 +1032,7 @@ export class AcpService {
     if (this.#ownedSessions.has(sessionID) && !this.#adoptedSessions.has(sessionID)) return true
     if (this.#acpOpenSessions.has(sessionID) && !this.#adoptedSessions.has(sessionID)) {
       this.#ownedSessions.add(sessionID)
+      this.#touchSession(sessionID)
       this.#persistSnapshot(sessionID)
       return true
     }
@@ -1074,6 +1241,7 @@ export class AcpService {
     this.#queues.delete(sessionID)
     this.#active.delete(sessionID)
     this.#acpOpenSessions.delete(sessionID)
+    this.#lastActivity.delete(sessionID)
     this.#dirtySnapshots.delete(sessionID)
     this.#dirtyStart.delete(sessionID)
     this.#snapshotWriteStart.delete(sessionID)
@@ -1084,6 +1252,7 @@ export class AcpService {
   async messages(sessionID, refresh = false) {
     if (this.#refreshSessionListOnRead || !this.#sessions.has(sessionID)) await this.#refreshSessions()
     await this.#restoreSnapshot(sessionID)
+    this.#touchSession(sessionID)
     if (this.#historyLoader?.authoritativeHistory) {
       try {
         const persistedMessages = mergeFragmentedPiSnapshot(await this.#historyLoader(sessionID))
@@ -2303,6 +2472,10 @@ export class AcpService {
     if (this.#deletedSessions.has(sessionID)) throw new Error("Harness session not found")
     const session = this.#sessions.get(sessionID)
     if (!session) throw new Error("Harness session not found")
+    // A prompt or read that arrived while the Session was being closed must not race the close:
+    // wait for it to finish, then load the Session again from the harness.
+    const unloading = this.#unloading.get(sessionID)
+    if (unloading) await unloading.catch(() => undefined)
     if (!force && this.#loaded.has(sessionID)) return
     // Config options only arrive with a real ACP session/load, which a harness may refuse —
     // Codex does for any conversation another client holds open. Sharing one in-flight load
@@ -2341,6 +2514,7 @@ export class AcpService {
   async #loadSession(sessionID, requireConfigOptions = false, replaceHistory = false) {
     const session = this.#sessions.get(sessionID)
     if (!session) throw new Error("Harness session not found")
+    this.#touchSession(sessionID)
     await this.#restoreSnapshot(sessionID)
     const authoritativeState = await this.#refreshActionState(sessionID, false)
     let previousMessages = mergeFragmentedPiSnapshot(this.#messages.get(sessionID) ?? [])
@@ -2437,6 +2611,7 @@ export class AcpService {
       }
       this.#loaded.add(sessionID)
       this.#persistSnapshot(sessionID)
+      this.#enforceLoadedSessionLimit(sessionID)
     } catch (error) {
       this.#messages.set(sessionID, previousMessages)
       this.#todos.set(sessionID, previousTodos)
@@ -2493,6 +2668,7 @@ export class AcpService {
     this.#rememberSessionConfiguration(sessionID, result)
     this.#loaded.add(sessionID)
     this.#persistSnapshot(sessionID)
+    this.#enforceLoadedSessionLimit(sessionID)
     return true
   }
 
@@ -2819,6 +2995,7 @@ export class AcpService {
   }
 
   #emit(type, sessionId, extra = {}) {
+    if (sessionId && type !== "session.deleted") this.#touchSession(sessionId)
     const event = { type, sessionId, ...extra }
     for (const listener of this.#listeners) listener(event)
   }

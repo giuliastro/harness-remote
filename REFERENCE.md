@@ -497,6 +497,16 @@ slash commands, and VCS/diff are not currently exposed through this bridge.
 The adapter also advertises a permission `mode` and an `effort` level, which the app
 does not use yet.
 
+**Idle Sessions release their Claude process.** A loaded Claude Code Session keeps a
+native `claude` process and its MCP servers alive. The bridge closes a Session after
+30 minutes without activity and keeps at most four open at once, reopening the
+transcript transparently on the next prompt or read. The close happens only when
+Claude Code's own process registry reports that Session as `idle`: a turn in flight,
+a pending request, a background shell/subagent, or a Claude build without that
+registry keeps the Session open. Override the policy with
+`HARNESS_REMOTE_IDLE_UNLOAD_MS` (milliseconds; `0` disables idle unloading) and
+`HARNESS_REMOTE_MAX_LOADED_SESSIONS` (count; `0` removes the cap).
+
 **Rename and delete are bridge-local.** Renames persist in `~/.harness-remote/claude/`
 and survive bridge restarts, but are not propagated to the `claude` CLI itself.
 Deletion hides the session from this bridge and clears its cached data; it does

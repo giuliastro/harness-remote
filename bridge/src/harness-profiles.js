@@ -8,6 +8,15 @@ import { resolveOpenCodeCommand } from "./opencode-discovery.js"
 import { CopilotModelCatalog } from "./copilot-model-catalog.js"
 import { createOpenCode2HistoryLoader } from "./opencode2-session-history.js"
 
+/**
+ * Claude Code keeps a native `claude` process and its MCP servers per loaded ACP Session. The
+ * transcript is on disk, so an idle Session can be closed and reopened on the next prompt instead
+ * of retaining that memory for the life of the gateway. The limits are deliberately conservative:
+ * an idle half hour, and four open Sessions unless the user overrides them.
+ */
+export const CLAUDE_IDLE_UNLOAD_MS = 30 * 60_000
+export const CLAUDE_MAX_LOADED_SESSIONS = 4
+
 const COMMON_ACP_LIFECYCLE_CONTRACT = {
   sessionAuthority: "native-harness",
   create: "native-session",
@@ -165,6 +174,13 @@ export const HARNESS_PROFILES = {
     // model supports), the same shape OpenCode 2 uses.
     modelVariantConfigIDs: ["effort"],
     modelVariantDefaultValues: ["default"],
+    // The process registry is the harness's own proof that nothing is in flight; see
+    // createClaudeSessionIdleGuard. Without that evidence AcpService leaves Sessions open.
+    sessionLifecycle: {
+      idleUnloadMs: CLAUDE_IDLE_UNLOAD_MS,
+      maxLoadedSessions: CLAUDE_MAX_LOADED_SESSIONS,
+      idleUnloadGuard: "claude-session-registry"
+    },
     lifecycleContract: COMMON_ACP_LIFECYCLE_CONTRACT,
     sessionContract: {
       authority: "native-harness",

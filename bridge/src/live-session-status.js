@@ -362,19 +362,17 @@ export async function readClaudeSessionRegistry(registryDir, { isAlive = process
  * in flight from records written by a process that then stopped (a resume appends a task
  * notification for orphaned shells, for example, and no turn follows it).
  */
-export function createClaudeLiveStatusProbe({
+function createClaudeRegistryReader({
   registryDir = defaultClaudeSessionRegistryDir(),
   registryTtlMs = 2_000,
   isAlive,
-  now = () => Date.now(),
-  ...options
+  now = () => Date.now()
 } = {}) {
-  const transcript = createClaudeTranscriptStatusProbe({ ...options, now })
   let registry
   let readAt = -Infinity
   let reading
 
-  async function currentRegistry() {
+  return async function currentRegistry() {
     if (now() - readAt < registryTtlMs) return registry
     reading ??= readClaudeSessionRegistry(registryDir, { isAlive })
       .then((sessions) => {
@@ -385,12 +383,47 @@ export function createClaudeLiveStatusProbe({
       .finally(() => { reading = undefined })
     return reading
   }
+}
+
+export function createClaudeLiveStatusProbe({
+  registryDir = defaultClaudeSessionRegistryDir(),
+  registryTtlMs = 2_000,
+  isAlive,
+  now = () => Date.now(),
+  ...options
+} = {}) {
+  const transcript = createClaudeTranscriptStatusProbe({ ...options, now })
+  const currentRegistry = createClaudeRegistryReader({ registryDir, registryTtlMs, isAlive, now })
 
   return async function claudeLiveStatus(sessionID) {
     if (!isSafeSessionFileName(sessionID)) return undefined
     const sessions = await currentRegistry()
     if (sessions) return sessions.get(sessionID) === "busy" ? { type: "busy", source: "claude-session-registry" } : undefined
     return transcript(sessionID)
+  }
+}
+
+/**
+ * Whether Claude Code itself reports one Session as idle and still loaded.
+ *
+ * An idle unload must not rely on the bridge's own turn bookkeeping: a background shell, subagent or
+ * monitor can outlive the turn that started it, and closing the adapter Session then kills work the
+ * user meant to keep. Claude's process registry is the harness's own statement about that Session,
+ * so only an explicit live `idle` entry permits the close. A missing registry (older Claude builds)
+ * or a Session with no live process entry leaves the Session alone; unloading is an optimization,
+ * never a reason to guess.
+ */
+export function createClaudeSessionIdleGuard({
+  registryDir = defaultClaudeSessionRegistryDir(),
+  registryTtlMs = 2_000,
+  isAlive,
+  now = () => Date.now()
+} = {}) {
+  const currentRegistry = createClaudeRegistryReader({ registryDir, registryTtlMs, isAlive, now })
+  return async function claudeSessionIsIdle(sessionID) {
+    if (!isSafeSessionFileName(sessionID)) return false
+    const sessions = await currentRegistry()
+    return sessions?.get(sessionID) === "idle"
   }
 }
 
