@@ -53,7 +53,8 @@
     "docs/QUICK_START.md",
     "bridge/scripts/acp-provider-real-smoke-lib.mjs",
     "bridge/scripts/opencode2-real-smoke.mjs",
-    "bridge/scripts/mimo-real-smoke.mjs"
+    "bridge/scripts/mimo-real-smoke.mjs",
+    "docs/PLUGINS.md"
   ],
   "publishConfig": {
     "access": "public"

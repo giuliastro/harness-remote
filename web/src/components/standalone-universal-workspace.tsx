@@ -72,6 +72,10 @@ import { NativeSessionActions } from "./native-session-actions"
 import { NativeSessionHome } from "./native-session-home"
 import { NativeSessionTitle } from "./native-session-rename"
 import { NativeSessionObserver, type NativeSessionVisualState } from "./native-session-observer"
+import { PluginCenter, PluginQuickView } from "./plugin-center"
+import { PluginHomeDashboard, PluginRailCard } from "./plugin-widgets"
+import { usePluginSnapshot } from "../usePluginSnapshot"
+import { activePlugins, preferredPluginMachine } from "../plugins"
 import "../taskdesk-workthreads.css"
 import "../taskdesk-mobile-navigation.css"
 import "../taskdesk-focus-layout.css"
@@ -615,7 +619,7 @@ function MachineManager({
   )
 }
 
-function MobileSettingsPage({ onClose }: { onClose: () => void }) {
+function MobileSettingsPage({ onClose, onOpenPlugins }: { onClose: () => void; onOpenPlugins: () => void }) {
   const [language, setLanguage] = useState<LanguageCode>(loadLanguage)
   const [theme, setTheme] = useState<ThemePreference>(loadThemePreference)
   const [skin, setSkin] = useState<SkinPreference>(loadSkinPreference)
@@ -803,6 +807,13 @@ function MobileSettingsPage({ onClose }: { onClose: () => void }) {
             <label data-icon="reasoning"><strong>{t("settings.activityReasoning")}</strong><select value={activity.reasoning} onChange={(event) => changeActivity({ reasoning: event.target.value as ReasoningMode })}>{REASONING_MODES.map((mode) => <option value={mode} key={mode}>{t(`settings.activityReasoning.${mode}`)}</option>)}</select></label>
           </div>
           <p>{t("settings.activityHint")}</p>
+          <div className="hr-mobile-settings-group" data-settings-plugins>
+            <span>{t("settings.plugins")}</span>
+            <button type="button" className="hr-settings-row-button" data-icon="plugins" onClick={onOpenPlugins}>
+              <strong>{t("settings.plugins")}</strong>
+              <span>{t("settings.pluginsHint")} ›</span>
+            </button>
+          </div>
           <AboutSection t={t} skin={skin} onSkinChange={changeSkin} />
           {network ? (
             <div className="hr-mobile-settings-group">
@@ -859,12 +870,14 @@ function NativeSessionsWorkspace({
   machinesLoading,
   onManageMachines,
   onManageSettings,
+  onOpenPlugins,
   onAttentionCountChange
 }: {
   machines: WorkspaceMachine[]
   machinesLoading: boolean
   onManageMachines: () => void
   onManageSettings: () => void
+  onOpenPlugins: (machineID?: string) => void
   onAttentionCountChange: (count: number) => void
 }) {
   const t = useTranslator()
@@ -923,6 +936,16 @@ function NativeSessionsWorkspace({
   // Paginated discovery cannot re-read every cached older page after DELETE. Once the server accepts
   // the mutation, suppress that exact native identity from retained pages for this app lifetime.
   const [deletedSessionKeys, setDeletedSessionKeys] = useState<Set<string>>(() => new Set())
+  // Plugins are machine-local. Follow the Session in view so a remote machine's allowance is the one
+  // on screen; otherwise prefer This computer, then the first configured machine.
+  const pluginMachine = useMemo(() => {
+    const preferred = selected
+      ? runtimes.find((runtime) => runtime.machine.id === selected.machineID || runtime.snapshot?.machine.id === selected.machineID)?.machine
+      : undefined
+    return preferredPluginMachine(machines, preferred, isDesktopLocalMachine)
+  }, [machines, runtimes, selected])
+  const pluginSnapshot = usePluginSnapshot(pluginMachine)
+  const pluginViewPlugins = useMemo(() => activePlugins(pluginSnapshot.snapshot), [pluginSnapshot.snapshot])
   // Machines answering is only the first half of starting up; the Session list is the half the user
   // is actually waiting for. See the startup states below.
   const [sessionsDiscovered, setSessionsDiscovered] = useState(machines.length === 0)
@@ -1362,6 +1385,13 @@ function NativeSessionsWorkspace({
       run: onManageSettings
     },
     {
+      id: "plugins",
+      group: t("palette.groupWorkspace"),
+      label: t("plugins.manage"),
+      keywords: "plugins integrations extensions token harness",
+      run: () => onOpenPlugins(pluginMachine?.id)
+    },
+    {
       id: "refresh",
       group: t("palette.groupSessions"),
       label: t("sf.refresh"),
@@ -1375,7 +1405,7 @@ function NativeSessionsWorkspace({
       keywords: "close current session list",
       run: () => setMobileDetailOpen(false)
     }] : [])
-  ], [onManageMachines, onManageSettings, requestRefresh, selected, t])
+  ], [onManageMachines, onManageSettings, onOpenPlugins, pluginMachine?.id, requestRefresh, selected, t])
 
   return (
     <section className={`tdw-shell hr-control-plane hr-native-workspace${sessionFocusMode ? " session-focus-mode" : ""}`} aria-label={t("nav.sessions")}>
@@ -1392,6 +1422,14 @@ function NativeSessionsWorkspace({
             <i className={startupPhase === "ready" ? onlineCount > 0 ? "online" : "offline" : "pending"} aria-hidden="true" />
             {t("sf.machineCount", { online: onlineCount, total: machines.length })}
           </span>
+          <PluginQuickView
+            machine={pluginMachine}
+            snapshot={pluginSnapshot.snapshot}
+            loading={pluginSnapshot.loading}
+            refreshing={pluginSnapshot.refreshing}
+            refresh={() => void pluginSnapshot.refresh()}
+            onOpenPlugins={() => onOpenPlugins(pluginMachine?.id)}
+          />
           <button type="button" className="tdw-button secondary tdw-machines-button" onClick={onManageMachines}><ServerIcon size={15} /> {t("sf.machines")}</button>
           <div id="hr-topbar-home-slot" className="hr-topbar-home-slot" />
           <button type="button" className="palette-hint" onClick={() => setPaletteOpen(true)} title={t("command.commandPalette")} aria-label={t("command.commandPalette")}><span>⌘K</span></button>
@@ -1435,6 +1473,13 @@ function NativeSessionsWorkspace({
             deletingKeys={deletingSessionKeys}
             deletedKeys={deletedSessionKeys}
             onDeletionSettled={handleSessionDeletionSettled}
+            pluginSlot={pluginMachine ? (
+              <PluginRailCard
+                plugins={pluginViewPlugins}
+                machineName={pluginMachine.name}
+                onOpen={() => onOpenPlugins(pluginMachine.id)}
+              />
+            ) : null}
           />
         </aside>
         {/* Ported from the 2.x shell, which persisted its sidebar width while this one did not, and
@@ -1603,6 +1648,14 @@ function NativeSessionsWorkspace({
               <strong>{t("sf.openNativeSession")}</strong>
               <p>{t("sf.openNativeSessionBody")}</p>
               <div className="hr-native-startup-facts"><span>{t("sf.onlineCount", { count: onlineCount })}</span>{offlineCount ? <span>{t("sf.offlineCount", { count: offlineCount })}</span> : null}<span>{t("sf.nativeSessionTruth")}</span></div>
+              {pluginMachine ? (
+                <PluginHomeDashboard
+                  plugins={pluginViewPlugins}
+                  machine={pluginMachine}
+                  onOpenPlugins={() => onOpenPlugins(pluginMachine.id)}
+                  onChanged={() => void pluginSnapshot.refresh()}
+                />
+              ) : null}
             </div>
           )}
         </main>
@@ -1644,6 +1697,7 @@ export function StandaloneUniversalWorkspace({
   // had just found. Open it once, and only once the list has settled with no machines at all.
   const [managerOpen, setManagerOpen] = useState(machinesReady && machines.length === 0)
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const [pluginsOpen, setPluginsOpen] = useState<{ machineID?: string } | null>(null)
   // Compact skin: inside a conversation the bottom navigation folds away behind a handle.
   const [navPeek, setNavPeek] = useState(false)
   const managerAutoOpened = useRef(false)
@@ -1669,6 +1723,10 @@ export function StandaloneUniversalWorkspace({
       }
       if (settingsOpen) {
         setSettingsOpen(false)
+        return
+      }
+      if (pluginsOpen) {
+        setPluginsOpen(null)
         return
       }
       if (managerOpen) {
@@ -1709,26 +1767,35 @@ export function StandaloneUniversalWorkspace({
       disposed = true
       if (handle) void handle.remove()
     }
-  }, [managerOpen, settingsOpen])
+  }, [managerOpen, pluginsOpen, settingsOpen])
 
   function showSessions() {
     setManagerOpen(false)
     setSettingsOpen(false)
+    setPluginsOpen(null)
   }
 
   function showMachines() {
     setSettingsOpen(false)
+    setPluginsOpen(null)
     setManagerOpen(true)
+  }
+
+  function showPlugins(machineID?: string) {
+    setManagerOpen(false)
+    setSettingsOpen(false)
+    setPluginsOpen({ machineID })
   }
 
   function showSettings() {
     setManagerOpen(false)
+    setPluginsOpen(null)
     setSettingsOpen(true)
   }
 
   return (
     <div className="uw-standalone-host">
-      <NativeSessionsWorkspace machines={machines} machinesLoading={machinesLoading} onManageMachines={showMachines} onManageSettings={showSettings} onAttentionCountChange={setAttentionCount} />
+      <NativeSessionsWorkspace machines={machines} machinesLoading={machinesLoading} onManageMachines={showMachines} onManageSettings={showSettings} onOpenPlugins={showPlugins} onAttentionCountChange={setAttentionCount} />
       {managerOpen ? (
         <MachineManager
           machines={machines}
@@ -1741,7 +1808,14 @@ export function StandaloneUniversalWorkspace({
           pairingSuccessMachineName={machinePairingSuccessMachineName}
         />
       ) : null}
-      {settingsOpen ? <MobileSettingsPage onClose={() => setSettingsOpen(false)} /> : null}
+      {settingsOpen ? <MobileSettingsPage onClose={() => setSettingsOpen(false)} onOpenPlugins={() => showPlugins()} /> : null}
+      {pluginsOpen ? (
+        <PluginCenter
+          machines={machines}
+          initialMachineID={pluginsOpen.machineID}
+          onClose={() => setPluginsOpen(null)}
+        />
+      ) : null}
       <button type="button" className={`hr-mobile-nav-handle${navPeek ? " open" : ""}`} onClick={() => setNavPeek((open) => !open)} aria-expanded={navPeek} aria-label={t("sf.mainNavigation")}><i aria-hidden="true" /></button>
       <nav className={`hr-mobile-nav${navPeek ? " peek" : ""}`} aria-label={t("sf.mainNavigation")} onClickCapture={() => setNavPeek(false)}>
         <button type="button" className={mobileSection === "sessions" ? "active" : ""} onClick={showSessions} aria-current={mobileSection === "sessions" ? "page" : undefined}><ChatIcon size={20} /><span>{t("nav.sessions")}</span>{attentionCount ? <b className="hr-mobile-nav-badge" aria-label={t("sf.attentionCount", { count: attentionCount })}>{attentionCount > 9 ? "9+" : attentionCount}</b> : null}</button>

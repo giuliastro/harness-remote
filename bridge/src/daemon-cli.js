@@ -13,6 +13,8 @@ import { loadMachineIdentity } from "./machine-registry.js"
 import { MachineDaemon, createMachineDaemonServer } from "./machine-daemon.js"
 import { internalServerCredentials, ManagedOpenCodeHost } from "./opencode-host.js"
 import { resolveOpenCodeCommand } from "./opencode-discovery.js"
+import { PluginHost } from "./plugins/plugin-host.js"
+import { createPluginServer } from "./plugins/plugin-server.js"
 
 function requireValue(args, index, option) {
   const value = args[index + 1]
@@ -211,7 +213,12 @@ async function main() {
   // durable, authenticated record of decisions that a client has already seen succeed. Every other
   // request is delegated untouched to the existing machine stack.
   const approvalDecisionStore = new ApprovalDecisionStore({ machineID: identity.id, stateDirectory: config.stateDirectory })
-  const server = createApprovalDecisionServer({ innerServer: machineServer, config, store: approvalDecisionStore })
+  const pluginHost = new PluginHost({ stateDirectory: config.stateDirectory })
+  const server = createPluginServer({
+    innerServer: createApprovalDecisionServer({ innerServer: machineServer, config, store: approvalDecisionStore }),
+    config,
+    pluginHost
+  })
 
   await new Promise((resolve, reject) => {
     const onError = (error) => reject(error)
@@ -245,7 +252,7 @@ async function main() {
   const shutdown = () => {
     if (shuttingDown) return
     shuttingDown = true
-    const closing = daemon.close()
+    const closing = Promise.allSettled([daemon.close(), pluginHost.close()])
     server.close(() => { void closing.then(() => process.exit(0)) })
     setTimeout(() => process.exit(1), 5_000).unref()
   }

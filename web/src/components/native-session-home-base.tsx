@@ -141,6 +141,8 @@ type Props = {
   deletedKeys?: ReadonlySet<string>
   /** Called once a fresh discovery proves a deleting Session has disappeared from the native index. */
   onDeletionSettled?: (key: string) => void
+  /** Declarative plugin contributions that belong above the Session filters. */
+  pluginSlot?: ReactNode
 }
 
 const SESSION_HOME_REFRESH_MS = 30_000
@@ -505,7 +507,8 @@ export function NativeSessionHome({
   selectedState,
   deletingKeys,
   deletedKeys,
-  onDeletionSettled
+  onDeletionSettled,
+  pluginSlot
 }: Props) {
   // A Session counts as open only while it is on screen: on a phone, back on the list it is not,
   // so its unseen mark ("Just finished") must survive until it is opened again.
@@ -1422,6 +1425,8 @@ export function NativeSessionHome({
             </button>
           </div>
         </div>
+
+        {pluginSlot}
 
         {records.length > 0 ? (
           <div className={`hr-native-home-tools${searchOpen ? " search-open" : ""}`}>

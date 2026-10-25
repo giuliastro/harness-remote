@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "id": "token-harness",
+  "name": "Token Harness",
+  "version": "1.0.0",
+  "description": "See how much subscription allowance your coding harnesses have left, what Token Harness has saved locally, and control automatic model routing.",
+  "vendor": "Giulio Ardoino",
+  "homepage": "https://github.com/giuliastro/token-harness",
+  "license": "Apache-2.0",
+  "icon": "token-harness",
+  "order": 10,
+  "autoEnableWhenReady": true,
+  "surfaces": ["backend", "frontend"],
+  "capabilities": ["dashboard", "quota", "routing", "install", "uninstall"],
+  "permissions": ["run-local", "network-install"],
+  "runtime": {
+    "kind": "node",
+    "entry": "plugin.js",
+    "timeoutMs": 75000
+  }
+}

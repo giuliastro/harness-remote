@@ -125,6 +125,7 @@ See the [Quick start guide](docs/QUICK_START.md) for advanced options and troubl
 - **Attention visibility** — questions, permissions and other blocking states stay visible even when the Session is not open, and a Session that finishes while you are elsewhere stays marked **Ready** until you open it.
 - **Recovery** — reconnect, idle/wake and desktop-runtime recovery are built around the native Session as the source of truth.
 - **Local-first operation** — repositories, credentials, subscriptions and native Session persistence stay on your machines.
+- **Plugins** — local integrations with their own dashboards and settings. Token Harness adds harness allowance, local savings and automatic model routing without leaving the app.
 
 ## Native Sessions stay authoritative
 
@@ -231,6 +232,7 @@ npm run electron:dev
 - [Architecture and roadmap](docs/HARNESS_3_ROADMAP.md)
 - [Capability matrix](docs/V3_HARNESS_CAPABILITY_MATRIX.md)
 - [OpenCode reliability contract](docs/OPENCODE_RELIABILITY_CONTRACT.md)
+- [Plugins](docs/PLUGINS.md)
 - [Backend reference](REFERENCE.md)
 - [Contributing](CONTRIBUTING.md)
 

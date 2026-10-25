@@ -51,6 +51,8 @@ import "./session-header-narrow.css"
 import "./mobile-compact-chat.css"
 // Final polish for the compact Session list. Self-contained: remove this import to revert it.
 import "./compact-final-touch.css"
+// Plugin catalogue, allowance cards and quick view. Self-contained `hr-plugin-*` classes.
+import "./plugin-center.css"
 
 installAppPreferences()
 installCompletionAudioGuard()
