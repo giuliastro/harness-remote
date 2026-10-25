@@ -73,6 +73,29 @@ test('native export paging keeps whole user turns and reports only earlier turns
   assert.equal(oldest.model, undefined)
 })
 
+test('a byte-heavy newest page stays under the desktop transport budget', async () => {
+  const text = 'x'.repeat(2 * 1024 * 1024)
+  const messages = []
+  for (let turn = 1; turn <= 3; turn += 1) {
+    messages.push({ id: `u${turn}`, type: 'user', text: `prompt ${turn}`, files: [], time: { created: turn } })
+    messages.push({
+      id: `a${turn}`, type: 'assistant', time: { created: turn, completed: turn },
+      finish: 'stop', content: [{ type: 'text', text, time: { created: turn, completed: turn } }]
+    })
+  }
+  const loader = createOpenCode2HistoryLoader({ runExport: async () => ({ info: { id: 'ses_bytes' }, messages }) })
+  const page = await loader.page('ses_bytes', { limit: 200 })
+  assert.equal(page.messages[0].info.role, 'user')
+  assert.equal(page.messages[0].parts[0].text, 'prompt 3', 'the newest turn must stay complete and visible')
+  assert.equal(page.hasMore, true)
+  assert.ok(Buffer.byteLength(JSON.stringify(page.messages)) < 8 * 1024 * 1024, 'one response must stay below the desktop transport cap')
+
+  const older = await loader.page('ses_bytes', { limit: 200, before: page.before })
+  assert.equal(older.messages[0].parts[0].text, 'prompt 2')
+  assert.equal(older.hasMore, true)
+  assert.ok(Buffer.byteLength(JSON.stringify(older.messages)) < 8 * 1024 * 1024)
+})
+
 test('a three-prompt Session with many assistant steps opens complete without earlier-history paging', async () => {
   const messages = []
   for (let turn = 1; turn <= 3; turn += 1) {
@@ -236,12 +259,14 @@ test('a structured tool failure is normalized to the message the transcript rend
   assert.equal(typeof toolPart.state.error, 'string')
 })
 
-test('reads a large export completely from the child process', async () => {
+test('a large export that exits immediately is read completely from a file descriptor', async () => {
   const directory = await mkdtemp(path.join(tmpdir(), 'opencode2-large-export-'))
   try {
     const script = path.join(directory, 'exporter.mjs')
-    const text = 'x'.repeat(2 * 1024 * 1024)
-    await writeFile(script, `process.stdout.write(JSON.stringify({ info: { id: process.argv[5] }, messages: [{ id: 'u1', type: 'user', text: ${JSON.stringify(text)}, files: [] }] }))\n`)
+    const text = 'x'.repeat(5 * 1024 * 1024)
+    // OpenCode can exit before a pipe drains, truncating a large export. Redirecting stdout to a
+    // file (as the loader now does) keeps the same early exit complete.
+    await writeFile(script, `process.stdout.write(JSON.stringify({ info: { id: process.argv[5] }, messages: [{ id: 'u1', type: 'user', text: ${JSON.stringify(text)}, files: [] }] }))\nprocess.exit(0)\n`)
     const loader = createOpenCode2HistoryLoader({ command: process.execPath, args: [script, 'acp'] })
     const messages = await loader('ses_large')
     assert.equal(messages.length, 1)

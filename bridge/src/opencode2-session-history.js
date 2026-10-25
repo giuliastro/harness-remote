@@ -1,4 +1,7 @@
 import { spawn } from "node:child_process"
+import { mkdtemp, open, readFile, rm, stat } from "node:fs/promises"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
 import { ownChildProcess } from "./managed-child-process.js"
 
 // OpenCode's standalone export streams the JSON to stdout and can exit 0 with a truncated document
@@ -12,6 +15,9 @@ const MAX_EXPORT_BYTES = 64 * 1024 * 1024
 // page size because one reply may contain hundreds of assistant steps. Keep a useful screenful of
 // complete exchanges visible on first open rather than counting those hidden steps.
 const MIN_PAGE_TURNS = 20
+// The desktop transport caps one response at 8 MiB. Keep a whole conversation screen below that
+// with room for headers and JSON overhead; a single turn larger than this is still returned whole.
+const MAX_PAGE_BYTES = 4 * 1024 * 1024
 
 function sleep(ms) {
   // This timer owns an awaited retry, so keep the process alive until it can finish the read.
@@ -78,45 +84,55 @@ export function openCode2ExportMessages(sessionID, exported) {
 /** Read history without opening the original project (which may have been removed). */
 export function createOpenCode2HistoryLoader({ command = "opencode2", args = ["acp"], runExport } = {}) {
   const prefix = args.at(-1) === "acp" ? args.slice(0, -1) : []
-  const readExport = runExport ?? ((sessionID) => new Promise((resolve, reject) => {
+  const readExport = runExport ?? (async (sessionID) => {
+    const directory = await mkdtemp(join(tmpdir(), "harness-remote-opencode2-export-"))
+    const file = join(directory, "session.json")
+    const output = await open(file, "w")
     const shim = process.platform === "win32" && /\.(cmd|bat)$/i.test(command)
     // A private server exits with the export; history reads must not leave a background service
     // holding an isolated test database (or connect to a service with a different data root).
     const exportArgs = [...prefix, "session", "export", "--standalone", sessionID]
+    // OpenCode's exporter can exit 0 with a truncated document when stdout is a pipe: a large
+    // Session loses its tail and cannot be parsed. Hand the child a real file descriptor instead,
+    // where the same export is written completely, then read the finished file.
     const child = ownChildProcess(spawn(shim ? process.env.ComSpec ?? "cmd.exe" : command,
       shim ? ["/d", "/s", "/c", command, ...exportArgs] : exportArgs,
-      { stdio: ["ignore", "pipe", "pipe"], windowsHide: true }))
-    let output = ""
-    let outputBytes = 0
+      { stdio: ["ignore", output.fd, "pipe"], windowsHide: true }))
+    let timedOut = false
     const timer = setTimeout(() => {
+      timedOut = true
       child.kill()
-      const error = new Error("OpenCode 2 history export timed out")
-      error.nonRetryable = true
-      reject(error)
     }, 30_000)
-    child.stdout.setEncoding("utf8")
-    child.stdout.on("data", (chunk) => {
-      output += chunk
-      // Measure each chunk, never the accumulated string. Re-encoding a multi-megabyte export on
-      // every chunk is O(total) work per read, and the slow reader is enough to make OpenCode's
-      // exporter return a document cut off mid-value with exit 0 - the "invalid history export"
-      // this loader used to retry three times and still fail.
-      outputBytes += Buffer.byteLength(chunk)
-      if (outputBytes > MAX_EXPORT_BYTES) {
-        child.kill()
+    child.stderr.resume()
+    try {
+      const code = await new Promise((resolve, reject) => {
+        child.once("error", reject)
+        child.once("close", resolve)
+      })
+      if (timedOut) {
+        const error = new Error("OpenCode 2 history export timed out")
+        error.nonRetryable = true
+        throw error
+      }
+      if (code !== 0) throw new Error(`OpenCode 2 history export failed (exit ${code})`)
+      const metadata = await stat(file)
+      if (metadata.size > MAX_EXPORT_BYTES) {
         const error = new Error("OpenCode 2 history export exceeds 64 MiB")
         error.nonRetryable = true
-        reject(error)
+        throw error
       }
-    })
-    child.stderr.resume()
-    child.once("error", (error) => { clearTimeout(timer); reject(error) })
-    child.once("close", (code) => {
+      const raw = await readFile(file, "utf8")
+      try {
+        return JSON.parse(raw)
+      } catch {
+        throw new Error("OpenCode 2 returned an invalid history export")
+      }
+    } finally {
       clearTimeout(timer)
-      if (code !== 0) return reject(new Error(`OpenCode 2 history export failed (exit ${code})`))
-      try { resolve(JSON.parse(output)) } catch { reject(new Error("OpenCode 2 returned an invalid history export")) }
-    })
-  }))
+      await output.close().catch(() => undefined)
+      await rm(directory, { recursive: true, force: true }).catch(() => undefined)
+    }
+  })
   const readExportOnce = async (sessionID) => {
     let lastError
     for (let attempt = 1; attempt <= EXPORT_ATTEMPTS; attempt += 1) {
@@ -186,13 +202,47 @@ function turnAlignedStart(messages, end, limit) {
     minimumTurnStart = index
     turns += 1
   }
+  let start = candidate
+  let aligned = false
   for (let index = candidate; index < end; index += 1) {
-    if (messages[index].info.role === "user") return Math.min(index, minimumTurnStart)
+    if (messages[index].info.role === "user") {
+      start = Math.min(index, minimumTurnStart)
+      aligned = true
+      break
+    }
   }
-  // No turn begins inside the limit, so the requested limit falls inside the newest turn. Keep that
-  // turn whole instead of returning activity whose prompt is missing.
-  for (let index = candidate - 1; index >= 0; index -= 1) {
-    if (messages[index].info.role === "user") return Math.min(index, minimumTurnStart)
+  if (!aligned) {
+    // No turn begins inside the limit, so the requested limit falls inside the newest turn. Keep
+    // that turn whole instead of returning activity whose prompt is missing.
+    for (let index = candidate - 1; index >= 0; index -= 1) {
+      if (messages[index].info.role === "user") {
+        start = Math.min(index, minimumTurnStart)
+        break
+      }
+    }
   }
-  return candidate
+  return dropTurnsOverByteBudget(messages, start, end)
+}
+
+function dropTurnsOverByteBudget(messages, start, end) {
+  let latestUser = -1
+  for (let index = end - 1; index >= start; index -= 1) {
+    if (messages[index].info.role === "user") {
+      latestUser = index
+      break
+    }
+  }
+  // A page has to keep the newest prompt and its whole reply. If that turn alone is over budget the
+  // transport has to carry it; dropping it would render activity with no visible question.
+  if (latestUser < 0 || latestUser <= start) return start
+  const sizes = messages.map((message) => Buffer.byteLength(JSON.stringify(message)) + 1)
+  let pageBytes = 0
+  for (let index = start; index < end; index += 1) pageBytes += sizes[index]
+  while (start < latestUser && pageBytes > MAX_PAGE_BYTES) {
+    let next = start + 1
+    while (next < latestUser && messages[next].info.role !== "user") next += 1
+    for (let index = start; index < next; index += 1) pageBytes -= sizes[index]
+    start = next
+  }
+  return start
 }
