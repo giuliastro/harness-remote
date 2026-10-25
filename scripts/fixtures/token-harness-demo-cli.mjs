@@ -172,6 +172,10 @@ async function main() {
     process.stdout.write("0.1.34\n")
     return
   }
+  if (args.length === 0 || args[0] === "ui") {
+    await appendFile(cliLog, `ui ${args.join(" ")}\n`, "utf8")
+    return
+  }
   if (args[0] === "observe") {
     json(envelope("observe", observeData()))
     return

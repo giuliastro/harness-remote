@@ -1,4 +1,4 @@
-import { findExecutable, codexAdapterEnvironment } from "./executable-discovery.js"
+import { findExecutable, codexAdapterEnvironment, claudeAdapterEnvironment } from "./executable-discovery.js"
 import { createCodexHistoryLoader } from "./codex-session-history.js"
 import { createOmpHistoryLoader } from "./omp-session-history.js"
 import { createPiHistoryLoader } from "./pi-session-history.js"
@@ -161,6 +161,9 @@ export const HARNESS_PROFILES = {
     // whose model catalog includes Opus 5.5.
     args: ["--yes", "--package=@agentclientprotocol/claude-agent-acp@0.84.0", "claude-agent-acp"],
     adapterCommand: "claude-agent-acp",
+    // The embedded Agent SDK cannot always find its optional native Claude binary. Point it at the
+    // user's installed CLI, which is what the adapter is meant to drive.
+    environment: claudeAdapterEnvironment(),
     permissionMode: "allow",
     preserveListedTimestamps: true,
     reloadOnHistoryRefresh: false,

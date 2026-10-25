@@ -154,6 +154,22 @@ export async function listPlugins(config: ServerConfig, options: { refresh?: boo
   }
 }
 
+export async function runPluginAction(
+  config: ServerConfig,
+  pluginID: string,
+  actionID: string
+): Promise<{ message?: string }> {
+  const { value } = await pluginRequest(config, `/v1/plugins/${encodeURIComponent(pluginID)}/actions/${encodeURIComponent(actionID)}`, {
+    method: "POST",
+    body: {},
+    timeoutMs: ACTION_TIMEOUT_MS
+  })
+  const record = responsePayload(value)
+  if (!record || typeof record !== "object" || Array.isArray(record)) return {}
+  const result = record as Record<string, unknown>
+  return typeof result.message === "string" ? { message: result.message } : {}
+}
+
 export async function mutatePlugin(
   config: ServerConfig,
   pluginID: string,

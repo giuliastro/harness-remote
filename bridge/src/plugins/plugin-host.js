@@ -209,12 +209,25 @@ function normalizeAction(value, fallbackLabel) {
   }
 }
 
+function normalizeCustomActions(value) {
+  if (!Array.isArray(value)) return []
+  return value
+    .filter((item) => isRecord(item) && typeof item.id === "string" && /^[a-z0-9][a-z0-9-]{0,63}$/.test(item.id))
+    .slice(0, 8)
+    .map((item) => ({
+      id: item.id,
+      label: boundedString(item.label, 160) ?? item.id,
+      style: ["primary", "secondary", "danger"].includes(item.style) ? item.style : "secondary"
+    }))
+}
+
 function normalizeActions(value) {
   const actions = isRecord(value) ? value : {}
   return {
     install: normalizeAction(actions.install, "Install"),
     update: normalizeAction(actions.update, "Update"),
-    uninstall: normalizeAction(actions.uninstall, "Uninstall")
+    uninstall: normalizeAction(actions.uninstall, "Uninstall"),
+    custom: normalizeCustomActions(actions.custom)
   }
 }
 
@@ -820,6 +833,26 @@ export class PluginHost {
       })
     }
     this.#invalidate(id)
+    return {
+      ok: true,
+      ...(isRecord(result) && typeof result.message === "string" ? { message: result.message.slice(0, 1_000) } : {})
+    }
+  }
+
+  async runAction(id, actionId, params = {}) {
+    const manifest = await this.#manifest(id)
+    if (typeof actionId !== "string" || !/^[a-z0-9][a-z0-9-]{0,63}$/.test(actionId)) {
+      throw pluginError("invalid_request", "Plugin action id is invalid")
+    }
+    const state = await this.#loadState()
+    const record = state.plugins[id]
+    const context = await this.#context(manifest, record)
+    const result = await this.#invoke(manifest, "action", {
+      action: actionId,
+      config: record?.config ?? {},
+      context,
+      ...(isRecord(params) ? params : {})
+    }, 120_000)
     return {
       ok: true,
       ...(isRecord(result) && typeof result.message === "string" ? { message: result.message.slice(0, 1_000) } : {})

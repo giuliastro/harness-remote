@@ -103,6 +103,7 @@ Methods:
 | `update` | The user chose Update. |
 | `uninstall` | The user confirmed Uninstall. |
 | `configure` | A settings field changed. Receives `values` plus the previous `config`. |
+| `action` | A named action from `actions.custom`, for example opening the application's own dashboard. |
 
 `status` runs with `enabled: false` when the plugin is disabled. Keep that path cheap: detect the
 external application and return its version, but do not load dashboards or settings.
@@ -125,7 +126,10 @@ external application and return its version, but do not load dashboards or setti
   "actions": {
     "install": { "available": false },
     "update": { "available": false },
-    "uninstall": { "available": false, "reason": "Installed outside Harness Remote." }
+    "uninstall": { "available": false, "reason": "Installed outside Harness Remote." },
+    "custom": [
+      { "id": "open", "label": "Open Token Harness", "style": "secondary" }
+    ]
   },
   "contributions": {},
   "settings": { "sections": [] },
@@ -235,6 +239,10 @@ The built-in plugin uses only public CLI surfaces:
 - `token-harness budget --json` and `token-harness savings --json` as the fallback for older copies.
 - `token-harness plan --harness <claude|codex> --provider none --agent-routing|--disable-agent-routing --json`
   followed by `apply --plan <id> --yes --json` for the routing switches.
+- `token-harness` with no arguments for the **Open Token Harness** action: the plugin starts the
+  guided dashboard on that machine. That dashboard remains the place for RTK, HarnessTrim and the
+  other optimizer settings; Harness Remote surfaces routing directly and links the rest there.
+  The plugin detail states this explicitly in its Optimizers note.
 - `--version` for external detection.
 
 Detection checks the managed runtime first, then `PATH` and the common user install directories. An

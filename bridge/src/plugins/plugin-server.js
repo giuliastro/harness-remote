@@ -2,6 +2,7 @@ import http from "node:http"
 import { authenticateDaemonRequest, guardRequestHandler, writeJSON } from "../http-policy.js"
 
 const PLUGIN_ROUTE = /^\/v1\/plugins(?:\/([a-z0-9][a-z0-9-]{0,63}))?(?:\/(install|update|uninstall|enable|disable|settings))?$/
+const PLUGIN_ACTION_ROUTE = /^\/v1\/plugins\/([a-z0-9][a-z0-9-]{0,63})\/actions\/([a-z0-9][a-z0-9-]{0,63})$/
 const MAX_BODY_BYTES = 128 * 1024
 
 function requestError(message) {
@@ -42,8 +43,9 @@ function errorDetail(error) {
 export function createPluginServer({ innerServer, config, pluginHost, createServer = http.createServer }) {
   return createServer(guardRequestHandler(async (request, response) => {
     const url = new URL(request.url ?? "/", `http://${request.headers.host ?? "localhost"}`)
-    const match = PLUGIN_ROUTE.exec(url.pathname)
-    if (!match) {
+    const actionMatch = PLUGIN_ACTION_ROUTE.exec(url.pathname)
+    const match = actionMatch ? null : PLUGIN_ROUTE.exec(url.pathname)
+    if (!match && !actionMatch) {
       innerServer.emit("request", request, response)
       return
     }
@@ -52,6 +54,16 @@ export function createPluginServer({ innerServer, config, pluginHost, createServ
 
     try {
       if (!pluginHost) throw Object.assign(new Error("Plugin host is not configured"), { code: "plugin_unavailable" })
+      if (actionMatch) {
+        if (request.method !== "POST") {
+          response.writeHead(405, { Allow: "POST, OPTIONS" })
+          response.end()
+          return
+        }
+        const body = await readJSONBody(request)
+        writeJSON(response, 200, await pluginHost.runAction(actionMatch[1], actionMatch[2], body))
+        return
+      }
       const [, rawID, action] = match
       if (!rawID) {
         if (request.method !== "GET") {

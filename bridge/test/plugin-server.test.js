@@ -53,7 +53,8 @@ function fakeHost() {
     async uninstall(id) { calls.push(["uninstall", id]); return { plugin: plugin({ enabled: false }), message: "removed" } },
     async enable(id) { calls.push(["enable", id]); return { plugin: plugin(), message: "enabled" } },
     async disable(id) { calls.push(["disable", id]); return { plugin: plugin({ enabled: false, state: "disabled" }), message: "disabled" } },
-    async configure(id, values) { calls.push(["configure", id, values]); return { ok: true, message: "saved" } }
+    async configure(id, values) { calls.push(["configure", id, values]); return { ok: true, message: "saved" } },
+    async runAction(id, actionID, params) { calls.push(["runAction", id, actionID, params]); return { ok: true, message: "opened" } }
   }
 }
 
@@ -100,6 +101,15 @@ test("plugin control plane is authenticated, routes lifecycle actions and preser
     })
     assert.equal(configured.status, 200)
     assert.deepEqual(host.calls.find((call) => call[0] === "configure"), ["configure", "token-harness", { window: "30d", "routing.claude": true }])
+
+    const opened = await fetch(`${base}/v1/plugins/token-harness/actions/open`, {
+      method: "POST",
+      headers: { Authorization: authorization(), "Content-Type": "application/json" },
+      body: "{}"
+    })
+    assert.equal(opened.status, 200)
+    assert.equal((await opened.json()).message, "opened")
+    assert.deepEqual(host.calls.find((call) => call[0] === "runAction"), ["runAction", "token-harness", "open", {}])
 
     const machine = await fetch(`${base}/v1/machine`)
     assert.equal(machine.status, 204)

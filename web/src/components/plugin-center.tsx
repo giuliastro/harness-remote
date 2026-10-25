@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react"
 import { createPortal } from "react-dom"
 import { AlertIcon, LoadingIcon, PuzzleIcon, RefreshIcon, ServerIcon } from "../Icons"
 import { harnessIconUrl } from "../harness-icons"
-import { mutatePlugin } from "../pluginClient"
+import { mutatePlugin, runPluginAction } from "../pluginClient"
 import {
   activePlugins,
   pluginIsActive,
@@ -67,7 +67,22 @@ function PluginPopover({
   const t = useTranslator()
   const language = useLanguage()
   const popoverRef = useRef<HTMLElement>(null)
+  const [actionBusy, setActionBusy] = useState(false)
+  const [actionNotice, setActionNotice] = useState<{ kind: "success" | "error"; text: string } | null>(null)
+  const openAction = plugin.actions.custom.find((action) => action.id === "open")
   useDialogDismiss(popoverRef, onClose, { autoFocus: false })
+  async function launchTokenHarness() {
+    setActionBusy(true)
+    setActionNotice(null)
+    try {
+      await runPluginAction(machine.config, plugin.id, "open")
+      setActionNotice({ kind: "success", text: t("plugins.tokenHarnessOpenedOn", { name: machine.name }) })
+    } catch (reason) {
+      setActionNotice({ kind: "error", text: reason instanceof Error ? reason.message : t("plugins.actionFailed") })
+    } finally {
+      setActionBusy(false)
+    }
+  }
   useEffect(() => {
     const close = () => onClose()
     window.addEventListener("resize", close)
@@ -133,9 +148,19 @@ function PluginPopover({
             focusHarness={focusHarness}
           />
         </div>
+        {actionNotice ? (
+          <p className={`hr-plugin-popover-status ${actionNotice.kind}`} role={actionNotice.kind === "error" ? "alert" : "status"}>{actionNotice.text}</p>
+        ) : null}
         <footer className="hr-plugin-popover-footer">
           <span>{plugin.dependency ? `${dependencyLabel(plugin, t)}${plugin.dependency.version ? ` · v${plugin.dependency.version}` : ""}` : t("plugins.notInstalled")}</span>
-          <button type="button" className="tdw-button primary" onClick={() => { onClose(); onOpenPlugins() }}>{t("plugins.manage")}</button>
+          <div className="hr-plugin-popover-actions">
+            {openAction ? (
+              <button type="button" className="tdw-button secondary" disabled={actionBusy} onClick={() => void launchTokenHarness()}>
+                {actionBusy ? <LoadingIcon size={13} /> : t("plugins.openTokenHarness")}
+              </button>
+            ) : null}
+            <button type="button" className="tdw-button primary" onClick={() => { onClose(); onOpenPlugins() }}>{t("plugins.manage")}</button>
+          </div>
         </footer>
       </section>
     </>,
@@ -263,6 +288,7 @@ function PluginDetail({
   plugin,
   machine,
   onAction,
+  onCustomAction,
   busyAction,
   notice,
   confirmUninstall,
@@ -274,6 +300,7 @@ function PluginDetail({
   plugin: PluginInfo
   machine: WorkspaceMachine
   onAction: (plugin: PluginInfo, action: "install" | "update" | "uninstall" | "enable" | "disable") => void
+  onCustomAction: (plugin: PluginInfo, actionID: string) => void
   busyAction: string | null
   notice: { kind: "success" | "error"; text: string } | null
   confirmUninstall: boolean
@@ -286,6 +313,7 @@ function PluginDetail({
   const language = useLanguage()
   const active = pluginIsActive(plugin)
   const busy = (action: string) => busyAction === `${plugin.id}:${action}`
+  const busyCustom = (actionID: string) => busyAction === `${plugin.id}:action:${actionID}`
   const dependency = plugin.dependency
   const canInstall = plugin.actions.install.available
   const canUpdate = plugin.actions.update.available
@@ -337,6 +365,20 @@ function PluginDetail({
               {busy("install") ? <><LoadingIcon size={14} /> {t("plugins.installing")}</> : t("plugins.install")}
             </button>
           ) : null}
+          {plugin.actions.custom.map((custom) => {
+            const label = custom.id === "open" ? t("plugins.openTokenHarness") : custom.label
+            return (
+              <button
+                type="button"
+                className={`tdw-button ${custom.style}`}
+                key={custom.id}
+                disabled={Boolean(busyAction)}
+                onClick={() => onCustomAction(plugin, custom.id)}
+              >
+                {busyCustom(custom.id) ? <><LoadingIcon size={14} /> {label}</> : label}
+              </button>
+            )
+          })}
           {plugin.homepage ? (
             <a className="tdw-button secondary hr-plugin-link-button" href={plugin.homepage} target="_blank" rel="noreferrer">{t("plugins.openProject")}</a>
           ) : null}
@@ -504,6 +546,20 @@ export function PluginCenter({
     }
   }
 
+  async function performCustom(plugin: PluginInfo, actionID: string) {
+    if (!machine) return
+    setBusyAction(`${plugin.id}:action:${actionID}`)
+    setNotice(null)
+    try {
+      const result = await runPluginAction(machine.config, plugin.id, actionID)
+      setNotice({ kind: "success", text: actionID === "open" ? t("plugins.tokenHarnessOpenedOn", { name: machine.name }) : result.message || t("plugins.actionDone", { name: plugin.name }) })
+    } catch (reason) {
+      setNotice({ kind: "error", text: reason instanceof Error ? reason.message : t("plugins.actionFailed") })
+    } finally {
+      setBusyAction(null)
+    }
+  }
+
   function selectPlugin(plugin: PluginInfo) {
     setSelectedPluginID(plugin.id)
     setMobileDetail(true)
@@ -604,6 +660,7 @@ export function PluginCenter({
                 plugin={selected}
                 machine={machine}
                 onAction={(plugin, action) => void perform(plugin, action)}
+                onCustomAction={(plugin, actionID) => void performCustom(plugin, actionID)}
                 busyAction={busyAction}
                 notice={notice}
                 confirmUninstall={confirmUninstallID === selected.id}

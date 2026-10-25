@@ -15,6 +15,12 @@ DEMO_HOME="$TEST/home"
 DEMO_STATE="$TEST/token-harness"
 LOGS="$STATE/logs"
 FIXTURE="$ROOT/scripts/fixtures/token-harness-demo-cli.mjs"
+REAL_STATE="${HARNESS_REMOTE_REAL_STATE:-}"
+if [[ -z "$REAL_STATE" ]]; then
+  for candidate in "$HOME/.config/harness-remote-web/embedded-daemon" "$HOME/.config/Harness Remote/embedded-daemon"; do
+    if [[ -d "$candidate" ]]; then REAL_STATE="$candidate"; break; fi
+  done
+fi
 MODE="demo"
 CHECK=0
 for argument in "$@"; do
@@ -101,14 +107,38 @@ trap 'exit 143' TERM HUP
 
 if ((CHECK)); then
   echo "Plugin review ($MODE): build desktop pronta; sessioni reali da $HOME"
+  [[ -n "$REAL_STATE" ]] && echo "Stato sessioni stabile: $REAL_STATE"
   exit 0
 fi
+
+# The stable app's daemon state owns the deleted-session and hidden-session indexes. Without it a
+# fresh test profile rediscovers Sessions the user already deleted and reports a much larger count.
+sync_real_state() {
+  [[ -n "$REAL_STATE" && -d "$REAL_STATE" ]] || return 0
+  local target="$STATE/desktop/embedded-daemon"
+  local backup="$STATE/plugin-state-backup"
+  rm -rf "$backup"
+  if [[ -d "$target/plugins" ]]; then
+    mkdir -p "$backup"
+    cp -a "$target/plugins/." "$backup/"
+  fi
+  rm -rf "$target"
+  mkdir -p "$STATE/desktop"
+  cp -a "$REAL_STATE" "$target"
+  if [[ -d "$backup" ]]; then
+    mkdir -p "$target/plugins"
+    cp -a "$backup/." "$target/plugins/"
+  fi
+  echo "Sincronizzato lo stato sessioni da $REAL_STATE"
+}
+sync_real_state
 
 cat <<EOF
 Plugin system — modalità $MODE
 Codice: $ROOT
 Stato Harness Remote: $STATE/desktop
 Sessioni reali: $HOME
+Stato sessioni stabile: ${REAL_STATE:-non trovato}
 Home routing demo: $DEMO_HOME
 Fixture CLI Token Harness: $FIXTURE
 Log: $LOGS
@@ -125,7 +155,8 @@ Cosa provare
   4. Attiva/disattiva il routing dell'harness in uso. Lo stato deve restare
      coerente dopo l'aggiornamento; in demo modifica solo $DEMO_HOME.
   5. Apri Impostazioni (ingranaggio) → Plugin → Token Harness.
-     Qui trovi lista, dettaglio, dashboard, diagnostica e impostazioni.
+     Qui trovi dashboard, routing, nota sugli optimizer e il pulsante
+     "Apri Token Harness" per le configurazioni che restano nel suo pannello.
   6. Disattiva il plugin: chip e dashboard devono sparire. Riattivalo e devono
      tornare. La card riepilogativa non è più sopra la lista Sessioni.
   7. Senza sessione selezionata il pannello destro mostra la dashboard

@@ -58,3 +58,26 @@ export function codexAdapterEnvironment({ environment = process.env, find = find
   // Without an installed binary the adapter retains its bundled Codex fallback.
   return command ? { CODEX_PATH: command } : {}
 }
+
+export function findClaudeExecutable(options = {}) {
+  const configured = options.claudePath ?? process.env.CLAUDE_CODE_EXECUTABLE
+  if (configured && executable(configured, options)) return configured
+  const onPath = findExecutable("claude", options)
+  if (onPath) return onPath
+  // A GUI launch can resolve a shell PATH without the private install directory used by the
+  // official Claude Code installer.
+  const home = options.homeDirectory ?? homedir()
+  const candidate = path.join(home, ".local", "bin", "claude")
+  return executable(candidate, options) ? candidate : null
+}
+
+/**
+ * The Claude ACP adapter embeds the Agent SDK, whose native binary lookup can fail when npm
+ * omitted optional platform packages. CLAUDE_CODE_EXECUTABLE is the SDK's documented override and
+ * the installed `claude` CLI is the same executable the adapter would otherwise bundle.
+ */
+export function claudeAdapterEnvironment({ environment = process.env, find = findClaudeExecutable } = {}) {
+  if (environment.CLAUDE_CODE_EXECUTABLE) return { CLAUDE_CODE_EXECUTABLE: environment.CLAUDE_CODE_EXECUTABLE }
+  const command = find({ pathValue: environment.PATH ?? "" })
+  return command ? { CLAUDE_CODE_EXECUTABLE: command } : {}
+}

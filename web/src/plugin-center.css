@@ -2,9 +2,30 @@
    Plugins
    --------------------------------------------------------------------------
    A plugin owns data, not pixels. These surfaces render the declarative
-   contributions the daemon returns, so the top bar, the Session rail, the
+   contributions the daemon returns, so the top bar, the Session header, the
    empty state and the catalogue keep one visual language as plugins grow.
    ========================================================================== */
+
+/* Portalled plugin surfaces live outside `.tdw-shell`, so they state the same box model and font
+   inheritance the shell normally provides. Native button defaults otherwise made a switch taller
+   than its track and pushed the knob toward the top. */
+.hr-plugin-backdrop,
+.hr-plugin-center,
+.hr-plugin-center *,
+.hr-plugin-center *::before,
+.hr-plugin-center *::after,
+.hr-plugin-popover-backdrop,
+.hr-plugin-popover,
+.hr-plugin-popover *,
+.hr-plugin-popover *::before,
+.hr-plugin-popover *::after {
+  box-sizing: border-box;
+}
+
+.hr-plugin-center,
+.hr-plugin-popover {
+  font-family: var(--font-family, Inter, ui-sans-serif, system-ui, sans-serif);
+}
 
 .hr-plugin-icon {
   --hr-plugin-icon-size: 20px;
@@ -208,10 +229,36 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 10px;
+  flex-wrap: wrap;
+  gap: 7px 10px;
   padding: 9px 12px;
   border-top: 1px solid var(--td3-border-soft);
   background: var(--td3-panel-2);
+}
+
+.hr-plugin-popover-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: none;
+}
+
+.hr-plugin-popover-status {
+  margin: 0;
+  padding: 7px 12px;
+  border-top: 1px solid var(--td3-border-soft);
+  font-size: 9.5px;
+  line-height: 1.4;
+}
+
+.hr-plugin-popover-status.success {
+  color: var(--td3-green-text);
+  background: var(--td3-green-soft);
+}
+
+.hr-plugin-popover-status.error {
+  color: var(--td3-red-text);
+  background: var(--td3-red-soft);
 }
 
 .hr-plugin-popover-footer > span {
@@ -227,6 +274,11 @@
   flex: none;
   min-height: 30px;
   font-size: 10px;
+}
+
+.hr-plugin-popover-footer .tdw-button svg {
+  width: 13px;
+  height: 13px;
 }
 
 /* --------------------------------------------------------------------------
@@ -655,24 +707,35 @@
 
 .hr-plugin-switch {
   position: relative;
-  width: 38px;
-  height: 22px;
+  display: inline-block;
+  flex: none;
+  box-sizing: border-box;
+  width: 40px;
+  height: 24px;
+  min-height: 24px;
+  margin: 0;
   padding: 0;
   border: 1px solid var(--td3-border-strong);
   border-radius: 999px;
+  outline: none;
   background: var(--td3-sunken-strong);
+  box-shadow: none;
+  appearance: none;
+  -webkit-appearance: none;
   cursor: pointer;
+  line-height: 0;
   transition: background 120ms var(--ease), border-color 120ms var(--ease);
 }
 
 .hr-plugin-switch > span {
   position: absolute;
-  top: 2px;
+  top: 50%;
   left: 2px;
-  width: 16px;
-  height: 16px;
+  width: 18px;
+  height: 18px;
   border-radius: 50%;
   background: var(--td3-muted);
+  transform: translateY(-50%);
   transition: left 140ms var(--ease), background 120ms var(--ease);
 }
 
@@ -682,8 +745,12 @@
 }
 
 .hr-plugin-switch.on > span {
-  left: 18px;
+  left: 20px;
   background: var(--td3-blue);
+}
+
+.hr-plugin-switch:focus-visible {
+  box-shadow: 0 0 0 2px var(--td3-focus);
 }
 
 .hr-plugin-switch:disabled {
@@ -1365,6 +1432,9 @@
    -------------------------------------------------------------------------- */
 
 .hr-native-workspace-empty:has(.hr-plugin-home-stack) {
+  width: 100%;
+  max-width: none;
+  margin-inline: 0;
   align-content: start;
   overflow-y: auto;
   padding-block: 30px;

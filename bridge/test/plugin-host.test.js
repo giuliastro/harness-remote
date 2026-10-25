@@ -114,6 +114,10 @@ if (args[0] === "--version") {
   process.stdout.write("0.1.34\\n")
   process.exit(0)
 }
+if (args.length === 0 || args[0] === "ui") {
+  if (process.env.FAKE_LOG) require("node:fs").appendFileSync(process.env.FAKE_LOG, "ui\\n")
+  process.exit(0)
+}
 if (args[0] === "observe") {
   process.stdout.write(process.env.FAKE_OBSERVE || "{}")
   process.exit(0)
@@ -156,6 +160,7 @@ test("plugin host detects an external Token Harness, auto-enables it and exposes
     assert.equal(plugin.dependency.state, "external")
     assert.equal(plugin.dependency.version, "0.1.34")
     assert.equal(plugin.dependency.supportsObserve, true)
+    assert.equal(plugin.actions.custom.find((item) => item.id === "open").label, "Open Token Harness")
     assert.equal(plugin.contributions.home.harnesses.find((item) => item.harnessId === "codex").remainingPercent, 30)
     assert.equal(plugin.contributions.home.meters.length, 2)
     const exact = plugin.contributions.home.stats.find((stat) => stat.id === "exact-saved")
@@ -164,6 +169,8 @@ test("plugin host detects an external Token Harness, auto-enables it and exposes
     assert.equal(routing.fields.find((field) => field.id === "routing.claude").value, true)
     const stored = JSON.parse(await readFile(host.statePath, "utf8"))
     assert.equal(stored.plugins["token-harness"].enabled, true)
+    const opened = await host.runAction("token-harness", "open")
+    assert.match(opened.message, /started on this machine/)
   } finally {
     await host.close()
     await rm(env.root, { recursive: true, force: true })

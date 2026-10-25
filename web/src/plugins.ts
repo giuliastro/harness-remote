@@ -29,10 +29,17 @@ export type PluginLifecycleAction = {
   reason?: string
 }
 
+export type PluginCustomAction = {
+  id: string
+  label: string
+  style: "primary" | "secondary" | "danger"
+}
+
 export type PluginActions = {
   install: PluginLifecycleAction
   update: PluginLifecycleAction
   uninstall: PluginLifecycleAction
+  custom: PluginCustomAction[]
 }
 
 export type PluginMeter = {
@@ -166,6 +173,15 @@ function numberOrNull(value: unknown): number | null {
 
 function tone(value: unknown): PluginTone | undefined {
   return value === "good" || value === "warn" || value === "danger" || value === "muted" ? value : undefined
+}
+
+function customAction(value: unknown): PluginCustomAction | null {
+  if (!isRecord(value) || typeof value.id !== "string" || !value.id) return null
+  return {
+    id: value.id,
+    label: stringValue(value.label, value.id),
+    style: value.style === "primary" || value.style === "danger" ? value.style : "secondary"
+  }
 }
 
 function action(value: unknown): PluginLifecycleAction {
@@ -353,7 +369,10 @@ export function normalizePlugin(value: unknown): PluginInfo | null {
     actions: {
       install: action(actions.install),
       update: action(actions.update),
-      uninstall: action(actions.uninstall)
+      uninstall: action(actions.uninstall),
+      custom: Array.isArray(actions.custom)
+        ? actions.custom.map(customAction).filter((item): item is PluginCustomAction => Boolean(item)).slice(0, 8)
+        : []
     },
     contributions: contributions(value.contributions),
     settings: settings(value.settings),

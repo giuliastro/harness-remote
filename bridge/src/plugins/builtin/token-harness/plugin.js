@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { execFile } from "node:child_process"
+import { execFile, spawn } from "node:child_process"
 import { access, mkdir, readFile, rm } from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
@@ -595,7 +595,7 @@ function routingField(routing, installed) {
   return {
     id: `routing.${routing.harness}`,
     type: "toggle",
-    label: harnessLabel(routing.harness),
+    label: `${harnessLabel(routing.harness)} routing`,
     description: routing.harness === "claude"
       ? "Adds Token Harness's native per-prompt routing hook to Claude Code."
       : "Adds Token Harness's native per-prompt routing hook to Codex.",
@@ -644,6 +644,12 @@ function buildSettings(context, config, routing, agents) {
             ]
           }
         ]
+      },
+      {
+        id: "optimizers",
+        title: "Optimizers",
+        description: "RTK, HarnessTrim and the other Token Harness optimizers are configured by Token Harness itself. Use Open Token Harness to enable, disable or review them. Automatic routing can be changed directly above.",
+        fields: []
       }
     ]
   }
@@ -710,7 +716,8 @@ function actionModel(cli) {
     return {
       install: { available: true, label: "Install Token Harness" },
       update: { available: false },
-      uninstall: { available: false }
+      uninstall: { available: false },
+      custom: []
     }
   }
   const supportsObserve = versionAtLeast(cli.version, MIN_OBSERVE_VERSION)
@@ -723,7 +730,13 @@ function actionModel(cli) {
       : { available: false },
     uninstall: cli.source === "managed"
       ? { available: true, label: "Uninstall Token Harness" }
-      : { available: false, reason: "This copy was installed outside Harness Remote and will not be removed." }
+      : { available: false, reason: "This copy was installed outside Harness Remote and will not be removed." },
+    custom: [{
+      id: "open",
+      label: "Open Token Harness",
+      tone: "secondary",
+      reason: "Opens the Token Harness setup and optimizer dashboard on this machine."
+    }]
   }
 }
 
@@ -876,6 +889,27 @@ async function applyRouting(cli, params, harness, enabled) {
   throw new Error(firstDiagnostic(plan, `No safe automatic routing change is available for ${harnessLabel(harness)}`))
 }
 
+async function openDashboard(params) {
+  const context = isRecord(params?.context) ? params.context : {}
+  const cli = await resolveCli(context)
+  if (!cli) throw new Error("Token Harness is not installed")
+  const home = tokenHarnessHome(context)
+  const child = spawn(cli.path, [], {
+    cwd: home,
+    env: {
+      ...process.env,
+      HOME: home
+    },
+    detached: true,
+    stdio: "ignore",
+    windowsHide: true,
+    ...(process.platform === "win32" ? { shell: true } : {})
+  })
+  child.on("error", () => undefined)
+  child.unref()
+  return { message: "Token Harness started on this machine. Use its browser window to manage optimizers and other settings." }
+}
+
 async function configure(params) {
   const context = isRecord(params?.context) ? params.context : {}
   const previous = normalizeConfig(params?.config)
@@ -911,6 +945,11 @@ async function dispatch(method, params) {
   if (method === "install" || method === "update") return await install(params)
   if (method === "uninstall") return await uninstall(params)
   if (method === "configure") return await configure(params)
+  if (method === "action") {
+    const action = text(params?.action)
+    if (action === "open") return await openDashboard(params)
+    throw new Error(`Unknown Token Harness action: ${action || "missing"}`)
+  }
   throw new Error(`Unknown plugin method: ${String(method)}`)
 }
 

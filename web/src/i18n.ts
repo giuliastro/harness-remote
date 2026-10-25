@@ -73,6 +73,9 @@ export type TranslationKey =
   | 'plugins.allowance'
   | 'plugins.observed'
   | 'plugins.inUse'
+  | 'plugins.openTokenHarness'
+  | 'plugins.tokenHarnessOpened'
+  | 'plugins.tokenHarnessOpenedOn'
   | 'plugins.unavailable'
   | 'plugins.savings'
   | 'plugins.dashboard'
@@ -861,6 +864,9 @@ const translations: Record<LanguageCode, Partial<Record<TranslationKey, string>>
     'plugins.allowance': 'Allowance',
     'plugins.observed': 'Observed',
     'plugins.inUse': 'In use',
+    'plugins.openTokenHarness': 'Open Token Harness',
+    'plugins.tokenHarnessOpened': 'Token Harness started on this machine.',
+    'plugins.tokenHarnessOpenedOn': 'Token Harness started on {name}.',
     'plugins.unavailable': 'Unavailable',
     'plugins.savings': 'Savings',
     'plugins.dashboard': 'Dashboard',
@@ -1628,6 +1634,9 @@ const translations: Record<LanguageCode, Partial<Record<TranslationKey, string>>
     'plugins.allowance': 'Budget',
     'plugins.observed': 'Osservato',
     'plugins.inUse': 'In uso',
+    'plugins.openTokenHarness': 'Apri Token Harness',
+    'plugins.tokenHarnessOpened': 'Token Harness avviato su questa macchina.',
+    'plugins.tokenHarnessOpenedOn': 'Token Harness avviato su {name}.',
     'plugins.unavailable': 'Non disponibile',
     'plugins.savings': 'Risparmi',
     'plugins.dashboard': 'Dashboard',
@@ -2395,6 +2404,9 @@ const translations: Record<LanguageCode, Partial<Record<TranslationKey, string>>
     'plugins.allowance': '額度',
     'plugins.observed': '已觀測',
     'plugins.inUse': '使用中',
+    'plugins.openTokenHarness': '開啟 Token Harness',
+    'plugins.tokenHarnessOpened': 'Token Harness 已在此機器啟動。',
+    'plugins.tokenHarnessOpenedOn': 'Token Harness 已在 {name} 上啟動。',
     'plugins.unavailable': '無法取得',
     'plugins.savings': '節省量',
     'plugins.dashboard': '儀表板',
@@ -3162,6 +3174,9 @@ const translations: Record<LanguageCode, Partial<Record<TranslationKey, string>>
     'plugins.allowance': '额度',
     'plugins.observed': '已观测',
     'plugins.inUse': '使用中',
+    'plugins.openTokenHarness': '打开 Token Harness',
+    'plugins.tokenHarnessOpened': 'Token Harness 已在此机器启动。',
+    'plugins.tokenHarnessOpenedOn': 'Token Harness 已在 {name} 上启动。',
     'plugins.unavailable': '不可用',
     'plugins.savings': '节省量',
     'plugins.dashboard': '仪表板',
@@ -3929,6 +3944,9 @@ const translations: Record<LanguageCode, Partial<Record<TranslationKey, string>>
     'plugins.allowance': 'Cota',
     'plugins.observed': 'Observado',
     'plugins.inUse': 'Em uso',
+    'plugins.openTokenHarness': 'Abrir Token Harness',
+    'plugins.tokenHarnessOpened': 'Token Harness iniciado nesta máquina.',
+    'plugins.tokenHarnessOpenedOn': 'Token Harness iniciado em {name}.',
     'plugins.unavailable': 'Indisponível',
     'plugins.savings': 'Economia',
     'plugins.dashboard': 'Painel',
