@@ -918,8 +918,10 @@ async function openDashboard(params) {
   await mkdir(dataDirectory, { recursive: true })
   const logPath = path.join(dataDirectory, "dashboard.log")
   const statePath = path.join(dataDirectory, "dashboard.json")
+  const usePipe = process.platform === "win32"
   const log = await openFile(logPath, "w")
   let child
+  let captured = ""
   try {
     child = spawn(cli.path, ["ui", "--no-open"], {
       cwd: home,
@@ -928,7 +930,10 @@ async function openDashboard(params) {
         HOME: home
       },
       detached: true,
-      stdio: ["ignore", log.fd, log.fd],
+      // Windows does not route a child's output to an arbitrary file descriptor when it must go
+      // through cmd.exe. Capture the short startup output through pipes there; POSIX can keep the
+      // detached child writing to the log file while the plugin process exits.
+      stdio: usePipe ? ["ignore", "pipe", "pipe"] : ["ignore", log.fd, log.fd],
       windowsHide: true,
       ...(process.platform === "win32" ? { shell: true } : {})
     })
@@ -937,11 +942,16 @@ async function openDashboard(params) {
   }
   if (!child?.pid) throw new Error("Token Harness could not be started")
   child.on("error", () => undefined)
+  if (usePipe) {
+    child.stdout?.on("data", (chunk) => { captured += chunk.toString() })
+    child.stderr?.on("data", (chunk) => { captured += chunk.toString() })
+  }
   const deadline = Date.now() + 30_000
   let url = null
   while (Date.now() < deadline) {
     try {
-      url = dashboardReadyUrl(await readFile(logPath, "utf8"))
+      const output = usePipe ? captured : await readFile(logPath, "utf8")
+      url = dashboardReadyUrl(output)
     } catch {
       url = null
     }
@@ -949,8 +959,15 @@ async function openDashboard(params) {
     await new Promise((resolve) => setTimeout(resolve, 250))
   }
   if (!url) {
-    const output = await readFile(logPath, "utf8").catch(() => "")
+    const output = usePipe ? captured : await readFile(logPath, "utf8").catch(() => "")
     throw new Error(`Token Harness did not report a dashboard URL.${output.trim() ? ` ${tail(output)}` : ""}`)
+  }
+  if (usePipe) {
+    await writeFile(logPath, captured)
+    // The URL is known; release the read ends so this one-shot plugin process can exit while the
+    // detached dashboard keeps serving.
+    child.stdout?.destroy()
+    child.stderr?.destroy()
   }
   await writeFile(statePath, JSON.stringify({ pid: child.pid, url, startedAt: new Date().toISOString() }), { mode: 0o600 })
   child.unref()
