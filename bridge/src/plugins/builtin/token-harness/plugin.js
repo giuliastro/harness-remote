@@ -948,6 +948,7 @@ async function openDashboard(params) {
   }
   const deadline = Date.now() + 30_000
   let url = null
+  let exitedAt = null
   while (Date.now() < deadline) {
     try {
       const output = usePipe ? captured : await readFile(logPath, "utf8")
@@ -955,8 +956,14 @@ async function openDashboard(params) {
     } catch {
       url = null
     }
-    if (url || child.exitCode !== null) break
-    await new Promise((resolve) => setTimeout(resolve, 250))
+    if (url) break
+    if (child.exitCode !== null) {
+      // `exitCode` can become visible before the final stdout pipe data event. Give the pipe a
+      // short drain window instead of declaring a valid one-shot CLI failed.
+      exitedAt ??= Date.now()
+      if (Date.now() - exitedAt > 1_000) break
+    }
+    await new Promise((resolve) => setTimeout(resolve, 100))
   }
   if (!url) {
     const output = usePipe ? captured : await readFile(logPath, "utf8").catch(() => "")
