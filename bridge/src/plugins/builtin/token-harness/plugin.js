@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { execFile, spawn } from "node:child_process"
-import { access, mkdir, open as openFile, readFile, rm, writeFile } from "node:fs/promises"
+import { access, mkdir, readFile, rm, writeFile } from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
 import { promisify } from "node:util"
@@ -918,36 +918,18 @@ async function openDashboard(params) {
   await mkdir(dataDirectory, { recursive: true })
   const logPath = path.join(dataDirectory, "dashboard.log")
   const statePath = path.join(dataDirectory, "dashboard.json")
-  const useShellRedirect = process.platform === "win32"
-  if (useShellRedirect) await writeFile(logPath, "")
-  const log = useShellRedirect ? null : await openFile(logPath, "w")
-  let child
-  try {
-    child = useShellRedirect
-      ? spawn(`"${cli.path}" ui --no-open > "${logPath}" 2>&1`, {
-        cwd: home,
-        env: {
-          ...process.env,
-          HOME: home
-        },
-        detached: true,
-        stdio: "ignore",
-        windowsHide: true,
-        shell: true
-      })
-      : spawn(cli.path, ["ui", "--no-open"], {
-        cwd: home,
-        env: {
-          ...process.env,
-          HOME: home
-        },
-        detached: true,
-        stdio: ["ignore", log.fd, log.fd],
-        windowsHide: true
-      })
-  } finally {
-    if (log) await log.close()
-  }
+  const runnerPath = path.join(text(context.pluginDirectory, path.dirname(process.argv[1] ?? ".")), "dashboard-runner.cjs")
+  await writeFile(logPath, "")
+  const child = spawn(process.execPath, [runnerPath, cli.path, logPath, home], {
+    cwd: home,
+    env: {
+      ...process.env,
+      HOME: home
+    },
+    detached: true,
+    stdio: "ignore",
+    windowsHide: true
+  })
   if (!child?.pid) throw new Error("Token Harness could not be started")
   child.on("error", () => undefined)
   const deadline = Date.now() + 30_000
@@ -961,7 +943,7 @@ async function openDashboard(params) {
     }
     if (url) break
     if (child.exitCode !== null) {
-      // `exitCode` can become visible before the final output is flushed. Give the log a short
+      // `exitCode` can become visible before the file stream is flushed. Give the runner a short
       // drain window instead of declaring a valid one-shot CLI failed.
       exitedAt ??= Date.now()
       if (Date.now() - exitedAt > 1_000) break
