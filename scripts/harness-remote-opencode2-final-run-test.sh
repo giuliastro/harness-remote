@@ -38,12 +38,36 @@ if [[ ! -d "$SANDBOX/.git" ]]; then
 fi
 
 # Reuse the tester's provider configuration and credentials, but never their OpenCode data root.
-if [[ -f "$HOME/.config/opencode/opencode.json" && ! -f "$XDG_CONFIG_HOME/opencode/opencode.json" ]]; then
-  cp "$HOME/.config/opencode/opencode.json" "$XDG_CONFIG_HOME/opencode/opencode.json"
-fi
+for config in opencode.json opencode.jsonc; do
+  if [[ -f "$HOME/.config/opencode/$config" && ! -f "$XDG_CONFIG_HOME/opencode/$config" ]]; then
+    cp "$HOME/.config/opencode/$config" "$XDG_CONFIG_HOME/opencode/$config"
+  fi
+done
 if [[ -f "$HOME/.local/share/opencode/auth.json" && ! -f "$XDG_DATA_HOME/opencode/auth.json" ]]; then
   mkdir -p "$XDG_DATA_HOME/opencode"
   cp "$HOME/.local/share/opencode/auth.json" "$XDG_DATA_HOME/opencode/auth.json"
+fi
+OLLAMA_MODEL=""
+if [[ -z "${HARNESS_REMOTE_OPENCODE2_TEST_MODEL:-}" ]] \
+  && curl -fsS --max-time 2 http://127.0.0.1:11434/v1/models 2>/dev/null | grep -Fq '"qwen2.5:1.5b"'; then
+  # A local Ollama model keeps this manual test independent of OpenCode's free-tier quota (429).
+  cat >"$XDG_CONFIG_HOME/opencode/opencode.jsonc" <<'JSON'
+{
+  "$schema": "https://opencode.ai/config.json",
+  "model": "ollama-local/qwen2.5:1.5b",
+  "provider": {
+    "ollama-local": {
+      "npm": "@ai-sdk/openai-compatible",
+      "name": "Ollama Local",
+      "options": { "baseURL": "http://127.0.0.1:11434/v1" },
+      "models": {
+        "qwen2.5:1.5b": { "name": "Qwen2.5 1.5B (Ollama)" }
+      }
+    }
+  }
+}
+JSON
+  OLLAMA_MODEL="ollama-local/qwen2.5:1.5b"
 fi
 export XDG_DATA_HOME XDG_CONFIG_HOME XDG_CACHE_HOME
 
@@ -60,9 +84,32 @@ CATALOG="$TEST/models.txt"
   echo "OpenCode 2 non ha potuto leggere il catalogo modelli." >&2
   exit 1
 }
+REQUESTED_MODEL="${HARNESS_REMOTE_OPENCODE2_TEST_MODEL:-}"
 PREFERRED_MODEL="$(grep -Fm1 'opencode/longcat-2.5-preview-free' "$CATALOG" || true)"
-FREE_MODEL="$(grep -Em1 '^opencode/[^[:space:]]*-free$' "$CATALOG" || true)"
-FIXTURE_MODEL="${PREFERRED_MODEL:-${FREE_MODEL:-$(grep -Em1 '^[A-Za-z0-9._-]+/[^[:space:]]+' "$CATALOG" || true)}}"
+OPENROUTER_FREE="$(grep -Fx 'openrouter/nvidia/nemotron-3.5-lightning:free' "$CATALOG" || true)"
+[[ -n "$OPENROUTER_FREE" ]] || OPENROUTER_FREE="$(grep -Em1 '^openrouter/.*:free$' "$CATALOG" || true)"
+OPENCODE_FREE="$(grep -Em1 '^opencode/[^[:space:]]*-free$' "$CATALOG" || true)"
+if [[ -n "$REQUESTED_MODEL" ]]; then
+  grep -Fxq -- "$REQUESTED_MODEL" "$CATALOG" || {
+    cat "$CATALOG" >&2
+    echo "Il modello richiesto non è nel catalogo OpenCode 2 isolato: $REQUESTED_MODEL" >&2
+    exit 1
+  }
+  # An explicit model always wins, including a paid/local provider the tester trusts.
+  FIXTURE_MODEL="$REQUESTED_MODEL"
+elif [[ -n "$PREFERRED_MODEL" ]]; then
+  FIXTURE_MODEL="$PREFERRED_MODEL"
+elif [[ -n "$OLLAMA_MODEL" ]]; then
+  FIXTURE_MODEL="$OLLAMA_MODEL"
+elif [[ -f "$XDG_DATA_HOME/opencode/auth.json" && -n "$OPENROUTER_FREE" ]]; then
+  # OpenCode's own free tier can hit provider.free-limit (HTTP 429), which is not a sync failure.
+  # With an OpenRouter credential present, use an OpenRouter free model instead of that quota.
+  FIXTURE_MODEL="$OPENROUTER_FREE"
+elif [[ -n "$OPENCODE_FREE" ]]; then
+  FIXTURE_MODEL="$OPENCODE_FREE"
+else
+  FIXTURE_MODEL="$(grep -Em1 '^[A-Za-z0-9._-]+/[^[:space:]]+' "$CATALOG" || true)"
+fi
 [[ -n "$FIXTURE_MODEL" ]] || {
   cat "$CATALOG" >&2
   echo "Nessun modello OpenCode 2 disponibile nel catalogo isolato." >&2
@@ -71,15 +118,15 @@ FIXTURE_MODEL="${PREFERRED_MODEL:-${FREE_MODEL:-$(grep -Em1 '^[A-Za-z0-9._-]+/[^
 
 # Build a long Session (more than one 200-message page) so the completion path exercises the same
 # journal-page boundary that hid the final reply. No model call is made while creating it.
-node --input-type=module - "$SANDBOX" "$PREFERRED_MODEL" "$FIXTURE_MODEL" "$STATE/fixture.json" <<'NODE'
+node --input-type=module - "$SANDBOX" "$FIXTURE_MODEL" "$STATE/fixture.json" <<'NODE'
 import { randomBytes } from 'node:crypto'
 import { writeFile } from 'node:fs/promises'
 
-const [directory, preferred, fallback, output] = process.argv.slice(2)
+const [directory, selectedModel, output] = process.argv.slice(2)
 const hex26 = () => randomBytes(13).toString('hex')
 const sessionID = `ses_${hex26()}`
 const messageID = () => `msg_${hex26()}`
-const [providerID, ...modelParts] = (preferred || fallback).split('/')
+const [providerID, ...modelParts] = selectedModel.split('/')
 const modelID = modelParts.join('/')
 const model = { providerID, id: modelID, variant: 'default' }
 const now = Date.now()
@@ -173,13 +220,25 @@ start_group() {
   PIDS+=("$LAST_PID")
 }
 
+if [[ -n "$REQUESTED_MODEL" ]]; then
+  MODEL_NOTE="Modello richiesto via HARNESS_REMOTE_OPENCODE2_TEST_MODEL."
+elif [[ -n "$PREFERRED_MODEL" ]]; then
+  MODEL_NOTE="Modello approvato LongCat disponibile."
+elif [[ -n "$OLLAMA_MODEL" ]]; then
+  MODEL_NOTE="LongCat 2.5 non è nel catalogo; uso Ollama locale qwen2.5:1.5b, senza quota free."
+elif [[ -n "$OPENROUTER_FREE" && -f "$XDG_DATA_HOME/opencode/auth.json" ]]; then
+  MODEL_NOTE="LongCat 2.5 non è nel catalogo; uso OpenRouter free con la chiave già configurata."
+else
+  MODEL_NOTE="LongCat 2.5 non è nel catalogo OpenCode 2 installato; scegli un modello disponibile."
+fi
 cat <<EOF
 OpenCode 2 — sincronizzazione del messaggio finale
 Sorgente: $ROOT
 Sandbox: $SANDBOX
 Session fixture: $SESSION_ID (30 turni, 240 messaggi)
 Modello fixture: $FIXTURE_MODEL
-$( [[ -n "$PREFERRED_MODEL" ]] && echo "Modello approvato disponibile: $PREFERRED_MODEL" || echo "Nota: LongCat 2.5 Preview Free non è nel catalogo OpenCode 2 installato; scegli un modello disponibile." )
+$MODEL_NOTE
+Per cambiare modello: HARNESS_REMOTE_OPENCODE2_TEST_MODEL=<provider/modello> $0
 
 LAN pairing: attivo su questa istanza Electron di test.
 1. Apri Electron e controlla che il progetto sandbox compaia sotto This computer → OpenCode 2.
