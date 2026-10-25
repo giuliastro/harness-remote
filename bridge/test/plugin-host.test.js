@@ -136,6 +136,13 @@ process.stderr.write("unsupported fake command: " + args.join(" "))
 process.exit(2)
 `, "utf8")
   await chmod(cli, 0o755)
+  if (process.platform === "win32") {
+    // Windows cannot execute the extensionless POSIX shim, so expose the same Node fixture through
+    // the .cmd spelling the plugin host already prefers on Windows.
+    const command = path.join(bin, "token-harness.cmd")
+    await writeFile(command, `@echo off\r\n"${process.execPath}" "%~dp0token-harness" %*\r\n`, "utf8")
+    return { root, home, bin, state, log, cli: command }
+  }
   return { root, home, bin, state, log, cli }
 }
 
