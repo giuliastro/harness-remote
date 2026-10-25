@@ -67,6 +67,13 @@ type NativeConversationEntry = {
   error: { message: string } | null
   initialPageCaptured: boolean
   piTailMessages: MessageEnvelope[]
+  /**
+   * The last OpenCode 2 tail before its source switched. While a bridge-owned turn runs the page
+   * comes from the ACP stream; once it settles the same messages are served from the harness journal
+   * under native `msg_...` ids. Keeping the previous page lets a tail read preserve the identity the
+   * mounted feed already knows, so the journal copy replaces a turn instead of appearing beside it.
+   */
+  openCode2TailMessages: MessageEnvelope[]
   writerReady: boolean
   writerClaimInFlight: Promise<void> | null
   turns: Map<string, NativeTurnRecord>
@@ -288,6 +295,64 @@ function stabilizePiTailPage(entry: NativeConversationEntry, page: MessagePage, 
 }
 
 /**
+ * OpenCode 2 switches a live turn's transport identity when it settles: the bridge serves the ACP
+ * stream while the turn runs, then the harness journal under native `msg_...` ids once it is idle.
+ * The feed merge treats an unseen id as a new message, so the same prompt appears twice and the
+ * journal's final envelope hangs off the invisible copy. Reuse the previous page's user-message id
+ * for the same prompt, one-to-one and nearest in time; genuinely new prompts keep their own id.
+ */
+function stabilizeOpenCode2TailPage(entry: NativeConversationEntry, page: MessagePage, before?: string): MessagePage {
+  if (entry.target.backend !== "opencode2" || before) return page
+  const previousUsers = entry.openCode2TailMessages
+    .filter((message) => message.info.role === "user" && message.info.id)
+    .map((message) => ({
+      id: message.info.id,
+      prompt: visiblePrompt(message),
+      created: Number(message.info.time?.created) || 0,
+      used: false
+    }))
+  const pageIDs = new Set(page.messages.map((message) => message.info.id))
+  let changed = false
+  const messages = page.messages.map((message) => {
+    if (message.info.role !== "user" || !message.info.id) return message
+    const prompt = visiblePrompt(message)
+    if (!prompt) return message
+    const created = Number(message.info.time?.created) || 0
+    let best: (typeof previousUsers)[number] | undefined
+    let bestDistance = Number.POSITIVE_INFINITY
+    for (const candidate of previousUsers) {
+      if (candidate.used || candidate.prompt !== prompt) continue
+      // The previous identity is already a different message on this page: it belongs to that
+      // occurrence, not to this one.
+      if (candidate.id !== message.info.id && pageIDs.has(candidate.id)) continue
+      const distance = created && candidate.created ? Math.abs(created - candidate.created) : 0
+      if (distance > PENDING_TRANSCRIPT_CLOCK_SKEW_MS || distance >= bestDistance) continue
+      best = candidate
+      bestDistance = distance
+    }
+    if (!best) return message
+    best.used = true
+    if (best.id === message.info.id) return message
+    changed = true
+    const stableID = best.id
+    return {
+      ...message,
+      info: { ...message.info, id: stableID },
+      parts: message.parts.map((part) => part.messageID === message.info.id ? { ...part, messageID: stableID } : part)
+    }
+  })
+  entry.openCode2TailMessages = changed ? messages : page.messages
+  return changed ? { ...page, messages } : page
+}
+
+function stabilizeTailPage(entry: NativeConversationEntry, page: MessagePage, before?: string): MessagePage {
+  if (before) return page
+  if (entry.target.backend === "pi") return stabilizePiTailPage(entry, page, before)
+  if (entry.target.backend === "opencode2") return stabilizeOpenCode2TailPage(entry, page, before)
+  return page
+}
+
+/**
  * The old v3 handoff packet is transport context, not visible dialogue. This adapter only extracts
  * the same USER INSTRUCTION marker so the mature work-thread timeline can match the native turn.
  */
@@ -365,7 +430,11 @@ function reconcileNativeSessionModel(entry: NativeConversationEntry, page: Messa
 function reconcileOpenCodeTranscriptStatus(entry: NativeConversationEntry, page: MessagePage, before?: string): void {
   if (!usesOpenCodeLifecycle(entry.target.backend) || before) return
   const recoveryWatchActive = entry.openCodeRecoveryWatchUntil > Date.now()
-  if (entry.forcedStatus !== "running" && !recoveryWatchActive) return
+  // A turn does not have to be started by this view to become terminal here. When the Session is
+  // being driven by the desktop app, discovery reports its busy status and the mounted detail must
+  // leave Working as soon as that exact turn's final envelope is durable.
+  const turnActive = entry.forcedStatus === "running" || nativeSessionIsWorking(entry.statusType)
+  if (!turnActive && !recoveryWatchActive) return
 
   const now = Date.now()
   const latestAssistant = latestOpenCodeAssistantForCurrentTurn(entry, page)
@@ -385,7 +454,7 @@ function reconcileOpenCodeTranscriptStatus(entry: NativeConversationEntry, page:
     // but let the transcript supply the second observation when /session/status omits this Session.
     // A real busy status clears openCodeIdleObservedAt in refreshStatus(), so active retries cannot
     // be completed by this fallback while the status endpoint is actually reporting them.
-    if (!terminalError || entry.forcedStatus !== "running") return
+    if (!terminalError || !turnActive) return
     if (entry.openCodeIdleObservedAt === null) {
       entry.openCodeIdleObservedAt = now
       return
@@ -608,12 +677,21 @@ function notifyTranscript(entry: NativeConversationEntry): void {
 
 function captureUserTurns(entry: NativeConversationEntry, page: MessagePage, before?: string): void {
   // The first page describes the Session state that existed when the v3 controller mounted. Older
-  // pages are admitted when the user explicitly pages backward. Codex Sessions can continue in the
-  // desktop app while this view stays open: each newly persisted user envelope must become a turn
-  // here as well, or its assistant messages have no turn to attach to in the timeline.
-  const mayDiscoverRuns = !entry.initialPageCaptured || Boolean(before) || entry.target.backend === "codex"
+  // pages are admitted when the user explicitly pages backward. Codex and OpenCode 2 Sessions can
+  // continue in the desktop app while this view stays open: each newly persisted user envelope must
+  // become a turn here as well, or its assistant messages have no turn to attach to in the timeline.
+  const tailDiscoversRuns = entry.target.backend === "codex" || entry.target.backend === "opencode2"
+  const mayDiscoverRuns = !entry.initialPageCaptured || Boolean(before) || tailDiscoversRuns
   if (!mayDiscoverRuns) return
 
+  // A tail page is also the only place a transport identity change becomes visible. Bind an unseen
+  // native user row to the turn already representing the same prompt when that turn's own id is no
+  // longer on the page, rather than minting a duplicate from the new id space.
+  const reconcileIdentities = entry.initialPageCaptured && !before
+  const pageUserIDs = new Set(page.messages
+    .filter((message) => message.info.role === "user" && message.info.id)
+    .map((message) => message.info.id))
+  const claimedTurns = new Set<string>()
   let changed = false
   for (const message of page.messages) {
     if (message.info.role !== "user" || !message.info.id) continue
@@ -622,14 +700,43 @@ function captureUserTurns(entry: NativeConversationEntry, page: MessagePage, bef
     const prompt = visiblePrompt(message)
     if (!prompt) continue
     const id = `${conversationID(entry.target)}:native-user:${message.info.id}`
-    if (
-      entry.turns.has(id)
-      || [...entry.turns.values()].some((turn) => turn.nativeMessageID === message.info.id)
-    ) continue
+    if (entry.turns.has(id)) {
+      claimedTurns.add(id)
+      continue
+    }
+    const nativeBound = [...entry.turns.values()].find((turn) => turn.nativeMessageID === message.info.id)
+    if (nativeBound) {
+      claimedTurns.add(nativeBound.id)
+      continue
+    }
     const created = Number(message.info.time?.created) || entry.createdAt
+    if (reconcileIdentities) {
+      let reusable: NativeTurnRecord | undefined
+      let reusableDistance = Number.POSITIVE_INFINITY
+      for (const turn of entry.turns.values()) {
+        if (claimedTurns.has(turn.id) || canonicalText(turn.prompt) !== prompt) continue
+        // An id still present on the page belongs to that other occurrence; only a turn whose
+        // previous identity has disappeared can be the same message under a new transport id.
+        if (turn.nativeMessageID && pageUserIDs.has(turn.nativeMessageID)) continue
+        // An accepted request row is the next native envelope for that exact prompt; its local
+        // accept clock need not agree with the harness journal's timestamp.
+        const acceptedTurn = turn.id.includes(":request:") && !turn.nativeMessageID
+        const distance = Math.abs(turn.created - created)
+        if (!acceptedTurn && distance > PENDING_TRANSCRIPT_CLOCK_SKEW_MS) continue
+        if (distance >= reusableDistance) continue
+        reusable = turn
+        reusableDistance = distance
+      }
+      if (reusable) {
+        reusable.nativeMessageID = message.info.id
+        claimedTurns.add(reusable.id)
+        changed = true
+        continue
+      }
+    }
     // A prompt sent from this view already has a durable request identity. Its native user row can
     // arrive on a later tail read; bind that row to the accepted turn instead of drawing it twice.
-    const accepted = entry.target.backend === "codex"
+    const accepted = tailDiscoversRuns
       ? [...entry.turns.values()].reverse().find((turn) =>
         turn.id.includes(":request:") && !turn.nativeMessageID
         && canonicalText(turn.prompt) === prompt
@@ -638,9 +745,11 @@ function captureUserTurns(entry: NativeConversationEntry, page: MessagePage, bef
       : undefined
     if (accepted) {
       accepted.nativeMessageID = message.info.id
+      claimedTurns.add(accepted.id)
       continue
     }
     entry.turns.set(id, { id, prompt, created, model: entry.currentModel, nativeMessageID: message.info.id })
+    claimedTurns.add(id)
     entry.createdAt = Math.min(entry.createdAt, created)
     entry.updatedAt = Math.max(entry.updatedAt, created)
     changed = true
@@ -801,7 +910,7 @@ async function reconcilePromptAfterTransportFailure(entry: NativeConversationEnt
       200,
       true
     )
-    page = stabilizePiTailPage(entry, page)
+    page = stabilizeTailPage(entry, page)
     reconcilePendingPromptFromTranscript(entry, page)
     captureUserTurns(entry, page)
     reconcileQueuedPrompts(entry, page)
@@ -848,7 +957,10 @@ async function refreshStatus(entry: NativeConversationEntry): Promise<void> {
   const now = Date.now()
   const openCodeRecoveryWatchActive = usesOpenCodeLifecycle(entry.target.backend)
     && entry.openCodeRecoveryWatchUntil > now
-  if (usesOpenCodeLifecycle(entry.target.backend) && entry.forcedStatus !== "running" && !openCodeRecoveryWatchActive) return
+  const openCodeTurnActive = entry.forcedStatus === "running" || nativeSessionIsWorking(entry.statusType)
+  if (usesOpenCodeLifecycle(entry.target.backend)
+    && !openCodeTurnActive
+    && !openCodeRecoveryWatchActive) return
 
   try {
     const statuses = await api.listStatuses(entry.target.config)
@@ -868,7 +980,13 @@ async function refreshStatus(entry: NativeConversationEntry): Promise<void> {
       }
       // Once an explicit no-final failure has been confirmed, another idle observation during the
       // recovery watch changes nothing. A later busy edge is the only signal that may resurrect it.
-      if (entry.forcedStatus !== "running") return
+      if (entry.forcedStatus !== "running") {
+        // An external turn has no optimistic request state to keep alive. Native idle alone still
+        // does not prove a final answer exists, so let the durable transcript settle it; the periodic
+        // mounted reconcile keeps reading that tail while this status remains working.
+        if (entry.openCodeIdleObservedAt === null) entry.openCodeIdleObservedAt = now
+        return
+      }
       if (entry.openCodeIdleObservedAt === null) {
         entry.openCodeIdleObservedAt = now
         return
@@ -930,7 +1048,7 @@ function nativeConversationController(entry: NativeConversationEntry): Conversat
       let page = await api.loadMessagePage(config, sessionID, directory, before, limit, refreshHistory)
       const activeEntry = entryForRead(config, sessionID, directory)
       if (activeEntry === entry) {
-        page = stabilizePiTailPage(entry, page, before)
+        page = stabilizeTailPage(entry, page, before)
         reconcilePendingPromptFromTranscript(entry, page, before)
         captureUserTurns(entry, page, before)
         reconcileQueuedPrompts(entry, page, before)
@@ -1041,6 +1159,7 @@ export function registerNativeSessionV3Adapter(
       error: null,
       initialPageCaptured: false,
       piTailMessages: [],
+      openCode2TailMessages: [],
       writerReady: !target.requiresExplicitClaim,
       writerClaimInFlight: null,
       turns: new Map(),
