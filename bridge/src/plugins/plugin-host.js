@@ -855,7 +855,10 @@ export class PluginHost {
     }, 120_000)
     return {
       ok: true,
-      ...(isRecord(result) && typeof result.message === "string" ? { message: result.message.slice(0, 1_000) } : {})
+      ...(isRecord(result) && typeof result.message === "string" ? { message: result.message.slice(0, 1_000) } : {}),
+      ...(isRecord(result) && typeof result.url === "string" && /^https?:\/\//.test(result.url)
+        ? { url: result.url.slice(0, 2_000) }
+        : {})
     }
   }
 

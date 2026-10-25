@@ -116,6 +116,7 @@ if (args[0] === "--version") {
 }
 if (args.length === 0 || args[0] === "ui") {
   if (process.env.FAKE_LOG) require("node:fs").appendFileSync(process.env.FAKE_LOG, "ui\\n")
+  process.stdout.write("Token Harness is ready: http://127.0.0.1:45678/\\n")
   process.exit(0)
 }
 if (args[0] === "observe") {
@@ -170,7 +171,8 @@ test("plugin host detects an external Token Harness, auto-enables it and exposes
     const stored = JSON.parse(await readFile(host.statePath, "utf8"))
     assert.equal(stored.plugins["token-harness"].enabled, true)
     const opened = await host.runAction("token-harness", "open")
-    assert.match(opened.message, /started on this machine/)
+    assert.match(opened.message, /ready/)
+    assert.equal(opened.url, "http://127.0.0.1:45678/")
   } finally {
     await host.close()
     await rm(env.root, { recursive: true, force: true })

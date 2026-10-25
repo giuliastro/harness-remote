@@ -158,7 +158,7 @@ export async function runPluginAction(
   config: ServerConfig,
   pluginID: string,
   actionID: string
-): Promise<{ message?: string }> {
+): Promise<{ message?: string; url?: string }> {
   const { value } = await pluginRequest(config, `/v1/plugins/${encodeURIComponent(pluginID)}/actions/${encodeURIComponent(actionID)}`, {
     method: "POST",
     body: {},
@@ -167,7 +167,10 @@ export async function runPluginAction(
   const record = responsePayload(value)
   if (!record || typeof record !== "object" || Array.isArray(record)) return {}
   const result = record as Record<string, unknown>
-  return typeof result.message === "string" ? { message: result.message } : {}
+  return {
+    ...(typeof result.message === "string" ? { message: result.message } : {}),
+    ...(typeof result.url === "string" && /^https?:\/\//.test(result.url) ? { url: result.url } : {})
+  }
 }
 
 export async function mutatePlugin(

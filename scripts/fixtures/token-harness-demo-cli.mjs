@@ -7,6 +7,7 @@
  * real Token Harness state root.
  */
 import { appendFile, mkdir, readFile, writeFile } from "node:fs/promises"
+import http from "node:http"
 import os from "node:os"
 import path from "node:path"
 
@@ -174,6 +175,18 @@ async function main() {
   }
   if (args.length === 0 || args[0] === "ui") {
     await appendFile(cliLog, `ui ${args.join(" ")}\n`, "utf8")
+    const server = http.createServer((_request, response) => {
+      response.writeHead(200, { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" })
+      response.end(`<!doctype html><html><head><meta charset="utf-8"><title>Token Harness demo</title>
+<style>body{font:16px/1.6 system-ui,sans-serif;max-width:720px;margin:10vh auto;padding:0 24px;color:#172033;background:#f6f8fc}main{padding:32px;border:1px solid #dce4f2;border-radius:20px;background:#fff;box-shadow:0 14px 40px rgba(20,40,80,.08)}h1{margin:0 0 8px;font-size:30px;letter-spacing:-.03em}p{color:#5f6b80}.tag{display:inline-block;padding:4px 9px;border-radius:999px;background:#e9effe;color:#2f66f5;font-size:12px;font-weight:700}code{background:#eef1f7;padding:2px 5px;border-radius:5px}</style></head>
+<body><main><span class="tag">DEMO FIXTURE</span><h1>Token Harness</h1><p>This page is provided by the Harness Remote plugin demo. It proves the plugin can start Token Harness and hand its dashboard URL to the desktop app.</p><p>Run the test with <code>--real</code> to open the real Token Harness dashboard and manage optimizers there.</p></main></body></html>`)
+    })
+    server.listen(0, "127.0.0.1", () => {
+      const address = server.address()
+      const port = typeof address === "object" && address ? address.port : null
+      if (port) process.stdout.write(`Token Harness is ready: http://127.0.0.1:${port}/\n`)
+      setTimeout(() => process.exit(0), 120_000)
+    })
     return
   }
   if (args[0] === "observe") {

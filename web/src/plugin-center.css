@@ -1212,6 +1212,19 @@
   background: var(--td3-red-soft);
 }
 
+.hr-plugin-notice-link {
+  color: var(--td3-blue-text);
+  font-weight: 700;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.hr-plugin-notice-url {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  overflow-wrap: anywhere;
+}
+
 .hr-plugin-external-note {
   margin: -7px 0 0;
   color: var(--td3-muted);

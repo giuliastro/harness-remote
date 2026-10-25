@@ -76,6 +76,7 @@ export type TranslationKey =
   | 'plugins.openTokenHarness'
   | 'plugins.tokenHarnessOpened'
   | 'plugins.tokenHarnessOpenedOn'
+  | 'plugins.openDashboard'
   | 'plugins.unavailable'
   | 'plugins.savings'
   | 'plugins.dashboard'
@@ -867,6 +868,7 @@ const translations: Record<LanguageCode, Partial<Record<TranslationKey, string>>
     'plugins.openTokenHarness': 'Open Token Harness',
     'plugins.tokenHarnessOpened': 'Token Harness started on this machine.',
     'plugins.tokenHarnessOpenedOn': 'Token Harness started on {name}.',
+    'plugins.openDashboard': 'Open dashboard',
     'plugins.unavailable': 'Unavailable',
     'plugins.savings': 'Savings',
     'plugins.dashboard': 'Dashboard',
@@ -1637,6 +1639,7 @@ const translations: Record<LanguageCode, Partial<Record<TranslationKey, string>>
     'plugins.openTokenHarness': 'Apri Token Harness',
     'plugins.tokenHarnessOpened': 'Token Harness avviato su questa macchina.',
     'plugins.tokenHarnessOpenedOn': 'Token Harness avviato su {name}.',
+    'plugins.openDashboard': 'Apri dashboard',
     'plugins.unavailable': 'Non disponibile',
     'plugins.savings': 'Risparmi',
     'plugins.dashboard': 'Dashboard',
@@ -2407,6 +2410,7 @@ const translations: Record<LanguageCode, Partial<Record<TranslationKey, string>>
     'plugins.openTokenHarness': '開啟 Token Harness',
     'plugins.tokenHarnessOpened': 'Token Harness 已在此機器啟動。',
     'plugins.tokenHarnessOpenedOn': 'Token Harness 已在 {name} 上啟動。',
+    'plugins.openDashboard': '開啟儀表板',
     'plugins.unavailable': '無法取得',
     'plugins.savings': '節省量',
     'plugins.dashboard': '儀表板',
@@ -3177,6 +3181,7 @@ const translations: Record<LanguageCode, Partial<Record<TranslationKey, string>>
     'plugins.openTokenHarness': '打开 Token Harness',
     'plugins.tokenHarnessOpened': 'Token Harness 已在此机器启动。',
     'plugins.tokenHarnessOpenedOn': 'Token Harness 已在 {name} 上启动。',
+    'plugins.openDashboard': '打开仪表板',
     'plugins.unavailable': '不可用',
     'plugins.savings': '节省量',
     'plugins.dashboard': '仪表板',
@@ -3947,6 +3952,7 @@ const translations: Record<LanguageCode, Partial<Record<TranslationKey, string>>
     'plugins.openTokenHarness': 'Abrir Token Harness',
     'plugins.tokenHarnessOpened': 'Token Harness iniciado nesta máquina.',
     'plugins.tokenHarnessOpenedOn': 'Token Harness iniciado em {name}.',
+    'plugins.openDashboard': 'Abrir painel',
     'plugins.unavailable': 'Indisponível',
     'plugins.savings': 'Economia',
     'plugins.dashboard': 'Painel',

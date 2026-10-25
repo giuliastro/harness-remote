@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { execFile, spawn } from "node:child_process"
-import { access, mkdir, readFile, rm } from "node:fs/promises"
+import { access, mkdir, open as openFile, readFile, rm, writeFile } from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
 import { promisify } from "node:util"
@@ -889,25 +889,72 @@ async function applyRouting(cli, params, harness, enabled) {
   throw new Error(firstDiagnostic(plan, `No safe automatic routing change is available for ${harnessLabel(harness)}`))
 }
 
+function dashboardReadyUrl(output) {
+  const match = /Token Harness is ready:\s*(http:\/\/(?:127\.0\.0\.1|localhost):\d+\/?)/.exec(output)
+  return match ? match[1] : null
+}
+
+async function runningDashboard(context) {
+  const dataDirectory = text(context.pluginDataDirectory)
+  if (!dataDirectory) return null
+  try {
+    const state = JSON.parse(await readFile(path.join(dataDirectory, "dashboard.json"), "utf8"))
+    if (!Number.isInteger(state?.pid) || typeof state?.url !== "string") return null
+    process.kill(state.pid, 0)
+    return state.url
+  } catch {
+    return null
+  }
+}
+
 async function openDashboard(params) {
   const context = isRecord(params?.context) ? params.context : {}
   const cli = await resolveCli(context)
   if (!cli) throw new Error("Token Harness is not installed")
+  const existing = await runningDashboard(context)
+  if (existing) return { url: existing, message: "Token Harness is already running." }
   const home = tokenHarnessHome(context)
-  const child = spawn(cli.path, [], {
-    cwd: home,
-    env: {
-      ...process.env,
-      HOME: home
-    },
-    detached: true,
-    stdio: "ignore",
-    windowsHide: true,
-    ...(process.platform === "win32" ? { shell: true } : {})
-  })
+  const dataDirectory = text(context.pluginDataDirectory) || path.join(home, ".token-harness-plugin")
+  await mkdir(dataDirectory, { recursive: true })
+  const logPath = path.join(dataDirectory, "dashboard.log")
+  const statePath = path.join(dataDirectory, "dashboard.json")
+  const log = await openFile(logPath, "w")
+  let child
+  try {
+    child = spawn(cli.path, ["ui", "--no-open"], {
+      cwd: home,
+      env: {
+        ...process.env,
+        HOME: home
+      },
+      detached: true,
+      stdio: ["ignore", log.fd, log.fd],
+      windowsHide: true,
+      ...(process.platform === "win32" ? { shell: true } : {})
+    })
+  } finally {
+    await log.close()
+  }
+  if (!child?.pid) throw new Error("Token Harness could not be started")
   child.on("error", () => undefined)
+  const deadline = Date.now() + 30_000
+  let url = null
+  while (Date.now() < deadline) {
+    try {
+      url = dashboardReadyUrl(await readFile(logPath, "utf8"))
+    } catch {
+      url = null
+    }
+    if (url || child.exitCode !== null) break
+    await new Promise((resolve) => setTimeout(resolve, 250))
+  }
+  if (!url) {
+    const output = await readFile(logPath, "utf8").catch(() => "")
+    throw new Error(`Token Harness did not report a dashboard URL.${output.trim() ? ` ${tail(output)}` : ""}`)
+  }
+  await writeFile(statePath, JSON.stringify({ pid: child.pid, url, startedAt: new Date().toISOString() }), { mode: 0o600 })
   child.unref()
-  return { message: "Token Harness started on this machine. Use its browser window to manage optimizers and other settings." }
+  return { url, message: "Token Harness is ready." }
 }
 
 async function configure(params) {

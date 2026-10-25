@@ -24,6 +24,19 @@ import {
 } from "./plugin-widgets"
 import { isDesktopLocalMachine } from "../workspaceMachines"
 
+type PluginNotice = { kind: "success" | "error"; text: string; url?: string }
+
+function openDashboardURL(url: string, machine: WorkspaceMachine): void {
+  if (isDesktopLocalMachine(machine)) window.open(url, "_blank", "noopener,noreferrer")
+}
+
+function NoticeLink({ notice, machine, t }: { notice: PluginNotice; machine: WorkspaceMachine; t: ReturnType<typeof useTranslator> }) {
+  if (!notice.url) return null
+  return isDesktopLocalMachine(machine)
+    ? <a className="hr-plugin-notice-link" href={notice.url} target="_blank" rel="noreferrer">{t("plugins.openDashboard")}</a>
+    : <code className="hr-plugin-notice-url" title={notice.url}>{notice.url}</code>
+}
+
 function pluginMachineName(machine: WorkspaceMachine | undefined): string {
   return machine?.name || "This machine"
 }
@@ -68,15 +81,20 @@ function PluginPopover({
   const language = useLanguage()
   const popoverRef = useRef<HTMLElement>(null)
   const [actionBusy, setActionBusy] = useState(false)
-  const [actionNotice, setActionNotice] = useState<{ kind: "success" | "error"; text: string } | null>(null)
+  const [actionNotice, setActionNotice] = useState<PluginNotice | null>(null)
   const openAction = plugin.actions.custom.find((action) => action.id === "open")
   useDialogDismiss(popoverRef, onClose, { autoFocus: false })
   async function launchTokenHarness() {
     setActionBusy(true)
     setActionNotice(null)
     try {
-      await runPluginAction(machine.config, plugin.id, "open")
-      setActionNotice({ kind: "success", text: t("plugins.tokenHarnessOpenedOn", { name: machine.name }) })
+      const result = await runPluginAction(machine.config, plugin.id, "open")
+      if (result.url) openDashboardURL(result.url, machine)
+      setActionNotice({
+        kind: "success",
+        text: t("plugins.tokenHarnessOpenedOn", { name: machine.name }),
+        ...(result.url ? { url: result.url } : {})
+      })
     } catch (reason) {
       setActionNotice({ kind: "error", text: reason instanceof Error ? reason.message : t("plugins.actionFailed") })
     } finally {
@@ -149,7 +167,10 @@ function PluginPopover({
           />
         </div>
         {actionNotice ? (
-          <p className={`hr-plugin-popover-status ${actionNotice.kind}`} role={actionNotice.kind === "error" ? "alert" : "status"}>{actionNotice.text}</p>
+          <p className={`hr-plugin-popover-status ${actionNotice.kind}`} role={actionNotice.kind === "error" ? "alert" : "status"}>
+            {actionNotice.text}
+            {actionNotice.url ? <> <NoticeLink notice={actionNotice} machine={machine} t={t} /></> : null}
+          </p>
         ) : null}
         <footer className="hr-plugin-popover-footer">
           <span>{plugin.dependency ? `${dependencyLabel(plugin, t)}${plugin.dependency.version ? ` · v${plugin.dependency.version}` : ""}` : t("plugins.notInstalled")}</span>
@@ -302,7 +323,7 @@ function PluginDetail({
   onAction: (plugin: PluginInfo, action: "install" | "update" | "uninstall" | "enable" | "disable") => void
   onCustomAction: (plugin: PluginInfo, actionID: string) => void
   busyAction: string | null
-  notice: { kind: "success" | "error"; text: string } | null
+  notice: PluginNotice | null
   confirmUninstall: boolean
   onConfirmUninstall: () => void
   onCancelUninstall: () => void
@@ -392,7 +413,10 @@ function PluginDetail({
       {dependency?.state === "external" ? <p className="hr-plugin-external-note">{t("plugins.externalInstallHint")}</p> : null}
 
       {notice ? (
-        <p className={`hr-plugin-notice ${notice.kind}`} role={notice.kind === "error" ? "alert" : "status"}>{notice.text}</p>
+        <p className={`hr-plugin-notice ${notice.kind}`} role={notice.kind === "error" ? "alert" : "status"}>
+          {notice.text}
+          {notice.url ? <> <NoticeLink notice={notice} machine={machine} t={t} /></> : null}
+        </p>
       ) : null}
 
       {confirmUninstall ? (
@@ -503,7 +527,7 @@ export function PluginCenter({
   const [selectedPluginID, setSelectedPluginID] = useState<string | null>(null)
   const [mobileDetail, setMobileDetail] = useState(false)
   const [busyAction, setBusyAction] = useState<string | null>(null)
-  const [notice, setNotice] = useState<{ kind: "success" | "error"; text: string } | null>(null)
+  const [notice, setNotice] = useState<PluginNotice | null>(null)
   const [confirmUninstallID, setConfirmUninstallID] = useState<string | null>(null)
 
   useEffect(() => {
@@ -552,7 +576,12 @@ export function PluginCenter({
     setNotice(null)
     try {
       const result = await runPluginAction(machine.config, plugin.id, actionID)
-      setNotice({ kind: "success", text: actionID === "open" ? t("plugins.tokenHarnessOpenedOn", { name: machine.name }) : result.message || t("plugins.actionDone", { name: plugin.name }) })
+      if (actionID === "open" && result.url) openDashboardURL(result.url, machine)
+      setNotice({
+        kind: "success",
+        text: actionID === "open" ? t("plugins.tokenHarnessOpenedOn", { name: machine.name }) : result.message || t("plugins.actionDone", { name: plugin.name }),
+        ...(actionID === "open" && result.url ? { url: result.url } : {})
+      })
     } catch (reason) {
       setNotice({ kind: "error", text: reason instanceof Error ? reason.message : t("plugins.actionFailed") })
     } finally {

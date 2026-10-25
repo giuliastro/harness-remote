@@ -156,7 +156,8 @@ Cosa provare
      coerente dopo l'aggiornamento; in demo modifica solo $DEMO_HOME.
   5. Apri Impostazioni (ingranaggio) → Plugin → Token Harness.
      Qui trovi dashboard, routing, nota sugli optimizer e il pulsante
-     "Apri Token Harness" per le configurazioni che restano nel suo pannello.
+     "Apri Token Harness": in demo apre una pagina di prova nel browser; in
+     --real apre il vero pannello Token Harness sulla macchina.
   6. Disattiva il plugin: chip e dashboard devono sparire. Riattivalo e devono
      tornare. La card riepilogativa non è più sopra la lista Sessioni.
   7. Senza sessione selezionata il pannello destro mostra la dashboard
@@ -169,8 +170,9 @@ if [[ "$MODE" == "demo" ]]; then
   cat <<EOF
 Dati demo: quota Claude 82%, quota Codex 30%, risparmio esatto 599.9K token,
 copertura 61%, routing iniziale ON per entrambi. Le sessioni e gli agenti sono
-quelli reali della macchina; solo la CLI Token Harness e la configurazione di
-routing sono isolate in $DEMO_HOME.
+quelli reali della macchina; la CLI Token Harness demo e la configurazione di
+routing sono isolate in $DEMO_HOME. Lo stato sessioni della release stabile
+viene sincronizzato a ogni avvio.
 Per il test reale:
   $0 --real
 
