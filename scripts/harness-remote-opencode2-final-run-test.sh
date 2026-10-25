@@ -130,11 +130,13 @@ const [providerID, ...modelParts] = selectedModel.split('/')
 const modelID = modelParts.join('/')
 const model = { providerID, id: modelID, variant: 'default' }
 const now = Date.now()
-const messages = []
 const TURNS = 30
 const STEPS = 8
+// Keep every fixture turn in the past: the tester's new prompt must sort after the whole fixture.
+const historyStart = now - TURNS * 10_000 - 60_000
+const messages = []
 for (let turn = 1; turn <= TURNS; turn += 1) {
-  const created = now + turn * 10_000
+  const created = historyStart + turn * 10_000
   messages.push({
     id: messageID(), type: 'user', time: { created },
     text: `Fixture prompt ${turn}. Keep this history and answer only the newest request.`
@@ -161,7 +163,7 @@ const exported = {
     model,
     cost: 0,
     tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
-    time: { created: now, updated: now + TURNS * 10_000 + STEPS },
+    time: { created: historyStart, updated: historyStart + TURNS * 10_000 + STEPS },
     subpath: '',
     location: { directory }
   },
