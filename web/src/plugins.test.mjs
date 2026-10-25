@@ -40,16 +40,13 @@ function plugin(overrides = {}) {
       uninstall: { available: false }
     },
     contributions: {
-      topbar: { label: "Allowance", value: "41%", detail: "Claude 82% · Codex 41% left", tone: "warn" },
-      rail: {
-        title: "Token Harness",
-        value: "41% left",
-        tone: "warn",
-        items: [{ id: "codex", label: "Codex", value: "41%", remainingPercent: 41, tone: "warn" }]
-      },
       home: {
         title: "Token Harness",
         subtitle: "Last 7 days",
+        harnesses: [
+          { harnessId: "claude", label: "Claude Code", state: "observed", remainingPercent: 82 },
+          { harnessId: "codex", label: "Codex", state: "observed", remainingPercent: 41 }
+        ],
         meters: [{
           id: "codex:weekly",
           harnessLabel: "Codex",
@@ -74,8 +71,8 @@ function plugin(overrides = {}) {
 
 const normalized = normalizePlugin(plugin())
 assert.ok(normalized)
-assert.equal(normalized.contributions.topbar.value, "41%")
 assert.equal(normalized.contributions.home.meters[0].remainingPercent, 41)
+assert.equal(normalized.contributions.home.harnesses.find((item) => item.harnessId === "codex").remainingPercent, 41)
 assert.equal(normalized.contributions.home.stats[0].value, 599930)
 assert.equal(pluginIsActive(normalized), true)
 

@@ -92,7 +92,7 @@ function MeterRow({ meter, compact = false }: { meter: PluginMeter; compact?: bo
   )
 }
 
-export function PluginAllowance({ meters, compact = false }: { meters: PluginMeter[]; compact?: boolean }) {
+export function PluginAllowance({ meters, compact = false, focusHarness }: { meters: PluginMeter[]; compact?: boolean; focusHarness?: string }) {
   const t = useTranslator()
   const groups = new Map<string, { label: string; state: string; meters: PluginMeter[] }>()
   for (const meter of meters) {
@@ -101,6 +101,11 @@ export function PluginAllowance({ meters, compact = false }: { meters: PluginMet
     group.meters.push(meter)
     groups.set(id, group)
   }
+  const orderedGroups = [...groups.entries()].sort(([left], [right]) => {
+    if (left === focusHarness) return -1
+    if (right === focusHarness) return 1
+    return 0
+  })
   if (groups.size === 0) {
     return (
       <div className="hr-plugin-allowance-empty">
@@ -111,10 +116,11 @@ export function PluginAllowance({ meters, compact = false }: { meters: PluginMet
   }
   return (
     <div className={`hr-plugin-allowance${compact ? " compact" : ""}`}>
-      {[...groups.entries()].map(([id, group]) => (
-        <section className="hr-plugin-harness" key={id}>
+      {orderedGroups.map(([id, group]) => (
+        <section className={`hr-plugin-harness${id === focusHarness ? " focus" : ""}`} key={id}>
           <header>
             <strong>{group.label}</strong>
+            {id === focusHarness ? <span className="hr-plugin-in-use">{t("plugins.inUse")}</span> : null}
             <span className={`hr-plugin-harness-state${group.meters.some((meter) => meter.remainingPercent !== null) ? " live" : ""}`}>
               {group.meters.some((meter) => meter.remainingPercent !== null) ? t("plugins.observed") : t("plugins.unavailable")}
             </span>
@@ -178,7 +184,8 @@ export function PluginDashboardContent({
   onChanged,
   showRouting = true,
   showWindow = true,
-  routingFirst = false
+  routingFirst = false,
+  focusHarness
 }: {
   plugin: PluginInfo
   compact?: boolean
@@ -187,6 +194,7 @@ export function PluginDashboardContent({
   showRouting?: boolean
   showWindow?: boolean
   routingFirst?: boolean
+  focusHarness?: string
 }) {
   const t = useTranslator()
   const home = plugin.contributions.home
@@ -208,7 +216,7 @@ export function PluginDashboardContent({
             <h4>{t("plugins.allowance")}</h4>
           </div>
         </div>
-        <PluginAllowance meters={home.meters} compact={compact} />
+        <PluginAllowance meters={home.meters} compact={compact} focusHarness={focusHarness} />
       </section>
       {routingFirst ? routingSettings : null}
       {(home.stats.length > 0 || home.chart) ? (
@@ -402,52 +410,6 @@ export function PluginSettingsForm({
           {notice.text}
         </p>
       ) : null}
-    </div>
-  )
-}
-
-export function PluginRailCard({
-  plugins,
-  machineName,
-  onOpen
-}: {
-  plugins: PluginInfo[]
-  machineName: string
-  onOpen: () => void
-}) {
-  const t = useTranslator()
-  const contributions = plugins
-    .map((plugin) => ({ plugin, rail: plugin.contributions.rail }))
-    .filter((entry): entry is { plugin: PluginInfo; rail: NonNullable<PluginInfo["contributions"]["rail"]> } => Boolean(entry.rail))
-  if (contributions.length === 0) return null
-  return (
-    <div className="hr-plugin-rail-stack">
-      {contributions.map(({ plugin, rail }) => (
-        <button
-          type="button"
-          key={plugin.id}
-          className={`hr-plugin-rail-card${pluginToneClass(rail.tone)}`}
-          onClick={onOpen}
-          title={`${plugin.name} · ${machineName}`}
-          aria-label={`${t("plugins.manage")}: ${plugin.name}`}
-        >
-          <div className="hr-plugin-rail-head">
-            <PluginIcon plugin={plugin} size={16} />
-            <strong>{rail.title}</strong>
-            <span>{rail.value}</span>
-          </div>
-          <div className="hr-plugin-rail-items">
-            {rail.items.slice(0, 3).map((item) => (
-              <span className="hr-plugin-rail-item" key={item.id} title={item.detail}>
-                <i aria-hidden="true"><b style={{ width: `${item.remainingPercent ?? 0}%` }} /></i>
-                <span>{item.label}</span>
-                <strong>{item.value}</strong>
-              </span>
-            ))}
-          </div>
-          {rail.detail ? <small>{rail.detail}</small> : null}
-        </button>
-      ))}
     </div>
   )
 }

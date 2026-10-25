@@ -66,42 +66,25 @@ export type PluginChart = {
   points: Array<{ label: string; value: number }>
 }
 
-export type PluginTopbarContribution = {
+export type PluginHarnessSummary = {
+  harnessId: string
   label: string
-  value: string
-  detail?: string
-  tone?: PluginTone
-}
-
-export type PluginRailItem = {
-  id: string
-  label: string
-  value: string
-  detail?: string
+  state: string
   remainingPercent: number | null
-  tone?: PluginTone
-}
-
-export type PluginRailContribution = {
-  title: string
-  value: string
   detail?: string
-  tone?: PluginTone
-  items: PluginRailItem[]
 }
 
 export type PluginHomeContribution = {
   title: string
   subtitle?: string
   footnote?: string
+  harnesses: PluginHarnessSummary[]
   meters: PluginMeter[]
   stats: PluginStat[]
   chart: PluginChart | null
 }
 
 export type PluginContributions = {
-  topbar?: PluginTopbarContribution
-  rail?: PluginRailContribution
   home?: PluginHomeContribution
 }
 
@@ -194,6 +177,17 @@ function action(value: unknown): PluginLifecycleAction {
   }
 }
 
+function harnessSummary(value: unknown): PluginHarnessSummary | null {
+  if (!isRecord(value)) return null
+  return {
+    harnessId: stringValue(value.harnessId, ""),
+    label: stringValue(value.label, "Harness"),
+    state: stringValue(value.state, "unknown"),
+    remainingPercent: numberOrNull(value.remainingPercent),
+    detail: optionalString(value.detail)
+  }
+}
+
 function meter(value: unknown): PluginMeter | null {
   if (!isRecord(value)) return null
   return {
@@ -249,37 +243,14 @@ function chart(value: unknown): PluginChart | null {
 function contributions(value: unknown): PluginContributions {
   if (!isRecord(value)) return {}
   const result: PluginContributions = {}
-  if (isRecord(value.topbar)) {
-    result.topbar = {
-      label: stringValue(value.topbar.label, "Status"),
-      value: stringValue(value.topbar.value, "—"),
-      detail: optionalString(value.topbar.detail),
-      tone: tone(value.topbar.tone)
-    }
-  }
-  if (isRecord(value.rail)) {
-    result.rail = {
-      title: stringValue(value.rail.title, "Plugin"),
-      value: stringValue(value.rail.value, "—"),
-      detail: optionalString(value.rail.detail),
-      tone: tone(value.rail.tone),
-      items: Array.isArray(value.rail.items)
-        ? value.rail.items.filter(isRecord).slice(0, 6).map((item) => ({
-          id: stringValue(item.id, `item-${Math.random().toString(36).slice(2)}`),
-          label: stringValue(item.label, "—"),
-          value: stringValue(item.value, "—"),
-          detail: optionalString(item.detail),
-          remainingPercent: numberOrNull(item.remainingPercent),
-          tone: tone(item.tone)
-        }))
-        : []
-    }
-  }
   if (isRecord(value.home)) {
     result.home = {
       title: stringValue(value.home.title, "Plugin"),
       subtitle: optionalString(value.home.subtitle),
       footnote: optionalString(value.home.footnote),
+      harnesses: Array.isArray(value.home.harnesses)
+        ? value.home.harnesses.map(harnessSummary).filter((item): item is PluginHarnessSummary => Boolean(item)).slice(0, 16)
+        : [],
       meters: Array.isArray(value.home.meters) ? value.home.meters.map(meter).filter((item): item is PluginMeter => Boolean(item)).slice(0, 24) : [],
       stats: Array.isArray(value.home.stats) ? value.home.stats.map(stat).filter((item): item is PluginStat => Boolean(item)).slice(0, 12) : [],
       chart: chart(value.home.chart)

@@ -53,6 +53,17 @@
   border-radius: 7px;
 }
 
+.hr-plugin-chip-harness {
+  width: 16px;
+  height: 16px;
+  flex: none;
+  object-fit: contain;
+}
+
+/* The main top bar is hidden while a phone is inside a Session. The same contextual allowance
+   moves into the Session header there, so "Codex 30%" remains attached to the harness in use. */
+.hr-plugin-chip-session { display: none; }
+
 .hr-plugin-chip-value {
   color: var(--td3-text);
   font-size: 11.5px;
@@ -72,127 +83,6 @@
 .hr-plugin-chip.tone-warn .hr-plugin-chip-value { color: var(--td3-yellow-text); }
 .hr-plugin-chip.tone-danger .hr-plugin-chip-value { color: var(--td3-red-text); }
 .hr-plugin-chip.tone-muted .hr-plugin-chip-value { color: var(--td3-muted); }
-
-.hr-plugin-chip-count {
-  min-width: 15px;
-  height: 15px;
-  display: grid;
-  place-items: center;
-  border-radius: 999px;
-  color: var(--td3-muted);
-  background: var(--td3-raise-3);
-  font-size: 8.5px;
-}
-
-/* The rail card is the phone's view of the same allowance: the top-bar chip is
-   hidden at narrow widths, and the Session list is always on screen. */
-.hr-plugin-rail-stack {
-  display: grid;
-  gap: 6px;
-  padding: 0 2px 9px;
-}
-
-.hr-plugin-rail-card {
-  display: grid;
-  gap: 7px;
-  width: 100%;
-  padding: 9px 10px;
-  border: 1px solid var(--td3-border-soft);
-  border-radius: 11px;
-  color: var(--td3-text);
-  background: var(--td3-raise-1);
-  text-align: left;
-  cursor: pointer;
-  transition: border-color var(--motion-fast) var(--ease), background var(--motion-fast) var(--ease);
-}
-
-.hr-plugin-rail-card:hover {
-  border-color: var(--td3-border-strong);
-  background: var(--td3-raise-2);
-}
-
-.hr-plugin-rail-head {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  min-width: 0;
-}
-
-.hr-plugin-rail-head .hr-plugin-icon {
-  width: 24px;
-  height: 24px;
-  border-radius: 7px;
-}
-
-.hr-plugin-rail-head strong {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  color: var(--td3-text-2);
-  font-size: 11px;
-  font-weight: 780;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.hr-plugin-rail-head > span {
-  color: var(--td3-text);
-  font-size: 11px;
-  font-weight: 800;
-  white-space: nowrap;
-}
-
-.hr-plugin-rail-card.tone-good .hr-plugin-rail-head > span { color: var(--td3-green-text); }
-.hr-plugin-rail-card.tone-warn .hr-plugin-rail-head > span { color: var(--td3-yellow-text); }
-.hr-plugin-rail-card.tone-danger .hr-plugin-rail-head > span { color: var(--td3-red-text); }
-.hr-plugin-rail-card.tone-muted .hr-plugin-rail-head > span { color: var(--td3-muted); }
-
-.hr-plugin-rail-items {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px 10px;
-}
-
-.hr-plugin-rail-item {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  min-width: 0;
-  color: var(--td3-muted);
-  font-size: 9.5px;
-}
-
-.hr-plugin-rail-item > i {
-  width: 26px;
-  height: 4px;
-  flex: none;
-  overflow: hidden;
-  border-radius: 999px;
-  background: var(--td3-sunken-strong);
-}
-
-.hr-plugin-rail-item > i > b {
-  display: block;
-  height: 100%;
-  border-radius: inherit;
-  background: var(--td3-green);
-}
-
-.hr-plugin-rail-card.tone-warn .hr-plugin-rail-item > i > b { background: var(--td3-yellow); }
-.hr-plugin-rail-card.tone-danger .hr-plugin-rail-item > i > b { background: var(--td3-red); }
-.hr-plugin-rail-card.tone-muted .hr-plugin-rail-item > i > b { background: var(--td3-muted-2); }
-
-.hr-plugin-rail-item > strong {
-  color: var(--td3-text-2);
-  font-size: 9.5px;
-  font-weight: 750;
-}
-
-.hr-plugin-rail-card > small {
-  color: var(--td3-muted);
-  font-size: 9px;
-  line-height: 1.3;
-}
 
 /* --------------------------------------------------------------------------
    Quick view popover
@@ -415,14 +305,32 @@
 .hr-plugin-harness > header {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 8px;
+  justify-content: flex-start;
+  flex-wrap: wrap;
+  gap: 5px 7px;
 }
 
 .hr-plugin-harness > header strong {
+  margin-right: auto;
   color: var(--td3-text-2);
   font-size: 11px;
   font-weight: 780;
+}
+
+.hr-plugin-harness.focus {
+  border-color: var(--td3-blue-border-soft);
+  box-shadow: inset 0 0 0 1px var(--td3-blue-soft-2);
+}
+
+.hr-plugin-in-use {
+  padding: 2px 6px;
+  border-radius: 999px;
+  color: var(--td3-blue-text);
+  background: var(--td3-blue-soft);
+  font-size: 8px;
+  font-weight: 750;
+  letter-spacing: .03em;
+  text-transform: uppercase;
 }
 
 .hr-plugin-harness-state {
@@ -1628,14 +1536,6 @@
 
 /* The top bar is the densest chrome in the app. Keep the pulse until there is
    no room for the label, then let the rail card take over entirely. */
-@media (max-width: 1320px) {
-  .hr-plugin-chip-label { display: none; }
-}
-
-@media (max-width: 1100px) {
-  .hr-plugin-chip-count { display: none; }
-}
-
 @media (max-width: 780px) {
   .hr-plugin-chip {
     height: 30px;
@@ -1643,6 +1543,19 @@
     padding: 0 7px 0 4px;
   }
   .hr-plugin-chip .hr-plugin-icon { width: 22px; height: 22px; }
+  .hr-plugin-chip-harness { width: 14px; height: 14px; }
+
+  .hr-plugin-chip-session {
+    display: inline-flex;
+    height: 28px;
+    margin-left: auto;
+    padding: 0 8px 0 6px;
+    border-color: var(--td3-border-soft);
+    background: var(--td3-raise-1);
+  }
+
+  .hr-plugin-chip-session .hr-plugin-chip-label { display: none; }
+  .hr-plugin-chip-session .hr-plugin-chip-value { font-size: 11px; }
 }
 
 /* Compact skin has its own icon tile for the Settings row. */

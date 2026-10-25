@@ -291,43 +291,29 @@ function normalizeChart(value) {
   }
 }
 
+function normalizeHarnessSummary(value, index) {
+  if (!isRecord(value)) return null
+  const remaining = boundedNumber(value.remainingPercent)
+  return {
+    harnessId: boundedString(value.harnessId, 80) ?? `harness-${index}`,
+    label: boundedString(value.label, 120) ?? "Harness",
+    state: boundedString(value.state, 40) ?? "unknown",
+    remainingPercent: remaining === null ? null : Math.min(100, Math.max(0, remaining)),
+    detail: boundedString(value.detail, 800)
+  }
+}
+
 function normalizeContributions(value) {
   if (!isRecord(value)) return {}
   const contributions = {}
-  if (isRecord(value.topbar)) {
-    contributions.topbar = {
-      label: boundedString(value.topbar.label, 120) ?? "Status",
-      value: boundedString(value.topbar.value, 80) ?? "—",
-      detail: boundedString(value.topbar.detail, 800),
-      tone: normalizeTone(value.topbar.tone)
-    }
-  }
-  if (isRecord(value.rail)) {
-    contributions.rail = {
-      title: boundedString(value.rail.title, 160) ?? "Plugin",
-      value: boundedString(value.rail.value, 80) ?? "—",
-      detail: boundedString(value.rail.detail, 800),
-      tone: normalizeTone(value.rail.tone),
-      items: Array.isArray(value.rail.items)
-        ? value.rail.items.filter(isRecord).slice(0, 6).map((item, index) => ({
-          id: boundedString(item.id, 120) ?? `item-${index}`,
-          label: boundedString(item.label, 120) ?? "—",
-          value: boundedString(item.value, 80) ?? "—",
-          detail: boundedString(item.detail, 500),
-          remainingPercent: (() => {
-            const remaining = boundedNumber(item.remainingPercent)
-            return remaining === null ? null : Math.min(100, Math.max(0, remaining))
-          })(),
-          tone: normalizeTone(item.tone)
-        }))
-        : []
-    }
-  }
   if (isRecord(value.home)) {
     contributions.home = {
       title: boundedString(value.home.title, 160) ?? "Plugin",
       subtitle: boundedString(value.home.subtitle, 800),
       footnote: boundedString(value.home.footnote, 1_000),
+      harnesses: Array.isArray(value.home.harnesses)
+        ? value.home.harnesses.map(normalizeHarnessSummary).filter(Boolean).slice(0, 16)
+        : [],
       meters: Array.isArray(value.home.meters)
         ? value.home.meters.map(normalizeMeter).filter(Boolean).slice(0, 24)
         : [],

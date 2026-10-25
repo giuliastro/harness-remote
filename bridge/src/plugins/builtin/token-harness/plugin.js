@@ -22,6 +22,13 @@ function isRecord(value) {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value)
 }
 
+/** The plugin can inspect a different home than the daemon for routing fixtures. */
+function tokenHarnessHome(context) {
+  return text(process.env.HARNESS_REMOTE_TOKEN_HARNESS_HOME).trim()
+    || text(context?.home).trim()
+    || os.homedir()
+}
+
 function numberOrNull(value) {
   return typeof value === "number" && Number.isFinite(value) ? value : null
 }
@@ -171,6 +178,7 @@ function dedupeDiagnostics(items) {
 }
 
 async function resolveCli(context) {
+  const home = tokenHarnessHome(context)
   const platform = text(context.platform, process.platform)
   const runtimeDirectory = text(context.managedRuntimeDirectory)
   const managed = runtimeDirectory
@@ -184,7 +192,8 @@ async function resolveCli(context) {
   if (external && !candidates.some((candidate) => candidate.path === external)) candidates.push({ path: external, source: "external" })
   for (const candidate of candidates) {
     const result = await run(candidate.path, ["--version"], {
-      cwd: text(context.home, os.homedir()),
+      cwd: home,
+      env: { HOME: home },
       timeout: 15_000
     })
     if (result.code === 0) {
@@ -414,13 +423,14 @@ function savingsToMetrics(savings, window) {
 }
 
 async function collectUsage(cli, context, config) {
-  const home = text(context.home, os.homedir())
+  const home = tokenHarnessHome(context)
   const diagnostics = []
   const supportsObserve = versionAtLeast(cli.version, MIN_OBSERVE_VERSION)
   if (supportsObserve) {
     try {
       const observe = await runJSON(cli.path, ["observe", "--json", "--since", config.window], {
         cwd: home,
+        env: { HOME: home },
         timeout: 75_000
       })
       if (observe?.status === "ok" && observe?.data && isRecord(observe.data)) {
@@ -454,8 +464,8 @@ async function collectUsage(cli, context, config) {
   }
 
   const [budget, savings] = await Promise.all([
-    runJSON(cli.path, ["budget", "--json"], { cwd: home, timeout: 45_000 }).catch((error) => ({ status: "error", diagnostics: [{ message: compactError(error) }] })),
-    runJSON(cli.path, ["savings", "--json", "--since", config.window], { cwd: home, timeout: 45_000 }).catch((error) => ({ status: "error", diagnostics: [{ message: compactError(error) }] }))
+    runJSON(cli.path, ["budget", "--json"], { cwd: home, env: { HOME: home }, timeout: 45_000 }).catch((error) => ({ status: "error", diagnostics: [{ message: compactError(error) }] })),
+    runJSON(cli.path, ["savings", "--json", "--since", config.window], { cwd: home, env: { HOME: home }, timeout: 45_000 }).catch((error) => ({ status: "error", diagnostics: [{ message: compactError(error) }] }))
   ])
   if (budget?.status === "ok" && budget?.data) {
     diagnostics.push(...(Array.isArray(budget.diagnostics) ? budget.diagnostics.filter(isRecord) : []).map((item) => diagnostic({
@@ -575,7 +585,7 @@ async function readRouting(home, harness) {
 }
 
 async function detectRouting(context) {
-  const home = text(context.home, os.homedir())
+  const home = tokenHarnessHome(context)
   const [claude, codex] = await Promise.all([readRouting(home, "claude"), readRouting(home, "codex")])
   return { claude, codex }
 }
@@ -641,37 +651,18 @@ function buildSettings(context, config, routing, agents) {
 
 function buildContributions(quota, metrics, supportsObserve) {
   const entries = summaryEntries(quota)
-  const remainingValues = entries.map((entry) => entry.remainingPercent).filter((value) => value !== null)
-  const worst = remainingValues.length ? Math.min(...remainingValues) : null
-  const summary = entries.length
-    ? entries.map((entry) => `${entry.label} ${entry.remainingPercent === null ? "—" : `${Math.round(entry.remainingPercent)}%`}`).join(" · ")
-    : "Allowance unavailable"
-  const tone = toneForRemaining(worst)
-  const topbar = {
-    label: "Allowance",
-    value: worst === null ? "—" : `${Math.round(worst)}%`,
-    detail: worst === null ? "Allowance unavailable" : `${summary} left`,
-    tone
-  }
-  const rail = {
-    title: "Token Harness",
-    value: worst === null ? "—" : `${Math.round(worst)}% left`,
-    detail: worst === null ? "Allowance unavailable" : "Worst remaining window",
-    tone,
-    items: entries.map((entry) => ({
-      id: entry.id,
-      label: entry.label,
-      value: entry.remainingPercent === null ? "—" : `${Math.round(entry.remainingPercent)}%`,
-      detail: entry.detail,
-      remainingPercent: entry.remainingPercent,
-      tone: toneForRemaining(entry.remainingPercent)
-    }))
-  }
   const stats = metrics?.stats ?? []
   const home = {
     title: "Token Harness",
     subtitle: `${windowLabelSafe(metrics)} · stored local evidence`,
     footnote: "Local token reductions are not subscription quota. Quota percentages come from each harness.",
+    harnesses: entries.map((entry) => ({
+      harnessId: entry.id,
+      label: entry.label,
+      state: entry.state,
+      remainingPercent: entry.remainingPercent,
+      detail: entry.detail
+    })),
     meters: quota.meters,
     stats,
     chart: metrics?.chart ?? null
@@ -679,7 +670,7 @@ function buildContributions(quota, metrics, supportsObserve) {
   if (!supportsObserve) {
     home.footnote = `${home.footnote} Update Token Harness to ${MIN_OBSERVE_VERSION} or newer for the read-only observe contract.`
   }
-  return { topbar, rail, home }
+  return { home }
 }
 
 function windowLabelSafe(metrics) {
@@ -848,7 +839,7 @@ async function uninstall(params) {
 async function applyRouting(cli, params, harness, enabled) {
   if (harness !== "claude" && harness !== "codex") throw new Error(`Unsupported harness: ${harness}`)
   const context = isRecord(params?.context) ? params.context : {}
-  const home = text(context.home, os.homedir())
+  const home = tokenHarnessHome(context)
   const planArgs = [
     "plan",
     "--harness", harness,
@@ -856,7 +847,7 @@ async function applyRouting(cli, params, harness, enabled) {
     enabled ? "--agent-routing" : "--disable-agent-routing",
     "--json"
   ]
-  const plan = await runJSON(cli.path, planArgs, { cwd: home, timeout: 90_000 })
+  const plan = await runJSON(cli.path, planArgs, { cwd: home, env: { HOME: home }, timeout: 90_000 })
   if (plan?.status === "error" || plan?.status === "blocked" || (typeof plan?.exitCode === "number" && plan.exitCode >= 2)) {
     throw new Error(firstDiagnostic(plan, `Token Harness could not prepare a routing change for ${harness}`))
   }
@@ -864,6 +855,7 @@ async function applyRouting(cli, params, harness, enabled) {
   if (planId) {
     const applied = await runJSON(cli.path, ["apply", "--plan", planId, "--yes", "--json"], {
       cwd: home,
+      env: { HOME: home },
       timeout: 90_000
     })
     if (applied?.status !== "ok" || (typeof applied?.exitCode === "number" && applied.exitCode !== 0)) {

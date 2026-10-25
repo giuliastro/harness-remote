@@ -138,38 +138,14 @@ already installed outside Harness Remote visible in the plugin catalogue.
 
 ## Declarative contributions
 
-A plugin may publish any combination of three slots.
+The current shell renders one contribution slot, `home`. It powers the small dashboard in the
+empty state, the plugin detail and the quick view.
 
-### Top bar
-
-```json
-{
-  "label": "Allowance",
-  "value": "41%",
-  "detail": "Claude Code 82% · Codex 41% left",
-  "tone": "warn"
-}
-```
-
-`tone` is `good`, `warn`, `danger` or `muted`. Clicking the chip opens the quick view with the plugin's
-dashboard and settings.
-
-### Session rail
-
-```json
-{
-  "title": "Token Harness",
-  "value": "41% left",
-  "detail": "Worst remaining window",
-  "tone": "warn",
-  "items": [
-    { "id": "claude", "label": "Claude Code", "value": "82%", "remainingPercent": 82, "tone": "good" },
-    { "id": "codex", "label": "Codex", "value": "41%", "remainingPercent": 41, "tone": "warn" }
-  ]
-}
-```
-
-The rail card is the phone's persistent view of the same data.
+The allowance chip is intentionally not a generic summary: it is derived from `home.harnesses`
+and the harness of the Session currently open. A Codex Session shows Codex's allowance, a Claude
+Session shows Claude's, and an OpenCode/Pi/OMP Session shows no quota chip at all. The chip lives in
+the top bar on desktop and in the Session header on a phone; both stay attached to the harness in
+use.
 
 ### Home dashboard
 
@@ -177,6 +153,10 @@ The rail card is the phone's persistent view of the same data.
 {
   "title": "Token Harness",
   "subtitle": "Last 7 days · stored local evidence",
+  "harnesses": [
+    { "harnessId": "claude", "label": "Claude Code", "state": "observed", "remainingPercent": 82 },
+    { "harnessId": "codex", "label": "Codex", "state": "observed", "remainingPercent": 41 }
+  ],
   "meters": [
     {
       "id": "codex:weekly",
@@ -212,9 +192,9 @@ The rail card is the phone's persistent view of the same data.
 }
 ```
 
-The home dashboard is shown in the empty state when no Session is selected. It also appears in the
-plugin detail. Meters, stats and chart points are rendered by the shell; values are escaped and
-bounded before they reach the renderer.
+`harnesses` is the compact per-harness summary used by the contextual top-bar chip. `meters` carries
+the detailed windows shown in the dashboard and quick view. Values are escaped and bounded before
+they reach the renderer.
 
 ## Settings
 

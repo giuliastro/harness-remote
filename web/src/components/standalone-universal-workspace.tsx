@@ -73,7 +73,7 @@ import { NativeSessionHome } from "./native-session-home"
 import { NativeSessionTitle } from "./native-session-rename"
 import { NativeSessionObserver, type NativeSessionVisualState } from "./native-session-observer"
 import { PluginCenter, PluginQuickView } from "./plugin-center"
-import { PluginHomeDashboard, PluginRailCard } from "./plugin-widgets"
+import { PluginHomeDashboard } from "./plugin-widgets"
 import { usePluginSnapshot } from "../usePluginSnapshot"
 import { activePlugins, preferredPluginMachine } from "../plugins"
 import "../taskdesk-workthreads.css"
@@ -1428,6 +1428,7 @@ function NativeSessionsWorkspace({
             loading={pluginSnapshot.loading}
             refreshing={pluginSnapshot.refreshing}
             refresh={() => void pluginSnapshot.refresh()}
+            activeHarness={selected?.backend}
             onOpenPlugins={() => onOpenPlugins(pluginMachine?.id)}
           />
           <button type="button" className="tdw-button secondary tdw-machines-button" onClick={onManageMachines}><ServerIcon size={15} /> {t("sf.machines")}</button>
@@ -1473,13 +1474,6 @@ function NativeSessionsWorkspace({
             deletingKeys={deletingSessionKeys}
             deletedKeys={deletedSessionKeys}
             onDeletionSettled={handleSessionDeletionSettled}
-            pluginSlot={pluginMachine ? (
-              <PluginRailCard
-                plugins={pluginViewPlugins}
-                machineName={pluginMachine.name}
-                onOpen={() => onOpenPlugins(pluginMachine.id)}
-              />
-            ) : null}
           />
         </aside>
         {/* Ported from the 2.x shell, which persisted its sidebar width while this one did not, and
@@ -1524,6 +1518,16 @@ function NativeSessionsWorkspace({
                       start: the end of a path is the part that tells two projects apart. */}
                   {selected.directory ? <small className="hr-native-session-directory hr-path-tail" title={selected.directory}><bdi>{selected.directory}</bdi></small> : null}
                 </div>
+                <PluginQuickView
+                  variant="session"
+                  machine={pluginMachine}
+                  snapshot={pluginSnapshot.snapshot}
+                  loading={pluginSnapshot.loading}
+                  refreshing={pluginSnapshot.refreshing}
+                  refresh={() => void pluginSnapshot.refresh()}
+                  activeHarness={selected.backend}
+                  onOpenPlugins={() => onOpenPlugins(pluginMachine?.id)}
+                />
                 <div className="hr-native-workspace-session-actions">
                   {selected.nativeAgent || selectedPolicyLabel || selectedTokenCount || selectedHasChanges || Number(selected.cost) > 0 ? (
                     <div className="hr-native-session-stats" aria-label={t("sf.sessionStatistics")}>

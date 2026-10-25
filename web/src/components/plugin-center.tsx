@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react"
 import { createPortal } from "react-dom"
 import { AlertIcon, LoadingIcon, PuzzleIcon, RefreshIcon, ServerIcon } from "../Icons"
+import { harnessIconUrl } from "../harness-icons"
 import { mutatePlugin } from "../pluginClient"
 import {
   activePlugins,
@@ -48,6 +49,7 @@ function PluginPopover({
   onOpenPlugins,
   onRefresh,
   refreshing,
+  focusHarness,
   anchor
 }: {
   plugin: PluginInfo
@@ -59,6 +61,7 @@ function PluginPopover({
   onOpenPlugins: () => void
   onRefresh: () => void
   refreshing: boolean
+  focusHarness?: string
   anchor: { top: number; right: number }
 }) {
   const t = useTranslator()
@@ -127,6 +130,7 @@ function PluginPopover({
             showWindow={false}
             routingFirst
             compact
+            focusHarness={focusHarness}
           />
         </div>
         <footer className="hr-plugin-popover-footer">
@@ -150,14 +154,18 @@ export function PluginQuickView({
   loading,
   refreshing,
   refresh,
-  onOpenPlugins
+  activeHarness,
+  onOpenPlugins,
+  variant = "topbar"
 }: {
   machine: WorkspaceMachine | undefined
   snapshot: PluginSnapshot | null
   loading: boolean
   refreshing: boolean
   refresh: () => void
+  activeHarness?: string
   onOpenPlugins: () => void
+  variant?: "topbar" | "session"
 }) {
   const t = useTranslator()
   const [open, setOpen] = useState(false)
@@ -165,19 +173,28 @@ export function PluginQuickView({
   const [anchor, setAnchor] = useState<{ top: number; right: number } | null>(null)
   const buttonRef = useRef<HTMLButtonElement>(null)
   const plugins = useMemo(
-    () => activePlugins(snapshot).filter((plugin) => Boolean(plugin.contributions.topbar)),
+    () => activePlugins(snapshot).filter((plugin) => Boolean(plugin.contributions.home)),
     [snapshot]
   )
+  const contextual = useMemo(() => {
+    if (!activeHarness) return null
+    for (const candidate of plugins) {
+      const harness = candidate.contributions.home?.harnesses.find((item) => item.harnessId === activeHarness)
+      if (harness) return { plugin: candidate, harness }
+    }
+    return null
+  }, [activeHarness, plugins])
   useEffect(() => {
     if (!plugins.length) {
       setOpen(false)
       setSelectedID(null)
       return
     }
-    if (!selectedID || !plugins.some((plugin) => plugin.id === selectedID)) setSelectedID(plugins[0].id)
-  }, [plugins, selectedID])
-  const plugin = plugins.find((candidate) => candidate.id === selectedID) ?? plugins[0]
-  const topbar = plugin?.contributions.topbar
+    if (!selectedID || !plugins.some((plugin) => plugin.id === selectedID)) {
+      setSelectedID(contextual?.plugin.id ?? plugins[0].id)
+    }
+  }, [contextual?.plugin.id, plugins, selectedID])
+  const plugin = plugins.find((candidate) => candidate.id === selectedID) ?? contextual?.plugin ?? plugins[0]
   function openPopover() {
     const rect = buttonRef.current?.getBoundingClientRect()
     if (!rect) return
@@ -185,7 +202,8 @@ export function PluginQuickView({
     setOpen(true)
   }
   if (!snapshot && !loading) return null
-  if (!plugin || !topbar) {
+  if (!plugin || !contextual) {
+    if (variant === "session") return null
     return (
       <button
         type="button"
@@ -198,21 +216,29 @@ export function PluginQuickView({
       </button>
     )
   }
+  const harness = contextual.harness
+  const value = harness.remainingPercent === null ? "—" : `${Math.round(harness.remainingPercent)}%`
+  const windows = plugin.contributions.home?.meters
+    .filter((meter) => meter.harness === activeHarness)
+    .map((meter) => `${meter.label} ${meter.remainingPercent === null ? "—" : `${Math.round(meter.remainingPercent)}%`}`)
+    .join(" · ")
+  const chipLabel = activeHarness === "claude" ? "Claude" : activeHarness === "codex" ? "Codex" : harness.label
+  const icon = activeHarness ? harnessIconUrl(activeHarness) : null
   return (
     <>
       <button
         type="button"
         ref={buttonRef}
-        className={`hr-plugin-chip${pluginToneClass(topbar.tone)}`}
+        className={`hr-plugin-chip${variant === "session" ? " hr-plugin-chip-session" : ""}${pluginToneClass(harness.remainingPercent === null ? "muted" : harness.remainingPercent <= 15 ? "danger" : harness.remainingPercent <= 35 ? "warn" : "good")}`}
         onClick={() => open ? setOpen(false) : openPopover()}
         aria-expanded={open}
         aria-haspopup="dialog"
-        title={`${plugin.name} · ${topbar.detail ?? topbar.label}`}
+        aria-label={`${plugin.name}: ${harness.label} allowance ${value}`}
+        title={`${plugin.name} · ${harness.label} allowance${windows ? ` · ${windows}` : ""}`}
       >
-        <PluginIcon plugin={plugin} size={15} />
-        <span className="hr-plugin-chip-value">{topbar.value}</span>
-        <span className="hr-plugin-chip-label">{topbar.label}</span>
-        {plugins.length > 1 ? <b className="hr-plugin-chip-count">{plugins.length}</b> : null}
+        {icon ? <img className="hr-plugin-chip-harness" src={icon} alt="" width={16} height={16} /> : <PluginIcon plugin={plugin} size={15} />}
+        <span className="hr-plugin-chip-label">{chipLabel}</span>
+        <span className="hr-plugin-chip-value">{value}</span>
       </button>
       {open && anchor && machine ? (
         <PluginPopover
@@ -225,6 +251,7 @@ export function PluginQuickView({
           onOpenPlugins={onOpenPlugins}
           onRefresh={refresh}
           refreshing={refreshing}
+          focusHarness={activeHarness}
           anchor={anchor}
         />
       ) : null}

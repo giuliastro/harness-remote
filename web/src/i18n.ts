@@ -72,6 +72,7 @@ export type TranslationKey =
   | 'plugins.machine'
   | 'plugins.allowance'
   | 'plugins.observed'
+  | 'plugins.inUse'
   | 'plugins.unavailable'
   | 'plugins.savings'
   | 'plugins.dashboard'
@@ -859,6 +860,7 @@ const translations: Record<LanguageCode, Partial<Record<TranslationKey, string>>
     'plugins.machine': 'Machine',
     'plugins.allowance': 'Allowance',
     'plugins.observed': 'Observed',
+    'plugins.inUse': 'In use',
     'plugins.unavailable': 'Unavailable',
     'plugins.savings': 'Savings',
     'plugins.dashboard': 'Dashboard',
@@ -1625,6 +1627,7 @@ const translations: Record<LanguageCode, Partial<Record<TranslationKey, string>>
     'plugins.machine': 'Macchina',
     'plugins.allowance': 'Budget',
     'plugins.observed': 'Osservato',
+    'plugins.inUse': 'In uso',
     'plugins.unavailable': 'Non disponibile',
     'plugins.savings': 'Risparmi',
     'plugins.dashboard': 'Dashboard',
@@ -2391,6 +2394,7 @@ const translations: Record<LanguageCode, Partial<Record<TranslationKey, string>>
     'plugins.machine': '機器',
     'plugins.allowance': '額度',
     'plugins.observed': '已觀測',
+    'plugins.inUse': '使用中',
     'plugins.unavailable': '無法取得',
     'plugins.savings': '節省量',
     'plugins.dashboard': '儀表板',
@@ -3157,6 +3161,7 @@ const translations: Record<LanguageCode, Partial<Record<TranslationKey, string>>
     'plugins.machine': '机器',
     'plugins.allowance': '额度',
     'plugins.observed': '已观测',
+    'plugins.inUse': '使用中',
     'plugins.unavailable': '不可用',
     'plugins.savings': '节省量',
     'plugins.dashboard': '仪表板',
@@ -3923,6 +3928,7 @@ const translations: Record<LanguageCode, Partial<Record<TranslationKey, string>>
     'plugins.machine': 'Máquina',
     'plugins.allowance': 'Cota',
     'plugins.observed': 'Observado',
+    'plugins.inUse': 'Em uso',
     'plugins.unavailable': 'Indisponível',
     'plugins.savings': 'Economia',
     'plugins.dashboard': 'Painel',
