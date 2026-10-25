@@ -918,63 +918,59 @@ async function openDashboard(params) {
   await mkdir(dataDirectory, { recursive: true })
   const logPath = path.join(dataDirectory, "dashboard.log")
   const statePath = path.join(dataDirectory, "dashboard.json")
-  const usePipe = process.platform === "win32"
-  const log = await openFile(logPath, "w")
+  const useShellRedirect = process.platform === "win32"
+  if (useShellRedirect) await writeFile(logPath, "")
+  const log = useShellRedirect ? null : await openFile(logPath, "w")
   let child
-  let captured = ""
   try {
-    child = spawn(cli.path, ["ui", "--no-open"], {
-      cwd: home,
-      env: {
-        ...process.env,
-        HOME: home
-      },
-      detached: true,
-      // Windows does not route a child's output to an arbitrary file descriptor when it must go
-      // through cmd.exe. Capture the short startup output through pipes there; POSIX can keep the
-      // detached child writing to the log file while the plugin process exits.
-      stdio: usePipe ? ["ignore", "pipe", "pipe"] : ["ignore", log.fd, log.fd],
-      windowsHide: true,
-      ...(process.platform === "win32" ? { shell: true } : {})
-    })
+    child = useShellRedirect
+      ? spawn(`"${cli.path}" ui --no-open > "${logPath}" 2>&1`, {
+        cwd: home,
+        env: {
+          ...process.env,
+          HOME: home
+        },
+        detached: true,
+        stdio: "ignore",
+        windowsHide: true,
+        shell: true
+      })
+      : spawn(cli.path, ["ui", "--no-open"], {
+        cwd: home,
+        env: {
+          ...process.env,
+          HOME: home
+        },
+        detached: true,
+        stdio: ["ignore", log.fd, log.fd],
+        windowsHide: true
+      })
   } finally {
-    await log.close()
+    if (log) await log.close()
   }
   if (!child?.pid) throw new Error("Token Harness could not be started")
   child.on("error", () => undefined)
-  if (usePipe) {
-    child.stdout?.on("data", (chunk) => { captured += chunk.toString() })
-    child.stderr?.on("data", (chunk) => { captured += chunk.toString() })
-  }
   const deadline = Date.now() + 30_000
   let url = null
   let exitedAt = null
   while (Date.now() < deadline) {
     try {
-      const output = usePipe ? captured : await readFile(logPath, "utf8")
-      url = dashboardReadyUrl(output)
+      url = dashboardReadyUrl(await readFile(logPath, "utf8"))
     } catch {
       url = null
     }
     if (url) break
     if (child.exitCode !== null) {
-      // `exitCode` can become visible before the final stdout pipe data event. Give the pipe a
-      // short drain window instead of declaring a valid one-shot CLI failed.
+      // `exitCode` can become visible before the final output is flushed. Give the log a short
+      // drain window instead of declaring a valid one-shot CLI failed.
       exitedAt ??= Date.now()
       if (Date.now() - exitedAt > 1_000) break
     }
     await new Promise((resolve) => setTimeout(resolve, 100))
   }
   if (!url) {
-    const output = usePipe ? captured : await readFile(logPath, "utf8").catch(() => "")
+    const output = await readFile(logPath, "utf8").catch(() => "")
     throw new Error(`Token Harness did not report a dashboard URL.${output.trim() ? ` ${tail(output)}` : ""}`)
-  }
-  if (usePipe) {
-    await writeFile(logPath, captured)
-    // The URL is known; release the read ends so this one-shot plugin process can exit while the
-    // detached dashboard keeps serving.
-    child.stdout?.destroy()
-    child.stderr?.destroy()
   }
   await writeFile(statePath, JSON.stringify({ pid: child.pid, url, startedAt: new Date().toISOString() }), { mode: 0o600 })
   child.unref()
