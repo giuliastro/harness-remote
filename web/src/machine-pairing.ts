@@ -71,12 +71,22 @@ function normalizedPairingEndpoint(value: string): string | null {
   return `${endpoint.protocol}//${endpoint.hostname}:${port}`
 }
 
+/** `harnessremote:` is a non-special scheme. Android System WebView before M130 parsed those as
+ * opaque paths, so `harnessremote://pair` reports hostname "" and pathname "//pair" instead of the
+ * host the URL Standard assigns it. Reading the authority back out of the path keeps pairing
+ * working on those devices, where the host check is the only part that differs. */
+function pairingAuthority(parsed: URL): string {
+  if (parsed.hostname) return parsed.hostname
+  const legacy = /^\/\/([^/?#]+)/.exec(parsed.pathname)
+  return legacy?.[1] ?? ""
+}
+
 /** Accept only the private URI emitted by the HR3 machine daemon startup pairing grant. Expiry is
  * checked during claim so opening an old QR produces an explicit user-visible error rather than a no-op. */
 export function parseMachinePairingActivation(url: string): MachinePairingActivation | null {
   let parsed: URL
   try { parsed = new URL(url) } catch { return null }
-  if (parsed.protocol !== "harnessremote:" || parsed.hostname !== "pair") return null
+  if (parsed.protocol !== "harnessremote:" || pairingAuthority(parsed) !== "pair") return null
 
   const endpointRaw = parsed.searchParams.get("endpoint")
   const token = cleanText(parsed.searchParams.get("token"), MAX_TOKEN_LENGTH)

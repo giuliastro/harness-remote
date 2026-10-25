@@ -269,3 +269,33 @@ test("every saved Machine can show a phone pairing QR from the Machines list", (
   assert.match(css, /\.uw-machine-pairing-countdown \{/)
   assert.match(css, /\.uw-machine-pairing-actions \{/)
 })
+
+test("pairing activation accepts a scan from WebView builds that parse non-special schemes as opaque paths", () => {
+  const expiresAt = future()
+  const url = pairingURL("http://192.168.1.20:4097", expiresAt)
+
+  // Android System WebView before M130 (crbug.com/1416006) reported hostname "" and pathname
+  // "//pair" for `harnessremote://pair?...`, which rejected every QR the daemon printed.
+  class LegacyWebViewURL extends URL {
+    get hostname() {
+      return this.protocol === "harnessremote:" ? "" : super.hostname
+    }
+    get pathname() {
+      return this.protocol === "harnessremote:" ? `//${super.hostname}${super.pathname}` : super.pathname
+    }
+  }
+
+  const nativeURL = globalThis.URL
+  globalThis.URL = LegacyWebViewURL
+  try {
+    assert.deepEqual(parseMachinePairingActivation(url), {
+      endpoint: "http://192.168.1.20:4097",
+      token: "a".repeat(43),
+      expiresAt
+    })
+    assert.equal(parseMachinePairingActivation(url.replace("://pair?", "://pairing?")), null)
+    assert.equal(parseMachinePairingActivation(url.replace("://pair?", ":/pair?")), null)
+  } finally {
+    globalThis.URL = nativeURL
+  }
+})
