@@ -686,8 +686,9 @@ function captureUserTurns(entry: NativeConversationEntry, page: MessagePage, bef
 
   // A tail page is also the only place a transport identity change becomes visible. Bind an unseen
   // native user row to the turn already representing the same prompt when that turn's own id is no
-  // longer on the page, rather than minting a duplicate from the new id space.
-  const reconcileIdentities = entry.initialPageCaptured && !before
+  // longer on the page, rather than minting a duplicate from the new id space. Only OpenCode 2 changes
+  // id space mid-Session; Codex ids are stable, so a matching prompt there is a genuine repeat.
+  const reconcileIdentities = entry.target.backend === "opencode2" && entry.initialPageCaptured && !before
   const pageUserIDs = new Set(page.messages
     .filter((message) => message.info.role === "user" && message.info.id)
     .map((message) => message.info.id))
@@ -985,6 +986,13 @@ async function refreshStatus(entry: NativeConversationEntry): Promise<void> {
         // does not prove a final answer exists, so let the durable transcript settle it; the periodic
         // mounted reconcile keeps reading that tail while this status remains working.
         if (entry.openCodeIdleObservedAt === null) entry.openCodeIdleObservedAt = now
+        // A turn that stopped without final text (aborted elsewhere, reasoning-only) would otherwise
+        // stay Working forever. After the same grace an own prompt gets, trust stable native idle.
+        if (now - entry.openCodeIdleObservedAt >= OPENCODE_SILENT_TURN_GRACE_MS && nativeSessionIsWorking(entry.statusType)) {
+          entry.statusType = next
+          entry.openCodeIdleObservedAt = null
+          notify(entry)
+        }
         return
       }
       if (entry.openCodeIdleObservedAt === null) {

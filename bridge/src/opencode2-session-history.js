@@ -235,13 +235,19 @@ function dropTurnsOverByteBudget(messages, start, end) {
   // A page has to keep the newest prompt and its whole reply. If that turn alone is over budget the
   // transport has to carry it; dropping it would render activity with no visible question.
   if (latestUser < 0 || latestUser <= start) return start
-  const sizes = messages.map((message) => Buffer.byteLength(JSON.stringify(message)) + 1)
+  // Measure only the candidate page: serializing the whole history on every read would cost as much
+  // as the oversized response this budget is there to avoid.
+  const sizes = new Map()
   let pageBytes = 0
-  for (let index = start; index < end; index += 1) pageBytes += sizes[index]
+  for (let index = start; index < end; index += 1) {
+    const size = Buffer.byteLength(JSON.stringify(messages[index])) + 1
+    sizes.set(index, size)
+    pageBytes += size
+  }
   while (start < latestUser && pageBytes > MAX_PAGE_BYTES) {
     let next = start + 1
     while (next < latestUser && messages[next].info.role !== "user") next += 1
-    for (let index = start; index < next; index += 1) pageBytes -= sizes[index]
+    for (let index = start; index < next; index += 1) pageBytes -= sizes.get(index)
     start = next
   }
   return start

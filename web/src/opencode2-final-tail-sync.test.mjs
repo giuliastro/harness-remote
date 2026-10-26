@@ -121,6 +121,39 @@ test('an open OpenCode 2 Session discovers a desktop turn and settles on its fin
   }
 })
 
+test('a desktop-started OpenCode 2 turn that stops without final text leaves Working after stable idle', async () => {
+  storage.clear()
+  const messages = [
+    userMessage('native-user-1', 'first', 1000),
+    assistantMessage('native-progress-1', '', 1001, 'tool-calls')
+  ]
+  let status = 'busy'
+  api.loadMessagePage = async () => ({ messages, hasMore: false })
+  api.listStatuses = async () => ({ [SESSION_ID]: { type: status } })
+  const realNow = Date.now
+  let now = realNow()
+  Date.now = () => now
+  const registration = registerNativeSessionV3Adapter(target('busy'), () => {})
+  try {
+    await registration.controller.loadMessagePage(CONFIG, SESSION_ID, DIRECTORY)
+    let conversation = await registration.controller.refreshConversation(CONFIG, registration.conversation.id)
+    assert.equal(conversation.status, 'running')
+
+    status = 'idle'
+    conversation = await registration.controller.refreshConversation(CONFIG, registration.conversation.id)
+    assert.equal(conversation.status, 'running', 'one idle edge is not enough to drop an external turn')
+
+    now += 16_000
+    conversation = await registration.controller.refreshConversation(CONFIG, registration.conversation.id)
+    assert.notEqual(conversation.status, 'running', 'stable native idle must end an external turn with no final text')
+  } finally {
+    Date.now = realNow
+    registration.dispose()
+    api.loadMessagePage = originalLoadMessagePage
+    api.listStatuses = originalListStatuses
+  }
+})
+
 test('an OpenCode 2 live-to-journal identity switch keeps one turn and shows the journal final reply', async () => {
   storage.clear()
   const liveMessages = []

@@ -7,6 +7,7 @@ TEST="$ROOT/.harnesstrim/plugins-history-electron"
 STATE="$TEST/state"
 LOGS="$STATE/logs"
 ELECTRON_DATA="$STATE/electron"
+HISTORY_ROOT="${HARNESS_REMOTE_PLUGINS_ROOT:-$HOME/Software/harness-remote-plugin-system}"
 CHECK=0
 if [[ "${1:-}" == --check ]]; then CHECK=1; shift; fi
 [[ $# == 0 ]] || { echo "Uso: $0 [--check]" >&2; exit 2; }
@@ -16,6 +17,10 @@ for name in node npm setsid flock; do
 done
 [[ -x "$ROOT/web/node_modules/.bin/electron" ]] || {
   echo "Dipendenze web assenti. Esegui: npm --prefix \"$ROOT/web\" install" >&2
+  exit 1
+}
+[[ -d "$HISTORY_ROOT" ]] || {
+  echo "Root del progetto non trovata: $HISTORY_ROOT (imposta HARNESS_REMOTE_PLUGINS_ROOT)" >&2
   exit 1
 }
 [[ -d "$HOME/.local/share/opencode" ]] || {
@@ -69,7 +74,7 @@ start_group() {
 cat <<EOF
 Harness Remote — Electron dal branch, dati OpenCode reali
 Sorgente: $ROOT
-Root visibile: $HOME/Software/harness-remote-plugin-system
+Root visibile: $HISTORY_ROOT
 Profilo Electron isolato: $ELECTRON_DATA
 Log: $LOGS
 
@@ -83,7 +88,7 @@ Chiudendo Electron o premendo Ctrl+C lo script ferma solo i propri processi.
 EOF
 
 start_group "$LOGS/electron.log" env -u ELECTRON_RUN_AS_NODE \
-  HARNESS_REMOTE_ROOT="$HOME/Software/harness-remote-plugin-system" \
+  HARNESS_REMOTE_ROOT="$HISTORY_ROOT" \
   "$ROOT/web/node_modules/.bin/electron" "$ROOT/web" --user-data-dir="$ELECTRON_DATA"
 
 if ((CHECK)); then

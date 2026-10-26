@@ -47,27 +47,32 @@ if [[ -f "$HOME/.local/share/opencode/auth.json" && ! -f "$XDG_DATA_HOME/opencod
   mkdir -p "$XDG_DATA_HOME/opencode"
   cp "$HOME/.local/share/opencode/auth.json" "$XDG_DATA_HOME/opencode/auth.json"
 fi
-OLLAMA_MODEL=""
-if [[ -z "${HARNESS_REMOTE_OPENCODE2_TEST_MODEL:-}" ]] \
-  && curl -fsS --max-time 2 http://127.0.0.1:11434/v1/models 2>/dev/null | grep -Fq '"qwen2.5:1.5b"'; then
-  # A local Ollama model keeps this manual test independent of OpenCode's free-tier quota (429).
-  cat >"$XDG_CONFIG_HOME/opencode/opencode.jsonc" <<'JSON'
+# Harness tests on this project use the always-on local LM Studio model (see AGENTS.md), never a
+# free cloud model: a quota error (429) is not a sync failure and must not be confused with one.
+LM_STUDIO_BASE_URL="${LM_STUDIO_BASE_URL:-http://127.0.0.1:1234/v1}"
+LM_STUDIO_MODEL="${HARNESS_REMOTE_LM_STUDIO_MODEL:-spark-x2.5-4b}"
+if [[ -z "${HARNESS_REMOTE_OPENCODE2_TEST_MODEL:-}" ]]; then
+  curl -fsS --max-time 3 "$LM_STUDIO_BASE_URL/models" 2>/dev/null | grep -Fq "\"$LM_STUDIO_MODEL\"" || {
+    echo "LM Studio non raggiungibile su $LM_STUDIO_BASE_URL o modello $LM_STUDIO_MODEL assente." >&2
+    echo "Avvia LM Studio con il modello, oppure scegli esplicitamente HARNESS_REMOTE_OPENCODE2_TEST_MODEL=<provider/modello>." >&2
+    exit 1
+  }
+  cat >"$XDG_CONFIG_HOME/opencode/opencode.jsonc" <<JSON
 {
-  "$schema": "https://opencode.ai/config.json",
-  "model": "ollama-local/qwen2.5:1.5b",
+  "\$schema": "https://opencode.ai/config.json",
+  "model": "localhost/$LM_STUDIO_MODEL",
   "provider": {
-    "ollama-local": {
+    "localhost": {
       "npm": "@ai-sdk/openai-compatible",
-      "name": "Ollama Local",
-      "options": { "baseURL": "http://127.0.0.1:11434/v1" },
+      "name": "LM Studio",
+      "options": { "baseURL": "$LM_STUDIO_BASE_URL" },
       "models": {
-        "qwen2.5:1.5b": { "name": "Qwen2.5 1.5B (Ollama)" }
+        "$LM_STUDIO_MODEL": { "name": "$LM_STUDIO_MODEL (LM Studio)" }
       }
     }
   }
 }
 JSON
-  OLLAMA_MODEL="ollama-local/qwen2.5:1.5b"
 fi
 export XDG_DATA_HOME XDG_CONFIG_HOME XDG_CACHE_HOME
 
@@ -85,34 +90,11 @@ CATALOG="$TEST/models.txt"
   exit 1
 }
 REQUESTED_MODEL="${HARNESS_REMOTE_OPENCODE2_TEST_MODEL:-}"
-PREFERRED_MODEL="$(grep -Fm1 'opencode/longcat-2.5-preview-free' "$CATALOG" || true)"
-OPENROUTER_FREE="$(grep -Fx 'openrouter/nvidia/nemotron-3.5-lightning:free' "$CATALOG" || true)"
-[[ -n "$OPENROUTER_FREE" ]] || OPENROUTER_FREE="$(grep -Em1 '^openrouter/.*:free$' "$CATALOG" || true)"
-OPENCODE_FREE="$(grep -Em1 '^opencode/[^[:space:]]*-free$' "$CATALOG" || true)"
-if [[ -n "$REQUESTED_MODEL" ]]; then
-  grep -Fxq -- "$REQUESTED_MODEL" "$CATALOG" || {
-    cat "$CATALOG" >&2
-    echo "Il modello richiesto non è nel catalogo OpenCode 2 isolato: $REQUESTED_MODEL" >&2
-    exit 1
-  }
-  # An explicit model always wins, including a paid/local provider the tester trusts.
-  FIXTURE_MODEL="$REQUESTED_MODEL"
-elif [[ -n "$PREFERRED_MODEL" ]]; then
-  FIXTURE_MODEL="$PREFERRED_MODEL"
-elif [[ -n "$OLLAMA_MODEL" ]]; then
-  FIXTURE_MODEL="$OLLAMA_MODEL"
-elif [[ -f "$XDG_DATA_HOME/opencode/auth.json" && -n "$OPENROUTER_FREE" ]]; then
-  # OpenCode's own free tier can hit provider.free-limit (HTTP 429), which is not a sync failure.
-  # With an OpenRouter credential present, use an OpenRouter free model instead of that quota.
-  FIXTURE_MODEL="$OPENROUTER_FREE"
-elif [[ -n "$OPENCODE_FREE" ]]; then
-  FIXTURE_MODEL="$OPENCODE_FREE"
-else
-  FIXTURE_MODEL="$(grep -Em1 '^[A-Za-z0-9._-]+/[^[:space:]]+' "$CATALOG" || true)"
-fi
-[[ -n "$FIXTURE_MODEL" ]] || {
+# An explicit model always wins, including a paid provider the tester trusts. Otherwise use LM Studio.
+FIXTURE_MODEL="${REQUESTED_MODEL:-localhost/$LM_STUDIO_MODEL}"
+grep -Fxq -- "$FIXTURE_MODEL" "$CATALOG" || {
   cat "$CATALOG" >&2
-  echo "Nessun modello OpenCode 2 disponibile nel catalogo isolato." >&2
+  echo "Il modello non è nel catalogo OpenCode 2 isolato: $FIXTURE_MODEL" >&2
   exit 1
 }
 
@@ -224,14 +206,8 @@ start_group() {
 
 if [[ -n "$REQUESTED_MODEL" ]]; then
   MODEL_NOTE="Modello richiesto via HARNESS_REMOTE_OPENCODE2_TEST_MODEL."
-elif [[ -n "$PREFERRED_MODEL" ]]; then
-  MODEL_NOTE="Modello approvato LongCat disponibile."
-elif [[ -n "$OLLAMA_MODEL" ]]; then
-  MODEL_NOTE="LongCat 2.5 non è nel catalogo; uso Ollama locale qwen2.5:1.5b, senza quota free."
-elif [[ -n "$OPENROUTER_FREE" && -f "$XDG_DATA_HOME/opencode/auth.json" ]]; then
-  MODEL_NOTE="LongCat 2.5 non è nel catalogo; uso OpenRouter free con la chiave già configurata."
 else
-  MODEL_NOTE="LongCat 2.5 non è nel catalogo OpenCode 2 installato; scegli un modello disponibile."
+  MODEL_NOTE="Modello locale LM Studio ($LM_STUDIO_BASE_URL), senza quota cloud."
 fi
 cat <<EOF
 OpenCode 2 — sincronizzazione del messaggio finale
