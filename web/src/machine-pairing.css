@@ -64,6 +64,7 @@
 
 .hr-machine-pairing-notice > span {
   display: grid;
+  flex: 1 1 auto;
   gap: 3px;
   min-width: 0;
   line-height: 1.35;
@@ -83,6 +84,29 @@
   cursor: pointer;
   padding: 0 3px;
   opacity: .7;
+}
+
+/* The dismiss control sits in the top-right corner with a full touch target: on a phone the notice
+ * spans the width, and a bare glyph right after short text read as a stray mark mid-card. */
+.hr-machine-pairing-notice > .hr-machine-pairing-dismiss {
+  flex: none;
+  display: grid;
+  place-items: center;
+  min-width: 36px;
+  height: 36px;
+  margin: -6px -6px -6px 0;
+  padding: 0 10px;
+  border: 1px solid var(--tdw-border, rgba(127, 127, 127, .28));
+  border-radius: 999px;
+  background: color-mix(in srgb, currentColor 8%, transparent);
+  font-size: 20px;
+  line-height: 1;
+  opacity: 1;
+}
+
+.hr-machine-pairing-notice > .hr-machine-pairing-dismiss:hover,
+.hr-machine-pairing-notice > .hr-machine-pairing-dismiss:focus-visible {
+  background: color-mix(in srgb, currentColor 16%, transparent);
 }
 
 .hr-machine-pairing-notice.success {

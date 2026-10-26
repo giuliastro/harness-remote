@@ -320,3 +320,14 @@ test("a claim that never reaches the computer is reported as unreachable, not as
     (error) => !(error instanceof PairingUnreachableError) && /expired/.test(error.message)
   )
 })
+
+test("a pairing success notice clears itself while errors stay until dismissed", () => {
+  const main = readFileSync(new URL("./main.tsx", import.meta.url), "utf8")
+  const css = readFileSync(new URL("./machine-pairing.css", import.meta.url), "utf8")
+  assert.match(main, /PAIRING_SUCCESS_NOTICE_MS = 4_000/)
+  assert.match(main, /if \(pairingNotice\?\.kind !== "success"\) return/, "only success auto-dismisses; an error carries what to fix")
+  assert.match(main, /className="hr-machine-pairing-dismiss"/)
+  // The close control is a real corner target, not a faint glyph that lands mid-card on a phone.
+  assert.match(css, /\.hr-machine-pairing-notice > span \{[^}]*flex: 1 1 auto/)
+  assert.match(css, /\.hr-machine-pairing-dismiss \{[^}]*min-width: 36px;[^}]*height: 36px/)
+})

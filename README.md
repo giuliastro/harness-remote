@@ -51,7 +51,7 @@ Common options are optional:
 npx harness-remote --root ~/dev
 npx harness-remote --port 4900
 npx harness-remote --cors https://giuliastro.github.io
-npx harness-remote --allow-firewall   # Windows: let phones through Windows Firewall
+npx harness-remote --allow-firewall   # Windows: let phones through Windows Firewall (see "If the phone cannot connect")
 ```
 
 ### Android
@@ -69,10 +69,18 @@ When the phone connects, the gateway prints **Phone connected**.
 
 #### If the phone cannot connect
 
-The gateway cannot test this by itself, so it reports what the phone shows: the QR expires without **Phone connected**, or the app says the phone cannot reach the computer. Check that:
+The gateway cannot test this by itself, so it reports what the phone shows: the QR expires without **Phone connected**, or the app says the phone cannot reach the computer.
 
-- the phone is on the same Wi-Fi as the computer, not on mobile data or a VPN;
-- the computer's firewall allows incoming connections. On Windows, restart with `npx harness-remote --allow-firewall`: it adds the Windows Firewall rule after asking for administrator permission.
+1. Put the phone on the same Wi-Fi as the computer, not on mobile data or a VPN.
+2. Let the computer's firewall accept incoming connections:
+
+| Computer | What to do |
+| --- | --- |
+| **Windows** | Restart with `npx harness-remote --allow-firewall`. Windows asks for administrator permission once, then phones can connect. |
+| **macOS** | The firewall is off by default. If it is on, click **Allow** when macOS asks whether `node` may accept incoming connections, or add `node` in **System Settings → Network → Firewall → Options**. |
+| **Linux** | Usually nothing to do. With a firewall, start on a fixed port and open it: `npx harness-remote --port 4097`, then `sudo ufw allow 4097/tcp` (ufw) or `sudo firewall-cmd --add-port=4097/tcp` (firewalld). |
+
+`--allow-firewall` only changes anything on Windows.
 
 If the gateway prints **Phone pairing unavailable** instead of a QR, it is listening only on this computer or has no network address: follow the message it prints.
 
