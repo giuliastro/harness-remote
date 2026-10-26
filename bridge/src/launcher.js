@@ -10,6 +10,7 @@ import { spawn } from "node:child_process"
 import { fileURLToPath } from "node:url"
 import { ManagedOpenCodeHost } from "./opencode-host.js"
 import { discoverOpenCodeExecutables, resolveOpenCodeCommand } from "./opencode-discovery.js"
+import { allowNodeThroughWindowsFirewall } from "./windows-firewall-rule.js"
 
 const OPENCODE_BACKEND = { id: "opencode", detectCommands: ["opencode"] }
 
@@ -129,6 +130,7 @@ export function buildBridgeArgs(args, { backend, host, port }) {
   let result = stripOptionWithValue(args, "--username")
   result = stripOptionWithValue(result, "--password")
   result = stripFlag(result, "--single")
+  result = stripFlag(result, "--allow-firewall")
   if (!hasOption(result, "--backend")) result.push("--backend", backend)
   if (!hasOption(result, "--host")) result.push("--host", host)
   if (!hasOption(result, "--port")) result.push("--port", String(port))
@@ -237,7 +239,7 @@ export function formatStartupSummary({ plan, addresses, port, username, password
 }
 
 export function launcherUsage() {
-  return `Usage: harness-remote [options]\n\nQuick start options:\n  --backend <name>       Select one of: ${supportedBackendText()} (on multi-agent machines, selects the daemon primary)\n  --single               Force the legacy single-backend path instead of the machine daemon\n  --host <host>          Bind host (quick-start default: 0.0.0.0)\n  --port <port>          Preferred port (OpenCode single-host default: 4096; daemon/ACP default: 4097)\n  --username <username>  Override generated Basic Auth username\n  --password <password>  Override generated Basic Auth password\n  --cors <origin>        Allow a browser client from this exact origin; repeatable\n  --verbose              Forward all harness diagnostics, not only errors\n  --help                 Show this help\n\nWith one detected agent, Harness starts the existing single-backend path. With multiple detected agents and at least one ACP backend, it starts the machine daemon automatically and exposes every detected ACP harness through the machine endpoint; OpenCode is included when installed and receives a free loopback port automatically.`
+  return `Usage: harness-remote [options]\n\nQuick start options:\n  --backend <name>       Select one of: ${supportedBackendText()} (on multi-agent machines, selects the daemon primary)\n  --single               Force the legacy single-backend path instead of the machine daemon\n  --host <host>          Bind host (quick-start default: 0.0.0.0)\n  --port <port>          Preferred port (OpenCode single-host default: 4096; daemon/ACP default: 4097)\n  --username <username>  Override generated Basic Auth username\n  --password <password>  Override generated Basic Auth password\n  --cors <origin>        Allow a browser client from this exact origin; repeatable\n  --verbose              Forward all harness diagnostics, not only errors\n  --allow-firewall       Windows only: allow phones through Windows Firewall (asks for administrator permission)\n  --help                 Show this help\n\nWith one detected agent, Harness starts the existing single-backend path. With multiple detected agents and at least one ACP backend, it starts the machine daemon automatically and exposes every detected ACP harness through the machine endpoint; OpenCode is included when installed and receives a free loopback port automatically.`
 }
 
 export async function startManagedOpenCode({ host, port, username, password, command = "opencode", Host = ManagedOpenCodeHost } = {}) {
@@ -326,6 +328,11 @@ async function main() {
     throw new Error("--username and --password must be supplied together")
   }
   if (!username) ({ username, password } = generateCredentials())
+
+  if (hasOption(args, "--allow-firewall")) {
+    const result = allowNodeThroughWindowsFirewall()
+    process[result.ok ? "stdout" : "stderr"].write(`${result.message}\n`)
+  }
 
   const addresses = host === "0.0.0.0" ? lanAddresses() : [host]
   process.stdout.write(formatStartupSummary({ plan, addresses, port, username, password }))

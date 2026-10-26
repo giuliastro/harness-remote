@@ -211,3 +211,10 @@ test("does not require IPv6 to validate an IPv4 wildcard bind", async () => {
   assert.ok(probes.includes("127.0.0.1"))
   assert.ok(!probes.includes("::1"))
 })
+
+test("--allow-firewall is handled by the launcher and never reaches the runtime", () => {
+  assert.deepEqual(
+    buildDaemonArgs(["--allow-firewall", "--root", "/work"], { backend: "codex", host: "0.0.0.0", port: 4097, openCode: false }),
+    ["--root", "/work", "--backend", "codex", "--host", "0.0.0.0", "--port", "4097", "--no-opencode"]
+  )
+})

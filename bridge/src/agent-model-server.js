@@ -1,6 +1,6 @@
 import http from "node:http"
 import { allowedOrigin, applyCorsHeaders, matchesCredentials, guardRequestHandler, writeJSON } from "./http-policy.js"
-import { announceMachinePairing, MachinePairingGrants, createPairingServer } from "./pairing-server.js"
+import { announceMachinePairing, MachinePairingGrants, createPairingServer, watchStartupPairing } from "./pairing-server.js"
 
 const MODEL_ROUTE = /^\/v1\/agents\/([^/]+)\/models$/
 const TASK_LAUNCH_ROUTE = /^\/v1\/tasks\/([^/]+)\/launch$/
@@ -122,6 +122,13 @@ export function createAgentModelServer({ innerServer, config, daemon, taskStore,
   // terminal; the same authority keeps serving the authenticated /v1/pairing/grant route so the
   // Machines list can show (and replace) a QR at any time without restarting the gateway.
   const grants = new MachinePairingGrants()
-  if (process.argv[1]?.endsWith("daemon-cli.js")) announceMachinePairing(config, grants.current)
-  return createPairingServer({ innerServer: authenticatedServer, config, machine, grants, createServer })
+  const terminal = process.argv[1]?.endsWith("daemon-cli.js")
+  if (terminal) {
+    const startupGrant = grants.current
+    watchStartupPairing(grants, startupGrant, announceMachinePairing(config, startupGrant))
+  }
+  const onClaim = terminal
+    ? ({ remoteAddress }) => process.stdout.write(`\nPhone connected${remoteAddress ? ` from ${remoteAddress}` : ""}.\n`)
+    : undefined
+  return createPairingServer({ innerServer: authenticatedServer, config, machine, grants, createServer, onClaim })
 }

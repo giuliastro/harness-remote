@@ -11,7 +11,8 @@ import {
   machinePairingLinks,
   pairingBoundToLoopback,
   pairingQRRendererMissing,
-  renderPairingQRCode
+  renderPairingQRCode,
+  watchStartupPairing
 } from "../src/pairing-server.js"
 
 async function listen(server) {
@@ -374,5 +375,86 @@ test("a loopback-only daemon answers with an explanation instead of an unreachab
     assert.equal(body.loopbackOnly, true)
     assert.deepEqual(body.links, [])
     assert.equal(body.expiresAt, 40_000 + PAIRING_TTL_MS)
+  } finally { await close(server) }
+})
+
+test("no QR is shown when the daemon only listens on this computer", () => {
+  let output = ""
+  let rendered = false
+  const links = announceMachinePairing(config({ host: "127.0.0.1" }), grant(), {
+    write: (text) => { output += text },
+    renderQR: () => { rendered = true; return "<QR>" }
+  })
+  assert.deepEqual(links, [])
+  assert.equal(rendered, false)
+  assert.match(output, /Phone pairing unavailable/)
+  assert.match(output, /only accepts connections from this computer/)
+})
+
+test("no QR is shown when the computer has no network address a phone can reach", () => {
+  let output = ""
+  let rendered = false
+  const links = announceMachinePairing(config(), grant(), {
+    interfaces: { lo: [{ family: "IPv4", internal: true, address: "127.0.0.1" }] },
+    write: (text) => { output += text },
+    renderQR: () => { rendered = true; return "<QR>" }
+  })
+  assert.deepEqual(links, [])
+  assert.equal(rendered, false)
+  assert.match(output, /no network address a phone can reach/)
+})
+
+function manualTimer() {
+  const timer = { fire: null, delay: null, unref() { this.unrefed = true } }
+  return { timer, setTimer: (callback, delay) => { timer.fire = callback; timer.delay = delay; return timer } }
+}
+
+test("an expired startup QR that no phone claimed says the phone could not connect", () => {
+  const pairing = grants()
+  const links = [{ endpoint: "http://192.168.1.44:4097", uri: "harnessremote://pair" }]
+  let output = ""
+  const { timer, setTimer } = manualTimer()
+  watchStartupPairing(pairing, pairing.current, links, { write: (text) => { output += text }, platform: "win32", setTimer, now: () => 1_000 })
+  assert.equal(timer.delay, 1_000, "fires when the grant expires")
+  assert.equal(timer.unrefed, true, "never keeps the process alive")
+  timer.fire()
+  assert.match(output, /No phone connected/)
+  assert.match(output, /could not reach http:\/\/192\.168\.1\.44:4097/)
+  assert.match(output, /--allow-firewall/)
+  assert.doesNotMatch(output, /one-time-token|secret-password/)
+})
+
+test("the expiry message stays silent after a claim, a regenerated QR, or off Windows mentions no Windows fix", () => {
+  const links = [{ endpoint: "http://192.168.1.44:4097", uri: "harnessremote://pair" }]
+  for (const settle of [(pairing) => pairing.consume("one-time-token"), (pairing) => pairing.issue()]) {
+    const pairing = grants()
+    const startup = pairing.current
+    let output = ""
+    const { timer, setTimer } = manualTimer()
+    watchStartupPairing(pairing, startup, links, { write: (text) => { output += text }, setTimer, now: () => 1_000 })
+    settle(pairing)
+    timer.fire()
+    assert.equal(output, "")
+  }
+  const pairing = grants()
+  let output = ""
+  const { timer, setTimer } = manualTimer()
+  watchStartupPairing(pairing, pairing.current, links, { write: (text) => { output += text }, platform: "linux", setTimer, now: () => 1_000 })
+  timer.fire()
+  assert.match(output, /No phone connected/)
+  assert.doesNotMatch(output, /--allow-firewall/)
+  assert.equal(watchStartupPairing(pairing, pairing.current, [], { setTimer }), null, "nothing to watch without a QR")
+})
+
+test("a successful claim reports the phone that connected", async () => {
+  const innerServer = http.createServer((_request, response) => { response.writeHead(500); response.end() })
+  const claims = []
+  const server = createPairingServer({ innerServer, config: config(), machine: machine(), grants: grants(), onClaim: (event) => claims.push(event) })
+  const base = await listen(server)
+  try {
+    assert.equal((await claim(base, "wrong-token")).status, 401)
+    assert.deepEqual(claims, [], "a rejected claim is not a connected phone")
+    assert.equal((await claim(base)).status, 200)
+    assert.deepEqual(claims, [{ remoteAddress: "127.0.0.1" }])
   } finally { await close(server) }
 })

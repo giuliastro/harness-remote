@@ -14,6 +14,7 @@ import {
 import { ErrorBoundary } from "./ErrorBoundary"
 import {
   claimMachinePairing,
+  PairingUnreachableError,
   scanAndroidMachinePairing,
   subscribeAndroidMachinePairing,
   upsertPairedMachine,
@@ -193,7 +194,9 @@ function HarnessRemoteBoundary() {
       // another chance until the server itself reports used/expired.
       setPairingNotice({
         kind: "error",
-        text: error instanceof Error ? error.message : t("sf.pairingFailed")
+        text: error instanceof PairingUnreachableError
+          ? t("sf.pairingUnreachable", { endpoint: error.endpoint })
+          : error instanceof Error ? error.message : t("sf.pairingFailed")
       })
     } finally {
       pairingInFlightRef.current.delete(grantKey)

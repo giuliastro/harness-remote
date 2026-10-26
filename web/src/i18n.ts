@@ -606,6 +606,7 @@ export type TranslationKey =
   | 'sf.pairingConnecting'
   | 'sf.pairingConnected'
   | 'sf.pairingFailed'
+  | 'sf.pairingUnreachable'
   | 'sf.qrPairingFailed'
   | 'sf.dismissPairingStatus'
   | 'pair.action'
@@ -1307,6 +1308,7 @@ const translations: Record<LanguageCode, Partial<Record<TranslationKey, string>>
     'sf.pairingConnecting': 'Connecting to this machine…',
     'sf.pairingConnected': '{name} is connected.',
     'sf.pairingFailed': 'Machine pairing failed.',
+    'sf.pairingUnreachable': 'This phone cannot reach {endpoint}. Make sure it is on the same Wi-Fi as the computer (not mobile data or a VPN) and that the firewall on the computer allows incoming connections.',
     'sf.qrPairingFailed': 'QR pairing failed.',
     'sf.dismissPairingStatus': 'Dismiss machine pairing status',
     'pair.action': 'Pair a phone',
@@ -2008,6 +2010,7 @@ const translations: Record<LanguageCode, Partial<Record<TranslationKey, string>>
     'sf.pairingConnecting': 'Connessione a questa macchina…',
     'sf.pairingConnected': '{name} è connessa.',
     'sf.pairingFailed': 'Collegamento della macchina non riuscito.',
+    'sf.pairingUnreachable': 'Il telefono non riesce a raggiungere {endpoint}. Verifica che sia sulla stessa rete Wi-Fi del computer (non su dati mobili o VPN) e che il firewall del computer consenta le connessioni in ingresso.',
     'sf.qrPairingFailed': 'Collegamento tramite QR non riuscito.',
     'sf.dismissPairingStatus': 'Chiudi stato collegamento macchina',
     'pair.action': 'Abbina un telefono',
@@ -2709,6 +2712,7 @@ const translations: Record<LanguageCode, Partial<Record<TranslationKey, string>>
     'sf.pairingConnecting': '正在連線到這台機器…',
     'sf.pairingConnected': '{name} 已連線。',
     'sf.pairingFailed': '機器配對失敗。',
+    'sf.pairingUnreachable': '這支手機無法連到 {endpoint}。請確認手機與電腦在同一個 Wi-Fi（不是行動數據或 VPN），且電腦的防火牆允許傳入連線。',
     'sf.qrPairingFailed': 'QR 配對失敗。',
     'sf.dismissPairingStatus': '關閉機器配對狀態',
     'pair.action': '配對手機',
@@ -3410,6 +3414,7 @@ const translations: Record<LanguageCode, Partial<Record<TranslationKey, string>>
     'sf.pairingConnecting': '正在连接到这台机器…',
     'sf.pairingConnected': '{name} 已连接。',
     'sf.pairingFailed': '机器配对失败。',
+    'sf.pairingUnreachable': '这部手机无法连接到 {endpoint}。请确认手机与电脑在同一个 Wi-Fi（不是移动数据或 VPN），并且电脑的防火墙允许传入连接。',
     'sf.qrPairingFailed': '二维码配对失败。',
     'sf.dismissPairingStatus': '关闭机器配对状态',
     'pair.action': '配对手机',
@@ -4111,6 +4116,7 @@ const translations: Record<LanguageCode, Partial<Record<TranslationKey, string>>
     'sf.pairingConnecting': 'Conectando a esta máquina…',
     'sf.pairingConnected': '{name} está conectada.',
     'sf.pairingFailed': 'Falha no pareamento da máquina.',
+    'sf.pairingUnreachable': 'Este telefone não consegue alcançar {endpoint}. Verifique se está na mesma rede Wi-Fi que o computador (não em dados móveis ou VPN) e se o firewall do computador permite conexões de entrada.',
     'sf.qrPairingFailed': 'Falha no pareamento por QR code.',
     'sf.dismissPairingStatus': 'Dispensar o status do pareamento da máquina',
     'pair.action': 'Parear um celular',

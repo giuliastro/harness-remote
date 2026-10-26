@@ -190,8 +190,17 @@ export function announceMachinePairing(config, grant, {
   renderQR = renderPairingQRCode,
   rendererMissing = pairingQRRendererMissing
 } = {}) {
+  // A QR is only useful if a phone can open its endpoint. These two cases are certain from here, so
+  // say so instead of printing a code that can never work.
+  if (pairingBoundToLoopback(config.host)) {
+    write(`\nPhone pairing unavailable: Harness Remote only accepts connections from this computer (--host ${config.host}).\nRestart without --host to pair a phone.\n`)
+    return []
+  }
   const links = machinePairingLinks(config, grant, interfaces)
-  if (!links.length) return []
+  if (!links.length) {
+    write("\nPhone pairing unavailable: this computer has no network address a phone can reach.\nConnect it to the same Wi-Fi or LAN as the phone, then restart.\n")
+    return []
+  }
 
   const qr = renderQR(links[0].uri)
   write("\nPhone pairing (optional, valid for 5 minutes)\n")
@@ -233,7 +242,39 @@ export function machinePairingGrantResponse(config, grant, interfaces) {
  * bootstrap path issuable on demand instead of once per daemon process. Everything else is passed
  * byte-for-byte to the existing server stack.
  */
-export function createPairingServer({ innerServer, config, machine, grants, interfaces, createServer = http.createServer }) {
+function remoteHost(request) {
+  const address = String(request.socket?.remoteAddress ?? "")
+  return address.startsWith("::ffff:") ? address.slice(7) : address
+}
+
+/**
+ * Only a phone can prove it reaches this machine: local connections never cross the firewall or the
+ * Wi-Fi, so nothing here can test that path. Report the outcome the phone produced instead - a
+ * successful claim, or a startup QR that expired without one.
+ */
+export function watchStartupPairing(grants, grant, links, {
+  write = (text) => process.stdout.write(text),
+  platform = process.platform,
+  setTimer = setTimeout,
+  now = () => Date.now()
+} = {}) {
+  if (!links.length) return null
+  const timer = setTimer(() => {
+    if (grants.current !== grant || grant.consumed) return
+    const lines = [
+      "",
+      "No phone connected, and the pairing QR has expired.",
+      `If you scanned it, the phone could not reach ${links[0].endpoint}: check that it is on the same Wi-Fi (not mobile data or a VPN) and that the firewall allows incoming connections.`
+    ]
+    if (platform === "win32") lines.push("On Windows, restart with --allow-firewall to allow them.")
+    lines.push("Restart Harness Remote for a new QR.")
+    write(`${lines.join("\n")}\n`)
+  }, Math.max(0, grant.expiresAt - now()))
+  timer?.unref?.()
+  return timer
+}
+
+export function createPairingServer({ innerServer, config, machine, grants, interfaces, createServer = http.createServer, onClaim = () => {} }) {
   return createServer(guardRequestHandler(async (request, response) => {
     const url = new URL(request.url ?? "/", `http://${request.headers.host ?? "localhost"}`)
     if (url.pathname === PAIRING_GRANT_PATH) {
@@ -276,6 +317,7 @@ export function createPairingServer({ innerServer, config, machine, grants, inte
       machine: { id: machine.id, name: machine.name },
       credentials: { username: config.username ?? "", password: config.password ?? "" }
     })
+    onClaim({ remoteAddress: remoteHost(request) })
   }))
 }
 

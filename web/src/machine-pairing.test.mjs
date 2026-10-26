@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs"
 import test from "node:test"
 import {
   claimMachinePairing,
+  PairingUnreachableError,
   parseMachinePairingActivation,
   parseMachinePairingGrant,
   parseMachinePairingGrantStatus,
@@ -298,4 +299,24 @@ test("pairing activation accepts a scan from WebView builds that parse non-speci
   } finally {
     globalThis.URL = nativeURL
   }
+})
+
+test("a claim that never reaches the computer is reported as unreachable, not as a server answer", async () => {
+  const activation = parseMachinePairingActivation(pairingURL())
+  assert.ok(activation)
+  for (const options of [
+    { native: true, nativeRequest: async () => { throw new Error("SocketTimeoutException: failed to connect") } },
+    { native: false, fetchImpl: async () => { throw new TypeError("Failed to fetch") } }
+  ]) {
+    await assert.rejects(claimMachinePairing(activation, options), (error) => {
+      assert.ok(error instanceof PairingUnreachableError)
+      assert.equal(error.endpoint, "http://192.168.1.20:4097")
+      return true
+    })
+  }
+  // The daemon answered: that is a pairing result (expired, used, invalid), not a network problem.
+  await assert.rejects(
+    claimMachinePairing(activation, { native: true, nativeRequest: async (options) => ({ status: 410, data: { error: "This pairing link has expired." }, headers: {}, url: options.url }) }),
+    (error) => !(error instanceof PairingUnreachableError) && /expired/.test(error.message)
+  )
 })

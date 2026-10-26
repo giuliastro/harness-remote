@@ -167,6 +167,18 @@ function workspaceMachine(endpoint: string, payload: PairingClaimResponse): Work
 
 type NativePairingRequest = typeof CapacitorHttp.request
 
+/** The phone never reached the computer: the request failed below HTTP. This, not the computer, is
+ *  the only side that can observe a firewall, a different network or Wi-Fi client isolation. */
+export class PairingUnreachableError extends Error {
+  readonly endpoint: string
+  constructor(endpoint: string, cause?: unknown) {
+    super(`Could not reach ${endpoint}.`)
+    this.name = "PairingUnreachableError"
+    this.endpoint = endpoint
+    if (cause !== undefined) (this as { cause?: unknown }).cause = cause
+  }
+}
+
 export async function claimMachinePairing(
   activation: MachinePairingActivation,
   options: { nativeRequest?: NativePairingRequest; fetchImpl?: typeof fetch; native?: boolean } = {}
@@ -188,7 +200,7 @@ export async function claimMachinePairing(
         readTimeout: 10_000
       })
     } catch (error) {
-      throw new Error(error instanceof Error ? error.message : "Could not reach the machine pairing endpoint.")
+      throw new PairingUnreachableError(activation.endpoint, error)
     }
     if (response.status < 200 || response.status >= 300) {
       throw new Error(errorDetail(response.data, `Pairing failed with HTTP ${response.status}.`))
@@ -207,7 +219,7 @@ export async function claimMachinePairing(
       body: JSON.stringify({ token: activation.token })
     })
   } catch (error) {
-    throw new Error(error instanceof Error ? error.message : "Could not reach the machine pairing endpoint.")
+    throw new PairingUnreachableError(activation.endpoint, error)
   }
   let body: unknown = null
   try { body = await response.json() } catch { /* handled below */ }
