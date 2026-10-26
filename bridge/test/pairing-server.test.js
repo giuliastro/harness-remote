@@ -10,6 +10,7 @@ import {
   createPairingServer,
   machinePairingLinks,
   pairingBoundToLoopback,
+  pairingQRRendererMissing,
   renderPairingQRCode
 } from "../src/pairing-server.js"
 
@@ -121,13 +122,40 @@ test("pairing announcement falls back to normal machine setup without leaking pa
       eth0: [{ family: "IPv4", internal: false, address: "192.168.1.44" }]
     },
     write: (text) => { output += text },
-    renderQR: () => null
+    renderQR: () => null,
+    rendererMissing: () => false
   })
   assert.match(output, /Machines → Add machine/)
   assert.match(output, /address and credentials/)
+  assert.doesNotMatch(output, /npm install/, "a render failure must not blame a missing dependency")
   assert.doesNotMatch(output, /harnessremote:\/\//)
   assert.doesNotMatch(output, /one-time-token|secret-password/)
   assert.doesNotMatch(output, /https?:\/\//)
+})
+
+test("pairing announcement explains a missing QR renderer in a source checkout", () => {
+  let output = ""
+  announceMachinePairing(config(), grant(), {
+    interfaces: {
+      eth0: [{ family: "IPv4", internal: false, address: "192.168.1.44" }]
+    },
+    write: (text) => { output += text },
+    renderQR: () => null,
+    rendererMissing: () => true
+  })
+  assert.match(output, /qrcode-terminal/)
+  assert.match(output, /npm install/)
+  assert.match(output, /npx harness-remote@latest/)
+  assert.match(output, /Machines → Add machine/)
+  assert.doesNotMatch(output, /one-time-token|secret-password/)
+})
+
+test("QR renderer is reported missing only when the module cannot be resolved", () => {
+  assert.equal(pairingQRRendererMissing({ resolve: () => "/node_modules/qrcode-terminal/lib/main.js" }), false)
+  assert.equal(pairingQRRendererMissing({
+    resolve: () => { throw Object.assign(new Error("Cannot find module"), { code: "MODULE_NOT_FOUND" }) }
+  }), true)
+  assert.equal(pairingQRRendererMissing({ resolve: () => { throw new Error("EACCES") } }), false)
 })
 
 test("pairing claim returns the existing daemon credentials without Basic Auth", async () => {

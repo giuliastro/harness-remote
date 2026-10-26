@@ -169,6 +169,16 @@ export function renderPairingQRCode(uri, { load = () => require("qrcode-terminal
   }
 }
 
+/** True only when the optional QR dependency cannot be resolved, not when rendering itself failed. */
+export function pairingQRRendererMissing({ resolve = () => require.resolve("qrcode-terminal") } = {}) {
+  try {
+    resolve()
+    return false
+  } catch (error) {
+    return error?.code === "MODULE_NOT_FOUND"
+  }
+}
+
 /**
  * The one-time URI and endpoint are implementation details of phone pairing, not useful terminal UI.
  * Show one QR for the preferred reachable endpoint and keep normal machine setup as the fallback.
@@ -177,7 +187,8 @@ export function renderPairingQRCode(uri, { load = () => require("qrcode-terminal
 export function announceMachinePairing(config, grant, {
   write = (text) => process.stdout.write(text),
   interfaces,
-  renderQR = renderPairingQRCode
+  renderQR = renderPairingQRCode,
+  rendererMissing = pairingQRRendererMissing
 } = {}) {
   const links = machinePairingLinks(config, grant, interfaces)
   if (!links.length) return []
@@ -188,6 +199,11 @@ export function announceMachinePairing(config, grant, {
     write(`${qr}\n`)
     write("Scan this QR in Harness Remote to add the machine automatically.\n")
   } else {
+    // `npx harness-remote` inside a source checkout runs that checkout, which has no node_modules
+    // until someone installs them. Name the cause instead of leaving pairing looking broken.
+    if (rendererMissing()) {
+      write("QR renderer not installed (qrcode-terminal). In a source checkout run `npm install` in the repository root, or run `npx harness-remote@latest` from another directory.\n")
+    }
     write("QR unavailable. Use Machines → Add machine with this machine's address and credentials.\n")
   }
   return links
