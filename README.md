@@ -51,6 +51,7 @@ Common options are optional:
 npx harness-remote --root ~/dev
 npx harness-remote --port 4900
 npx harness-remote --cors https://giuliastro.github.io
+npx harness-remote --allow-firewall   # Windows: let phones through Windows Firewall
 ```
 
 ### Android
@@ -64,7 +65,16 @@ Start the gateway on the computer you want to control, then:
 
 The QR uses a short-lived one-time pairing token. Manual address/credential entry remains available as a fallback.
 
-When the phone connects, the gateway prints **Phone connected**. If the QR expires without that, or the app reports that the phone cannot reach the computer, the phone and computer are not on the same network or a firewall blocks incoming connections. On Windows, `npx harness-remote --allow-firewall` adds the Windows Firewall rule (it asks for administrator permission).
+When the phone connects, the gateway prints **Phone connected**.
+
+#### If the phone cannot connect
+
+The gateway cannot test this by itself, so it reports what the phone shows: the QR expires without **Phone connected**, or the app says the phone cannot reach the computer. Check that:
+
+- the phone is on the same Wi-Fi as the computer, not on mobile data or a VPN;
+- the computer's firewall allows incoming connections. On Windows, restart with `npx harness-remote --allow-firewall`: it adds the Windows Firewall rule after asking for administrator permission.
+
+If the gateway prints **Phone pairing unavailable** instead of a QR, it is listening only on this computer or has no network address: follow the message it prints.
 
 The same QR is available without the terminal: in the desktop or web app, open **Machines**, choose **Pair a phone** on the machine you want to connect, and scan the code it shows. It counts down the remaining validity and can be regenerated at any time; a new code replaces the previous one immediately.
 
