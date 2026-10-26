@@ -8,6 +8,7 @@ import { executeConfigurationProbe } from "./configuration-probe.js"
 import { buildApplicationMenu } from "./app-menu.js"
 import { buildContextMenu } from "./context-menu.js"
 import { EmbeddedDaemonRuntime, EMBEDDED_DAEMON_HOST, EMBEDDED_DAEMON_LAN_HOST, EMBEDDED_DAEMON_PROFILE_ID, embeddedDaemonEntry, type EmbeddedDaemonExit } from "./embedded-daemon.js"
+import { loadOrCreateEmbeddedDaemonAuth, type EmbeddedDaemonAuth } from "./embedded-daemon-auth.js"
 import { DesktopEventTransport } from "./event-transport.js"
 import { externalLinkUrl } from "./external-link.js"
 import { IPC_CHANNELS, parseDesktopAttentionNotification, parseDesktopMenuTemplate, type DesktopNetworkSettingsState, type DesktopProjectRootsState } from "./ipc-contract.js"
@@ -27,6 +28,7 @@ const isWindows = process.platform === "win32"
 const isMac = process.platform === "darwin"
 const rendererEntry = join(__dirname, "../../dist/index.html")
 const profileFile = () => join(app.getPath("userData"), "desktop-profiles.json")
+const embeddedDaemonAuthFile = () => join(app.getPath("userData"), "embedded-daemon-auth.json")
 const projectRootsFile = () => join(app.getPath("userData"), "desktop-project-roots.json")
 const networkSettingsFile = () => join(app.getPath("userData"), "desktop-network-settings.json")
 type SavedWindowState = {
@@ -500,6 +502,14 @@ async function start(): Promise<void> {
   await projectRoots.load()
   networkSettings = new NetworkSettingsStore(networkSettingsFile())
   await networkSettings.load()
+  let embeddedDaemonAuth: EmbeddedDaemonAuth | undefined
+  try {
+    embeddedDaemonAuth = await loadOrCreateEmbeddedDaemonAuth(embeddedDaemonAuthFile())
+  } catch (error) {
+    // Keep the app and its local runtime usable even if the secret cannot be read. The next launch
+    // retries; a fresh per-process credential only costs one phone re-pair.
+    log(`embedded daemon credential unavailable: ${error instanceof Error ? error.message : "unknown error"}`)
+  }
   eventTransport = new DesktopEventTransport(registry, IPC_CHANNELS)
   embeddedDaemon = new EmbeddedDaemonRuntime({
     entryPath: embeddedDaemonEntry({
@@ -513,6 +523,9 @@ async function start(): Promise<void> {
     environment: () => resolveDesktopRuntimeEnvironment(),
     stateDirectory: join(app.getPath("userData"), "embedded-daemon"),
     roots: () => effectiveProjectRoots(projectRoots.get(), process.env.HARNESS_REMOTE_ROOT, homedir()),
+    // A phone pairs with these credentials and stores them. Keeping them across launches is what
+    // prevents a 401 after the desktop app or its embedded daemon restarts.
+    auth: embeddedDaemonAuth,
     bindHost: () => networkSettings.get().lanPairing ? EMBEDDED_DAEMON_LAN_HOST : EMBEDDED_DAEMON_HOST,
     onExit: embeddedDaemonExited
   })

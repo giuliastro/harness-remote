@@ -3,6 +3,7 @@ import { randomBytes } from "node:crypto"
 import { createServer } from "node:net"
 import { join } from "node:path"
 import { homedir } from "node:os"
+import type { EmbeddedDaemonAuth } from "./embedded-daemon-auth.js"
 
 export const EMBEDDED_DAEMON_HOST = "127.0.0.1"
 export const EMBEDDED_DAEMON_LAN_HOST = "0.0.0.0"
@@ -45,7 +46,7 @@ type EmbeddedDaemonEnvironment = NodeJS.ProcessEnv | (() => Promise<NodeJS.Proce
 type EmbeddedDaemonLaunchConfig = {
   port: number
   openCodePort: number
-  auth: { username: string; password: string }
+  auth: EmbeddedDaemonAuth
   bindHost: string
 }
 
@@ -68,7 +69,7 @@ export function embeddedDaemonArgs(port: number, openCodePort: number, stateDire
 
 export function embeddedDaemonEnvironment(
   environment: NodeJS.ProcessEnv = process.env,
-  auth?: { username: string; password: string }
+  auth?: EmbeddedDaemonAuth
 ): NodeJS.ProcessEnv {
   return {
     ...environment,
@@ -117,7 +118,7 @@ function canBind(port: number, host: string): Promise<boolean> {
   })
 }
 
-function credentials(): { username: string; password: string } {
+function credentials(): EmbeddedDaemonAuth {
   return {
     username: "harness-desktop",
     password: randomBytes(24).toString("base64url")
@@ -153,6 +154,9 @@ export class EmbeddedDaemonRuntime {
     environment?: EmbeddedDaemonEnvironment
     stateDirectory?: string
     roots?: () => readonly string[]
+    /** Stable credential loaded by main from userData. Without one, callers get a fresh per-process
+     *  credential; that is fine for tests but breaks phone pairing across application restarts. */
+    auth?: EmbeddedDaemonAuth
     /** Opt-in LAN pairing (Settings → This computer): the daemon binds the wildcard address so a
      *  phone on the network can reach it. Read on every launch, so a restart applies a change. The
      *  app itself keeps talking to the endpoint over loopback, which a wildcard bind also serves. */
@@ -170,7 +174,7 @@ export class EmbeddedDaemonRuntime {
   get isRunning(): boolean {
     // A supervised recovery deliberately keeps the same externally registered endpoint and
     // credentials. Treat that short replacement window as logical runtime liveness so Electron does
-    // not discard the still-valid volatile profile while the child process tree is being replaced.
+    // not discard the still-valid runtime profile while the child process tree is being replaced.
     if (this.recovering && !this.stopRequested) return true
     return Boolean(this.child && this.child.exitCode === null && !this.child.killed && this.ready)
   }
@@ -222,7 +226,7 @@ export class EmbeddedDaemonRuntime {
     const bindHost = reuse?.bindHost ?? ((this.options.bindHost?.() ?? EMBEDDED_DAEMON_HOST).trim() || EMBEDDED_DAEMON_HOST)
     const port = reuse?.port ?? await findBindablePort(4097, bindHost)
     const openCodePort = reuse?.openCodePort ?? await findBindablePort(4096, EMBEDDED_DAEMON_HOST, [port])
-    const auth = reuse?.auth ?? credentials()
+    const auth = reuse?.auth ?? this.options.auth ?? credentials()
     const launchConfig = { port, openCodePort, auth, bindHost }
     // HARNESS_REMOTE_ROOT is an established override. Passing CLI roots as well would merge the
     // environment root with the user setting, so omit them entirely when the override is present.
@@ -353,9 +357,9 @@ export class EmbeddedDaemonRuntime {
     this.recovering = (async () => {
       this.cancelHealthCheck()
       this.healthFailures = 0
-      // Keep only the externally registered loopback endpoint and volatile credentials stable. The
-      // managed OpenCode port is internal to the daemon, so selecting a fresh free port on recovery
-      // prevents an escaped/stale descendant from blocking the entire local runtime.
+      // Keep only the externally registered loopback endpoint and credentials stable. The managed
+      // OpenCode port is internal to the daemon, so selecting a fresh free port on recovery prevents
+      // an escaped/stale descendant from blocking the entire local runtime.
       if (this.child === child) this.child = undefined
       if (this.ready === expectedReady) this.ready = undefined
       await this.terminateChild(child)

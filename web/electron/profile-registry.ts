@@ -137,8 +137,9 @@ function sameProfile(left: DesktopProfile, right: DesktopProfile): boolean {
 /** Main-owned allowlist. Renderer profile mutation represents user-approved Settings state. */
 export class ProfileRegistry {
   private profiles = new Map<string, DesktopProfile>()
-  // Runtime profiles are deliberately process-local. In particular, the desktop-owned daemon uses
-  // ephemeral credentials that must never be serialized into desktop-profiles.json.
+  // Runtime profiles are deliberately process-local. The desktop-owned daemon credential is
+  // persisted separately in embedded-daemon-auth.json so phone pairing survives a restart; it must
+  // never be serialized into desktop-profiles.json.
   private runtimeProfiles = new Map<string, DesktopProfile>()
   private nextRevision = 0
   private writeQueue: Promise<void> = Promise.resolve()

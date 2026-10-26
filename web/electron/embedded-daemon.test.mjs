@@ -125,6 +125,39 @@ process.on("SIGTERM", () => { clearInterval(timer); process.exit(0) })
   }
 })
 
+test("uses the persisted desktop credential supplied by main", async () => {
+  const root = await mkdtemp(join(tmpdir(), "hr-embedded-daemon-auth-"))
+  const script = join(root, "auth-daemon.mjs")
+  const auth = {
+    username: "harness-desktop",
+    password: "persisted-auth-password-0123456789"
+  }
+  await writeFile(script, `
+const port = process.argv[process.argv.indexOf("--port") + 1]
+if (process.env.HARNESS_REMOTE_USERNAME !== ${JSON.stringify(auth.username)}) process.exit(8)
+if (process.env.HARNESS_REMOTE_PASSWORD !== ${JSON.stringify(auth.password)}) process.exit(9)
+process.stdout.write("Harness daemon ready at http://127.0.0.1:" + port + "\\n")
+const timer = setInterval(() => {}, 1000)
+process.on("SIGTERM", () => { clearInterval(timer); process.exit(0) })
+`, "utf8")
+
+  const runtime = new EmbeddedDaemonRuntime({
+    entryPath: script,
+    stateDirectory: join(root, "state"),
+    auth,
+    startupTimeoutMs: 2_000,
+    shutdownTimeoutMs: 2_000
+  })
+  try {
+    const ready = await runtime.start()
+    assert.equal(ready.endpoint.username, auth.username)
+    assert.equal(ready.endpoint.password, auth.password)
+  } finally {
+    await runtime.stop()
+    await rm(root, { recursive: true, force: true })
+  }
+})
+
 test("binds the wildcard address on opt-in while the app keeps the loopback endpoint", async () => {
   const root = await mkdtemp(join(tmpdir(), "hr-embedded-daemon-lan-"))
   const script = join(root, "lan-daemon.mjs")
