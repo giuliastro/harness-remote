@@ -10,6 +10,7 @@ import { spawn } from "node:child_process"
 import { fileURLToPath } from "node:url"
 import { ManagedOpenCodeHost } from "./opencode-host.js"
 import { discoverOpenCodeExecutables, resolveOpenCodeCommand } from "./opencode-discovery.js"
+import { windowsFirewallWarning } from "./windows-firewall.js"
 
 const OPENCODE_BACKEND = { id: "opencode", detectCommands: ["opencode"] }
 
@@ -329,6 +330,11 @@ async function main() {
 
   const addresses = host === "0.0.0.0" ? lanAddresses() : [host]
   process.stdout.write(formatStartupSummary({ plan, addresses, port, username, password }))
+  // Runs beside startup: the runtime child uses this same Node executable, and reading the rules
+  // takes a few seconds on Windows.
+  void windowsFirewallWarning({ host }).then((warning) => {
+    if (warning) process.stderr.write(warning)
+  }).catch(() => undefined)
 
   if (plan.mode === "daemon") {
     const daemonArgs = buildDaemonArgs(args, { backend, host, port, openCode: plan.openCode, openCodePort })
