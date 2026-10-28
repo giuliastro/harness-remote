@@ -166,6 +166,10 @@ replayed out of a loaded session's history — so `AcpService` settles a Session
 reasoning as soon as the turn behind them is no longer live (`settleUnfinishedActivity`). Without it
 an Activity section in a finished conversation reads `Working` for good, snapshot included.
 
+**Observed with 0.84.0:** `session/load` replays one `session/update` per transcript record (a
+text, thinking, tool use or tool result block), and a tool result arrives whole in one
+`tool_call_update`, so a long transcript is thousands of notifications into one cached Session.
+
 **Watch:** the pinned adapter version, bare model ids, ACP session update and permission-request
 shapes, and whether session visibility or image capability changes. The app intentionally does not
 expose agent selection, server slash commands or VCS/diff for this backend.

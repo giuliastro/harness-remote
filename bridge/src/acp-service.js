@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto"
 import { mkdir, readFile, rename, stat, unlink, writeFile } from "node:fs/promises"
 import path from "node:path"
 import { selectableAcpModelValue, modelConfigOptionFromSessionResponse, modelValueIsExcluded, normalizedAcpModelCandidates, splitAcpModelValue, splitInlineAcpModelVariant } from "./agent-model-catalog.js"
-import { TranscriptCache } from "./transcript-cache.js"
+import { partWeight, TranscriptCache, transcriptWeight } from "./transcript-cache.js"
 import { stripAmbientContext } from "./ambient-context.js"
 import {
   listExtensionActions,
@@ -2129,6 +2129,7 @@ export class AcpService {
     this.#messages.set(sessionID, messages)
     const streamedID = this.#chunkMessageIDs.get(`${sessionID}:assistant`)
     let target = streamedID ? messages.find((item) => item.info.id === streamedID) : undefined
+    const weight = target ? transcriptWeight([{ info: target.info }]) : 0
     if (!target) {
       target = {
         info: { id: randomUUID(), role: "assistant", sessionID, time: { created: Date.now() } },
@@ -2137,6 +2138,7 @@ export class AcpService {
       messages.push(target)
     }
     target.info.error = { name: "HarnessTurnError", message: message.trim() }
+    this.#messages.grow(sessionID, transcriptWeight([{ info: target.info }]) - weight)
     if (this.#historyLoader?.authoritativeHistory) {
       const failures = this.#transientFailureMessageIDs.get(sessionID) ?? new Set()
       failures.add(target.info.id)
@@ -2458,6 +2460,7 @@ export class AcpService {
         const cachedMessages = this.#messages.get(sessionID) ?? []
         const healedMessages = healPoisonedSnapshot(cachedMessages)
         if (healedMessages !== cachedMessages) this.#messages.set(sessionID, healedMessages)
+        else this.#messages.refresh(sessionID)
         const snapshot = JSON.stringify({
           version: 1,
           messages: journalOwnsTranscript ? [] : healedMessages,
@@ -2790,10 +2793,12 @@ export class AcpService {
       const index = messages.findIndex((item) => queuedIDs.has(item.info.id))
       if (index >= 0) {
         messages.splice(index, 0, message)
+        this.#messages.grow(sessionID, transcriptWeight([message]))
         return
       }
     }
     messages.push(message)
+    this.#messages.grow(sessionID, transcriptWeight([message]))
   }
 
   /**
@@ -2818,6 +2823,7 @@ export class AcpService {
         }))
       ]
     })
+    this.#messages.grow(sessionID, transcriptWeight([messages.at(-1)]))
     // The acknowledgement suppresses the harness echoing this prompt back. A queued prompt sets it
     // on dequeue instead: set here, it replaced the running turn's and let that echo through as a
     // duplicate user row below the queued one.
@@ -2953,6 +2959,7 @@ export class AcpService {
           time: { start: Date.now() }
         }
       })
+      this.#messages.grow(sessionId, partWeight(message.parts.at(-1)))
       if (!replaying) this.#emit("message.updated", sessionId)
       return
     }
@@ -2961,6 +2968,7 @@ export class AcpService {
         .flatMap((message) => message.parts)
         .find((part) => part.type === "tool" && part.callID === update.toolCallId)
       if (!tool?.state) return
+      const weight = partWeight(tool)
       const output = update.rawOutput ?? update.content
         ?.flatMap((item) => item.type === "content" && item.content?.type === "text" ? [item.content.text] : [])
         .join("")
@@ -2973,6 +2981,7 @@ export class AcpService {
       if (typeof update.kind === "string") tool.kind = update.kind
       if (output) tool.state.output = typeof output === "string" ? output : JSON.stringify(output)
       if (tool.state.time && ["completed", "error"].includes(tool.state.status)) tool.state.time.end = Date.now()
+      this.#messages.grow(sessionId, partWeight(tool) - weight)
       if (!replaying) this.#emit("message.updated", sessionId)
       return
     }
@@ -3068,6 +3077,7 @@ export class AcpService {
         ...(partType === "reasoning" ? { time: { start: now } } : {})
       })
     }
+    this.#messages.grow(sessionId, !image && continuesPrevious ? text.length : partWeight(message.parts.at(-1)))
     if (!replaying) this.#emit("message.updated", sessionId)
   }
 
