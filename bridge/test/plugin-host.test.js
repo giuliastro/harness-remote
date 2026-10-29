@@ -47,6 +47,17 @@ const observeReport = {
           planType: "Plus",
           windows: [{
             harnessId: "codex",
+            bucketId: "five-hour",
+            scope: "five-hour",
+            window: "primary",
+            usedPercent: 20,
+            remainingPercent: 80,
+            resetsAt: "2026-10-25T17:00:00.000Z",
+            observedAt: "2026-10-25T12:00:00.000Z",
+            source: "native-rpc",
+            confidence: "reported"
+          }, {
+            harnessId: "codex",
             bucketId: "weekly",
             scope: "weekly",
             window: "primary",
@@ -170,8 +181,9 @@ test("plugin host detects an external Token Harness, auto-enables it and exposes
     assert.equal(plugin.dependency.version, "0.1.34")
     assert.equal(plugin.dependency.supportsObserve, true)
     assert.equal(plugin.actions.custom.find((item) => item.id === "open").label, "Open Token Harness")
-    assert.equal(plugin.contributions.home.harnesses.find((item) => item.harnessId === "codex").remainingPercent, 30)
-    assert.equal(plugin.contributions.home.meters.length, 2)
+    assert.equal(plugin.contributions.home.harnesses.find((item) => item.harnessId === "codex").remainingPercent, 80)
+    assert.equal(plugin.contributions.home.meters.length, 3)
+    assert.equal(plugin.contributions.home.meters.find((item) => item.id === "codex:weekly:weekly:primary").remainingPercent, 30)
     const exact = plugin.contributions.home.stats.find((stat) => stat.id === "exact-saved")
     assert.equal(exact.value, 123456)
     const routing = plugin.settings.sections.find((section) => section.id === "routing")

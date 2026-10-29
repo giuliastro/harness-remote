@@ -287,14 +287,15 @@ function quotaModel(quotas) {
 
 function summaryEntries(quota) {
   return quota.harnesses.map((harness) => {
-    const remaining = harness.windows
+    const fiveHourRemaining = harness.windows
+      .filter((window) => window.scope === "five-hour")
       .map((window) => percentOrNull(window.remainingPercent))
-      .filter((value) => value !== null)
+      .find((value) => value !== null)
     return {
       id: harness.harnessId,
       label: harness.label,
       state: harness.state,
-      remainingPercent: remaining.length ? Math.min(...remaining) : null,
+      remainingPercent: fiveHourRemaining ?? null,
       detail: harness.diagnostics.find((item) => typeof item.message === "string")?.message
     }
   })
