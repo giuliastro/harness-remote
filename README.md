@@ -125,7 +125,17 @@ See the [Quick start guide](docs/QUICK_START.md) for advanced options and troubl
 - **Attention visibility** — questions, permissions and other blocking states stay visible even when the Session is not open, and a Session that finishes while you are elsewhere stays marked **Ready** until you open it.
 - **Recovery** — reconnect, idle/wake and desktop-runtime recovery are built around the native Session as the source of truth.
 - **Local-first operation** — repositories, credentials, subscriptions and native Session persistence stay on your machines.
-- **Plugins** — local integrations with their own dashboards and settings. Token Harness adds harness allowance, local savings and automatic model routing without leaving the app.
+- **Plugins** — local integrations with their own dashboards and settings. The built-in [Token Harness](https://github.com/giuliastro/token-harness) plugin brings allowance, local savings and automatic model routing into Harness Remote.
+
+## Plugin Center and Token Harness
+
+Open **Settings → Plugins** to see the integrations available on a machine. Plugins run with that machine's local runtime and can add a dashboard and settings to Harness Remote. The first built-in plugin is [Token Harness](https://github.com/giuliastro/token-harness), one of the most promising open-source projects for making Claude Code and Codex's five-hour and seven-day allowances go further through measured token savings and model routing. Its dashboard brings together:
+
+- Current subscription allowance reported by supported coding harnesses.
+- Token Harness's locally recorded token savings, with measured and estimated savings kept distinct.
+- Automatic model-routing switches for Claude Code and Codex.
+
+Harness Remote detects an existing `token-harness` installation and leaves it in place. If it is not installed, you can install a managed copy from the plugin panel; updates and uninstall from Harness Remote apply only to that managed copy. The **Open Token Harness** action opens Token Harness's own dashboard on the machine where it runs, which remains the place for RTK, HarnessTrim and other optimizer settings. For an existing installation and integration details, see the [Token Harness project](https://github.com/giuliastro/token-harness) and the [plugin guide](docs/PLUGINS.md).
 
 ## Native Sessions stay authoritative
 
