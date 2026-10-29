@@ -187,7 +187,7 @@ test("plugin host detects an external Token Harness, auto-enables it and exposes
   }
 })
 
-test("Token Harness 0.1.32 uses the legacy quota commands without claiming observe support", async () => {
+test("Token Harness 0.1.32 uses budget and savings without claiming observe support", async () => {
   const env = await fixture()
   const host = new PluginHost({
     stateDirectory: env.state,

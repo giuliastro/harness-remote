@@ -458,8 +458,8 @@ async function collectUsage(cli, context, config) {
   } else {
     diagnostics.push(diagnostic({
       severity: "info",
-      message: `Token Harness ${cli.version ?? "is present but its version is unknown"}; the integrated read-only observe contract needs ${MIN_OBSERVE_VERSION} or newer.`,
-      detail: "Quota and savings are read with the older budget and savings commands. Update Token Harness for the complete dashboard."
+      message: `Token Harness ${cli.version ?? "is present but its version is unknown"} does not provide the combined observe command.`,
+      detail: "Harness Remote still reads current quota with budget and recorded savings with savings. Update Token Harness only for the combined observe report."
     }))
   }
 
@@ -674,7 +674,7 @@ function buildContributions(quota, metrics, supportsObserve) {
     chart: metrics?.chart ?? null
   }
   if (!supportsObserve) {
-    home.footnote = `${home.footnote} Update Token Harness to ${MIN_OBSERVE_VERSION} or newer for the read-only observe contract.`
+    home.footnote = `${home.footnote} Quota comes from budget; recorded savings come from savings.`
   }
   return { home }
 }
@@ -723,7 +723,7 @@ function actionModel(cli) {
   const supportsObserve = versionAtLeast(cli.version, MIN_OBSERVE_VERSION)
   return {
     install: cli.source === "external" && !supportsObserve
-      ? { available: true, label: "Install newer copy", reason: `A managed v${MIN_OBSERVE_VERSION}+ copy enables the integrated dashboard.` }
+      ? { available: true, label: "Install newer copy", reason: `A managed v${MIN_OBSERVE_VERSION}+ copy adds the combined observe report; the current dashboard already uses real budget and savings data.` }
       : { available: false },
     update: cli.source === "managed"
       ? { available: true, label: "Update Token Harness" }
@@ -799,7 +799,7 @@ async function status(params) {
     diagnostics,
     message: usage.supportsObserve
       ? `Token Harness ${cli.version ?? ""}`.trim()
-      : `Token Harness ${cli.version ?? ""} · legacy budget mode`.trim()
+      : `Token Harness ${cli.version ?? ""} · budget and recorded savings`.trim()
   }
 }
 
