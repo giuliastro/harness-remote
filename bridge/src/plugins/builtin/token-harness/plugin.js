@@ -6,7 +6,7 @@ import path from "node:path"
 import { promisify } from "node:util"
 
 const execFileAsync = promisify(execFile)
-const MIN_OBSERVE_VERSION = "0.1.32"
+const MIN_OBSERVE_VERSION = "0.1.34"
 const HARNESS_NAMES = {
   claude: "Claude Code",
   codex: "Codex",

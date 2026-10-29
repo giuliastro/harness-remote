@@ -254,7 +254,7 @@ new config in `result.config`; the daemon persists it and passes it back to ever
 
 The built-in plugin uses only public CLI surfaces:
 
-- `token-harness observe --json --since <7d|30d|all>` for the read-only dashboard (0.1.32+).
+- `token-harness observe --json --since <7d|30d|all>` for the read-only dashboard (0.1.34+).
 - `token-harness budget --json` and `token-harness savings --json` as the fallback for older copies.
 - `token-harness plan --harness <claude|codex> --provider none --agent-routing|--disable-agent-routing --json`
   followed by `apply --plan <id> --yes --json` for the routing switches.

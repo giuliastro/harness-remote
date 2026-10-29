@@ -180,7 +180,7 @@ EOF
 else
   cat <<EOF
 Modalità reale: rileva il Token Harness installato sulla macchina e i suoi dati.
-Harness Remote resta isolato in $STATE. Se la CLI è più vecchia di 0.1.32, il
+Harness Remote resta isolato in $STATE. Se la CLI è più vecchia di 0.1.34, il
 pannello offre "Install newer copy": installa una copia gestita nei dati del
 plugin, senza modificare quella di sistema. Attenzione: gli switch di routing,
 se supportati dalla versione del harness, agiscono sulla configurazione reale

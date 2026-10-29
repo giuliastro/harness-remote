@@ -111,7 +111,7 @@ async function fixture() {
   await writeFile(cli, `#!/usr/bin/env node
 const args = process.argv.slice(2)
 if (args[0] === "--version") {
-  process.stdout.write("0.1.34\\n")
+  process.stdout.write((process.env.FAKE_VERSION || "0.1.34") + "\\n")
   process.exit(0)
 }
 if (args.length === 0 || args[0] === "ui") {
@@ -120,6 +120,7 @@ if (args.length === 0 || args[0] === "ui") {
   process.exit(0)
 }
 if (args[0] === "observe") {
+  if (process.env.FAKE_LOG) require("node:fs").appendFileSync(process.env.FAKE_LOG, "observe\\n")
   process.stdout.write(process.env.FAKE_OBSERVE || "{}")
   process.exit(0)
 }
@@ -180,6 +181,30 @@ test("plugin host detects an external Token Harness, auto-enables it and exposes
     const opened = await host.runAction("token-harness", "open")
     assert.match(opened.message, /ready/)
     assert.equal(opened.url, "http://127.0.0.1:45678/")
+  } finally {
+    await host.close()
+    await rm(env.root, { recursive: true, force: true })
+  }
+})
+
+test("Token Harness 0.1.32 uses the legacy quota commands without claiming observe support", async () => {
+  const env = await fixture()
+  const host = new PluginHost({
+    stateDirectory: env.state,
+    home: env.home,
+    environment: {
+      ...process.env,
+      HOME: env.home,
+      PATH: `${env.bin}${path.delimiter}${path.dirname(process.execPath)}`,
+      FAKE_VERSION: "0.1.32",
+      FAKE_LOG: env.log
+    }
+  })
+  try {
+    const plugin = (await host.list()).plugins.find((item) => item.id === "token-harness")
+    assert.equal(plugin?.dependency.version, "0.1.32")
+    assert.equal(plugin?.dependency.supportsObserve, false)
+    await assert.rejects(readFile(env.log, "utf8"), { code: "ENOENT" })
   } finally {
     await host.close()
     await rm(env.root, { recursive: true, force: true })
