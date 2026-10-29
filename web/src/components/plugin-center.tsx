@@ -25,6 +25,14 @@ import {
 import { isDesktopLocalMachine } from "../workspaceMachines"
 
 type PluginNotice = { kind: "success" | "error"; text: string; url?: string }
+const STORAGE_WARNING_BYTES = 512 * 1024 * 1024
+
+function formatStorage(bytes: number, language: string): string {
+  if (bytes < 1024) return `${bytes} B`
+  const unit = bytes < 1024 * 1024 ? "KB" : bytes < 1024 * 1024 * 1024 ? "MB" : "GB"
+  const divisor = unit === "KB" ? 1024 : unit === "MB" ? 1024 * 1024 : 1024 * 1024 * 1024
+  return `${new Intl.NumberFormat(language, { maximumFractionDigits: 1 }).format(bytes / divisor)} ${unit}`
+}
 
 function openDashboardURL(url: string, machine: WorkspaceMachine): void {
   if (isDesktopLocalMachine(machine)) window.open(url, "_blank", "noopener,noreferrer")
@@ -357,6 +365,7 @@ function PluginDetail({
               <span className="hr-plugin-badge">v{plugin.version}</span>
               {dependency ? <span className="hr-plugin-badge">{dependencyLabel(plugin, t)}</span> : null}
               {dependency?.version ? <span className="hr-plugin-badge">CLI {dependency.version}</span> : null}
+              {plugin.storage ? <span className="hr-plugin-badge">{t("plugins.storage")}: {plugin.storage.complete ? "" : "≥"}{formatStorage(plugin.storage.bytes, language)}</span> : null}
             </div>
           </div>
         </div>
@@ -411,6 +420,8 @@ function PluginDetail({
         </div>
       </header>
       {dependency?.state === "external" ? <p className="hr-plugin-external-note">{t("plugins.externalInstallHint")}</p> : null}
+      {!plugin.builtIn && !active ? <p className="hr-plugin-external-note">{t("plugins.userCodeWarning")}</p> : null}
+      {plugin.storage && plugin.storage.bytes >= STORAGE_WARNING_BYTES ? <p className="hr-plugin-external-note" role="status">{t("plugins.storageLarge")}</p> : null}
 
       {notice ? (
         <p className={`hr-plugin-notice ${notice.kind}`} role={notice.kind === "error" ? "alert" : "status"}>

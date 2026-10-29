@@ -52,8 +52,12 @@ Each plugin directory contains `harness-plugin.json` and its backend entry file.
 - `runtime.entry` is relative to the plugin directory and may not escape it.
 - `surfaces` says where the plugin contributes. `backend` means it runs on the daemon; `frontend`
   means it returns one or more of the declarative view shapes below.
-- `autoEnableWhenReady` enables the integration the first time its `status` method reports `ready`.
-  A user can always disable it afterwards.
+- `autoEnableWhenReady` applies only to built-in plugins. A user plugin is listed without executing
+  its code until the user explicitly enables it. Disabling a user plugin also stops status probes and
+  custom actions; enabling it runs `status` to verify that its dependency is ready.
+- `permissions` is descriptive metadata, not an operating-system sandbox. A Node or Python plugin
+  runs with the account's local privileges after it is enabled. Install only code from a trusted
+  source, and review updates before replacing a plugin directory.
 
 ## Process protocol
 
@@ -107,6 +111,16 @@ Methods:
 
 `status` runs with `enabled: false` when the plugin is disabled. Keep that path cheap: detect the
 external application and return its version, but do not load dashboards or settings.
+For user plugins, the host does not call `status` while disabled. This preserves the built-in
+Token Harness detection flow without running newly discovered third-party code.
+
+The host checks at most three plugin statuses concurrently. A status response is limited to 4 MiB
+and each invocation has a timeout. Token Harness's dashboard log is capped at 1 MiB; the cap covers
+that log only, not the plugin's managed npm runtime or files written by external applications.
+The Plugin Center displays the size of each plugin's managed data directory and warns at 512 MiB.
+The scan is cached for five minutes and stops after 10,000 entries; when incomplete, the displayed
+size is marked as a lower bound. This is monitoring, not a filesystem quota: plugin processes may
+write elsewhere with the user's privileges, so a hard limit requires an operating-system sandbox.
 
 ## Status result
 

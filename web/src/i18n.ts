@@ -52,6 +52,9 @@ export type TranslationKey =
   | 'plugins.detected'
   | 'plugins.externalInstallHint'
   | 'plugins.managed'
+  | 'plugins.storage'
+  | 'plugins.storageLarge'
+  | 'plugins.userCodeWarning'
   | 'plugins.disabled'
   | 'plugins.needsAttention'
   | 'plugins.install'
@@ -844,6 +847,9 @@ const translations: Record<LanguageCode, Partial<Record<TranslationKey, string>>
     'plugins.detected': 'Detected on this machine',
     'plugins.externalInstallHint': 'Installed outside Harness Remote. Disabling the plugin leaves it on this machine.',
     'plugins.managed': 'Installed by Harness Remote',
+    'plugins.storage': 'Managed data',
+    'plugins.storageLarge': 'This plugin uses at least 512 MB of managed data. Review its files or uninstall it to reclaim space.',
+    'plugins.userCodeWarning': 'Enabling a user plugin runs its local code with your account permissions. Enable only plugins you trust.',
     'plugins.disabled': 'Disabled',
     'plugins.needsAttention': 'Needs attention',
     'plugins.install': 'Install',
@@ -1615,6 +1621,9 @@ const translations: Record<LanguageCode, Partial<Record<TranslationKey, string>>
     'plugins.detected': 'Rilevato su questa macchina',
     'plugins.externalInstallHint': 'Installato fuori da Harness Remote. Disattivare il plugin lo lascia su questa macchina.',
     'plugins.managed': 'Installato da Harness Remote',
+    'plugins.storage': 'Dati gestiti',
+    'plugins.storageLarge': 'Questo plugin usa almeno 512 MB di dati gestiti. Controlla i file o disinstallalo per liberare spazio.',
+    'plugins.userCodeWarning': 'Abilitare un plugin utente esegue il suo codice locale con i permessi del tuo account. Abilita solo plugin fidati.',
     'plugins.disabled': 'Disattivato',
     'plugins.needsAttention': 'Richiede attenzione',
     'plugins.install': 'Installa',
@@ -2386,6 +2395,9 @@ const translations: Record<LanguageCode, Partial<Record<TranslationKey, string>>
     'plugins.detected': '已在此機器偵測到',
     'plugins.externalInstallHint': '安裝在 Harness Remote 之外。停用此外掛不會將它從此機器移除。',
     'plugins.managed': '由 Harness Remote 安裝',
+    'plugins.storage': '受管理資料',
+    'plugins.storageLarge': '此外掛使用至少 512 MB 的受管理資料。請檢查檔案或解除安裝以釋放空間。',
+    'plugins.userCodeWarning': '啟用使用者外掛會以你的帳戶權限執行本機程式碼。只啟用可信任的外掛。',
     'plugins.disabled': '已停用',
     'plugins.needsAttention': '需要處理',
     'plugins.install': '安裝',
@@ -3157,6 +3169,9 @@ const translations: Record<LanguageCode, Partial<Record<TranslationKey, string>>
     'plugins.detected': '已在此机器检测到',
     'plugins.externalInstallHint': '安装在 Harness Remote 之外。停用此插件不会将它从此机器移除。',
     'plugins.managed': '由 Harness Remote 安装',
+    'plugins.storage': '托管数据',
+    'plugins.storageLarge': '此插件使用至少 512 MB 的托管数据。请检查文件或卸载以释放空间。',
+    'plugins.userCodeWarning': '启用用户插件会以你的账户权限运行本地代码。只启用可信任的插件。',
     'plugins.disabled': '已停用',
     'plugins.needsAttention': '需要处理',
     'plugins.install': '安装',
@@ -3928,6 +3943,9 @@ const translations: Record<LanguageCode, Partial<Record<TranslationKey, string>>
     'plugins.detected': 'Detectado nesta máquina',
     'plugins.externalInstallHint': 'Instalado fora do Harness Remote. Desativar o plugin o mantém nesta máquina.',
     'plugins.managed': 'Instalado pelo Harness Remote',
+    'plugins.storage': 'Dados gerenciados',
+    'plugins.storageLarge': 'Este plugin usa pelo menos 512 MB de dados gerenciados. Revise os arquivos ou desinstale para liberar espaço.',
+    'plugins.userCodeWarning': 'Ativar um plugin de usuário executa código local com as permissões da sua conta. Ative apenas plugins confiáveis.',
     'plugins.disabled': 'Desativado',
     'plugins.needsAttention': 'Precisa de atenção',
     'plugins.install': 'Instalar',

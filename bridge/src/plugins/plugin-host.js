@@ -27,6 +27,9 @@ const DEFAULT_STATUS_CACHE_MS = 120_000
 const STATUS_TIMEOUT_MS = 90_000
 const ACTION_TIMEOUT_MS = 300_000
 const MAX_OUTPUT_BYTES = 4 * 1024 * 1024
+const STATUS_CONCURRENCY = 3
+const STORAGE_CACHE_MS = 5 * 60_000
+const STORAGE_SCAN_LIMIT = 10_000
 
 function pluginError(code, message, options = {}) {
   const error = new Error(message)
@@ -417,6 +420,7 @@ export class PluginHost {
   #state
   #stateWrite = Promise.resolve()
   #statusCache = new Map()
+  #storageCache = new Map()
   #listQueue = Promise.resolve()
   #closed = false
   #store
@@ -523,6 +527,42 @@ export class PluginHost {
   #dataDirectory(id) {
     const directory = path.join(this.paths.dataDirectory, id)
     return directory
+  }
+
+  async #storageUsage(id) {
+    const cached = this.#storageCache.get(id)
+    if (cached && Date.now() - cached.at < STORAGE_CACHE_MS) return cached.value
+    const pending = [this.#dataDirectory(id)]
+    let bytes = 0
+    let visited = 0
+    let complete = true
+    while (pending.length && visited < STORAGE_SCAN_LIMIT) {
+      const directory = pending.pop()
+      let entries
+      try {
+        entries = await readdir(directory, { withFileTypes: true })
+      } catch (error) {
+        if (error?.code !== "ENOENT") complete = false
+        continue
+      }
+      for (const entry of entries) {
+        if (++visited > STORAGE_SCAN_LIMIT) {
+          complete = false
+          break
+        }
+        const target = path.join(directory, entry.name)
+        // Never follow links outside the plugin's managed data directory.
+        if (entry.isSymbolicLink()) continue
+        if (entry.isDirectory()) pending.push(target)
+        else if (entry.isFile()) {
+          try { bytes += (await stat(target)).size } catch { complete = false }
+        }
+      }
+    }
+    if (pending.length) complete = false
+    const value = { bytes, complete }
+    this.#storageCache.set(id, { at: Date.now(), value })
+    return value
   }
 
   async #context(manifest, record) {
@@ -680,7 +720,20 @@ export class PluginHost {
   async #itemFor(manifest, { refresh = false } = {}) {
     const state = await this.#loadState()
     const record = state.plugins[manifest.id]
-    const shouldAutoEnable = record === undefined && manifest.autoEnableWhenReady
+    // A directory placed on disk must not execute user-supplied code during catalogue discovery.
+    // The explicit Enable action is the trust boundary for user plugins.
+    if (!manifest.builtIn && record?.enabled !== true) {
+      return { ...this.#item(manifest, normalizeStatus({
+        ready: true,
+        dependency: null,
+        actions: {},
+        contributions: {},
+        settings: null,
+        diagnostics: [],
+        message: "Enable this plugin to run its local code and inspect its dependency."
+      }), false), storage: await this.#storageUsage(manifest.id) }
+    }
+    const shouldAutoEnable = manifest.builtIn && record === undefined && manifest.autoEnableWhenReady
     let enabled = shouldAutoEnable ? true : record?.enabled === true
     let status
     try {
@@ -707,7 +760,7 @@ export class PluginHost {
       })
       enabled = true
     }
-    return this.#item(manifest, status, enabled)
+    return { ...this.#item(manifest, status, enabled), storage: await this.#storageUsage(manifest.id) }
   }
 
   async list({ refresh = false } = {}) {
@@ -716,8 +769,12 @@ export class PluginHost {
     // not start two native quota probes or two observe processes; queue the second behind the first.
     const operation = this.#listQueue.then(async () => {
       const manifests = await this.#loadManifests()
-      const plugins = []
-      for (const manifest of manifests) plugins.push(await this.#itemFor(manifest, { refresh }))
+      const plugins = new Array(manifests.length)
+      for (let start = 0; start < manifests.length; start += STATUS_CONCURRENCY) {
+        await Promise.all(manifests.slice(start, start + STATUS_CONCURRENCY).map(async (manifest, offset) => {
+          plugins[start + offset] = await this.#itemFor(manifest, { refresh })
+        }))
+      }
       return { plugins, generatedAt: new Date().toISOString() }
     })
     this.#listQueue = operation.catch(() => undefined)
@@ -731,6 +788,7 @@ export class PluginHost {
 
   #invalidate(id) {
     this.#statusCache.delete(id)
+    this.#storageCache.delete(id)
   }
 
   async #runLifecycle(id, method) {
@@ -846,6 +904,11 @@ export class PluginHost {
     }
     const state = await this.#loadState()
     const record = state.plugins[id]
+    if (record?.enabled !== true) throw pluginError("plugin_disabled", `${manifest.name} is disabled`)
+    const status = await this.#status(manifest, true)
+    if (!status.actions.custom.some((action) => action.id === actionId)) {
+      throw pluginError("invalid_request", `Unknown or unavailable action: ${actionId}`)
+    }
     const context = await this.#context(manifest, record)
     const result = await this.#invoke(manifest, "action", {
       action: actionId,
@@ -865,6 +928,7 @@ export class PluginHost {
   async close() {
     this.#closed = true
     this.#statusCache.clear()
+    this.#storageCache.clear()
     this.#listQueue = Promise.resolve()
     await this.#stateWrite.catch(() => undefined)
   }

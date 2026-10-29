@@ -314,3 +314,60 @@ test("a missing external application stays visible as installable without exposi
     await rm(root, { recursive: true, force: true })
   }
 })
+
+test("user plugins run only after explicit enable and disabled plugins cannot run actions", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "harness-plugin-consent-"))
+  const builtin = path.join(root, "builtin")
+  const user = path.join(root, "user")
+  const pluginDirectory = path.join(user, "untrusted")
+  const calls = path.join(root, "calls.log")
+  await mkdir(builtin, { recursive: true })
+  await mkdir(pluginDirectory, { recursive: true })
+  await writeFile(path.join(pluginDirectory, "harness-plugin.json"), JSON.stringify({
+    schemaVersion: 1,
+    id: "untrusted",
+    name: "User plugin",
+    version: "1.0.0",
+    autoEnableWhenReady: true,
+    runtime: { kind: "node", entry: "plugin.cjs" }
+  }))
+  await writeFile(path.join(pluginDirectory, "plugin.cjs"), `
+const fs = require("node:fs")
+fs.appendFileSync(${JSON.stringify(calls)}, "called\\n")
+const request = JSON.parse(fs.readFileSync(0, "utf8"))
+process.stdout.write(JSON.stringify({ ok: true, result: request.method === "status"
+  ? { ready: true, actions: { custom: [{ id: "open", label: "Open" }] } }
+  : { message: "opened" } }))
+`)
+  const host = new PluginHost({
+    stateDirectory: path.join(root, "state"),
+    builtinDirectory: builtin,
+    userDirectory: user,
+    home: root
+  })
+  try {
+    const discovered = (await host.list()).plugins[0]
+    assert.equal(discovered.enabled, false)
+    assert.equal(discovered.ready, true)
+    assert.deepEqual(discovered.storage, { bytes: 0, complete: true })
+    await assert.rejects(readFile(calls, "utf8"), { code: "ENOENT" })
+    await assert.rejects(host.runAction("untrusted", "open"), { code: "plugin_disabled" })
+    const managedData = path.join(root, "state", "plugins", "data", "untrusted")
+    await mkdir(managedData, { recursive: true })
+    await writeFile(path.join(managedData, "data.bin"), "1234567890")
+    const enabled = await host.enable("untrusted")
+    assert.equal(enabled.plugin.enabled, true)
+    assert.equal(enabled.plugin.storage.bytes, 10)
+    assert.match(await readFile(calls, "utf8"), /called/)
+    await assert.rejects(host.runAction("untrusted", "other"), { code: "invalid_request" })
+    assert.equal((await host.runAction("untrusted", "open")).message, "opened")
+    await host.disable("untrusted")
+    const before = await readFile(calls, "utf8")
+    await host.list({ refresh: true })
+    await assert.rejects(host.runAction("untrusted", "open"), { code: "plugin_disabled" })
+    assert.equal(await readFile(calls, "utf8"), before)
+  } finally {
+    await host.close()
+    await rm(root, { recursive: true, force: true })
+  }
+})

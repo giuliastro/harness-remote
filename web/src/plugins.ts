@@ -146,6 +146,7 @@ export type PluginInfo = {
   contributions: PluginContributions
   settings: PluginSettings | null
   diagnostics: PluginDiagnostic[]
+  storage?: { bytes: number; complete: boolean }
   message?: string
   checkedAt: string
 }
@@ -377,6 +378,9 @@ export function normalizePlugin(value: unknown): PluginInfo | null {
     contributions: contributions(value.contributions),
     settings: settings(value.settings),
     diagnostics: diagnostics(value.diagnostics),
+    storage: isRecord(value.storage) && numberOrNull(value.storage.bytes) !== null
+      ? { bytes: Math.max(0, numberOrNull(value.storage.bytes) ?? 0), complete: value.storage.complete === true }
+      : undefined,
     message: optionalString(value.message),
     checkedAt: stringValue(value.checkedAt, new Date().toISOString())
   }
