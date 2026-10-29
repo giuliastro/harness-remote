@@ -16,6 +16,7 @@
   "runtime": {
     "kind": "node",
     "entry": "plugin.js",
+    "deactivateOnDisable": true,
     "timeoutMs": 75000
   }
 }

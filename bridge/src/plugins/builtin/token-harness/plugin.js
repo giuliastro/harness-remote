@@ -840,6 +840,7 @@ async function uninstall(params) {
   const runtimeDirectory = text(context.managedRuntimeDirectory)
   if (!runtimeDirectory) throw new Error("The plugin host did not provide a managed runtime directory")
   const before = await resolveCli(context)
+  await stopDashboard(context)
   await rm(runtimeDirectory, { recursive: true, force: true })
   return {
     message: before?.source === "external"
@@ -907,6 +908,19 @@ async function runningDashboard(context) {
   }
 }
 
+async function stopDashboard(context) {
+  const dataDirectory = text(context.pluginDataDirectory)
+  if (!dataDirectory || !(await runningDashboard(context))) return
+  await writeFile(path.join(dataDirectory, "dashboard.stop"), "stop")
+  const statePath = path.join(dataDirectory, "dashboard.json")
+  const deadline = Date.now() + 3_000
+  while (Date.now() < deadline) {
+    if (!(await exists(statePath))) return
+    await new Promise((resolve) => setTimeout(resolve, 100))
+  }
+  throw new Error("Token Harness dashboard did not stop within 3s")
+}
+
 async function openDashboard(params) {
   const context = isRecord(params?.context) ? params.context : {}
   const cli = await resolveCli(context)
@@ -919,6 +933,7 @@ async function openDashboard(params) {
   const logPath = path.join(dataDirectory, "dashboard.log")
   const statePath = path.join(dataDirectory, "dashboard.json")
   const runnerPath = path.join(text(context.pluginDirectory, path.dirname(process.argv[1] ?? ".")), "dashboard-runner.cjs")
+  await rm(path.join(dataDirectory, "dashboard.stop"), { force: true })
   await writeFile(logPath, "")
   const child = spawn(process.execPath, [runnerPath, cli.path, logPath, home], {
     cwd: home,
@@ -991,6 +1006,10 @@ async function configure(params) {
 
 async function dispatch(method, params) {
   if (method === "status") return await status(params)
+  if (method === "deactivate") {
+    await stopDashboard(isRecord(params?.context) ? params.context : {})
+    return { message: "Token Harness dashboard stopped." }
+  }
   if (method === "install" || method === "update") return await install(params)
   if (method === "uninstall") return await uninstall(params)
   if (method === "configure") return await configure(params)

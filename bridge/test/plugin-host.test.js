@@ -329,7 +329,7 @@ test("user plugins run only after explicit enable and disabled plugins cannot ru
     name: "User plugin",
     version: "1.0.0",
     autoEnableWhenReady: true,
-    runtime: { kind: "node", entry: "plugin.cjs" }
+    runtime: { kind: "node", entry: "plugin.cjs", deactivateOnDisable: true }
   }))
   await writeFile(path.join(pluginDirectory, "plugin.cjs"), `
 const fs = require("node:fs")
@@ -351,6 +351,8 @@ process.stdout.write(JSON.stringify({ ok: true, result: request.method === "stat
     assert.equal(discovered.ready, true)
     assert.deepEqual(discovered.storage, { bytes: 0, complete: true })
     await assert.rejects(readFile(calls, "utf8"), { code: "ENOENT" })
+    await host.disable("untrusted")
+    await assert.rejects(readFile(calls, "utf8"), { code: "ENOENT" })
     await assert.rejects(host.runAction("untrusted", "open"), { code: "plugin_disabled" })
     const managedData = path.join(root, "state", "plugins", "data", "untrusted")
     await mkdir(managedData, { recursive: true })
@@ -366,6 +368,37 @@ process.stdout.write(JSON.stringify({ ok: true, result: request.method === "stat
     await host.list({ refresh: true })
     await assert.rejects(host.runAction("untrusted", "open"), { code: "plugin_disabled" })
     assert.equal(await readFile(calls, "utf8"), before)
+  } finally {
+    await host.close()
+    await rm(root, { recursive: true, force: true })
+  }
+})
+
+test("disabling an opted-in plugin calls deactivate after persisting disabled state", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "harness-plugin-deactivate-"))
+  const builtin = path.join(root, "builtin")
+  const pluginDirectory = path.join(builtin, "long-running")
+  const calls = path.join(root, "calls.log")
+  await mkdir(pluginDirectory, { recursive: true })
+  await writeFile(path.join(pluginDirectory, "harness-plugin.json"), JSON.stringify({
+    schemaVersion: 1,
+    id: "long-running",
+    name: "Long running",
+    version: "1.0.0",
+    runtime: { kind: "node", entry: "plugin.cjs", deactivateOnDisable: true }
+  }))
+  await writeFile(path.join(pluginDirectory, "plugin.cjs"), `
+const fs = require("node:fs")
+const request = JSON.parse(fs.readFileSync(0, "utf8"))
+fs.appendFileSync(${JSON.stringify(calls)}, request.method + "\\n")
+process.stdout.write(JSON.stringify({ ok: true, result: request.method === "status" ? { ready: true } : {} }))
+`)
+  const host = new PluginHost({ stateDirectory: path.join(root, "state"), builtinDirectory: builtin, home: root })
+  try {
+    await host.list()
+    const disabled = await host.disable("long-running")
+    assert.equal(disabled.plugin.enabled, false)
+    assert.match(await readFile(calls, "utf8"), /status\ndeactivate\nstatus/)
   } finally {
     await host.close()
     await rm(root, { recursive: true, force: true })

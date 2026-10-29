@@ -169,6 +169,7 @@ function parseManifest(raw, directory, builtIn) {
     entryPath,
     runtime: {
       kind: runtime.kind,
+      deactivateOnDisable: runtime.deactivateOnDisable === true,
       ...(Number.isFinite(runtime.timeoutMs) && runtime.timeoutMs > 0
         ? { timeoutMs: Math.min(Number(runtime.timeoutMs), ACTION_TIMEOUT_MS) }
         : {})
@@ -857,12 +858,24 @@ export class PluginHost {
 
   async disable(id) {
     const manifest = await this.#manifest(id)
+    const wasEnabled = (await this.#loadState()).plugins[id]?.enabled === true
     const now = new Date().toISOString()
     await this.#updateState((next) => {
       const current = next.plugins[id] ?? { enabled: false, config: {} }
       next.plugins[id] = { ...current, enabled: false, updatedAt: now }
       return next
     })
+    if (wasEnabled && manifest.runtime.deactivateOnDisable) {
+      const state = await this.#loadState()
+      try {
+        await this.#invoke(manifest, "deactivate", {
+          config: state.plugins[id]?.config ?? {},
+          context: await this.#context(manifest, state.plugins[id])
+        }, 10_000)
+      } catch (error) {
+        this.warn(`Cannot deactivate ${manifest.name}: ${error instanceof Error ? error.message : String(error)}`)
+      }
+    }
     this.#invalidate(id)
     return {
       plugin: await this.#itemFor(manifest, { refresh: true }),

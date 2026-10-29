@@ -1,5 +1,6 @@
-const { spawn } = require("node:child_process")
-const { appendFileSync, readFileSync, writeFileSync } = require("node:fs")
+const { spawn, spawnSync } = require("node:child_process")
+const { appendFileSync, existsSync, readFileSync, rmSync, writeFileSync } = require("node:fs")
+const path = require("node:path")
 
 const MAX_LOG_BYTES = 1024 * 1024
 
@@ -8,6 +9,8 @@ const MAX_LOG_BYTES = 1024 * 1024
 // plugin read the ready URL without keeping the one-shot process alive.
 const [cli, logPath, home] = process.argv.slice(2)
 if (!cli || !logPath) process.exit(2)
+const stopPath = path.join(path.dirname(logPath), "dashboard.stop")
+const statePath = path.join(path.dirname(logPath), "dashboard.json")
 
 let logBytes = 0
 let readyLine = ""
@@ -60,9 +63,40 @@ const child = spawn(cli, ["ui", "--no-open"], {
     ...(home ? { HOME: home } : {})
   },
   stdio: ["ignore", "pipe", "pipe"],
+  detached: process.platform !== "win32",
   windowsHide: true,
   shell: process.platform === "win32" && /\.cmd$/i.test(cli)
 })
+
+function removeOwnState() {
+  try {
+    const state = JSON.parse(readFileSync(statePath, "utf8"))
+    if (state.pid === process.pid) rmSync(statePath, { force: true })
+  } catch {
+    // The opener may not have written state yet, or a newer runner owns it.
+  }
+}
+
+let stopping = false
+function stopChild() {
+  stopping = true
+  clearInterval(stopTimer)
+  rmSync(stopPath, { force: true })
+  if (child.pid && process.platform === "win32") {
+    const taskkill = path.join(process.env.SystemRoot || "C:\\Windows", "System32", "taskkill.exe")
+    const result = spawnSync(taskkill, ["/PID", String(child.pid), "/T", "/F"], { windowsHide: true })
+    if (result.status !== 0) child.kill()
+  } else if (child.pid) {
+    try { process.kill(-child.pid, "SIGTERM") } catch { child.kill("SIGTERM") }
+  }
+  removeOwnState()
+  // A .cmd shim may take a moment to report the exit after its process tree is stopped.
+  setTimeout(() => process.exit(0), 1_000).unref()
+}
+
+const stopTimer = setInterval(() => {
+  if (existsSync(stopPath)) stopChild()
+}, 250)
 
 child.stdout.on("data", writeLog)
 child.stderr.on("data", writeLog)
@@ -70,6 +104,8 @@ child.once("error", (error) => {
   writeLog(`\nToken Harness failed to start: ${error.message}\n`)
   process.exit(1)
 })
-child.once("exit", (code) => {
-  process.exit(code ?? 0)
+child.once("close", (code) => {
+  clearInterval(stopTimer)
+  removeOwnState()
+  process.exit(stopping ? 0 : code ?? 0)
 })

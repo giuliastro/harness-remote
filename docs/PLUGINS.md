@@ -43,6 +43,7 @@ Each plugin directory contains `harness-plugin.json` and its backend entry file.
   "runtime": {
     "kind": "node",
     "entry": "plugin.js",
+    "deactivateOnDisable": false,
     "timeoutMs": 60000
   }
 }
@@ -50,6 +51,8 @@ Each plugin directory contains `harness-plugin.json` and its backend entry file.
 
 - `runtime.kind` is `node` or `python`.
 - `runtime.entry` is relative to the plugin directory and may not escape it.
+- `runtime.deactivateOnDisable` opts into a `deactivate` call after Disable. It is useful for a
+  plugin that owns a long-lived helper process; failures are logged while the plugin remains disabled.
 - `surfaces` says where the plugin contributes. `backend` means it runs on the daemon; `frontend`
   means it returns one or more of the declarative view shapes below.
 - `autoEnableWhenReady` applies only to built-in plugins. A user plugin is listed without executing
@@ -108,6 +111,7 @@ Methods:
 | `uninstall` | The user confirmed Uninstall. |
 | `configure` | A settings field changed. Receives `values` plus the previous `config`. |
 | `action` | A named action from `actions.custom`, for example opening the application's own dashboard. The result may include a `url`; the shell opens it automatically on the local desktop and shows the address for a remote machine. |
+| `deactivate` | Optional cleanup after Disable when `runtime.deactivateOnDisable` is true. |
 
 `status` runs with `enabled: false` when the plugin is disabled. Keep that path cheap: detect the
 external application and return its version, but do not load dashboards or settings.
@@ -117,6 +121,7 @@ Token Harness detection flow without running newly discovered third-party code.
 The host checks at most three plugin statuses concurrently. A status response is limited to 4 MiB
 and each invocation has a timeout. Token Harness's dashboard log is capped at 1 MiB; the cap covers
 that log only, not the plugin's managed npm runtime or files written by external applications.
+Disabling or uninstalling Token Harness also asks its launched dashboard to stop.
 The Plugin Center displays the size of each plugin's managed data directory and warns at 512 MiB.
 The scan is cached for five minutes and stops after 10,000 entries; when incomplete, the displayed
 size is marked as a lower bound. This is monitoring, not a filesystem quota: plugin processes may
