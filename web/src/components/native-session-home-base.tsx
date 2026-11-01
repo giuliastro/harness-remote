@@ -604,6 +604,7 @@ export function NativeSessionHome({
   const deletedKeysRef = useRef(deletedKeys)
   deletedKeysRef.current = deletedKeys
   const authoritativeRefreshApplied = useRef(authoritativeRefreshToken)
+  const discoveryRetry = useRef<{ signature: string | null; attempt: number }>({ signature: null, attempt: 0 })
   const onRefreshCompleteRef = useRef(onRefreshComplete)
   onRefreshCompleteRef.current = onRefreshComplete
   const [presentationOverrides, setPresentationOverrides] = useState<Record<string, SessionPresentationState>>({})
@@ -681,7 +682,11 @@ export function NativeSessionHome({
       setDiscoveryError(null)
       return
     }
+    if (discoveryRetry.current.signature !== discoverySignature) {
+      discoveryRetry.current = { signature: discoverySignature, attempt: 0 }
+    }
     let cancelled = false
+    let retryTimer: number | undefined
     setLoading(true)
     setDiscoveryError(null)
     setOlderSessionErrors({})
@@ -698,6 +703,16 @@ export function NativeSessionHome({
       return { machine, snapshot, projects, pages }
     })).then((results) => {
       if (cancelled) return
+      // A cold npx adapter can exceed the per-harness discovery budget even though it is starting
+      // correctly. Retry only the failed pages a few times instead of leaving PI/DeepSeek at zero
+      // until the next periodic refresh; a successful pass resets the backoff.
+      const failed = results.some((result) => result.pages.some((entry) => entry.page === null))
+      if (failed && discoveryRetry.current.attempt < 3) {
+        discoveryRetry.current.attempt += 1
+        retryTimer = window.setTimeout(() => setRevision((value) => value + 1), 3_000 * discoveryRetry.current.attempt)
+      } else if (!failed) {
+        discoveryRetry.current.attempt = 0
+      }
       const loadingMachineIDs = new Set(sources.filter(({ state }) => state === "loading").map(({ machine }) => machine.id))
       setProjectsByMachine((current) => Object.fromEntries([
         ...Object.entries(current).filter(([machineID]) => loadingMachineIDs.has(machineID)),
@@ -777,7 +792,7 @@ export function NativeSessionHome({
         onRefreshCompleteRef.current?.(refreshToken)
       }
     })
-    return () => { cancelled = true }
+    return () => { cancelled = true; if (retryTimer) window.clearTimeout(retryTimer) }
   }, [revision, refreshToken, authoritativeRefreshToken, discoveryReady, discoverySignature, endpointSignature, deletedKeys])
 
   useEffect(() => {
