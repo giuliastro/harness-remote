@@ -4,6 +4,7 @@ import { listMachineProjects, type MachineProject } from "../machineClient"
 import { canCreateNativeSession, createNativeSessionTarget } from "../native-session-create"
 import {
   discoverAgentNativeSessionPageSkippingEmpty,
+  nativeSessionDiscoverySignature,
   nativeSessionSurfaceTarget,
   selectReadyNativeSessionSources,
   type NativeSessionRecord,
@@ -620,11 +621,12 @@ export function NativeSessionHome({
       snapshot?.agents.map((agent) => `${agent.id}:${agent.backend}:${agent.transport}:${agent.processID ?? ""}:${agent.state}`).join(",") || ""
     ].join(":")
   ).join("|")
-  // Agent lifecycle (a lazy ACP start, a process exit or restart, a machine probe flapping) changes
-  // the signature above all the time on a perfectly healthy machine. That must re-read the Sessions,
-  // but it is not a different set of machines: treating it as one sent the rail and the workspace back
-  // to their first-load state ("Loading Sessions" in the workspace), hid the counts and disabled the
-  // open Session until the read finished. Only a changed endpoint is a new first load.
+  // Adapter startup changes state and PID while the first Session pages are still loading. Those
+  // changes invalidate ACP cursors, but must not cancel the whole federated read and discard pages
+  // already returned by other harnesses. Membership and endpoint changes still start a new read.
+  const discoverySignature = nativeSessionDiscoverySignature(sources)
+  // Only an endpoint change is a new first load. Adapter lifecycle changes are handled by the
+  // periodic refresh after the current federated read settles.
   const endpointSignature = sources.map(({ machine }) =>
     [
       machine.id,
@@ -639,7 +641,7 @@ export function NativeSessionHome({
   // Whether the read for the current snapshot has landed. Only used where showing stale emptiness
   // would be wrong (e.g. "No Sessions on this machine" for a machine that just came back).
   const [currentSignature, setCurrentSignature] = useState<string | null>(null)
-  const snapshotLoaded = loaded && currentSignature === machineSignature
+  const snapshotLoaded = loaded && currentSignature === discoverySignature
 
   useEffect(() => {
     if (!loaded || loading || !deletingKeys?.size || !onDeletionSettled) return
@@ -669,7 +671,7 @@ export function NativeSessionHome({
       setPresentationOverrides({})
       setOlderSessionErrors({})
       setLoadedSignature(endpointSignature)
-      setCurrentSignature(machineSignature)
+      setCurrentSignature(discoverySignature)
       setLoading(false)
       onRefreshCompleteRef.current?.(refreshToken)
       return
@@ -762,11 +764,11 @@ export function NativeSessionHome({
       }))
       if (authoritativeRefresh) authoritativeRefreshApplied.current = authoritativeRefreshToken
       setLoadedSignature(endpointSignature)
-      setCurrentSignature(machineSignature)
+      setCurrentSignature(discoverySignature)
     }).catch((reason) => {
       if (!cancelled) {
         setLoadedSignature(endpointSignature)
-        setCurrentSignature(machineSignature)
+        setCurrentSignature(discoverySignature)
         setDiscoveryError(reason instanceof Error ? reason.message : String(reason))
       }
     }).finally(() => {
@@ -776,7 +778,7 @@ export function NativeSessionHome({
       }
     })
     return () => { cancelled = true }
-  }, [sources, revision, refreshToken, authoritativeRefreshToken, discoveryReady, machineSignature, endpointSignature, deletedKeys])
+  }, [revision, refreshToken, authoritativeRefreshToken, discoveryReady, discoverySignature, endpointSignature, deletedKeys])
 
   useEffect(() => {
     if (!loaded || document.visibilityState !== "visible") return

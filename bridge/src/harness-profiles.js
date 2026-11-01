@@ -1,5 +1,6 @@
-import { findExecutable, codexAdapterEnvironment, claudeAdapterEnvironment } from "./executable-discovery.js"
+import { findExecutable, findPiExecutable, codexAdapterEnvironment, claudeAdapterEnvironment } from "./executable-discovery.js"
 import { createCodexHistoryLoader } from "./codex-session-history.js"
+import { createDeepseekHistoryLoader } from "./deepseek-session-history.js"
 import { createOmpHistoryLoader } from "./omp-session-history.js"
 import { createPiHistoryLoader } from "./pi-session-history.js"
 import { OMP_EXTENSION_ACTION_PROVIDERS } from "./extension-actions.js"
@@ -105,6 +106,7 @@ export const HARNESS_PROFILES = {
     // literal package spec and exit 127 on a real machine.
     command: process.platform === "win32" ? "npx.cmd" : "npx",
     detectCommands: ["pi"],
+    detectExecutable: findPiExecutable,
     launchPriority: 40,
     args: ["--yes", "--package=@automatalabs/pi-acp@0.5.0", "pi-acp"],
     adapterCommand: "pi-acp",
@@ -428,6 +430,11 @@ export const HARNESS_PROFILES = {
     adapterCommand: "dsh-acp",
     allowPackageFallback: true,
     permissionMode: "allow",
+    historyLoader: createDeepseekHistoryLoader(),
+    // The DSH journal is the authoritative transcript even when a `dsh web` process owns the
+    // Session. Reading it avoids session/load's single-writer rejection while the app is watching.
+    journalPageWhileOwned: false,
+    reloadOnHistoryRefresh: false,
     environment: {
       // DSH otherwise tries to open a browser for interactive login. The bridge uses the
       // credentials DSH already holds (~/.dsh/.credentials.yaml or DEEPSEEK_API_KEY).
@@ -449,8 +456,8 @@ export const HARNESS_PROFILES = {
     sessionContract: {
       authority: "native-harness",
       discovery: "native-list",
-      transcript: "session-load",
-      externalWriterObservation: "unverified-session-load",
+      transcript: "native-journal",
+      externalWriterObservation: "supported-via-journal",
       continuation: "session-load",
       writerOwnership: "adapter-defined",
       stop: "owned-session-native-cancel"

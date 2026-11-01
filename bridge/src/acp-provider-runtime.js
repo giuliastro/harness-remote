@@ -60,22 +60,24 @@ const NPX_COMMAND = /(?:^|[\\/])npx(?:\.cmd)?$/i
  * `package.json`, which makes every later launch fail with "Could not read package.json". Two npx
  * runs racing on one cache produced exactly that, and a broken entry is reused forever afterwards.
  *
- * Adapters therefore install into the daemon's own cache instead of the user's global one, and the
- * launches are serialized so no two installs ever share that cache at the same time. Serializing is
- * what makes one cache enough: the previous per-harness, per-client caches cost a full adapter
- * install each (gigabytes on a machine with several npx adapters).
+ * Each harness has one daemon-owned cache, shared by its user and catalog clients. Starts using
+ * the same cache are serialized so their installs cannot race. A slow adapter startup must not
+ * block model discovery for a different harness.
  */
-let npxInstallTail = Promise.resolve()
-function serializeNpxLaunch(run) {
-  const started = npxInstallTail.then(run, run)
-  npxInstallTail = started.then(() => undefined, () => undefined)
+const npxInstallTails = new Map()
+function serializeNpxLaunch(cache, run) {
+  const previous = npxInstallTails.get(cache) ?? Promise.resolve()
+  const started = previous.then(run, run)
+  const tail = started.then(() => undefined, () => undefined)
+  npxInstallTails.set(cache, tail)
+  void tail.then(() => { if (npxInstallTails.get(cache) === tail) npxInstallTails.delete(cache) })
   return started
 }
 
-function serializeNpxStart(client) {
+function serializeNpxStart(client, cache) {
   const start = client?.start
   if (typeof start !== "function") return client
-  client.start = (...args) => serializeNpxLaunch(() => start.apply(client, args))
+  client.start = (...args) => serializeNpxLaunch(cache, () => start.apply(client, args))
   return client
 }
 
@@ -84,10 +86,10 @@ export function acpProviderEnvironment(provider, launch, config) {
   if (!NPX_COMMAND.test(launch.command)) return provider.environment
   return {
     ...provider.environment,
-    // A per-harness override stays authoritative; otherwise one daemon-wide cache serves every
-    // npx adapter, with `serializeNpxStart` keeping installs apart.
+    // A per-harness override stays authoritative. Otherwise each adapter owns one cache so a
+    // lengthy install or runtime extraction cannot stall unrelated harness model pickers.
     npm_config_cache: provider.environment?.npm_config_cache
-      ?? path.join(config.stateDirectory, "npm-cache")
+      ?? path.join(config.stateDirectory, "npm-cache", provider.id)
   }
 }
 
@@ -106,7 +108,9 @@ export async function createAcpProviderRuntime({
   cwd = process.cwd()
 }) {
   const environment = acpProviderEnvironment(provider, launch, config)
-  const serialized = NPX_COMMAND.test(launch.command) ? serializeNpxStart : (client) => client
+  const serialized = NPX_COMMAND.test(launch.command)
+    ? (client) => serializeNpxStart(client, environment.npm_config_cache)
+    : (client) => client
   const clientOptions = {
     command: launch.command,
     args: [...launch.args],

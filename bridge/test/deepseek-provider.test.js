@@ -23,7 +23,12 @@ test("DeepSeek Harness uses the pinned ACP adapter and the native ACP surface", 
   assert.deepEqual(contract.models.variantConfigIDs, ["effort"])
   assert.deepEqual(provider.modelProviderLabels, { "deepseek-official": "DeepSeek" })
   assert.equal(contract.sessions.discovery, "native-list")
-  assert.equal(contract.sessions.transcript, "session-load")
+  assert.equal(contract.sessions.transcript, "native-journal")
+  assert.equal(contract.sessions.externalWriterObservation, "supported-via-journal")
+  assert.equal(typeof provider.historyLoader, "function")
+  assert.equal(typeof provider.historyLoader.page, "function")
+  assert.equal(provider.journalPageWhileOwned, false)
+  assert.equal(provider.reloadOnHistoryRefresh, false)
 
   assert.equal(provider.capabilities.models, true)
   assert.equal(provider.capabilities.todos, true)

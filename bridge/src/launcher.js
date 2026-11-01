@@ -53,7 +53,8 @@ export function detectBackends(options = {}) {
     .filter((provider) => provider.id === "opencode" || provider.executableGeneration
       ? openCode.some((candidate) => candidate.generation === (provider.executableGeneration ?? 1))
       : provider.id === "codex" ? Boolean(findCodexExecutable(options))
-      : provider.detectCommands.some((command) => findExecutable(command, options)))
+      : (provider.detectExecutable?.(options) ?? provider.detectCommands.some((command) => findExecutable(command, options)))
+        || (provider.allowPackageFallback && Boolean(findExecutable("npx", options))))
     .map((provider) => provider.id)
 }
 
