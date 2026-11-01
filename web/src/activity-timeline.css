@@ -39,14 +39,14 @@
 }
 
 /* Open, the header rides along at the top of the transcript: a long section would otherwise put its
-   only collapse control a screen or more above the reader. */
-.hr-activity.is-open > .hr-activity-head {
+   only collapse control a screen or more above the reader. Opaque, so rows do not show through. */
+.hr-activity.is-open > .hr-activity-frame > .hr-activity-head {
   position: sticky;
   top: 0;
   z-index: 3;
   border-bottom: 1px solid var(--td3-border-soft);
   border-radius: 11px 11px 0 0;
-  background: var(--td3-raise-1);
+  background: linear-gradient(var(--td3-raise-1), var(--td3-raise-1)), var(--td3-bg);
 }
 
 .hr-activity-toggle {
@@ -225,7 +225,7 @@
   transition: transform .16s ease;
 }
 
-.hr-activity.is-open > .hr-activity-head .hr-act-chevron,
+.hr-activity.is-open > .hr-activity-frame > .hr-activity-head .hr-act-chevron,
 .hr-act-tool.is-open > .hr-act-tool-row .hr-act-chevron,
 .hr-act-thought.is-open > .hr-act-thought-row .hr-act-chevron {
   transform: rotate(180deg);

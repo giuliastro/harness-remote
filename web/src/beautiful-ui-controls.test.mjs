@@ -109,6 +109,12 @@ test("aria semantics survive the restyle", () => {
   assert.match(timeline, /<span className="hr-act-kind" aria-hidden="true">/)
 })
 
+test("an open Activity header stays in view and turns its chevron", () => {
+  assert.match(timeline, /<div className="hr-activity-frame">\s*<div className="hr-activity-head"/, "the header renders inside the frame")
+  assert.match(activityCss, /\.hr-activity\.is-open > \.hr-activity-frame > \.hr-activity-head \{[^}]*?position: sticky;/, "an open Activity header must stay in view")
+  assert.match(activityCss, /\.hr-activity\.is-open > \.hr-activity-frame > \.hr-activity-head \.hr-act-chevron,[^{]*\{[^}]*?rotate\(180deg\)/, "an open Activity header must turn its chevron")
+})
+
 test("the dev preview loads exactly the stylesheets the app loads", () => {
   // The preview exists so these controls can be reviewed without waiting for a harness to emit a
   // tool part or a permission request. That only works if it is styled by the same sheets: a rule
