@@ -115,6 +115,11 @@ test("an open Activity header stays in view and turns its chevron", () => {
   assert.match(activityCss, /\.hr-activity\.is-open > \.hr-activity-frame > \.hr-activity-head \.hr-act-chevron,[^{]*\{[^}]*?rotate\(180deg\)/, "an open Activity header must turn its chevron")
 })
 
+test("the stuck Activity header covers the rows above it", () => {
+  assert.match(activityCss, /\.hr-activity\.is-open > \.hr-activity-frame > \.hr-activity-head::before \{[^}]*?position: absolute;[^}]*?z-index: -1;[^}]*?height: 100vh;[^}]*?content: "";/, "the stuck header must cover the rows above it")
+  assert.match(activityCss, /\.hr-activity\.is-open > \.hr-activity-frame \{[^}]*?overflow: clip;/, "the frame must clip the cover with `clip`: `hidden` would make it the scroller and nothing would stick")
+})
+
 test("the dev preview loads exactly the stylesheets the app loads", () => {
   // The preview exists so these controls can be reviewed without waiting for a harness to emit a
   // tool part or a permission request. That only works if it is styled by the same sheets: a rule

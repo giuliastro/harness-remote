@@ -49,6 +49,23 @@
   background: linear-gradient(var(--td3-raise-1), var(--td3-raise-1)), var(--td3-bg);
 }
 
+/* Sticky stops at the transcript's padding edge; cover the rows above it, clipped while at rest. */
+@supports (overflow: clip) {
+  .hr-activity.is-open > .hr-activity-frame {
+    overflow: clip;
+    border-radius: 11px 11px 0 0;
+  }
+
+  .hr-activity.is-open > .hr-activity-frame > .hr-activity-head::before {
+    position: absolute;
+    inset: auto 0 calc(100% - 11px);
+    z-index: -1;
+    height: 100vh;
+    content: "";
+    background: linear-gradient(to top, var(--td3-raise-1) 11px, transparent 11px), var(--td3-bg);
+  }
+}
+
 .hr-activity-toggle {
   display: flex;
   flex: 1;
