@@ -120,6 +120,9 @@ type Props = {
    * those harness scopes so externally deleted Sessions can be pruned without making automatic
    * lifecycle refreshes destructive. */
   authoritativeRefreshToken?: number
+  /** Bumped on validated Session lifecycle edges. It re-reads the index without making adapter
+   * process/PID changes a reason to cancel an in-flight federated read. */
+  lifecycleRevision?: number
   /** The rail already counts Sessions needing input; the mobile nav needs that count outside it. */
   onAttentionCountChange?: (count: number) => void
   /** Finished Sessions the user has not opened since, for the window title. */
@@ -497,6 +500,7 @@ export function NativeSessionHome({
   onOpen,
   refreshToken = 0,
   authoritativeRefreshToken = 0,
+  lifecycleRevision = 0,
   onAttentionCountChange,
   onUnseenReadyCountChange,
   attentionSessionKeys,
@@ -793,7 +797,7 @@ export function NativeSessionHome({
       }
     })
     return () => { cancelled = true; if (retryTimer) window.clearTimeout(retryTimer) }
-  }, [revision, refreshToken, authoritativeRefreshToken, discoveryReady, discoverySignature, endpointSignature, deletedKeys])
+  }, [revision, refreshToken, authoritativeRefreshToken, lifecycleRevision, discoveryReady, discoverySignature, endpointSignature, deletedKeys])
 
   useEffect(() => {
     if (!loaded || document.visibilityState !== "visible") return

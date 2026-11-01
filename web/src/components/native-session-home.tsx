@@ -82,5 +82,5 @@ export function NativeSessionHome(props: Props) {
     // wrappers even when routing is unchanged. Reopening the SSE stream on each render loses edges.
   }, [routedStreamSignature])
 
-  return <NativeSessionHomeWithAttention {...props} sources={liveSources} />
+  return <NativeSessionHomeWithAttention {...props} sources={liveSources} lifecycleRevision={liveRevision} />
 }

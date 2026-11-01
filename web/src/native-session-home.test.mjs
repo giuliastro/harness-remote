@@ -303,6 +303,9 @@ assert.equal(mergedAttentionSessionCount(
 ), 3, "the nav attention count must be a Session-identity union rather than double-counting Inbox overlap")
 
 const source = readFileSync(new URL("./components/native-session-home-base.tsx", import.meta.url), "utf8")
+const wrapperSource = readFileSync(new URL("./components/native-session-home.tsx", import.meta.url), "utf8")
+assert.match(wrapperSource, /lifecycleRevision=\{liveRevision\}/, "validated lifecycle edges must reach the federated read without restoring volatile source identity")
+assert.match(source, /\[revision, refreshToken, authoritativeRefreshToken, lifecycleRevision, discoveryReady, discoverySignature, endpointSignature, deletedKeys\]/, "lifecycle edges must trigger one index read while adapter process/PID changes stay out of the effect keys")
 assert.match(source, /presentationOverrides/, "live detail status must survive selecting another Session")
 assert.match(source, /\{ \.\.\.current, \[selectedKey\]: selectedState \}/, "the status bridge must be keyed by native Session identity")
 assert.match(source, /reconcileStableSessionRecords\(current, freshRecords/, "native refreshes must reconcile into stable visual positions instead of replacing the rail order")
