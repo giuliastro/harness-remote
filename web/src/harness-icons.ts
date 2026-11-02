@@ -1,9 +1,10 @@
 // Icons bundled under public/harness-icons, so they ship inside the APK and work offline.
-// The Classic skin keeps the project's own generic glyphs; the brand marks under brand/ are an
-// opt-in of the Mahurley skin, so no other skin shows a third-party trademark.
+// The Classic skin keeps the project's own generic glyphs, except for the DeepSeek mark requested
+// in both skins. The other brand marks under brand/ are used by the Mahurley skin.
 const CLASSIC_ICON_FILES: Record<string, string> = {
   codex: "codex.svg",
   claude: "claude.svg",
+  deepseek: "brand/deepseek.svg",
   opencode: "opencode.svg",
   opencode2: "opencode.svg",
   omp: "omp.svg",
@@ -38,7 +39,7 @@ function brandSkin(): boolean {
 }
 
 function iconUrl(file: string | undefined): string | undefined {
-  return file ? `${import.meta.env.BASE_URL}harness-icons/${file}` : undefined
+  return file ? `${import.meta.env?.BASE_URL ?? "/"}harness-icons/${file}` : undefined
 }
 
 export function harnessIconUrl(backend: string | undefined): string | undefined {

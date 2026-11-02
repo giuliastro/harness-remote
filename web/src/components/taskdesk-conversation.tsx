@@ -105,12 +105,13 @@ function jumpAffordancesFor(element: HTMLElement): JumpAffordances {
   return { top: fromTop > threshold, bottom: fromBottom > threshold }
 }
 
-const MessageBubble = memo(function MessageBubble({ message, agentLabel }: { message: MessageEnvelope; agentLabel: string }) {
+const MessageBubble = memo(function MessageBubble({ message, agentLabel, agentBackend }: { message: MessageEnvelope; agentLabel: string; agentBackend?: string }) {
   const isUser = message.info.role === "user"
+  const icon = !isUser ? harnessIconUrl(agentBackend) : undefined
   return (
     <article className={`uw-message ${isUser ? "uw-message-user" : "uw-message-agent"}`}>
       <div className={`uw-avatar ${isUser ? "uw-avatar-user" : "uw-avatar-agent"}`} aria-hidden="true">
-        {isUser ? "You" : agentLabel.slice(0, 2).toUpperCase()}
+        {isUser ? "You" : icon ? <img src={icon} alt="" /> : agentLabel.slice(0, 2).toUpperCase()}
       </div>
       <div className="uw-message-body">
         <header>
@@ -412,7 +413,7 @@ const ConversationTranscript = memo(function ConversationTranscript({
             ) : renderMessage
               ? messages.map((message) => renderMessage(message))
               : messages.map((message) => (
-                  <MessageBubble key={message.info.id} message={message} agentLabel={agentLabel} />
+                  <MessageBubble key={message.info.id} message={message} agentLabel={agentLabel} agentBackend={agentBackend} />
                 ))}
           </>
         )}
