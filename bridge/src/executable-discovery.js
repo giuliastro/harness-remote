@@ -51,6 +51,29 @@ export function findCodexExecutable(options = {}) {
   return candidates.find((candidate) => executable(candidate, options)) ?? null
 }
 
+/**
+ * PI's installer puts its launcher in `~/.pi/agent/bin` and adds that directory to the user's
+ * PATH. Windows applications (and terminals opened before the installer ran) can keep an older
+ * environment for the rest of the session, which made an installed PI invisible even though its
+ * Session journals were there. The history loader already treats this directory as PI's home, so
+ * executable discovery uses the same fallback instead of requiring a fresh PATH.
+ */
+export function findPiExecutable(options = {}) {
+  const configured = options.piPath ?? process.env.PI_PATH
+  if (configured && executable(configured, options)) return configured
+  const onPath = findExecutable("pi", options)
+  if (onPath) return onPath
+  const platform = options.platform ?? process.platform
+  const home = options.homeDirectory ?? homedir()
+  const agentDirectory = options.piAgentDirectory
+    ?? process.env.PI_CODING_AGENT_DIR
+    ?? path.join(home, ".pi", "agent")
+  const names = platform === "win32" ? ["pi.cmd", "pi.exe", "pi.bat", "pi"] : ["pi"]
+  return names
+    .map((name) => path.join(agentDirectory, "bin", name))
+    .find((candidate) => executable(candidate, options)) ?? null
+}
+
 export function codexAdapterEnvironment({ environment = process.env, find = findCodexExecutable } = {}) {
   // An explicit adapter override remains authoritative, including its error reporting.
   if (environment.CODEX_PATH) return { CODEX_PATH: environment.CODEX_PATH }

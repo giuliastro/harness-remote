@@ -71,16 +71,16 @@ test("provider launch preserves an explicit primary ACP command and delegates ma
   assert.equal(resolved, p)
 })
 
-test("npx adapters use the daemon's own cache while native adapters keep their environment", () => {
+test("npx adapters use a per-harness daemon cache while native adapters keep their environment", () => {
   const configured = provider({ environment: { CODEX_PATH: "/tools/codex" } })
   const config = { stateDirectory: "/state" }
   assert.deepEqual(acpProviderEnvironment(configured, { command: "npx", args: [] }, config), {
     CODEX_PATH: "/tools/codex",
-    npm_config_cache: path.join("/state", "npm-cache")
+    npm_config_cache: path.join("/state", "npm-cache", "example")
   })
   assert.deepEqual(acpProviderEnvironment(configured, { command: "C:\\node\\npx.cmd", args: [] }, config), {
     CODEX_PATH: "/tools/codex",
-    npm_config_cache: path.join("/state", "npm-cache")
+    npm_config_cache: path.join("/state", "npm-cache", "example")
   })
   assert.equal(acpProviderEnvironment(provider(), { command: "omp", args: ["acp"] }, config), undefined)
   // An operator can still pin one harness to a specific cache.
@@ -197,7 +197,7 @@ test("provider runtime falls back to cwd when no project root is configured", as
   assert.equal(runtime.modelCatalog.options.directory, "/fallback")
 })
 
-test("npx ACP clients share one daemon cache but never start an install at the same time", async () => {
+test("npx ACP clients for one harness share a cache but never start an install at the same time", async () => {
   const clients = []
   let active = 0
   let peak = 0
@@ -224,14 +224,50 @@ test("npx ACP clients share one daemon cache but never start an install at the s
   assert.equal(clients.length, 2)
   assert.equal(clients[0].options.environment.CODEX_PATH, "/tools/codex")
   assert.equal(clients[1].options.environment.CODEX_PATH, "/tools/codex")
-  assert.equal(clients[0].options.environment.npm_config_cache, path.join("/state", "npm-cache"))
-  assert.equal(clients[1].options.environment.npm_config_cache, path.join("/state", "npm-cache"))
-  assert.equal(runtime.modelCatalog.options.environment.npm_config_cache, path.join("/state", "npm-cache"))
+  assert.equal(clients[0].options.environment.npm_config_cache, path.join("/state", "npm-cache", "example"))
+  assert.equal(clients[1].options.environment.npm_config_cache, path.join("/state", "npm-cache", "example"))
+  assert.equal(runtime.modelCatalog.options.environment.npm_config_cache, path.join("/state", "npm-cache", "example"))
 
   // The user-facing and catalog clients start in parallel on first use; two installs must not.
   await Promise.all([runtime.agent.start(), runtime.modelCatalog.options.agent.start()])
   assert.equal(peak, 1, "npx launches must be serialized")
   assert.equal(active, 0)
+})
+
+test("a slow npx harness cannot block another harness from starting", async () => {
+  let releaseSlowStart
+  const slowStart = new Promise((resolve) => { releaseSlowStart = resolve })
+  let slowStarted
+  const slowEntered = new Promise((resolve) => { slowStarted = resolve })
+  let fastStarted = false
+  class FakeClient {
+    constructor(options) { this.options = options }
+    async start() {
+      if (this.options.environment.npm_config_cache.endsWith(`${path.sep}slow`)) {
+        slowStarted()
+        await slowStart
+      } else {
+        fastStarted = true
+      }
+    }
+  }
+  class FakeCatalog {
+    constructor(options) { this.options = options; this.hiddenSessionIDs = new Set() }
+    async preloadState() {}
+  }
+  const config = { roots: [], stateDirectory: "/state" }
+  const launch = { command: "npx", args: [] }
+  const slow = await createAcpProviderRuntime({ provider: provider({ id: "slow" }), launch, config, Client: FakeClient, ModelCatalog: FakeCatalog })
+  const fast = await createAcpProviderRuntime({ provider: provider({ id: "fast" }), launch, config, Client: FakeClient, ModelCatalog: FakeCatalog })
+  const pendingSlow = slow.agent.start()
+  try {
+    await slowEntered
+    await fast.agent.start()
+    assert.equal(fastStarted, true)
+  } finally {
+    releaseSlowStart()
+    await pendingSlow
+  }
 })
 
 test("native ACP adapters start without waiting behind an npx install", async () => {

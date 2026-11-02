@@ -5,6 +5,7 @@ import {
   discoverMachineNativeSessions,
   NativeSessionDiscoveryTimeoutError,
   nativeSessionConfig,
+  nativeSessionDiscoverySignature,
   selectReadyNativeSessionSources,
   nativeSessionSurfaceTarget
 } from './native-session-discovery.ts'
@@ -21,6 +22,22 @@ const completedDiscovery = selectReadyNativeSessionSources([
 ])
 assert.deepEqual(completedDiscovery.sources.map(({ machine }) => machine.id), ['reachable', 'unreachable'], 'a later-settled machine joins the next discovery pass')
 assert.equal(selectReadyNativeSessionSources([probingMachine]).ready, false, 'discovery still waits when every configured machine is probing')
+
+const harnessSource = {
+  machine: { id: 'local' }, state: 'online',
+  snapshot: { machine: { id: 'machine-1' }, agents: [
+    { id: 'pi', backend: 'pi', transport: 'acp', state: 'available', processID: 1 },
+    { id: 'copilot', backend: 'copilot', transport: 'acp', state: 'configured' },
+    { id: 'deepseek', backend: 'deepseek', transport: 'acp', state: 'starting' }
+  ] }
+}
+const stableSignature = nativeSessionDiscoverySignature([harnessSource])
+assert.equal(nativeSessionDiscoverySignature([{ ...harnessSource, snapshot: { ...harnessSource.snapshot,
+  agents: harnessSource.snapshot.agents.map((agent) => ({ ...agent, state: 'unavailable', processID: 99 }))
+} }]), stableSignature, 'one adapter lifecycle change must not cancel PI or Copilot discovery')
+assert.notEqual(nativeSessionDiscoverySignature([{ ...harnessSource, snapshot: { ...harnessSource.snapshot,
+  agents: harnessSource.snapshot.agents.filter((agent) => agent.id !== 'copilot')
+} }]), stableSignature, 'a removed harness must refresh the federated Session catalog')
 
 const base = {
   backend: 'opencode',

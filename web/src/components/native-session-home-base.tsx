@@ -4,6 +4,7 @@ import { listMachineProjects, type MachineProject } from "../machineClient"
 import { canCreateNativeSession, createNativeSessionTarget } from "../native-session-create"
 import {
   discoverAgentNativeSessionPageSkippingEmpty,
+  nativeSessionDiscoverySignature,
   nativeSessionSurfaceTarget,
   selectReadyNativeSessionSources,
   type NativeSessionRecord,
@@ -119,6 +120,9 @@ type Props = {
    * those harness scopes so externally deleted Sessions can be pruned without making automatic
    * lifecycle refreshes destructive. */
   authoritativeRefreshToken?: number
+  /** Bumped on validated Session lifecycle edges. It re-reads the index without making adapter
+   * process/PID changes a reason to cancel an in-flight federated read. */
+  lifecycleRevision?: number
   /** The rail already counts Sessions needing input; the mobile nav needs that count outside it. */
   onAttentionCountChange?: (count: number) => void
   /** Finished Sessions the user has not opened since, for the window title. */
@@ -496,6 +500,7 @@ export function NativeSessionHome({
   onOpen,
   refreshToken = 0,
   authoritativeRefreshToken = 0,
+  lifecycleRevision = 0,
   onAttentionCountChange,
   onUnseenReadyCountChange,
   attentionSessionKeys,
@@ -603,6 +608,7 @@ export function NativeSessionHome({
   const deletedKeysRef = useRef(deletedKeys)
   deletedKeysRef.current = deletedKeys
   const authoritativeRefreshApplied = useRef(authoritativeRefreshToken)
+  const discoveryRetry = useRef<{ signature: string | null; attempt: number }>({ signature: null, attempt: 0 })
   const onRefreshCompleteRef = useRef(onRefreshComplete)
   onRefreshCompleteRef.current = onRefreshComplete
   const [presentationOverrides, setPresentationOverrides] = useState<Record<string, SessionPresentationState>>({})
@@ -620,11 +626,12 @@ export function NativeSessionHome({
       snapshot?.agents.map((agent) => `${agent.id}:${agent.backend}:${agent.transport}:${agent.processID ?? ""}:${agent.state}`).join(",") || ""
     ].join(":")
   ).join("|")
-  // Agent lifecycle (a lazy ACP start, a process exit or restart, a machine probe flapping) changes
-  // the signature above all the time on a perfectly healthy machine. That must re-read the Sessions,
-  // but it is not a different set of machines: treating it as one sent the rail and the workspace back
-  // to their first-load state ("Loading Sessions" in the workspace), hid the counts and disabled the
-  // open Session until the read finished. Only a changed endpoint is a new first load.
+  // Adapter startup changes state and PID while the first Session pages are still loading. Those
+  // changes invalidate ACP cursors, but must not cancel the whole federated read and discard pages
+  // already returned by other harnesses. Membership and endpoint changes still start a new read.
+  const discoverySignature = nativeSessionDiscoverySignature(sources)
+  // Only an endpoint change is a new first load. Adapter lifecycle changes are handled by the
+  // periodic refresh after the current federated read settles.
   const endpointSignature = sources.map(({ machine }) =>
     [
       machine.id,
@@ -639,7 +646,7 @@ export function NativeSessionHome({
   // Whether the read for the current snapshot has landed. Only used where showing stale emptiness
   // would be wrong (e.g. "No Sessions on this machine" for a machine that just came back).
   const [currentSignature, setCurrentSignature] = useState<string | null>(null)
-  const snapshotLoaded = loaded && currentSignature === machineSignature
+  const snapshotLoaded = loaded && currentSignature === discoverySignature
 
   useEffect(() => {
     if (!loaded || loading || !deletingKeys?.size || !onDeletionSettled) return
@@ -669,7 +676,7 @@ export function NativeSessionHome({
       setPresentationOverrides({})
       setOlderSessionErrors({})
       setLoadedSignature(endpointSignature)
-      setCurrentSignature(machineSignature)
+      setCurrentSignature(discoverySignature)
       setLoading(false)
       onRefreshCompleteRef.current?.(refreshToken)
       return
@@ -679,7 +686,11 @@ export function NativeSessionHome({
       setDiscoveryError(null)
       return
     }
+    if (discoveryRetry.current.signature !== discoverySignature) {
+      discoveryRetry.current = { signature: discoverySignature, attempt: 0 }
+    }
     let cancelled = false
+    let retryTimer: number | undefined
     setLoading(true)
     setDiscoveryError(null)
     setOlderSessionErrors({})
@@ -696,6 +707,16 @@ export function NativeSessionHome({
       return { machine, snapshot, projects, pages }
     })).then((results) => {
       if (cancelled) return
+      // A cold npx adapter can exceed the per-harness discovery budget even though it is starting
+      // correctly. Retry only the failed pages a few times instead of leaving PI/DeepSeek at zero
+      // until the next periodic refresh; a successful pass resets the backoff.
+      const failed = results.some((result) => result.pages.some((entry) => entry.page === null))
+      if (failed && discoveryRetry.current.attempt < 3) {
+        discoveryRetry.current.attempt += 1
+        retryTimer = window.setTimeout(() => setRevision((value) => value + 1), 3_000 * discoveryRetry.current.attempt)
+      } else if (!failed) {
+        discoveryRetry.current.attempt = 0
+      }
       const loadingMachineIDs = new Set(sources.filter(({ state }) => state === "loading").map(({ machine }) => machine.id))
       setProjectsByMachine((current) => Object.fromEntries([
         ...Object.entries(current).filter(([machineID]) => loadingMachineIDs.has(machineID)),
@@ -762,11 +783,11 @@ export function NativeSessionHome({
       }))
       if (authoritativeRefresh) authoritativeRefreshApplied.current = authoritativeRefreshToken
       setLoadedSignature(endpointSignature)
-      setCurrentSignature(machineSignature)
+      setCurrentSignature(discoverySignature)
     }).catch((reason) => {
       if (!cancelled) {
         setLoadedSignature(endpointSignature)
-        setCurrentSignature(machineSignature)
+        setCurrentSignature(discoverySignature)
         setDiscoveryError(reason instanceof Error ? reason.message : String(reason))
       }
     }).finally(() => {
@@ -775,8 +796,8 @@ export function NativeSessionHome({
         onRefreshCompleteRef.current?.(refreshToken)
       }
     })
-    return () => { cancelled = true }
-  }, [sources, revision, refreshToken, authoritativeRefreshToken, discoveryReady, machineSignature, endpointSignature, deletedKeys])
+    return () => { cancelled = true; if (retryTimer) window.clearTimeout(retryTimer) }
+  }, [revision, refreshToken, authoritativeRefreshToken, lifecycleRevision, discoveryReady, discoverySignature, endpointSignature, deletedKeys])
 
   useEffect(() => {
     if (!loaded || document.visibilityState !== "visible") return

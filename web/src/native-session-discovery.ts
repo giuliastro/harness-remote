@@ -16,6 +16,18 @@ export function selectReadyNativeSessionSources<T extends { state: string }>(sou
   }
 }
 
+/** The federated read changes only when machines or harness membership change. */
+export function nativeSessionDiscoverySignature(sources: readonly {
+  machine: { id: string }
+  state: string
+  snapshot?: { machine: { id: string }; agents: Array<Pick<MachineAgentHost, "id" | "backend" | "transport">> } | null
+}[]): string {
+  return sources.map(({ machine, snapshot, state }) =>
+    [machine.id, state, snapshot?.machine.id || "", snapshot?.agents.map((agent) =>
+      `${agent.id}:${agent.backend}:${agent.transport}`).sort().join(",") || ""].join(":"))
+    .join("|")
+}
+
 export type NativeSessionRecord = {
   key: string
   agentId: string

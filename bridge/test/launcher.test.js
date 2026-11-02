@@ -9,6 +9,29 @@ test("detects executable agent files on PATH without running them", () => {
   assert.deepEqual(detectBackends({ pathValue, platform: "linux", exists: (candidate) => existing.has(candidate), access: () => {} }), ["codex"])
 })
 
+test("detects DeepSeek through its npx adapter fallback when no DSH executable is installed", () => {
+  const pathValue = ["/bin", "/tools"].join(path.delimiter)
+  const npx = path.join("/tools", process.platform === "win32" ? "npx.cmd" : "npx")
+  const options = { pathValue, platform: process.platform, exists: (candidate) => candidate === npx, access: () => {} }
+  assert.deepEqual(detectBackends(options), ["deepseek"])
+  assert.deepEqual(resolveLaunchPlan([], detectBackends(options)), {
+    mode: "single", backend: "deepseek", detected: ["deepseek"]
+  })
+  assert.deepEqual(detectBackends({ ...options, exists: () => false }), [])
+})
+
+test("DeepSeek fallback keeps every other installed ACP harness in machine discovery", () => {
+  const pathValue = ["/bin", "/tools"].join(path.delimiter)
+  const extension = process.platform === "win32" ? ".cmd" : ""
+  const existing = new Set(["omp", "pi", "copilot", "mimo", "npx"]
+    .map((name) => path.join("/tools", `${name}${extension}`)))
+  const detected = detectBackends({ pathValue, platform: process.platform, exists: (candidate) => existing.has(candidate), access: () => {} })
+  assert.deepEqual(detected, ["omp", "pi", "copilot", "mimo", "deepseek"])
+  assert.deepEqual(resolveLaunchPlan([], detected), {
+    mode: "daemon", backend: "omp", detected, openCode: false
+  })
+})
+
 test("detects GitHub Copilot from provider metadata without changing existing primary preference", () => {
   const pathValue = ["/bin", "/tools"].join(path.delimiter)
   const existing = new Set([
