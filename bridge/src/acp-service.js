@@ -1855,9 +1855,16 @@ export class AcpService {
     this.#cancelledSessions.delete(sessionID)
     this.#promptedSessions.add(sessionID)
     this.#turnResponseObserved.delete(sessionID)
-    const messageID = recorded ? undefined : this.#recordPrompt(sessionID, text, attachments)
-    if (recorded) this.#promptAcknowledgements.set(sessionID, { text, received: "" })
+    // Active before the prompt is recorded, so recording it cannot evict this Session.
     this.#active.add(sessionID)
+    let messageID
+    try {
+      messageID = recorded ? undefined : this.#recordPrompt(sessionID, text, attachments)
+    } catch (error) {
+      this.#active.delete(sessionID)
+      throw error
+    }
+    if (recorded) this.#promptAcknowledgements.set(sessionID, { text, received: "" })
     this.#chunkMessageIDs.delete(`${sessionID}:assistant`)
     this.#emit("session.updated", sessionID)
     void this.#requestPromptWithRecovery(sessionID, {
@@ -2174,8 +2181,8 @@ export class AcpService {
       }
     }
     if (this.#queues.get(sessionID)?.[0] !== next) return this.#resumeQueue(sessionID)
-    dequeue()
     this.#setPromptQueued(sessionID, next.messageID, false)
+    dequeue()
     this.#startTurn(sessionID, next.text, true, next.attachments ?? [])
   }
 

@@ -169,3 +169,60 @@ test("authoritative journal transcripts are not duplicated into bridge snapshots
     await rm(stateDirectory, { recursive: true, force: true })
   }
 })
+
+test("prompting a Session whose history is over the memory budget does not leave it busy", async () => {
+  const acp = new EventEmitter()
+  let prompted
+  Object.assign(acp, {
+    promptCapabilities: {},
+    async start() {},
+    async listSessions() { return [{ sessionId: "claude-long", cwd: "/repo" }] },
+    notify() {},
+    async request(method) {
+      if (method !== "session/load") {
+        // Read while the turn runs: once it ends, the budget may evict this transcript as usual.
+        prompted = (await service.messages("claude-long")).find((message) => message.info.role === "user")
+        return { stopReason: "end_turn" }
+      }
+      acp.emit("notification", { method: "session/update", params: { sessionId: "claude-long", update: { sessionUpdate: "agent_message_chunk", messageId: "msg_1", content: { type: "text", text: "x".repeat(25 * 1024 * 1024) } } } })
+      return {}
+    }
+  })
+  const service = new AcpService(acp)
+  await service.messages("claude-long")
+  await service.prompt("claude-long", "y".repeat(2_000))
+  for (let wait = 0; wait < 200 && service.status("claude-long").type === "busy"; wait += 1) await new Promise((resolve) => setTimeout(resolve, 10))
+  assert.equal(service.status("claude-long").type, "idle", "the Session stayed busy")
+  assert.equal(prompted?.parts[0].text, "y".repeat(2_000), "the prompt was lost")
+})
+
+test("a queued prompt that starts on a Session over the memory budget keeps its history", async () => {
+  const acp = new EventEmitter()
+  let release
+  const firstTurn = new Promise((resolve) => { release = resolve })
+  let prompts = 0
+  let secondTurnPrompts
+  Object.assign(acp, {
+    promptCapabilities: {},
+    async start() {},
+    async listSessions() { return [{ sessionId: "claude-long", cwd: "/repo" }] },
+    notify() {},
+    async request(method) {
+      if (method === "session/load") {
+        acp.emit("notification", { method: "session/update", params: { sessionId: "claude-long", update: { sessionUpdate: "agent_message_chunk", messageId: "msg_1", content: { type: "text", text: "x".repeat(25 * 1024 * 1024) } } } })
+        return {}
+      }
+      prompts += 1
+      if (prompts === 1) await firstTurn
+      else secondTurnPrompts = (await service.messages("claude-long")).filter((message) => message.info.role === "user").map((message) => message.parts[0].text)
+      return { stopReason: "end_turn" }
+    }
+  })
+  const service = new AcpService(acp)
+  await service.messages("claude-long")
+  await service.prompt("claude-long", "first")
+  await service.prompt("claude-long", "second")
+  release()
+  for (let wait = 0; wait < 200 && (prompts < 2 || service.status("claude-long").type === "busy"); wait += 1) await new Promise((resolve) => setTimeout(resolve, 10))
+  assert.deepEqual(secondTurnPrompts, ["first", "second"])
+})
