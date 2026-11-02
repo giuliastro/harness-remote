@@ -127,6 +127,12 @@ See the [Quick start guide](docs/QUICK_START.md) for advanced options and troubl
 - **Local-first operation** — repositories, credentials, subscriptions and native Session persistence stay on your machines.
 - **Plugins** — local integrations with their own dashboards and settings. The built-in [Token Harness](https://github.com/giuliastro/token-harness) plugin brings allowance, local savings and automatic model routing into Harness Remote.
 
+## DeepSeek Harness
+
+DeepSeek Harness is available as a native Session through its ACP adapter. Harness Remote can discover and reopen its existing Sessions, show its models and reasoning levels, and send a new prompt into a running turn. The integration also works in desktop, web and Android views, with its own icon in the Session list and chat.
+
+The adapter needs Node.js 22.15 or newer and DeepSeek credentials on the machine running it. See [DeepSeek setup and integration details](docs/DEPENDENCIES.md#deepseek-harness-dsh--acp-over-stdio-via-a-third-party-adapter).
+
 ## Plugin Center and Token Harness
 
 Open **Settings → Plugins** to see the integrations available on a machine. Plugins run with that machine's local runtime and can add a dashboard and settings to Harness Remote. The first built-in plugin is [Token Harness](https://github.com/giuliastro/token-harness), one of the most promising open-source projects for making Claude Code and Codex's five-hour and seven-day allowances go further through measured token savings and model routing. Its dashboard brings together:
