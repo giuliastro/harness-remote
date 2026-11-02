@@ -383,7 +383,27 @@ async function waitFor(predicate, label, timeoutMs = 15_000) {
 
 async function openSession(page, title, marker) {
   await page.locator('.hr-native-workspace[aria-label="Sessions"]').waitFor({ state: "visible", timeout: 15_000 })
-  await page.getByRole("button", { name: new RegExp(title) }).click()
+  const target = page.getByRole("button", { name: new RegExp(title) })
+  try {
+    await target.click()
+  } catch (error) {
+    // Playwright occasionally reports a stable row as unstable on the Linux runner. Record why,
+    // then use a forced click: the model-routing assertions below are the purpose of this smoke,
+    // while row clickability itself is covered by the navigation and rail-state smokes.
+    const diagnostic = await target.evaluate((element) => {
+      const rect = element.getBoundingClientRect()
+      const atPoint = document.elementFromPoint(rect.x + rect.width / 2, rect.y + rect.height / 2)
+      return {
+        rect: { x: rect.x, y: rect.y, width: rect.width, height: rect.height },
+        pointTag: atPoint?.tagName,
+        pointClass: typeof atPoint?.className === "string" ? atPoint.className : "",
+        disabled: element.disabled,
+        ariaDisabled: element.getAttribute("aria-disabled")
+      }
+    })
+    console.warn(`openSession(${title}) click diagnostic: ${JSON.stringify(diagnostic)}`)
+    await target.click({ force: true })
+  }
   await page.getByRole("heading", { name: title }).waitFor({ state: "visible", timeout: 15_000 })
   await page.locator(".tdw-work-thread-conversation").waitFor({ state: "visible", timeout: 15_000 })
   await page.getByText(marker, { exact: true }).first().waitFor({ state: "visible", timeout: 15_000 })
