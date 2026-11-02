@@ -852,8 +852,8 @@
     --hr-transcript-pad-top: 0px;
   }
 
-  /* Below the outcome row that padding is bare, so a stuck Activity header covers it. */
-  :root[data-skin="compact"] .hr-control-plane.hr-native-workspace .hr-native-outcome ~ .tdw-work-thread-conversation .uw-transcript {
+  /* Below the outcome row or the lineage panel that padding is bare, so a stuck Activity header covers it. */
+  :root[data-skin="compact"] .hr-control-plane.hr-native-workspace :is(.hr-native-outcome, .hr-native-lineage) ~ .tdw-work-thread-conversation .uw-transcript {
     --hr-transcript-pad-top: 56px;
   }
 

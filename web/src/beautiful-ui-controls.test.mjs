@@ -123,8 +123,9 @@ test("the stuck Activity header rises over the transcript's top padding", () => 
     ["session-first-workbench.css", /\n\.hr-native-session-observer \.uw-transcript \{\s*padding:\s*(\d+px)[^;]*;\s*--hr-transcript-pad-top:\s*\1;/],
     ["v3-mobile.css", /@media \(max-width: 780px\), \(pointer: coarse\) and \(max-height: 640px\) \{[^@]*?\n\s*\.hr-control-plane \.tdw-work-thread-conversation \.uw-transcript \{[^}]*?padding:\s*(\d+px)[^;]*;\s*--hr-transcript-pad-top:\s*\1;/],
     ["v3-mobile.css", /@media \(pointer: coarse\) and \(min-width: 600px\) and \(max-height: 640px\) \{[^@]*?\n\s*\.hr-control-plane \.tdw-work-thread-conversation \.uw-transcript \{[^}]*?padding:\s*(\d+px)[^;]*;\s*--hr-transcript-pad-top:\s*\1;/],
-    ["mobile-compact-chat.css", /\n\s*:root\[data-skin="compact"\] \.hr-control-plane\.hr-native-workspace \.uw-transcript \{\s*padding-top:\s*(\d+px)\s*!important;\s*--hr-transcript-pad-top:\s*0px;\s*\}\s*(?:\/\*[^*]*\*\/\s*)?:root\[data-skin="compact"\] \.hr-control-plane\.hr-native-workspace \.hr-native-outcome ~ \.tdw-work-thread-conversation \.uw-transcript \{\s*--hr-transcript-pad-top:\s*\1;/]
+    ["mobile-compact-chat.css", /\n\s*:root\[data-skin="compact"\] \.hr-control-plane\.hr-native-workspace \.uw-transcript \{\s*padding-top:\s*(\d+px)\s*!important;\s*--hr-transcript-pad-top:\s*0px;\s*\}\s*(?:\/\*[^*]*\*\/\s*)?:root\[data-skin="compact"\] \.hr-control-plane\.hr-native-workspace :is\(\.hr-native-outcome, \.hr-native-lineage\) ~ \.tdw-work-thread-conversation \.uw-transcript \{\s*--hr-transcript-pad-top:\s*\1;/]
   ]) assert.match(read(file), rule, `${file} must publish the transcript's top padding next to it`)
+  assert.match(read("components/native-session-lineage-panel.tsx"), /<section className="hr-native-lineage"/, "the lineage panel must carry the class the compact offset rule names")
 })
 
 test("the dev preview loads exactly the stylesheets the app loads", () => {
