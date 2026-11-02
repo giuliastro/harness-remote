@@ -109,6 +109,25 @@ test("aria semantics survive the restyle", () => {
   assert.match(timeline, /<span className="hr-act-kind" aria-hidden="true">/)
 })
 
+test("an open Activity header stays in view and turns its chevron", () => {
+  assert.match(timeline, /<div className="hr-activity-frame">\s*<div className="hr-activity-head"/, "the header renders inside the frame")
+  assert.match(activityCss, /\.hr-activity\.is-open > \.hr-activity-frame > \.hr-activity-head \{[^}]*?position: sticky;/, "an open Activity header must stay in view")
+  assert.match(activityCss, /\.hr-activity\.is-open > \.hr-activity-frame > \.hr-activity-head \.hr-act-chevron,[^{]*\{[^}]*?rotate\(180deg\)/, "an open Activity header must turn its chevron")
+})
+
+test("the stuck Activity header rises over the transcript's top padding", () => {
+  assert.match(activityCss, /\.hr-activity\.is-open > \.hr-activity-frame > \.hr-activity-head \{[^}]*?top: calc\(-1 \* var\(--hr-transcript-pad-top, 0px\)\);/, "the stuck header must rise by the transcript's top padding")
+  assert.match(activityCss, /\.hr-activity\.is-open > \.hr-activity-frame > \.hr-activity-head \{[^}]*?background: linear-gradient\(var\(--td3-raise-1\), var\(--td3-raise-1\)\), var\(--td3-bg\);/, "the stuck header must be opaque, or rows show through it")
+  // Each winning padding publishes the part the header must cover, or rows peek above it.
+  for (const [file, rule] of [
+    ["session-first-workbench.css", /\n\.hr-native-session-observer \.uw-transcript \{\s*padding:\s*(\d+px)[^;]*;\s*--hr-transcript-pad-top:\s*\1;/],
+    ["v3-mobile.css", /@media \(max-width: 780px\), \(pointer: coarse\) and \(max-height: 640px\) \{[^@]*?\n\s*\.hr-control-plane \.tdw-work-thread-conversation \.uw-transcript \{[^}]*?padding:\s*(\d+px)[^;]*;\s*--hr-transcript-pad-top:\s*\1;/],
+    ["v3-mobile.css", /@media \(pointer: coarse\) and \(min-width: 600px\) and \(max-height: 640px\) \{[^@]*?\n\s*\.hr-control-plane \.tdw-work-thread-conversation \.uw-transcript \{[^}]*?padding:\s*(\d+px)[^;]*;\s*--hr-transcript-pad-top:\s*\1;/],
+    ["mobile-compact-chat.css", /\n\s*:root\[data-skin="compact"\] \.hr-control-plane\.hr-native-workspace \.uw-transcript \{\s*padding-top:\s*(\d+px)\s*!important;\s*--hr-transcript-pad-top:\s*0px;\s*\}\s*(?:\/\*[^*]*\*\/\s*)?:root\[data-skin="compact"\] \.hr-control-plane\.hr-native-workspace :is\(\.hr-native-outcome, \.hr-native-lineage\) ~ \.tdw-work-thread-conversation \.uw-transcript \{\s*--hr-transcript-pad-top:\s*\1;/]
+  ]) assert.match(read(file), rule, `${file} must publish the transcript's top padding next to it`)
+  assert.match(read("components/native-session-lineage-panel.tsx"), /<section className="hr-native-lineage"/, "the lineage panel must carry the class the compact offset rule names")
+})
+
 test("the dev preview loads exactly the stylesheets the app loads", () => {
   // The preview exists so these controls can be reviewed without waiting for a harness to emit a
   // tool part or a permission request. That only works if it is styled by the same sheets: a rule

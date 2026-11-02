@@ -1821,6 +1821,7 @@
 /* The bottom inset is the breathing room between the live tail and the composer. */
 .hr-native-session-observer .uw-transcript {
   padding: 18px var(--hrsf-gutter) 36px;
+  --hr-transcript-pad-top: 18px;
   background: transparent;
 }
 

@@ -706,6 +706,37 @@ async function assertExistingSessionContract(browser, viewport, mobile) {
   }
   assert.equal(await page.getByRole("button", { name: "Continue with another agent" }).count(), 0, "cross-agent handoff UI must stay disabled during single-Session parity work")
 
+  // Scrolled past, an open Activity header sticks flush to the transcript's top, chevron turned.
+  const firstActivity = page.locator(".hr-activity").first()
+  if (!(await firstActivity.evaluate((section) => section.classList.contains("is-open")))) await firstActivity.locator(".hr-activity-toggle").click()
+  const stuck = await firstActivity.evaluate(async (section) => {
+    const transcript = section.closest(".uw-transcript")
+    const frame = section.querySelector(".hr-activity-frame")
+    const head = frame.querySelector(".hr-activity-head")
+    const chevron = head.querySelector(".hr-act-chevron")
+    const restore = transcript.scrollTop
+    const edge = () => transcript.getBoundingClientRect().top + transcript.clientTop
+    await Promise.all(chevron.getAnimations().map((animation) => animation.finished))
+    const rise = Math.min(24, frame.offsetHeight - head.offsetHeight - 1)
+    transcript.scrollTo({ top: transcript.scrollTop + frame.getBoundingClientRect().top - edge() + rise, behavior: "instant" })
+    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))
+    const style = getComputedStyle(head)
+    const result = {
+      frameAboveEdge: edge() - frame.getBoundingClientRect().top,
+      position: style.position,
+      top: parseFloat(style.top),
+      paddingTop: parseFloat(getComputedStyle(transcript).paddingTop),
+      gap: head.getBoundingClientRect().top - edge(),
+      chevron: getComputedStyle(chevron).transform
+    }
+    transcript.scrollTo({ top: restore, behavior: "instant" })
+    return result
+  })
+  assert.ok(stuck.frameAboveEdge > 0, `the open Activity section must scroll above the transcript's top: ${JSON.stringify(stuck)}`)
+  assert.equal(stuck.position, "sticky", "an open Activity header must stay in view")
+  assert.notEqual(stuck.chevron, "none", "an open Activity header must turn its chevron")
+  assert.ok(Math.abs(stuck.top + stuck.paddingTop) <= 1 && Math.abs(stuck.gap) <= 1, `the stuck Activity header must sit flush with the transcript's top: ${JSON.stringify(stuck)}`)
+
   const composer = await page.locator(".uw-composer-shell").boundingBox()
   const size = page.viewportSize()
   assert.ok(composer && size, "v3 composer geometry unavailable")

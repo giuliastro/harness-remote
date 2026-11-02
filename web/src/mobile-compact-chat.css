@@ -849,6 +849,12 @@
   /* The transcript scrolls under the floating header. */
   :root[data-skin="compact"] .hr-control-plane.hr-native-workspace .uw-transcript {
     padding-top: 56px !important;
+    --hr-transcript-pad-top: 0px;
+  }
+
+  /* Below the outcome row or the lineage panel that padding is bare, so a stuck Activity header covers it. */
+  :root[data-skin="compact"] .hr-control-plane.hr-native-workspace :is(.hr-native-outcome, .hr-native-lineage) ~ .tdw-work-thread-conversation .uw-transcript {
+    --hr-transcript-pad-top: 56px;
   }
 
   /* Without lineage the outcome row is the observer's first child, so it would sit under the
