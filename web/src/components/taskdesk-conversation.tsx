@@ -664,7 +664,10 @@ export function TaskDeskConversation({
           onChange={(event) => onDraftChange(event.target.value)}
           onKeyDown={onComposerKeyDown}
           placeholder={waiting ? `${agentLabel} is working…` : placeholder || `Continue with ${agentLabel}…`}
-          rows={3}
+          // A phone's control row sits inside the field's bottom band, so one row plus that band is
+          // already taller than the old three empty rows. The effect above grows the field only as
+          // the draft needs it; desktop keeps the roomier three-row field.
+          rows={touchFirst ? 1 : 3}
           enterKeyHint={touchFirst ? "enter" : "send"}
           disabled={!ready || composerDisabled}
           aria-disabled={!ready || composerDisabled || undefined}

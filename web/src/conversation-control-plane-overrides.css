@@ -399,7 +399,9 @@
 
   .hr-control-plane .tdw-work-thread-conversation .uw-composer-shell textarea {
     min-height: 58px !important;
-    padding: 12px 58px 12px 13px !important;
+    max-height: min(180px, 32dvh) !important;
+    /* The footer is positioned inside the field below. Keep a band clear of text for it. */
+    padding: 12px 13px 54px !important;
   }
 
   .hr-control-plane .tdw-work-thread-conversation .uw-composer-footer {

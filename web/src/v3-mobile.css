@@ -361,7 +361,10 @@
   .hr-control-plane .tdw-work-thread-conversation .uw-message { gap:7px!important; margin-bottom:13px!important; }
   .hr-control-plane .tdw-work-thread-conversation .uw-markdown { font-size:13.5px!important; line-height:1.58!important; }
   .hr-control-plane .tdw-work-thread-conversation .uw-composer-shell { width:calc(100% - 12px)!important; max-width:none!important; margin:0 6px max(6px,env(safe-area-inset-bottom))!important; border-radius:12px!important; box-shadow:none!important; }
-  .hr-control-plane .tdw-work-thread-conversation .uw-composer-shell textarea { min-height:56px!important; max-height:132px!important; padding:10px 54px 10px 11px!important; resize:none!important; font-size:16px!important; line-height:1.45!important; }
+  /* The footer floats over the foot of the field, so the field keeps a band open for it. Without
+     this, every line that reached the buttons was drawn beneath them and could not be read. The
+     right inset is no longer needed: text stops above the band, where the buttons do not reach. */
+  .hr-control-plane .tdw-work-thread-conversation .uw-composer-shell textarea { min-height:56px!important; max-height:min(180px,32dvh)!important; padding:10px 12px 54px 11px!important; resize:none!important; font-size:16px!important; line-height:1.45!important; }
   .hr-control-plane .tdw-work-thread-conversation .uw-composer-footer { right:7px!important; bottom:7px!important; min-height:40px!important; }
   .hr-control-plane .tdw-work-thread-conversation .uw-composer-footer .uw-button { width:40px!important; min-width:40px!important; height:40px!important; min-height:40px!important; border-radius:10px!important; }
 
@@ -433,7 +436,7 @@
   .hr-control-plane .tdw-work-thread-conversation .uw-transcript { padding:5px 8px 7px!important; --hr-transcript-pad-top:5px; }
   .hr-control-plane .tdw-work-thread-conversation .uw-message { margin-bottom:9px!important; }
   .hr-control-plane .tdw-work-thread-conversation .uw-markdown { font-size:12.5px!important; line-height:1.5!important; }
-  .hr-control-plane .tdw-work-thread-conversation .uw-composer-shell textarea { min-height:50px!important; max-height:92px!important; padding-block:8px!important; }
+  .hr-control-plane .tdw-work-thread-conversation .uw-composer-shell textarea { min-height:50px!important; max-height:min(132px,32dvh)!important; padding:8px 12px 54px 11px!important; }
   .hr-control-plane .tdw-work-thread-conversation .uw-composer-footer .uw-button { width:36px!important; min-width:36px!important; height:36px!important; min-height:36px!important; }
 
   /* New Conversation uses landscape width instead of becoming a tall scroll sheet. */

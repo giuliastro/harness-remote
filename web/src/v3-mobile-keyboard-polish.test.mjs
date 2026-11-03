@@ -54,6 +54,17 @@ test("native Session composer remains stable and readable when the phone keyboar
   assert.match(workbench, /padding: 9px 56px 9px 11px !important/)
 })
 
+test("a phone composer keeps multi-line prompts clear of its overlaid controls", () => {
+  // The footer is absolutely positioned inside the field on phones. The field must reserve the
+  // matching band at its foot, or the last lines are drawn underneath the paperclip, model chip
+  // and Send button. A one-row seed keeps the empty field as compact as the old overlaid gap.
+  assert.match(parity, /\.hr-control-plane \.tdw-work-thread-conversation \.uw-composer-shell textarea \{[^}]*?padding:10px 12px 54px 11px\s*!important;/)
+  assert.match(parity, /\.hr-control-plane \.tdw-work-thread-conversation \.uw-composer-shell textarea \{[^}]*?max-height:min\(180px,32dvh\)\s*!important;/)
+  // Short landscape phones have their own capped field; it needs the same reserved band.
+  assert.match(parity, /\.hr-control-plane \.tdw-work-thread-conversation \.uw-composer-shell textarea \{[^}]*?padding:8px 12px 54px 11px\s*!important;/)
+  assert.match(conversation, /rows=\{touchFirst \? 1 : 3\}/)
+})
+
 test("native Session transcript typography is scoped to the Session observer", () => {
   assert.match(workbench, /\.hr-native-session-observer \.uw-markdown \{[\s\S]*?font-size: 14px !important/)
   assert.match(workbench, /\.hr-native-session-observer \.uw-message \{[\s\S]*?grid-template-columns: 28px minmax\(0, 1fr\) !important/)
