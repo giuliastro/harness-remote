@@ -161,18 +161,26 @@ export function chronologicalReplay(messages) {
   return ordered
 }
 
+// A text-less message is the same one only by its first tool call, never by rank.
+function replayIdentity(message) {
+  if (visibleMessageText(message) || message?.info?.error?.message) return messageSignature(message)
+  const call = message?.parts?.find((part) => part?.type === "tool" && part.callID)?.callID
+  return call ? `${messageSignature(message)}\u0000${call}` : undefined
+}
+
 function authoritativeReplay(previous, replayed) {
   // ACP replay can omit timestamps and mint fresh ids. Retain known identities for unchanged
   // occurrences, while the native replay alone decides content, membership and order.
   const priorBySignature = new Map()
   for (const message of previous) {
-    const signature = messageSignature(message)
+    const signature = replayIdentity(message)
+    if (signature === undefined) continue
     const matches = priorBySignature.get(signature) ?? []
     matches.push(message)
     priorBySignature.set(signature, matches)
   }
   return replayed.map((message) => {
-    const prior = priorBySignature.get(messageSignature(message))?.shift()
+    const prior = priorBySignature.get(replayIdentity(message))?.shift()
     if (!prior) return message
     return {
       ...message,
