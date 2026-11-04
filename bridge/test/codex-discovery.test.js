@@ -34,8 +34,15 @@ test("prefers an installed CLI and skips a dangling standalone shim", { skip: pr
 })
 
 test("does not claim desktop Codex when absent or on an unsupported platform", () => {
-  assert.equal(findCodexExecutable({ pathValue: "", exists: () => false }), null)
-  assert.equal(findCodexExecutable({ platform: "win32", pathValue: "", exists: () => true }), null)
+  const codexPath = process.env.CODEX_PATH
+  delete process.env.CODEX_PATH
+  try {
+    assert.equal(findCodexExecutable({ pathValue: "", exists: () => false }), null)
+    assert.equal(findCodexExecutable({ platform: "win32", pathValue: "", exists: () => true }), null)
+  } finally {
+    if (codexPath === undefined) delete process.env.CODEX_PATH
+    else process.env.CODEX_PATH = codexPath
+  }
 })
 
 test("adapter uses detected Codex, respects an explicit override and retains bundled fallback", () => {

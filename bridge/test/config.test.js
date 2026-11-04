@@ -49,13 +49,14 @@ test("selects PI defaults for the ACP backend", () => {
 
 test("selects Codex defaults for the ACP backend", () => {
   const expectedArgs = ["--yes", "--package=@agentclientprotocol/codex-acp@1.13.1", "codex-acp"]
-  assert.deepEqual(parseConfig(["--backend", "codex"], {}).backend, "codex")
-  assert.equal(parseConfig(["--backend", "codex"], {}).acpCommand, process.platform === "win32" ? "npx.cmd" : "npx")
+  const withoutInstalledAdapter = { resolveLaunch: profile => ({ command: profile.command, args: profile.args }) }
+  assert.deepEqual(parseConfig(["--backend", "codex"], {}, withoutInstalledAdapter).backend, "codex")
+  assert.equal(parseConfig(["--backend", "codex"], {}, withoutInstalledAdapter).acpCommand, process.platform === "win32" ? "npx.cmd" : "npx")
   // The adapter embeds @openai/codex, so no separate Codex installation is required; the
   // version is pinned for the same `notarget` reason PI and Claude document.
-  assert.deepEqual(parseConfig(["--backend", "codex"], {}).acpArgs, expectedArgs)
-  assert.deepEqual(parseConfig([], { OMP_BRIDGE_BACKEND: "codex" }).acpArgs, expectedArgs)
-  assert.match(parseConfig(["--backend", "codex"], {}).acpArgs[1], /@\d+\.\d+\.\d+$/, "the adapter version must stay pinned")
+  assert.deepEqual(parseConfig(["--backend", "codex"], {}, withoutInstalledAdapter).acpArgs, expectedArgs)
+  assert.deepEqual(parseConfig([], { OMP_BRIDGE_BACKEND: "codex" }, withoutInstalledAdapter).acpArgs, expectedArgs)
+  assert.match(parseConfig(["--backend", "codex"], {}, withoutInstalledAdapter).acpArgs[1], /@\d+\.\d+\.\d+$/, "the adapter version must stay pinned")
 })
 
 test("selects OpenCode 2 package fallback and MiMo native ACP defaults", () => {
