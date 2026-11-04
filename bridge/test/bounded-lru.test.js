@@ -78,3 +78,30 @@ test("refresh recomputes weight after a cached mutable transcript grows", () => 
   assert.equal(cache.has("first"), true)
   assert.equal(cache.weight, 3)
 })
+
+test("reported growth counts at once and re-weighs only after half the last weigh", () => {
+  let weighs = 0
+  const value = [1, 2, 3, 4]
+  const cache = new BoundedLru({ weightOf: (items) => { weighs += 1; return items.length * 10 } })
+  cache.set("entry", value)
+  value.push(5)
+  cache.grow("entry", 19)
+  assert.equal(weighs, 1)
+  assert.equal(cache.weight, 59)
+  value.push(6)
+  cache.grow("entry", 1)
+  assert.equal(weighs, 2)
+  assert.equal(cache.weight, 60)
+  assert.equal(cache.grow("missing", 10), false)
+})
+
+test("reported growth evicts an inactive entry as soon as it crosses the budget", () => {
+  const live = [1, 2, 3, 4, 5]
+  const cache = new BoundedLru({ maxWeight: 10, weightOf: (items) => items.length })
+  cache.set("old", [1, 2, 3, 4])
+  cache.set("live", live)
+  live.push(6, 7)
+  cache.grow("live", 2)
+  assert.equal(cache.has("old"), false)
+  assert.equal(cache.weight, 7)
+})

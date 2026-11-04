@@ -46,10 +46,28 @@ test("transcript weight reflects large text and refresh observes in-place growth
   assert.ok(cache.get("first"), "the transcript being viewed becomes most-recently used")
   transcript[0].parts[0].text += "x".repeat(2_000)
 
-  cache.get("first")
   const stats = cache.stats()
   assert.equal(cache.has("second"), false)
   assert.equal(cache.has("first"), true)
   assert.equal(stats.weight, transcriptWeight(transcript))
   assert.equal(stats.weight <= stats.maxWeight, true)
+})
+
+test("reported growth keeps the tracked weight equal to the real one, whatever the chunk size", () => {
+  for (const size of [1_000, 20_000, 100_000]) {
+    const cache = new TranscriptCache({ maxWeight: Number.MAX_SAFE_INTEGER })
+    cache.set("session", [])
+    let real = 0
+    for (let index = 0; index < 200; index += 1) {
+      const messages = cache.get("session")
+      const added = message(`m${index}`, "x".repeat(size))
+      messages.push(added)
+      cache.set("session", messages)
+      cache.grow("session", transcriptWeight([added]))
+      real += transcriptWeight([added])
+      assert.equal(cache.weight, real, `${size} B chunks`)
+    }
+    cache.set("session", [...cache.get("session")])
+    assert.equal(cache.weight, real, "a transcript that lands as a new array is weighed exactly")
+  }
 })

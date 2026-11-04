@@ -17,7 +17,7 @@ import { BoundedLru } from "./bounded-lru.js"
 const DEFAULT_MAX_ENTRIES = 64
 const DEFAULT_MAX_WEIGHT = 24 * 1024 * 1024
 
-function partWeight(part) {
+export function partWeight(part) {
   if (!part || typeof part !== "object") return 0
   let weight = 64
   if (typeof part.text === "string") weight += part.text.length
@@ -80,14 +80,16 @@ export class TranscriptCache {
       return value
     }
     this.#hits += 1
-    this.#lru.refresh(key)
     return value
   }
 
   set(key, value) {
-    this.#lru.set(key, value)
+    // Callers set back the array they just read to edit in place; its growth arrives through grow().
+    if (this.#lru.peek(key) !== value) this.#lru.set(key, value)
     return this
   }
+
+  grow(key, weight) { return this.#lru.grow(key, weight) }
 
   delete(key) { return this.#lru.delete(key) }
   clear() { this.#lru.clear() }

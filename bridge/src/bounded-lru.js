@@ -52,7 +52,7 @@ export class BoundedLru {
       this.#weight -= previous.weight
       this.#entries.delete(key)
     }
-    this.#entries.set(key, { value, weight })
+    this.#entries.set(key, { value, weight, grown: 0 })
     this.#weight += weight
     this.#evict()
     return this
@@ -64,7 +64,21 @@ export class BoundedLru {
     const weight = this.#weightFor(entry.value, key)
     this.#weight += weight - entry.weight
     entry.weight = weight
+    entry.grown = 0
     this.#evict()
+    return true
+  }
+
+  // Reported growth counts at once; re-weighing waits until it reaches half the last weigh.
+  grow(key, weight) {
+    const entry = this.#entries.get(key)
+    if (!entry) return false
+    weight = Number(weight) || 0
+    entry.weight += weight
+    entry.grown += weight
+    this.#weight += weight
+    if (entry.grown * 2 >= entry.weight - entry.grown) this.refresh(key)
+    else this.#evict()
     return true
   }
 
@@ -73,6 +87,7 @@ export class BoundedLru {
       const weight = this.#weightFor(entry.value, key)
       this.#weight += weight - entry.weight
       entry.weight = weight
+      entry.grown = 0
     }
     this.#evict()
   }
