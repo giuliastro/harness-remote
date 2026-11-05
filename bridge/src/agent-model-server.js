@@ -31,7 +31,10 @@ function modelWaitMs(url) {
 }
 
 async function settleWithin(promise, waitMs) {
-  if (waitMs <= 0) return { settled: false }
+  if (waitMs <= 0) {
+    void promise.catch(() => {})
+    return { settled: false }
+  }
   let timer
   const pending = Symbol("pending")
   try {

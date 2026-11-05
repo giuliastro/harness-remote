@@ -72,6 +72,22 @@ test("cold ACP catalog returns loading without waiting for discovery to settle",
   }
 })
 
+test("model read with waitMs=0 does not leave a failed discovery unhandled", async () => {
+  let fail
+  const daemon = {
+    listModels() { return new Promise((_resolve, reject) => { fail = reject }) }
+  }
+  const innerServer = http.createServer((_request, response) => { response.writeHead(500); response.end("should not be reached") })
+  const server = createAgentModelServer({ innerServer, config: config(), daemon, taskStore: {} })
+  const base = await listen(server)
+  try {
+    const response = await fetch(`${base}/v1/agents/codex/models?waitMs=0`, { headers: auth() })
+    assert.equal(response.status, 202)
+    fail(new Error("Authentication required"))
+    await new Promise((resolve) => setImmediate(resolve))
+  } finally { await close(server) }
+})
+
 test("task launch is rejected when selected model disappeared", async () => {
   let delegated = 0
   const error = new Error("Selected model is no longer available: openai/removed")
