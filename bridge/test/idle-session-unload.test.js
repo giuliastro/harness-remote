@@ -1,5 +1,6 @@
 import assert from "node:assert/strict"
 import test from "node:test"
+import { AcpPromptEchoFilter } from "../src/acp-prompt-echo-filter.js"
 import { AcpService } from "../src/acp-service.js"
 
 /**
@@ -159,6 +160,19 @@ test("a Session with a pending ACP request is never unloaded", async () => {
   })
   const session = await service.createSession({ directory: "/repo" })
   acp.pendingRequests = [{ method: "session/prompt", sessionID: session.id }]
+
+  assert.deepEqual(await service.sweepIdleSessions({ now: Date.now() + 3_600_000 }), [])
+  assert.equal(acp.count("session/close"), 0)
+})
+
+test("a pending ACP request keeps the Session open behind the prompt echo filter", async () => {
+  const acp = new FakeAcp()
+  const service = new AcpService(new AcpPromptEchoFilter(acp), {
+    idleUnloadMs: 60_000,
+    canUnloadIdleSession: async () => true
+  })
+  const session = await service.createSession({ directory: "/repo" })
+  acp.pendingRequests = [{ method: "session/set_config_option", sessionID: session.id }]
 
   assert.deepEqual(await service.sweepIdleSessions({ now: Date.now() + 3_600_000 }), [])
   assert.equal(acp.count("session/close"), 0)
