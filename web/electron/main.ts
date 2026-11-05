@@ -1,4 +1,4 @@
-import { app, BrowserWindow, clipboard, dialog, Menu, Notification, nativeImage, screen, session, shell, ipcMain, type IpcMainInvokeEvent } from "electron"
+import { app, BrowserWindow, clipboard, dialog, Menu, Notification, nativeImage, powerSaveBlocker, screen, session, shell, ipcMain, type IpcMainInvokeEvent } from "electron"
 import { readFileSync, writeFileSync } from "node:fs"
 import { homedir } from "node:os"
 import { dirname, join } from "node:path"
@@ -8,6 +8,7 @@ import { executeConfigurationProbe } from "./configuration-probe.js"
 import { buildApplicationMenu } from "./app-menu.js"
 import { buildContextMenu } from "./context-menu.js"
 import { EmbeddedDaemonRuntime, EMBEDDED_DAEMON_HOST, EMBEDDED_DAEMON_LAN_HOST, EMBEDDED_DAEMON_PROFILE_ID, embeddedDaemonEntry, type EmbeddedDaemonExit } from "./embedded-daemon.js"
+import { ActiveTurnSleepBlocker, readActiveAcpTurns } from "./active-turn-sleep-blocker.js"
 import { loadOrCreateEmbeddedDaemonAuth, type EmbeddedDaemonAuth } from "./embedded-daemon-auth.js"
 import { DesktopEventTransport } from "./event-transport.js"
 import { externalLinkUrl } from "./external-link.js"
@@ -61,6 +62,7 @@ let projectRoots: ProjectRootsStore
 let networkSettings: NetworkSettingsStore
 let eventTransport: DesktopEventTransport
 let embeddedDaemon: EmbeddedDaemonRuntime | undefined
+let activeTurnSleepBlocker: ActiveTurnSleepBlocker | undefined
 let localRuntimeState: DesktopLocalRuntimeState = { status: "starting" }
 let localRuntimeStart: Promise<DesktopLocalRuntimeState> | undefined
 let runtimeRestarting = false
@@ -109,6 +111,8 @@ function clearLocalRuntimeProfile(): void {
 }
 
 function embeddedDaemonExited(details: EmbeddedDaemonExit): void {
+  activeTurnSleepBlocker?.stop()
+  activeTurnSleepBlocker = undefined
   clearLocalRuntimeProfile()
   const suffix = details.signal ? ` (${details.signal})` : details.code === null ? "" : ` (exit ${details.code})`
   localRuntimeState = { status: "unavailable", error: `Local desktop runtime stopped unexpectedly${suffix}.` }
@@ -125,6 +129,13 @@ function ensureLocalRuntime(): Promise<DesktopLocalRuntimeState> {
   clearLocalRuntimeProfile()
   localRuntimeState = { status: "starting" }
   localRuntimeStart = embeddedDaemon.start().then((ready) => {
+    activeTurnSleepBlocker?.stop()
+    activeTurnSleepBlocker = new ActiveTurnSleepBlocker(
+      () => readActiveAcpTurns(ready.endpoint),
+      () => powerSaveBlocker.start("prevent-app-suspension"),
+      (id) => { powerSaveBlocker.stop(id) }
+    )
+    activeTurnSleepBlocker.start()
     const endpoint = ready.endpoint
     const change = registry.setRuntimeProfile({
       id: endpoint.id,
@@ -562,6 +573,7 @@ app.whenReady().then(() => start()).catch((error: unknown) => {
 })
 
 app.on("before-quit", (event) => {
+  activeTurnSleepBlocker?.stop()
   eventTransport?.closeAll()
   if (quitting) return
   event.preventDefault()

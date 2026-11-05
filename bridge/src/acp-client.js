@@ -8,6 +8,9 @@ import { closeOwnedChildProcess, ownChildProcess } from "./managed-child-process
 // than a warm start. Ten seconds failed on a cold PI adapter while npm was still fetching.
 const START_TIMEOUT_MS = 90_000
 const REQUEST_TIMEOUT_MS = 30_000
+// A tool can legitimately wait for external work long after the prompt's ordinary idle window.
+// Keep a bounded watchdog so an adapter that never answers can still release the turn.
+const ACTIVE_TOOL_TIMEOUT_MS = 2 * 60 * 60_000
 /** Kept so a failed handshake can report why the adapter died instead of just its exit code. */
 const STDERR_KEPT_CHARS = 600
 
@@ -93,7 +96,9 @@ export class AcpClient extends EventEmitter {
       ...(pending.configID ? { configID: pending.configID } : {}),
       ageMs: Math.max(0, now - pending.startedAt),
       idleMs: Math.max(0, now - pending.lastActivityAt),
-      timeoutMs: pending.timeoutMs
+      timeoutMs: pending.timeoutMs,
+      watchdogMs: pending.watchdogMs,
+      activeToolCalls: pending.toolCalls.size
     }))
     const listenerCounts = Object.fromEntries(
       this.eventNames().map((eventName) => [String(eventName), this.listenerCount(eventName)])
@@ -244,6 +249,8 @@ export class AcpClient extends EventEmitter {
         startedAt,
         lastActivityAt: startedAt,
         timeoutMs,
+        watchdogMs: timeoutMs,
+        toolCalls: new Set(),
         resetTimeout: undefined
       }
       const expire = () => {
@@ -253,7 +260,8 @@ export class AcpClient extends EventEmitter {
       pending.resetTimeout = () => {
         pending.lastActivityAt = Date.now()
         clearTimeout(pending.timer)
-        pending.timer = setTimeout(expire, timeoutMs)
+        pending.watchdogMs = pending.toolCalls.size ? Math.max(timeoutMs, ACTIVE_TOOL_TIMEOUT_MS) : timeoutMs
+        pending.timer = setTimeout(expire, pending.watchdogMs)
       }
       pending.resetTimeout()
       this.#pending.set(id, pending)
@@ -334,7 +342,7 @@ export class AcpClient extends EventEmitter {
 
     // A long ACP prompt is alive as long as that same Session keeps producing protocol traffic.
     // Treat its timeout as an inactivity watchdog, not a wall-clock cap on legitimate long turns.
-    if (typeof message.params?.sessionId === "string") this.#touchSessionActivity(message.params.sessionId)
+    if (typeof message.params?.sessionId === "string") this.#touchSessionActivity(message.params.sessionId, message.params.update)
 
     // A JSON-RPC message carrying both an id and a method is an agent-initiated
     // request. An unanswered request would stall the agent until the prompt
@@ -358,9 +366,14 @@ export class AcpClient extends EventEmitter {
     if (message.method) this.emit("notification", message)
   }
 
-  #touchSessionActivity(sessionID) {
+  #touchSessionActivity(sessionID, update) {
     for (const pending of this.#pending.values()) {
       if (pending.method !== "session/prompt" || pending.sessionID !== sessionID) continue
+      if ((update?.sessionUpdate === "tool_call" || update?.sessionUpdate === "tool_call_update")
+        && typeof update.toolCallId === "string") {
+        if (["completed", "error", "failed", "cancelled"].includes(update.status)) pending.toolCalls.delete(update.toolCallId)
+        else pending.toolCalls.add(update.toolCallId)
+      }
       pending.resetTimeout?.()
     }
   }

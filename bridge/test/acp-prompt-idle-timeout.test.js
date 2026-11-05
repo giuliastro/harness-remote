@@ -91,3 +91,33 @@ test("activity from another session does not keep a stalled prompt alive", async
   await assert.rejects(prompt, /ACP adapter request timed out: session\/prompt/)
   client.close()
 })
+
+test("a silent running tool keeps its prompt alive beyond the ordinary inactivity timeout", async () => {
+  let promptRequest
+  const child = new FakeChild((current, request) => {
+    handshake(current, request)
+    if (request.method === "session/prompt") promptRequest = request
+  })
+  const client = new AcpClient({ spawnProcess: () => child })
+  await client.start()
+
+  const prompt = client.request("session/prompt", { sessionId: "session-1", prompt: [] }, 35)
+  child.respond({
+    jsonrpc: "2.0",
+    method: "session/update",
+    params: { sessionId: "session-1", update: { sessionUpdate: "tool_call", toolCallId: "tool-1", status: "running" } }
+  })
+  assert.equal(client.diagnostics().pendingRequests[0].activeToolCalls, 1)
+  assert.ok(client.diagnostics().pendingRequests[0].watchdogMs > 35)
+  await new Promise((resolve) => setTimeout(resolve, 60))
+  child.respond({
+    jsonrpc: "2.0",
+    method: "session/update",
+    params: { sessionId: "session-1", update: { sessionUpdate: "tool_call_update", toolCallId: "tool-1", status: "completed" } }
+  })
+  assert.equal(client.diagnostics().pendingRequests[0].activeToolCalls, 0)
+  assert.equal(client.diagnostics().pendingRequests[0].watchdogMs, 35)
+  child.respond({ jsonrpc: "2.0", id: promptRequest.id, result: { stopReason: "end_turn" } })
+  assert.deepEqual(await prompt, { stopReason: "end_turn" })
+  client.close()
+})
