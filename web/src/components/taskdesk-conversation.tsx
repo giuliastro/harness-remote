@@ -1,5 +1,5 @@
 import { memo, useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react"
-import { ATTACHMENT_MAX_COUNT, fileToAttachment, type AttachmentPart } from "../attachments"
+import { ATTACHMENT_MAX_COUNT, fileToAttachment, type AttachmentPart, type WorkspaceAttachment } from "../attachments"
 import type { QueuedPromptEntry } from "../mid-turn-policy"
 import type { CommandInfo, MessageEnvelope } from "../types"
 import { AlertIcon, ChatIcon, CloseIcon, JumpToBottomIcon, JumpToTopIcon, LoadingIcon, PaperclipIcon, StopCircleIcon } from "../Icons"
@@ -32,8 +32,12 @@ type Props = {
   commands?: CommandInfo[]
   attachments?: AttachmentPart[]
   attachmentsSupported?: boolean
+  /** CSV/XLSX files uploaded into the Session workspace; the prompt carries their paths. */
+  workspaceAttachments?: WorkspaceAttachment[]
   composerAccessory?: ReactNode
   onAttachmentsChange?: (attachments: AttachmentPart[]) => void
+  onWorkspaceAttachmentsChange?: (attachments: WorkspaceAttachment[]) => void
+  onWorkspaceFilesSelected?: (files: File[]) => Promise<WorkspaceAttachment[]>
   onAttachmentError?: (message: string) => void
   onSend: () => Promise<void> | void
   sending?: boolean
@@ -461,8 +465,11 @@ export function TaskDeskConversation({
   commands = [],
   attachments = [],
   attachmentsSupported = false,
+  workspaceAttachments = [],
   composerAccessory,
   onAttachmentsChange,
+  onWorkspaceAttachmentsChange,
+  onWorkspaceFilesSelected,
   onAttachmentError,
   onSend,
   sending = false,
@@ -501,7 +508,7 @@ export function TaskDeskConversation({
   // waiting or its reply is being prepared. One whose harness steers or queues opts in explicitly.
   const midTurnSend = canSendWhileWaiting && (waiting || sending)
   const canSend = Boolean(
-    draft.trim()
+    (draft.trim() || workspaceAttachments.length)
     && (midTurnSend || (!sending && !waiting))
     && !sendDisabled
     && !composerDisabled
@@ -511,6 +518,19 @@ export function TaskDeskConversation({
   // way to send that they do not have. Enter inserts a newline there; the Send button is the action.
   const composerBusy = Boolean(composerBusyLabel)
   const hint = footerHint ?? (touchFirst ? "Enter adds a line. Tap Send to send." : "Enter to send · Shift+Enter for a newline")
+  const attachmentEnabled = attachmentsSupported || Boolean(onWorkspaceFilesSelected)
+  const attachmentCount = attachments.length + workspaceAttachments.length
+  const attachmentAccept = [
+    ...(attachmentsSupported ? ["image/*"] : []),
+    ...(onWorkspaceFilesSelected
+      ? [
+          ".csv", ".xlsx", ".xls",
+          "text/csv",
+          "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+          "application/vnd.ms-excel"
+        ]
+      : [])
+  ].join(",")
 
   useEffect(() => {
     if (composerFrameRef.current !== undefined) window.cancelAnimationFrame(composerFrameRef.current)
@@ -629,6 +649,22 @@ export function TaskDeskConversation({
             ))}
           </div>
         ) : null}
+        {workspaceAttachments.length ? (
+          <div className="uw-composer-attachments" aria-label="Attached files">
+            {workspaceAttachments.map((attachment, index) => (
+              <span className="uw-composer-attachment" key={`${attachment.relativePath}:${index}`} title={attachment.relativePath}>
+                <strong>{attachment.filename}</strong>
+                <button
+                  type="button"
+                  onClick={() => onWorkspaceAttachmentsChange?.(workspaceAttachments.filter((_, position) => position !== index))}
+                  aria-label={`Remove ${attachment.filename}`}
+                >
+                  <CloseIcon size={12} />
+                </button>
+              </span>
+            ))}
+          </div>
+        ) : null}
         {/* A placeholder is not a label: it disappears as soon as the field has content, which left
             the product's primary input unnamed for a screen reader.
 
@@ -674,22 +710,32 @@ export function TaskDeskConversation({
         <div className="uw-composer-footer">
           <span className="uw-composer-directory">{directory || ""}</span>
           <div>
-            {attachmentsSupported ? (
+            {attachmentEnabled ? (
               <>
                 <input
                   ref={attachmentInputRef}
                   type="file"
-                  accept="image/*"
+                  accept={attachmentAccept}
                   multiple
                   hidden
                   onChange={async (event) => {
-                    const room = Math.max(0, ATTACHMENT_MAX_COUNT - attachments.length)
+                    const room = Math.max(0, ATTACHMENT_MAX_COUNT - attachmentCount)
                     const chosen = Array.from(event.target.files ?? []).slice(0, room)
                     event.target.value = ""
                     if (!chosen.length) return
+                    const imageFiles = attachmentsSupported
+                      ? chosen.filter((file) => file.type.startsWith("image/"))
+                      : []
+                    const workspaceFiles = onWorkspaceFilesSelected
+                      ? chosen.filter((file) => !file.type.startsWith("image/"))
+                      : []
                     try {
-                      const prepared = await Promise.all(chosen.map((file) => fileToAttachment(file)))
-                      onAttachmentsChange?.([...attachments, ...prepared])
+                      const prepared = await Promise.all(imageFiles.map((file) => fileToAttachment(file)))
+                      if (prepared.length) onAttachmentsChange?.([...attachments, ...prepared])
+                      if (workspaceFiles.length) {
+                        const uploaded = await onWorkspaceFilesSelected?.(workspaceFiles) ?? []
+                        if (uploaded.length) onWorkspaceAttachmentsChange?.([...workspaceAttachments, ...uploaded])
+                      }
                     } catch (reason) {
                       onAttachmentError?.(reason instanceof Error ? reason.message : String(reason))
                     }
@@ -698,10 +744,10 @@ export function TaskDeskConversation({
                 <button
                   type="button"
                   className="uw-button"
-                  disabled={!ready || composerDisabled || sending || waiting || attachments.length >= ATTACHMENT_MAX_COUNT}
+                  disabled={!ready || composerDisabled || sending || waiting || attachmentCount >= ATTACHMENT_MAX_COUNT}
                   onClick={() => attachmentInputRef.current?.click()}
-                  aria-label="Attach image"
-                  title="Attach image"
+                  aria-label="Attach image or file"
+                  title="Attach image or file"
                 >
                   <PaperclipIcon size={15} />
                 </button>

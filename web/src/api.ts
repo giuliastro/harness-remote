@@ -4,7 +4,7 @@ import { normalizeNativeResponseData } from "./nativeResponse"
 import { MachineHttpError } from "./machine-request-error"
 import { streamURL } from "./opencode-events"
 import { authHeader, baseUrl, hasCredentials, isValidServerConfig, routingHeaders } from "./serverConfig"
-import type { AttachmentPart } from "./attachments"
+import type { AttachmentPart, WorkspaceAttachment, WorkspaceAttachmentPayload } from "./attachments"
 import type {
   AgentOption,
   CommandInfo,
@@ -463,6 +463,16 @@ export const api = {
       method: "POST",
       body: {},
       readTimeout: 300_000
+    })
+  },
+
+  uploadWorkspaceAttachment(config: ServerConfig, directory: string, payload: WorkspaceAttachmentPayload) {
+    // The upload endpoint is machine-level: a per-agent path would be proxied to an ACP harness
+    // that has no filesystem in common with the daemon.
+    return request<WorkspaceAttachment>({ ...config, agentId: undefined }, "/v1/attachments", {
+      method: "POST",
+      body: { directory, ...payload },
+      readTimeout: 120_000
     })
   },
 

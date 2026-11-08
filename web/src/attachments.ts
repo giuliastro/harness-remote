@@ -71,3 +71,50 @@ export async function fileToAttachment(
   }
   return attachmentPart("image/jpeg", filename, canvas.toDataURL("image/jpeg", 0.85))
 }
+
+export const WORKSPACE_ATTACHMENT_MAX_BYTES = 10 * 1024 * 1024
+export const WORKSPACE_ATTACHMENT_EXTENSIONS = [".csv", ".xlsx", ".xls"] as const
+
+export type WorkspaceAttachment = {
+  filename: string
+  path: string
+  relativePath: string
+  size: number
+}
+
+export type WorkspaceAttachmentPayload = {
+  filename: string
+  mime: string
+  data: string
+}
+
+export function isWorkspaceAttachmentFile(file: Pick<File, "name">): boolean {
+  const name = file.name.toLowerCase()
+  return WORKSPACE_ATTACHMENT_EXTENSIONS.some((extension) => name.endsWith(extension))
+}
+
+function bytesToBase64(bytes: Uint8Array): string {
+  let binary = ""
+  const chunk = 0x8000
+  for (let index = 0; index < bytes.length; index += chunk) {
+    binary += String.fromCharCode(...bytes.subarray(index, index + chunk))
+  }
+  return btoa(binary)
+}
+
+export async function workspaceAttachmentPayload(
+  file: File,
+  maxBytes = WORKSPACE_ATTACHMENT_MAX_BYTES
+): Promise<WorkspaceAttachmentPayload> {
+  if (!isWorkspaceAttachmentFile(file)) {
+    throw new Error("Only CSV, XLSX and XLS files can be attached as workspace files")
+  }
+  if (file.size > maxBytes) throw new Error("Each file attachment must stay under 10MB")
+  if (file.size === 0) throw new Error("The selected file is empty")
+  const bytes = new Uint8Array(await file.arrayBuffer())
+  return {
+    filename: file.name || "attachment",
+    mime: file.type || "application/octet-stream",
+    data: bytesToBase64(bytes)
+  }
+}

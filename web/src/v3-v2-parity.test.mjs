@@ -93,8 +93,10 @@ test("code blocks stay outside the reading measure", () => {
 
 test("Session-first restores capability-gated image attachments without reviving the 2.x shell", () => {
   assert.match(conversation, /fileToAttachment/)
-  assert.match(conversation, /accept="image\/\*"/)
-  assert.match(conversation, /attachmentsSupported \? \(/)
+  assert.match(conversation, /attachmentsSupported \? \["image\/\*"\] : \[\]/)
+  assert.match(conversation, /text\/csv/)
+  assert.match(conversation, /attachmentEnabled \? \(/)
+  assert.match(conversation, /onWorkspaceFilesSelected/)
   assert.match(workThread, /attachments: promptAttachments/)
   assert.match(nativePrompt, /attachments: AttachmentPart\[\] = \[\]/)
   assert.match(nativePrompt, /attachmentKeys/)

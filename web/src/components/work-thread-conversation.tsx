@@ -2,6 +2,7 @@ import { memo, useCallback, useEffect, useMemo, useRef, useState, type CSSProper
 import { api } from "../api"
 import { ChevronDownIcon, RefreshIcon } from "../Icons"
 import type { AttachmentPart } from "../attachments"
+import { workspaceAttachmentPayload, type WorkspaceAttachment } from "../attachments"
 import { createCoalescedTailRefresh } from "../coalesced-tail-refresh"
 import type { ConversationController } from "../conversation-controller"
 import { conversationTurnSessionID, conversationTurns, type ConversationRuntime, type ConversationTurn } from "../conversation-runtime"
@@ -347,6 +348,7 @@ export function WorkThreadConversation({
   const [loadingOlder, setLoadingOlder] = useState(false)
   const [draft, setDraft] = useState(() => localStorage.getItem(draftStorageKey) || "")
   const [attachments, setAttachments] = useState<AttachmentPart[]>([])
+  const [workspaceAttachments, setWorkspaceAttachments] = useState<WorkspaceAttachment[]>([])
   const [sending, setSending] = useState(false)
   // Explicit presentation phase for the reply that has been requested but has not produced any
   // meaningful assistant activity yet. Do not derive this only from transport/runtime state:
@@ -484,6 +486,7 @@ export function WorkThreadConversation({
     setQuestions([])
     setPermissions([])
     setAttachments([])
+    setWorkspaceAttachments([])
     setPendingPrompt(null)
     setAwaitingReplyTurnID(null)
     setReplyPending(false)
@@ -979,8 +982,20 @@ export function WorkThreadConversation({
     }
   }
 
+  async function uploadWorkspaceFiles(files: File[]): Promise<WorkspaceAttachment[]> {
+    const uploaded: WorkspaceAttachment[] = []
+    for (const file of files) {
+      const payload = await workspaceAttachmentPayload(file)
+      uploaded.push(await api.uploadWorkspaceAttachment(baseConfig, conversation.directory, payload))
+    }
+    return uploaded
+  }
+
   async function send() {
-    const text = draft.trim()
+    const originalDraft = draft
+    const workspaceLines = workspaceAttachments.map((file) => `Attached file: ${file.relativePath}`)
+    const text = [draft.trim(), ...workspaceLines].filter(Boolean).join("\n\n")
+    const promptWorkspaceAttachments = workspaceAttachments
     const promptAttachments = attachments
     const slashMatch = /^\/([^\s]+)(?:\s+([\s\S]*))?$/.exec(text)
     const matchedCommand = slashMatch
@@ -1049,6 +1064,7 @@ export function WorkThreadConversation({
         })
         localStorage.removeItem(draftStorageKey)
         setAttachments([])
+        setWorkspaceAttachments([])
         setPendingPrompt(null)
         setReplyPending(false)
         modelSelectionTouchedRef.current = false
@@ -1062,6 +1078,7 @@ export function WorkThreadConversation({
         })
         localStorage.removeItem(draftStorageKey)
         setAttachments([])
+        setWorkspaceAttachments([])
         modelSelectionTouchedRef.current = false
         // A new current turn means the prompt started (or joined the live turn as one of its own);
         // an unchanged one means the daemon queued it, and its row shows as the queued strip.
@@ -1098,9 +1115,10 @@ export function WorkThreadConversation({
       // clears this restored draft only after the exact native turn becomes authoritative. A mid-turn
       // send presented nothing, and the running turn's own pending state is not this send's to clear.
       if (!midTurn) presentOptimistically(false)
-      setDraft((current) => text ? (current ? `${text}
-${current}` : text) : current)
+      setDraft((current) => originalDraft ? (current ? `${originalDraft}
+${current}` : originalDraft) : current)
       setAttachments(promptAttachments)
+      setWorkspaceAttachments(promptWorkspaceAttachments)
       setError(reason instanceof Error ? reason.message : String(reason))
     } finally {
       sendInFlightRef.current = false
@@ -1149,7 +1167,7 @@ ${current}` : text) : current)
   const currentLabel = agentLabel(agents, currentAgentID)
   const attachmentAgent = destinationAgents.find((agent) => agent.id === targetAgentID)
   const attachmentsSupported = !routeChanged && attachmentAgent?.capabilities?.attachments === true
-  const routeBlockedByAttachments = routeChanged && attachments.length > 0
+  const routeBlockedByAttachments = routeChanged && (attachments.length > 0 || workspaceAttachments.length > 0)
   const hasAttention = questions.length > 0 || permissions.length > 0
   // "Getting started" only belongs to a reply this client sent while the user was watching this view
   // of the Session. Returning to a Session that is already working - a re-opened OpenCode turn whose
@@ -1332,6 +1350,9 @@ ${current}` : text) : current)
         commands={commands}
         attachments={attachments}
         attachmentsSupported={attachmentsSupported}
+        workspaceAttachments={workspaceAttachments}
+        onWorkspaceAttachmentsChange={setWorkspaceAttachments}
+        onWorkspaceFilesSelected={uploadWorkspaceFiles}
         composerAccessory={(
           <div className="tdw-effort-anchor" ref={effortAnchorRef}>
             <span className="tdw-composer-status">{statePill}</span>

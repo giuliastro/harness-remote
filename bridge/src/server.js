@@ -1,5 +1,6 @@
 import http from "node:http"
-import { readdir, realpath } from "node:fs/promises"
+import { randomBytes } from "node:crypto"
+import { mkdir, readdir, realpath, writeFile } from "node:fs/promises"
 import path from "node:path"
 import { selectableAcpModelValue, splitAcpModelValue } from "./agent-model-catalog.js"
 import { AcpPromptEchoFilter } from "./acp-prompt-echo-filter.js"
@@ -14,6 +15,8 @@ const MAX_ATTACHMENTS = 8
 const MAX_ATTACHMENT_BYTES = 5 * 1024 * 1024
 const MAX_ATTACHMENT_TOTAL_BYTES = 15 * 1024 * 1024
 const MAX_MESSAGE_PAGE = 500
+const MAX_WORKSPACE_ATTACHMENT_BYTES = 10 * 1024 * 1024
+const WORKSPACE_ATTACHMENT_EXTENSIONS = new Set([".csv", ".xlsx", ".xls"])
 
 /**
  * Claude's ACP adapter can leave the service bookkeeping flag active after the visible turn has
@@ -67,6 +70,20 @@ function attachmentPayload(url) {
   const match = typeof url === "string" ? /^data:[^;,]+;base64,(.+)$/s.exec(url) : null
   if (!match) throw new Error("An attachment must be a base64 data URL")
   return match[1]
+}
+
+function workspaceAttachmentFilename(value) {
+  const original = path.basename(typeof value === "string" ? value : "")
+  const extension = path.extname(original).toLowerCase()
+  if (!WORKSPACE_ATTACHMENT_EXTENSIONS.has(extension)) {
+    throw new Error("Unsupported attachment type: accepted files are .csv, .xlsx and .xls")
+  }
+  const stem = original
+    .slice(0, -extension.length)
+    .replace(/[^A-Za-z0-9._-]+/g, "_")
+    .replace(/^[._]+/, "")
+    .slice(0, 80) || "attachment"
+  return `${stem}${extension}`
 }
 
 /**
@@ -402,6 +419,42 @@ export function createBridgeServer({ config, acp, serviceOptions, machineRegistr
       if (request.method === "GET" && url.pathname === "/v1/capabilities") {
         await acp.start()
         writeJSON(response, 200, { ...profile.capabilities, attachments: Boolean(acp.promptCapabilities?.image) })
+        return
+      }
+      if (request.method === "POST" && url.pathname === "/v1/attachments") {
+        try {
+          const body = await readBody(request)
+          if (typeof body.directory !== "string" || !body.directory) throw new Error("A Session directory is required")
+          if (typeof body.data !== "string" || !body.data) throw new Error("Attachment data is required")
+          if (!/^[A-Za-z0-9+/]*={0,2}$/.test(body.data) || body.data.length % 4 !== 0) {
+            throw new Error("Attachment data must be standard base64")
+          }
+          const selected = await allowedDirectory(body.directory, config)
+          const filename = workspaceAttachmentFilename(body.filename)
+          const bytes = Buffer.from(body.data, "base64")
+          if (!bytes.length) throw new Error("Attachment is empty")
+          if (bytes.length > MAX_WORKSPACE_ATTACHMENT_BYTES) throw new Error("Each uploaded file must stay under 10MB")
+
+          const attachmentDirectory = path.join(selected, ".harness-remote", "attachments")
+          await mkdir(attachmentDirectory, { recursive: true })
+          const resolvedAttachmentDirectory = await realpath(attachmentDirectory)
+          if (!insideRoot(selected, resolvedAttachmentDirectory)) {
+            throw new Error("Attachment directory escapes the Session workspace")
+          }
+          const target = path.join(
+            resolvedAttachmentDirectory,
+            `${Date.now()}-${randomBytes(4).toString("hex")}-${filename}`
+          )
+          await writeFile(target, bytes, { mode: 0o600 })
+          writeJSON(response, 200, {
+            filename,
+            path: target,
+            relativePath: path.relative(selected, target).split(path.sep).join("/"),
+            size: bytes.length
+          })
+        } catch (error) {
+          writeJSON(response, 400, { error: error instanceof Error ? error.message : String(error) })
+        }
         return
       }
       if (request.method === "GET" && (url.pathname === "/v1/events" || url.pathname === "/global/event")) {
