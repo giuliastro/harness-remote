@@ -1,4 +1,6 @@
 import assert from "node:assert/strict"
+import { mkdtemp, mkdir, writeFile, access, rm } from "node:fs/promises"
+import os from "node:os"
 import path from "node:path"
 import test from "node:test"
 import { acpProviderEnvironment, createAcpProviderRuntime, resolveAcpProviderIDs, resolveAcpProviderLaunch } from "../src/acp-provider-runtime.js"
@@ -232,6 +234,42 @@ test("npx ACP clients for one harness share a cache but never start an install a
   await Promise.all([runtime.agent.start(), runtime.modelCatalog.options.agent.start()])
   assert.equal(peak, 1, "npx launches must be serialized")
   assert.equal(active, 0)
+})
+
+test("npx startup repairs an incomplete entry in its daemon-owned cache and retries once", async () => {
+  const stateDirectory = await mkdtemp(path.join(os.tmpdir(), "acp-npx-repair-"))
+  const cache = path.join(stateDirectory, "npm-cache", "example")
+  const broken = path.join(cache, "_npx", "broken")
+  const healthy = path.join(cache, "_npx", "healthy")
+  await mkdir(path.join(broken, "node_modules"), { recursive: true })
+  await mkdir(healthy, { recursive: true })
+  await writeFile(path.join(healthy, "package.json"), "{}")
+  let starts = 0
+  class FakeClient {
+    async start() {
+      starts += 1
+      if (starts === 1) throw new Error("npm error enoent Could not read package.json")
+    }
+  }
+  class FakeCatalog {
+    constructor(options) { this.options = options; this.hiddenSessionIDs = new Set() }
+    async preloadState() {}
+  }
+  try {
+    const runtime = await createAcpProviderRuntime({
+      provider: provider(),
+      launch: { command: "npx", args: [] },
+      config: { roots: [], stateDirectory },
+      Client: FakeClient,
+      ModelCatalog: FakeCatalog
+    })
+    await runtime.agent.start()
+    assert.equal(starts, 2)
+    await assert.rejects(access(broken), { code: "ENOENT" })
+    await access(path.join(healthy, "package.json"))
+  } finally {
+    await rm(stateDirectory, { recursive: true, force: true })
+  }
 })
 
 test("a slow npx harness cannot block another harness from starting", async () => {
