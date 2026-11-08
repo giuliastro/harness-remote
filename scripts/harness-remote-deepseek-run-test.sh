@@ -79,7 +79,9 @@ cache_ready() {
 }
 if ! cache_ready; then
   echo "Estraggo il runtime DeepSeek nel cache isolato (prima volta, circa 1 GB)…"
-  if ! PATH="$BIN:$PATH" DSH_HOME="$DSH_HOME" DSH_ACP_CACHE_DIR="$DSH_CACHE" NO_BROWSER=1 \
+fi
+echo "Verifico l'avvio dell'adattatore DeepSeek…"
+if ! PATH="$BIN:$PATH" DSH_HOME="$DSH_HOME" DSH_ACP_CACHE_DIR="$DSH_CACHE" NO_BROWSER=1 \
     PREWARM_ACP_CLIENT="$ROOT/bridge/src/acp-client.js" \
     node --input-type=module >"$LOGS/prewarm.log" 2>&1 <<'JS'
 import { pathToFileURL } from "node:url"
@@ -92,17 +94,16 @@ try {
   await client.close().catch(() => undefined)
 }
 JS
-  then
-    cat "$LOGS/prewarm.log" >&2
-    echo "Il runtime DeepSeek non si è avviato." >&2
-    exit 1
-  fi
-  cache_ready || {
-    cat "$LOGS/prewarm.log" >&2
-    echo "Cache del runtime DeepSeek incompleta." >&2
-    exit 1
-  }
+then
+  cat "$LOGS/prewarm.log" >&2
+  echo "Il runtime DeepSeek non si è avviato." >&2
+  exit 1
 fi
+cache_ready || {
+  cat "$LOGS/prewarm.log" >&2
+  echo "Cache del runtime DeepSeek incompleta." >&2
+  exit 1
+}
 
 echo "Compilo la vera app desktop Electron…"
 npm --prefix "$ROOT/web" run build:desktop >"$LOGS/build-electron.log" 2>&1 || {
@@ -133,17 +134,16 @@ Progetto sandbox: $PROJECT
 Macchina: "Questo computer" (daemon integrato; nessun URL o credenziale da digitare)
 
 Apri il selettore di harness/agente della macchina locale e scegli DeepSeek Harness.
-Seleziona esplicitamente DeepSeek Flash (deepseek-official::deepseek-flash); l'altro
-modello disponibile è DeepSeek V4 Pro (deepseek-official::deepseek-v4-pro). In questa
-build appaiono come "DeepSeek-V4.1-Flash (DeepSeek)" e "DeepSeek-V4-Pro (DeepSeek)"
-sotto il provider DeepSeek, con la variante Effort separata (off/low/high/max).
+I modelli disponibili sono DeepSeek Flash (deepseek-official::deepseek-flash) e
+DeepSeek V4 Pro (deepseek-official::deepseek-v4-pro), con Effort separato.
 
 Checklist:
   1. Aggiorna i modelli: devono comparire Flash e V4 Pro (non un modello OpenCode).
-  2. Crea una Native Session nel progetto sandbox con DeepSeek Flash, Effort low.
-  3. Chiedi: "Leggi README.md e dimmi in una riga cosa contiene." Verifica streaming,
-     tool call di lettura e risposta finale; il modello deve restare DeepSeek Flash.
-  4. Passa a V4 Pro ed Effort high nella stessa sessione, poi chiedi:
+  2. Crea una Native Session nel progetto sandbox: non deve apparire alcun timeout.
+  Dopo aver concordato il modello per i test reali con Giulio:
+  3. Seleziona quel modello ed Effort low. Chiedi: "Leggi README.md e dimmi in
+     una riga cosa contiene." Verifica streaming, lettura e risposta finale.
+  4. Se autorizzato anche V4 Pro, passa a V4 Pro ed Effort high, poi chiedi:
      "Rispondi con la parola DEEPSEEK e l'elenco dei file correnti."
      Verifica che il turno usi il nuovo modello senza aprire un'altra sessione.
   5. Avvia un turno più lungo (es. "Elenca e spiega ogni file del progetto, poi crea
@@ -203,8 +203,9 @@ trap cleanup EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM HUP
 
-# The embedded daemon inherits this environment. PATH makes the installed adapter visible to the
-# bridge's `resolveAcpLaunch`; DSH_HOME/CACHE keep the runtime's sessions and extraction isolated.
+# The embedded daemon inherits this environment. PATH makes the preinstalled adapter visible to
+# `resolveAcpLaunch`, avoiding a second large npx extraction on machines with little free space.
+# DSH_HOME/CACHE keep the runtime's sessions and extraction isolated.
 # HARNESS_REMOTE_ROOT controls the local machine's project roots so only the sandbox is offered.
 setsid env -u ELECTRON_RUN_AS_NODE -u HARNESS_REMOTE_BACKEND \
   -u HARNESS_REMOTE_ACP_COMMAND -u HARNESS_REMOTE_ACP_ARGS \
