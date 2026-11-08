@@ -1,5 +1,6 @@
 import path from "node:path"
 import { spawn } from "node:child_process"
+import { access, readdir, rm } from "node:fs/promises"
 import { AcpClient } from "./acp-client.js"
 import { AcpAgentModelCatalog } from "./agent-model-catalog.js"
 import { acpHarnessCapabilityContract } from "./harness-capability-contract.js"
@@ -74,10 +75,47 @@ function serializeNpxLaunch(cache, run) {
   return started
 }
 
-function serializeNpxStart(client, cache) {
+async function removeIncompleteNpxEntries(cache) {
+  let entries
+  try {
+    entries = await readdir(path.join(cache, "_npx"), { withFileTypes: true })
+  } catch (error) {
+    if (error?.code === "ENOENT") return false
+    throw error
+  }
+  let removed = false
+  for (const entry of entries) {
+    if (!entry.isDirectory()) continue
+    const directory = path.join(cache, "_npx", entry.name)
+    try {
+      await access(path.join(directory, "package.json"))
+    } catch (error) {
+      if (error?.code !== "ENOENT") throw error
+      // npm can leave an entry without its manifest after an interrupted install. It will keep
+      // reusing that entry and fail every subsequent launch until the entry is removed.
+      await rm(directory, { recursive: true, force: true })
+      removed = true
+    }
+  }
+  return removed
+}
+
+function serializeNpxStart(client, cache, repairCache) {
   const start = client?.start
   if (typeof start !== "function") return client
-  client.start = (...args) => serializeNpxLaunch(cache, () => start.apply(client, args))
+  client.start = (...args) => serializeNpxLaunch(cache, async () => {
+    try {
+      return await start.apply(client, args)
+    } catch (error) {
+      // Only the daemon-owned cache can be repaired automatically. An explicit npm cache may
+      // belong to another program, and an unrelated adapter error must remain untouched.
+      if (!repairCache || !/\benoent\b|Could not read package\.json/i.test(error?.message ?? "")) throw error
+      let repaired = false
+      try { repaired = await removeIncompleteNpxEntries(cache) } catch { /* report original error */ }
+      if (!repaired) throw error
+      return start.apply(client, args)
+    }
+  })
   return client
 }
 
@@ -108,8 +146,10 @@ export async function createAcpProviderRuntime({
   cwd = process.cwd()
 }) {
   const environment = acpProviderEnvironment(provider, launch, config)
+  const ownedCache = path.join(config.stateDirectory, "npm-cache", provider.id)
   const serialized = NPX_COMMAND.test(launch.command)
-    ? (client) => serializeNpxStart(client, environment.npm_config_cache)
+    ? (client) => serializeNpxStart(client, environment.npm_config_cache,
+      path.resolve(environment.npm_config_cache) === path.resolve(ownedCache))
     : (client) => client
   const clientOptions = {
     command: launch.command,
