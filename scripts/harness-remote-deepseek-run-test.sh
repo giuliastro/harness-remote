@@ -207,6 +207,11 @@ trap 'exit 143' TERM HUP
 # `resolveAcpLaunch`, avoiding a second large npx extraction on machines with little free space.
 # DSH_HOME/CACHE keep the runtime's sessions and extraction isolated.
 # HARNESS_REMOTE_ROOT controls the local machine's project roots so only the sandbox is offered.
+electron_debug_args=()
+if [[ -n "${HARNESS_REMOTE_TEST_CDP_PORT:-}" ]]; then
+  [[ "$HARNESS_REMOTE_TEST_CDP_PORT" =~ ^[1-9][0-9]{1,4}$ ]] || { echo "Porta CDP non valida." >&2; exit 2; }
+  electron_debug_args+=("--remote-debugging-port=$HARNESS_REMOTE_TEST_CDP_PORT")
+fi
 setsid env -u ELECTRON_RUN_AS_NODE -u HARNESS_REMOTE_BACKEND \
   -u HARNESS_REMOTE_ACP_COMMAND -u HARNESS_REMOTE_ACP_ARGS \
   PATH="$BIN:$PATH" \
@@ -215,6 +220,6 @@ setsid env -u ELECTRON_RUN_AS_NODE -u HARNESS_REMOTE_BACKEND \
   DSH_ACP_CACHE_DIR="$DSH_CACHE" \
   NO_BROWSER=1 \
   "$ROOT/web/node_modules/.bin/electron" "$ROOT/web" \
-  --disable-gpu --user-data-dir="$DESKTOP" >"$LOGS/electron.log" 2>&1 &
+  --disable-gpu "${electron_debug_args[@]}" --user-data-dir="$DESKTOP" >"$LOGS/electron.log" 2>&1 &
 app_pid=$!
 wait "$app_pid"
