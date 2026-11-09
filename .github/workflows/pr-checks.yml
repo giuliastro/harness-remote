@@ -220,7 +220,11 @@ jobs:
         run: node web/scripts/set-debug-app-id.mjs
 
       - name: Build debug APK
-        run: ./gradlew assembleDebug --stacktrace --no-daemon
+        run: |
+          # Capacitor generates the wrapper with a 10-second download timeout. Fresh runners
+          # often need longer to fetch the Gradle distribution before any build work can start.
+          sed -i 's/^networkTimeout=.*/networkTimeout=60000/' gradle/wrapper/gradle-wrapper.properties
+          ./gradlew assembleDebug --stacktrace --no-daemon
         working-directory: web/android
 
       - name: Verify debug APK signature
