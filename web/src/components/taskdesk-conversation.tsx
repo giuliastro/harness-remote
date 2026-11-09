@@ -520,6 +520,15 @@ export function TaskDeskConversation({
       if (!composer) return
       composer.style.height = "auto"
       composer.style.height = `${Math.min(COMPOSER_MAX_HEIGHT_PX, Math.max(66, composer.scrollHeight))}px`
+      // At the capped height the field scrolls internally. A browser does not reliably move that
+      // scroll position when the height changes, leaving the newest line under the floating
+      // controls. Follow the caret when it is at the end; a caret moved into earlier text keeps the
+      // user's own scroll position.
+      const caretAtEnd = composer.selectionStart === composer.value.length
+        && composer.selectionEnd === composer.value.length
+      if (caretAtEnd && composer.scrollHeight > composer.clientHeight + 1) {
+        composer.scrollTop = composer.scrollHeight
+      }
     })
     return () => {
       if (composerFrameRef.current !== undefined) {

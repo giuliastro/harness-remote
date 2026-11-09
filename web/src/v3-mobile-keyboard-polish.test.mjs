@@ -62,6 +62,10 @@ test("a phone composer keeps multi-line prompts clear of its overlaid controls",
   assert.match(parity, /\.hr-control-plane \.tdw-work-thread-conversation \.uw-composer-shell textarea \{[^}]*?max-height:min\(180px,32dvh\)\s*!important;/)
   // Short landscape phones have their own capped field; it needs the same reserved band.
   assert.match(parity, /\.hr-control-plane \.tdw-work-thread-conversation \.uw-composer-shell textarea \{[^}]*?padding:8px 12px 54px 11px\s*!important;/)
+  // At the capped height the browser leaves the newest line below the reserved band unless the
+  // field follows a caret that is at the end.
+  assert.match(conversation, /const caretAtEnd = composer\.selectionStart === composer\.value\.length/)
+  assert.match(conversation, /composer\.scrollTop = composer\.scrollHeight/)
   assert.match(conversation, /rows=\{touchFirst \? 1 : 3\}/)
 })
 
