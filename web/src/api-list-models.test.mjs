@@ -160,6 +160,33 @@ try {
   } finally {
     globalThis.setTimeout = originalSetTimeout
   }
+
+  // A cold DeepSeek npx launch may install and unpack the runtime before either endpoint replies.
+  // Exercise the browser transport's actual abort timer for both UI requests.
+  for (const invoke of [
+    (config) => api.listModels(config),
+    (config) => api.createSession(config, 'cold start')
+  ]) {
+    let deepseekTimeoutDelay
+    let deepseekAborted = false
+    try {
+      globalThis.setTimeout = (callback, delay, ...args) => {
+        deepseekTimeoutDelay = delay
+        return originalSetTimeout(callback, 0, ...args)
+      }
+      globalThis.fetch = (_input, init = {}) => new Promise((_resolve, reject) => {
+        init.signal?.addEventListener('abort', () => {
+          deepseekAborted = true
+          reject(Object.assign(new Error('aborted'), { name: 'AbortError' }))
+        }, { once: true })
+      })
+      await assert.rejects(invoke({ backend: 'deepseek', host: 'cold-start.invalid', port: 4098, username: '', password: '' }), /timed out after 300s/)
+      assert.equal(deepseekTimeoutDelay, 300_000)
+      assert.equal(deepseekAborted, true)
+    } finally {
+      globalThis.setTimeout = originalSetTimeout
+    }
+  }
 } finally {
   globalThis.fetch = originalFetch
 }

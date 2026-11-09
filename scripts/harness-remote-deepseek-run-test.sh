@@ -19,8 +19,14 @@ BIN="$TEST/bin"
 PROJECT="$TEST/sandbox/DeepSeek-Harness"
 LOGS="$STATE/logs"
 MODE="${1:-}"
-[[ -z "$MODE" || "$MODE" == --check ]] || { echo "Uso: $0 [--check]" >&2; exit 2; }
-[[ $# -le 1 ]] || { echo "Uso: $0 [--check]" >&2; exit 2; }
+[[ -z "$MODE" || "$MODE" == --check || "$MODE" == --npx ]] || { echo "Uso: $0 [--check|--npx]" >&2; exit 2; }
+[[ $# -le 1 ]] || { echo "Uso: $0 [--check|--npx]" >&2; exit 2; }
+if [[ "$MODE" == --npx ]]; then
+  STATE="$TEST/state-npx"
+  DESKTOP="$STATE/desktop"
+  DSH_HOME="$STATE/dsh-home"
+  LOGS="$STATE/logs"
+fi
 
 for name in node npm flock git setsid ps tr cp mkdir find readlink install; do
   command -v "$name" >/dev/null || { echo "Comando mancante: $name" >&2; exit 1; }
@@ -65,14 +71,34 @@ for item in .anonymous-user-id profiles settings.yaml.imported; do
   cp -a -- "$HOME/.dsh/$item" "$DSH_HOME/$item"
 done
 
-if [[ ! -x "$ADAPTER/node_modules/.bin/dsh-acp" ]]; then
+if [[ "$MODE" != --npx && ! -x "$ADAPTER/node_modules/.bin/dsh-acp" ]]; then
   echo "Installo @openma/deepseek-harness-acp@0.4.40 in $ADAPTER…"
   npm install --prefix "$ADAPTER" --no-audit --no-fund --loglevel=error \
     @openma/deepseek-harness-acp@0.4.40 >"$LOGS/adapter-install.log" 2>&1 || {
       cat "$LOGS/adapter-install.log" >&2; exit 1;
     }
 fi
-ln -sfn "$(readlink -f "$ADAPTER/node_modules/.bin/dsh-acp")" "$BIN/dsh-acp"
+if [[ "$MODE" != --npx ]]; then
+  ln -sfn "$(readlink -f "$ADAPTER/node_modules/.bin/dsh-acp")" "$BIN/dsh-acp"
+fi
+
+if [[ "$MODE" == --npx ]]; then
+  # Exercise the normal Electron npx fallback using its existing package and runtime caches.
+  # DSH_HOME and the desktop profile remain isolated, so no daily Session is exposed.
+  DAILY_NPM_CACHE="$HOME/.config/harness-remote-web/embedded-daemon/npm-cache/deepseek"
+  DAILY_DSH_CACHE="${DSH_ACP_CACHE_DIR:-${XDG_CACHE_HOME:-$HOME/.cache}/dsh-acp}"
+  [[ -d "$DAILY_NPM_CACHE" && -d "$DAILY_DSH_CACHE" ]] || {
+    echo "Cache DeepSeek dell'app normale non trovata; avvia prima l'app normale." >&2; exit 1;
+  }
+  mkdir -p "$DESKTOP/embedded-daemon/npm-cache"
+  # The daemon also probes other installed agents at startup. Reuse their package caches so this
+  # isolated profile does not duplicate hundreds of MB before DeepSeek's first Session.
+  for cache in "$HOME/.config/harness-remote-web/embedded-daemon/npm-cache"/*; do
+    [[ -d "$cache" ]] || continue
+    ln -sfn "$cache" "$DESKTOP/embedded-daemon/npm-cache/$(basename "$cache")"
+  done
+  DSH_CACHE="$DAILY_DSH_CACHE"
+fi
 
 cache_ready() {
   [[ -n "$(find "$DSH_CACHE" -maxdepth 2 -name .dsh-acp-runtime -print -quit)" ]]
@@ -80,8 +106,8 @@ cache_ready() {
 if ! cache_ready; then
   echo "Estraggo il runtime DeepSeek nel cache isolato (prima volta, circa 1 GB)…"
 fi
-echo "Verifico l'avvio dell'adattatore DeepSeek…"
-if ! PATH="$BIN:$PATH" DSH_HOME="$DSH_HOME" DSH_ACP_CACHE_DIR="$DSH_CACHE" NO_BROWSER=1 \
+if [[ "$MODE" != --npx ]]; then echo "Verifico l'avvio dell'adattatore DeepSeek…"; fi
+if [[ "$MODE" != --npx ]] && ! PATH="$BIN:$PATH" DSH_HOME="$DSH_HOME" DSH_ACP_CACHE_DIR="$DSH_CACHE" NO_BROWSER=1 \
     PREWARM_ACP_CLIENT="$ROOT/bridge/src/acp-client.js" \
     node --input-type=module >"$LOGS/prewarm.log" 2>&1 <<'JS'
 import { pathToFileURL } from "node:url"
@@ -129,40 +155,34 @@ cat <<EOF
 DeepSeek Harness — vera app desktop Electron, stato isolato
 Profilo Electron: $DESKTOP
 DSH_HOME isolato: $DSH_HOME
-Adattatore: $BIN/dsh-acp (dsh-acp 0.4.40)
+Adattatore: $(if [[ "$MODE" == --npx ]]; then echo 'npx → dsh-acp 0.4.40 (cache dell’app normale)'; else echo "$BIN/dsh-acp (dsh-acp 0.4.40)"; fi)
 Progetto sandbox: $PROJECT
 Macchina: "Questo computer" (daemon integrato; nessun URL o credenziale da digitare)
 
 Apri il selettore di harness/agente della macchina locale e scegli DeepSeek Harness.
-I modelli disponibili sono DeepSeek Flash (deepseek-official::deepseek-flash) e
-DeepSeek V4 Pro (deepseek-official::deepseek-v4-pro), con Effort separato.
+Seleziona DeepSeek-V4.1-Flash (DeepSeek) e, se disponibile, Effort low.
 
 Checklist:
-  1. Aggiorna i modelli: devono comparire Flash e V4 Pro (non un modello OpenCode).
+  1. Aggiorna i modelli: deve comparire DeepSeek-V4.1-Flash.
   2. Crea una Native Session nel progetto sandbox: non deve apparire alcun timeout.
-  Dopo aver concordato il modello per i test reali con Giulio:
-  3. Seleziona quel modello ed Effort low. Chiedi: "Leggi README.md e dimmi in
+  3. Seleziona Flash ed Effort low. Chiedi: "Leggi README.md e dimmi in
      una riga cosa contiene." Verifica streaming, lettura e risposta finale.
-  4. Se autorizzato anche V4 Pro, passa a V4 Pro ed Effort high, poi chiedi:
-     "Rispondi con la parola DEEPSEEK e l'elenco dei file correnti."
-     Verifica che il turno usi il nuovo modello senza aprire un'altra sessione.
-  5. Avvia un turno più lungo (es. "Elenca e spiega ogni file del progetto, poi crea
+  4. Avvia un turno più lungo (es. "Elenca e spiega ogni file del progetto, poi crea
      NOTE.md con un riassunto") e premi Stop: il turno deve fermarsi e la sessione
      restare utilizzabile. Invia poi un nuovo prompt.
-  6. Durante un turno invia un secondo prompt: deve essere trattato come steering,
+  5. Durante un turno invia un secondo prompt: deve essere trattato come steering,
      non messo in coda. Se il turno è appena finito, deve partire come nuovo turno
      senza perdere il testo (promptRequired).
-  7. Rinomina la sessione, chiudi e riapri l'app: deve comparire nell'elenco native
+  6. Rinomina la sessione, chiudi e riapri l'app: deve comparire nell'elenco native
      con il nuovo nome, apribile e con la trascrizione completa. Prova anche Elimina.
-  8. Torna a OpenCode Legacy e verifica che una sessione normale e il model picker
+  7. Torna a OpenCode 2 e verifica che una sessione normale e il model picker
      continuino a funzionare. Se Codex Luna è disponibile, ripeti la prova anche lì.
 
-Non avviare turni Claude Code. I modelli DeepSeek eseguono inferenza a pagamento:
-usa il test solo dopo l'autorizzazione esplicita di Giulio.
+Non avviare turni Claude Code o V4 Pro. DeepSeek Flash è già autorizzato per il test.
 
 Chiudi la finestra o premi Ctrl+C per fermare solo questo test.
 Log Electron: $LOGS/electron.log
-Log adattatore/prewarm: $LOGS/prewarm.log
+$(if [[ "$MODE" != --npx ]]; then echo "Log adattatore/prewarm: $LOGS/prewarm.log"; fi)
 EOF
 
 app_pid=''
@@ -214,7 +234,7 @@ if [[ -n "${HARNESS_REMOTE_TEST_CDP_PORT:-}" ]]; then
 fi
 setsid env -u ELECTRON_RUN_AS_NODE -u HARNESS_REMOTE_BACKEND \
   -u HARNESS_REMOTE_ACP_COMMAND -u HARNESS_REMOTE_ACP_ARGS \
-  PATH="$BIN:$PATH" \
+  PATH="$(if [[ "$MODE" == --npx ]]; then printf '%s' "$PATH"; else printf '%s:%s' "$BIN" "$PATH"; fi)" \
   HARNESS_REMOTE_ROOT="$PROJECT" \
   DSH_HOME="$DSH_HOME" \
   DSH_ACP_CACHE_DIR="$DSH_CACHE" \

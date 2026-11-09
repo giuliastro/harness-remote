@@ -88,7 +88,12 @@ jobs:
             *) echo "Unsupported macOS runner architecture: $(uname -m)" >&2; exit 1 ;;
           esac
           npm run build:desktop
-          npx electron-builder --publish never --mac dir "$arch_flag"
+          for attempt in 1 2 3; do
+            if npx electron-builder --publish never --mac dir "$arch_flag"; then break; fi
+            if [ "$attempt" -eq 3 ]; then exit 1; fi
+            echo "macOS packaging download failed; retrying ($attempt/3)…" >&2
+            sleep $((attempt * 20))
+          done
           app_bundle="$(find release -type d -name 'Harness Remote.app' -print -quit)"
           if [ -z "$app_bundle" ]; then
             echo "Packaged macOS app bundle was not produced." >&2

@@ -346,7 +346,8 @@ export const api = {
   async listModels(config: ServerConfig, directory?: string, sessionID?: string) {
     const path = withDirectory("/config/providers", directory)
     const sessionPath = sessionID ? `${path}${path.includes("?") ? "&" : "?"}sessionID=${encodeURIComponent(sessionID)}` : path
-    const response = await request<ConfigProvidersResponse>(config, sessionPath)
+    const response = await request<ConfigProvidersResponse>(config, sessionPath,
+      config.backend === "deepseek" ? { readTimeout: 300_000 } : {})
     return response.providers.flatMap((provider) => {
       const defaultModel = response.default?.[provider.id]
       return Object.entries(provider.models).flatMap(([modelID, model]) => {
@@ -370,7 +371,12 @@ export const api = {
   },
 
   createSession(config: ServerConfig, title?: string, model?: ModelSelection, directory?: string) {
-    return request<Session>(config, withDirectory("/session", directory), { method: "POST", body: { title, model: toCreateSessionModel(model) } })
+    return request<Session>(config, withDirectory("/session", directory), {
+      method: "POST",
+      body: { title, model: toCreateSessionModel(model) },
+      // A fresh DeepSeek npx adapter can install and unpack its runtime during session creation.
+      ...(config.backend === "deepseek" ? { readTimeout: 300_000 } : {})
+    })
   },
 
   async listNativeSessionLinks(config: ServerConfig, identity: NativeSessionIdentityPayload) {
