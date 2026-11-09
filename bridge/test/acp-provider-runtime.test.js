@@ -5,6 +5,7 @@ import path from "node:path"
 import test from "node:test"
 import { acpProviderEnvironment, createAcpProviderRuntime, resolveAcpProviderIDs, resolveAcpProviderLaunch } from "../src/acp-provider-runtime.js"
 import { defineAcpProvider } from "../src/acp-provider-kit.js"
+import { HARNESS_PROFILES } from "../src/harness-profiles.js"
 
 function provider(overrides = {}) {
   return defineAcpProvider({
@@ -234,6 +235,31 @@ test("npx ACP clients for one harness share a cache but never start an install a
   await Promise.all([runtime.agent.start(), runtime.modelCatalog.options.agent.start()])
   assert.equal(peak, 1, "npx launches must be serialized")
   assert.equal(active, 0)
+})
+
+test("npx cold starts and model discovery honor the provider startup budget", async () => {
+  assert.equal(HARNESS_PROFILES.deepseek.packageStartupTimeoutMs, 240_000)
+  assert.equal(HARNESS_PROFILES.opencode2.packageStartupTimeoutMs, undefined)
+  for (const command of ["npx", "C:\\Program Files\\nodejs\\npx.cmd"]) {
+    const starts = []
+    class FakeClient {
+      async start(timeoutMs) { starts.push(timeoutMs) }
+    }
+    class FakeCatalog {
+      constructor(options) { this.options = options; this.hiddenSessionIDs = new Set() }
+      async preloadState() {}
+    }
+    const runtime = await createAcpProviderRuntime({
+      provider: provider({ packageStartupTimeoutMs: 240_000 }),
+      launch: { command, args: ["example-acp"] },
+      config: { roots: [], stateDirectory: "/state" },
+      Client: FakeClient,
+      ModelCatalog: FakeCatalog
+    })
+    await runtime.agent.start()
+    assert.deepEqual(starts, [240_000], command)
+    assert.equal(runtime.modelCatalog.options.timeoutMs, 240_000, command)
+  }
 })
 
 test("npx startup repairs an incomplete entry in its daemon-owned cache and retries once", async () => {

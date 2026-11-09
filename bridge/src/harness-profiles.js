@@ -429,6 +429,9 @@ export const HARNESS_PROFILES = {
     args: ["--yes", "--package=@openma/deepseek-harness-acp@0.4.40", "dsh-acp"],
     adapterCommand: "dsh-acp",
     allowPackageFallback: true,
+    // On the first npx launch the adapter also unpacks its bundled runtime. Give that cold start
+    // time to finish before the ACP handshake is treated as failed.
+    packageStartupTimeoutMs: 240_000,
     permissionMode: "allow",
     historyLoader: createDeepseekHistoryLoader(),
     // The DSH journal is the authoritative transcript even when a `dsh web` process owns the

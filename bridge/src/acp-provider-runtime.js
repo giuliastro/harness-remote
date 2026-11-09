@@ -100,12 +100,12 @@ async function removeIncompleteNpxEntries(cache) {
   return removed
 }
 
-function serializeNpxStart(client, cache, repairCache) {
+function serializeNpxStart(client, cache, repairCache, startupTimeoutMs) {
   const start = client?.start
   if (typeof start !== "function") return client
   client.start = (...args) => serializeNpxLaunch(cache, async () => {
     try {
-      return await start.apply(client, args)
+      return await start.apply(client, args.length ? args : [startupTimeoutMs])
     } catch (error) {
       // Only the daemon-owned cache can be repaired automatically. An explicit npm cache may
       // belong to another program, and an unrelated adapter error must remain untouched.
@@ -113,7 +113,7 @@ function serializeNpxStart(client, cache, repairCache) {
       let repaired = false
       try { repaired = await removeIncompleteNpxEntries(cache) } catch { /* report original error */ }
       if (!repaired) throw error
-      return start.apply(client, args)
+      return start.apply(client, args.length ? args : [startupTimeoutMs])
     }
   })
   return client
@@ -149,7 +149,7 @@ export async function createAcpProviderRuntime({
   const ownedCache = path.join(config.stateDirectory, "npm-cache", provider.id)
   const serialized = NPX_COMMAND.test(launch.command)
     ? (client) => serializeNpxStart(client, environment.npm_config_cache,
-      path.resolve(environment.npm_config_cache) === path.resolve(ownedCache))
+      path.resolve(environment.npm_config_cache) === path.resolve(ownedCache), provider.packageStartupTimeoutMs)
     : (client) => client
   const clientOptions = {
     command: launch.command,
@@ -177,6 +177,9 @@ export async function createAcpProviderRuntime({
     command: launch.command,
     environment,
     releaseAfterRefresh: provider.sessionListScope === "project",
+    ...(NPX_COMMAND.test(launch.command) && provider.packageStartupTimeoutMs
+      ? { timeoutMs: provider.packageStartupTimeoutMs }
+      : {}),
     ...(provider.catalogSessionCleanup ? {
       cleanupSession: (session) => cleanupCatalogSession(provider.catalogSessionCleanup, session, provider.sessionListScope === "project", environment)
     } : {})
