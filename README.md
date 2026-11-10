@@ -246,7 +246,9 @@ npm run electron:dev
 ## Documentation
 
 - [Quick start](docs/QUICK_START.md)
-- [Architecture and roadmap](docs/HARNESS_3_ROADMAP.md)
+- [Roadmap](docs/ROADMAP_4.md)
+- [Architecture and product model](docs/HARNESS_3_ROADMAP.md)
+- [Release distribution](docs/RELEASE_DISTRIBUTION.md)
 - [Capability matrix](docs/V3_HARNESS_CAPABILITY_MATRIX.md)
 - [OpenCode reliability contract](docs/OPENCODE_RELIABILITY_CONTRACT.md)
 - [Plugins](docs/PLUGINS.md)
