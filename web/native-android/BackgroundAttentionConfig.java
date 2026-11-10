@@ -24,6 +24,8 @@ final class BackgroundAttentionConfig {
     static final String PREFS_NAME = "harness_remote_background_attention";
     static final String KEY_MACHINES = "machines";
     static final String KEY_BATTERY_PROMPTED = "battery_prompted";
+    static final String KEY_NOTIFICATION_PROMPTED = "notification_prompted";
+    static final String KEY_NOTIFICATION_PROMPT_PENDING = "notification_prompt_pending";
     static final int MAX_MACHINES = 6;
     static final int MAX_AGENTS_PER_MACHINE = 6;
 
@@ -134,6 +136,30 @@ final class BackgroundAttentionConfig {
         context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
             .edit()
             .putBoolean(KEY_BATTERY_PROMPTED, prompted)
+            .apply();
+    }
+
+    static boolean notificationPrompted(Context context) {
+        return context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .getBoolean(KEY_NOTIFICATION_PROMPTED, false);
+    }
+
+    static void setNotificationPrompted(Context context, boolean prompted) {
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .edit()
+            .putBoolean(KEY_NOTIFICATION_PROMPTED, prompted)
+            .apply();
+    }
+
+    static boolean notificationPromptPending(Context context) {
+        return context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .getBoolean(KEY_NOTIFICATION_PROMPT_PENDING, false);
+    }
+
+    static void setNotificationPromptPending(Context context, boolean pending) {
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .edit()
+            .putBoolean(KEY_NOTIFICATION_PROMPT_PENDING, pending)
             .apply();
     }
 

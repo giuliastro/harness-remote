@@ -9,6 +9,7 @@ import android.net.Uri;
 import android.os.Build;
 import android.os.PowerManager;
 import android.provider.Settings;
+import android.util.Log;
 
 import androidx.core.content.ContextCompat;
 
@@ -23,9 +24,14 @@ import java.util.List;
 
 @CapacitorPlugin(name = "BackgroundAttention")
 public class BackgroundAttentionPlugin extends Plugin {
+    private static final String TAG = "HarnessBackground";
     private static final int NOTIFICATION_PERMISSION_REQUEST = 7413;
+    // Returning from the QR scanner can recreate or resume the host activity. Request only after the
+    // resumed window has settled, otherwise Android can dismiss the system dialog with the transition.
+    private static final long PERMISSION_REQUEST_DELAY_MS = 500;
 
     private PluginCall pendingPermissionCall;
+    private boolean permissionRequestScheduled;
 
     @PluginMethod
     public void configure(PluginCall call) {
@@ -54,20 +60,27 @@ public class BackgroundAttentionPlugin extends Plugin {
     @PluginMethod
     public void start(PluginCall call) {
         boolean prompt = Boolean.TRUE.equals(call.getBoolean("prompt", false));
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && !notificationPermission()) {
-            if (!prompt || getActivity() == null) {
-                call.resolve(statusObject());
-                return;
-            }
-            pendingPermissionCall = call;
-            getActivity().requestPermissions(
-                new String[] { Manifest.permission.POST_NOTIFICATIONS },
-                NOTIFICATION_PERMISSION_REQUEST
-            );
+        if (notificationPermission()) {
+            // The user has already answered the system prompt (or is on an older Android). Never ask
+            // again for the lifetime of this install.
+            BackgroundAttentionConfig.setNotificationPrompted(getContext(), true);
+            BackgroundAttentionConfig.setNotificationPromptPending(getContext(), false);
+            maybePromptBatteryExemption(prompt);
+            startService(call);
             return;
         }
-        maybePromptBatteryExemption(prompt);
-        startService(call);
+        if (!prompt || getActivity() == null) {
+            call.resolve(statusObject());
+            return;
+        }
+        if (BackgroundAttentionConfig.notificationPrompted(getContext())) {
+            // The user denied once. Do not nag; a future settings surface can point at App info.
+            call.resolve(statusObject());
+            return;
+        }
+        pendingPermissionCall = call;
+        BackgroundAttentionConfig.setNotificationPromptPending(getContext(), true);
+        requestNotificationPermissionWhenResumed();
     }
 
     @PluginMethod
@@ -85,16 +98,29 @@ public class BackgroundAttentionPlugin extends Plugin {
     protected void handleRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
         super.handleRequestPermissionsResult(requestCode, permissions, grantResults);
         if (requestCode != NOTIFICATION_PERMISSION_REQUEST) return;
-        PluginCall call = pendingPermissionCall;
-        pendingPermissionCall = null;
-        if (call == null) return;
         boolean granted = grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED;
-        if (!granted) {
-            call.resolve(statusObject());
+        completeNotificationPrompt(granted);
+    }
+
+    @Override
+    protected void handleOnResume() {
+        super.handleOnResume();
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return;
+        Context context = getContext();
+        if (notificationPermission()) {
+            boolean wasPending = BackgroundAttentionConfig.notificationPromptPending(context);
+            BackgroundAttentionConfig.setNotificationPrompted(context, true);
+            BackgroundAttentionConfig.setNotificationPromptPending(context, false);
+            if (wasPending) startServiceWithoutCall();
             return;
         }
-        maybePromptBatteryExemption(true);
-        startService(call);
+        if (!BackgroundAttentionConfig.notificationPromptPending(context)) return;
+        if (BackgroundAttentionConfig.notificationPrompted(context)) {
+            // A previous denial is final for automatic prompts.
+            BackgroundAttentionConfig.setNotificationPromptPending(context, false);
+            return;
+        }
+        requestNotificationPermissionWhenResumed();
     }
 
     @Override
@@ -102,9 +128,61 @@ public class BackgroundAttentionPlugin extends Plugin {
         PluginCall call = pendingPermissionCall;
         pendingPermissionCall = null;
         if (call != null) call.resolve(statusObject());
+        // Keep the durable pending flag: a recreated activity may need to finish the same prompt.
     }
 
-    private void startService(PluginCall call) {        Context context = getContext();
+    private void requestNotificationPermissionWhenResumed() {
+        if (notificationPermission()) {
+            completeNotificationPrompt(true);
+            return;
+        }
+        Activity activity = getActivity();
+        if (activity == null || activity.isFinishing() || activity.isChangingConfigurations()) return;
+        if (!BackgroundAttentionConfig.notificationPromptPending(getContext())) return;
+        if (permissionRequestScheduled) return;
+        permissionRequestScheduled = true;
+        activity.runOnUiThread(() -> {
+            Activity current = getActivity();
+            if (current == null || current != activity || current.isFinishing()) {
+                permissionRequestScheduled = false;
+                return;
+            }
+            current.getWindow().getDecorView().postDelayed(() -> {
+                permissionRequestScheduled = false;
+                Activity ready = getActivity();
+                if (ready == null || ready != activity || ready.isFinishing() || ready.isChangingConfigurations()) return;
+                if (!BackgroundAttentionConfig.notificationPromptPending(getContext())) return;
+                if (notificationPermission()) {
+                    completeNotificationPrompt(true);
+                    return;
+                }
+                try {
+                    ready.requestPermissions(
+                        new String[] { Manifest.permission.POST_NOTIFICATIONS },
+                        NOTIFICATION_PERMISSION_REQUEST
+                    );
+                } catch (Exception error) {
+                    Log.w(TAG, "notification permission request could not be shown");
+                }
+            }, PERMISSION_REQUEST_DELAY_MS);
+        });
+    }
+
+    private void completeNotificationPrompt(boolean granted) {
+        Context context = getContext();
+        BackgroundAttentionConfig.setNotificationPrompted(context, true);
+        BackgroundAttentionConfig.setNotificationPromptPending(context, false);
+        PluginCall call = pendingPermissionCall;
+        pendingPermissionCall = null;
+        if (granted) {
+            maybePromptBatteryExemption(true);
+            startServiceWithoutCall();
+        }
+        if (call != null) call.resolve(statusObject());
+    }
+
+    private void startService(PluginCall call) {
+        Context context = getContext();
         Intent intent = new Intent(context, BackgroundAttentionService.class)
             .setAction(BackgroundAttentionService.ACTION_START);
         try {
@@ -113,6 +191,18 @@ public class BackgroundAttentionPlugin extends Plugin {
             call.resolve(statusObject());
         } catch (Exception error) {
             call.reject("The background connection could not start", error);
+        }
+    }
+
+    private void startServiceWithoutCall() {
+        Context context = getContext();
+        Intent intent = new Intent(context, BackgroundAttentionService.class)
+            .setAction(BackgroundAttentionService.ACTION_START);
+        try {
+            if (BackgroundAttentionStatus.running) context.startService(intent);
+            else ContextCompat.startForegroundService(context, intent);
+        } catch (Exception error) {
+            Log.w(TAG, "background service could not start after permission grant");
         }
     }
 
