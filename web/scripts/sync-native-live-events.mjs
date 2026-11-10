@@ -18,7 +18,11 @@ const javaFiles = [
   "BackgroundAttentionStatus.java",
   "BackgroundAttentionNotifications.java",
   "BackgroundAttentionUrls.java",
-  "ReconnectBackoff.java"
+  "ReconnectBackoff.java",
+  "AttentionDeepLink.java",
+  "AttentionEventParser.java",
+  "AttentionNotificationCenter.java",
+  "AttentionRequest.java"
 ]
 for (const file of javaFiles) {
   cpSync(resolve(source, file), resolve(target, file))
@@ -92,6 +96,23 @@ if (!manifestText.includes(pairingMarker)) {
                 <data android:scheme="harnessremote" android:host="pair" />
             </intent-filter>`
   manifestText = manifestText.replace(activityPattern, `$1$2${pairingFilter}\n        $3`)
+  changed = true
+}
+
+// Attention notifications reopen the exact native Session through the same singleTask activity.
+// The URI carries only machine, agent and Session identity; no transcript or prompt text.
+const attentionMarker = 'android:host="attention"'
+if (!manifestText.includes(attentionMarker)) {
+  const activityPattern = /(<activity\b[^>]*android:name="\.MainActivity"[^>]*>)([\s\S]*?)(<\/activity>)/
+  if (!activityPattern.test(manifestText)) throw new Error("MainActivity not found in Android manifest after Capacitor sync")
+  const attentionFilter = `
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="harnessremote" android:host="attention" />
+            </intent-filter>`
+  manifestText = manifestText.replace(activityPattern, `$1$2${attentionFilter}\n        $3`)
   changed = true
 }
 

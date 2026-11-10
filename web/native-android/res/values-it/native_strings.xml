@@ -11,4 +11,13 @@
         <item quantity="other">Connessione a %d macchine…</item>
     </plurals>
     <string name="hr_bg_no_machines">Nessuna macchina configurata</string>
+    <string name="hr_attention_channel_name">Attenzione</string>
+    <string name="hr_attention_channel_description">Permessi e domande che richiedono la tua attenzione</string>
+    <string name="hr_attention_permission_title">Autorizzazione richiesta</string>
+    <string name="hr_attention_question_title">Input richiesto</string>
+    <string name="hr_attention_permission_fallback">Permesso richiesto</string>
+    <string name="hr_attention_question_fallback">L\'agente di programmazione attende un tuo input.</string>
+    <string name="hr_attention_permission_consequence">La Session resta bloccata finché non autorizzi o rifiuti questa richiesta.</string>
+    <string name="hr_attention_question_consequence">La Session resta bloccata finché non rispondi a questa domanda.</string>
+    <string name="hr_attention_boundary">Ambito: %1$s</string>
 </resources>
