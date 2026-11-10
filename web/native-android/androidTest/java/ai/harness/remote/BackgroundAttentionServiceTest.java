@@ -153,8 +153,8 @@ public class BackgroundAttentionServiceTest {
         String permissionBody = notificationBody(permission);
         assertTrue(permissionBody.contains("bash"));
         assertTrue(permissionBody.contains("Needs to edit files"));
-        assertTrue(permissionBody.contains("Boundary: src/**"));
-        assertTrue(permissionBody.contains("The Session remains blocked"));
+        assertTrue(permissionBody.contains(context.getString(R.string.hr_attention_boundary, "src/**")));
+        assertTrue(permissionBody.contains(context.getString(R.string.hr_attention_permission_consequence)));
         assertTrue(permissionBody.contains("Test Machine · OpenCode"));
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             assertEquals(AttentionNotificationCenter.ATTENTION_CHANNEL_ID, permission.getChannelId());
@@ -171,7 +171,7 @@ public class BackgroundAttentionServiceTest {
         assertNotNull(question);
         String questionBody = notificationBody(question);
         assertTrue(questionBody.contains("Which branch?"));
-        assertTrue(questionBody.contains("The Session remains blocked"));
+        assertTrue(questionBody.contains(context.getString(R.string.hr_attention_question_consequence)));
         assertTrue(questionBody.contains("Test Machine · OpenCode"));
     }
 
@@ -187,17 +187,7 @@ public class BackgroundAttentionServiceTest {
         assertNotNull(notification);
         assertNotNull(notification.contentIntent);
 
-        AttentionRequest request = AttentionEventParser.parse(
-            FakeMachineServer.MACHINE_ID,
-            "Test Machine",
-            FakeMachineServer.AGENT_ID,
-            "OpenCode",
-            true,
-            true,
-            asked
-        );
-        assertNotNull(request);
-        IntentFilter filter = new IntentFilter(AttentionNotificationCenter.attentionAction(request.notificationKey()));
+        IntentFilter filter = new IntentFilter(Intent.ACTION_VIEW);
         filter.addCategory(Intent.CATEGORY_DEFAULT);
         filter.addDataScheme("harnessremote");
         filter.addDataAuthority("attention", null);

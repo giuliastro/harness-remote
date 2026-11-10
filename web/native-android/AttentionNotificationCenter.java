@@ -38,7 +38,7 @@ final class AttentionNotificationCenter {
         String key = request.notificationKey();
         if (active.containsKey(key)) return;
         int notificationID = notificationID(key);
-        Notification notification = buildNotification(request, notificationID, key);
+        Notification notification = buildNotification(request, notificationID);
         if (notification == null) return;
         try {
             manager.notify(notificationID, notification);
@@ -85,11 +85,13 @@ final class AttentionNotificationCenter {
         if (notificationID != null && manager != null) manager.cancel(notificationID);
     }
 
-    private Notification buildNotification(AttentionRequest request, int notificationID, String key) {
+    private Notification buildNotification(AttentionRequest request, int notificationID) {
         String deepLink = AttentionDeepLink.forRequest(request.machineID, request.agentID, request.sessionID);
         if (deepLink == null) return null;
         Intent intent = new Intent(context, MainActivity.class)
-            .setAction(attentionAction(key))
+            // Capacitor App only emits appUrlOpen for ACTION_VIEW. An explicit component still
+            // launches MainActivity, so this also works for a cold start.
+            .setAction(Intent.ACTION_VIEW)
             .setData(Uri.parse(deepLink))
             .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP);
         int pendingFlags = PendingIntent.FLAG_UPDATE_CURRENT;
@@ -168,9 +170,5 @@ final class AttentionNotificationCenter {
     static int notificationID(String key) {
         int value = key.hashCode() & 0x7fffffff;
         return value == 0 ? 1 : value;
-    }
-
-    static String attentionAction(String key) {
-        return "ai.harness.remote.ATTENTION." + Integer.toHexString(key.hashCode());
     }
 }
