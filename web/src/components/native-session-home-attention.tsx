@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ComponentProps } from "react"
 import { notifyDesktopAttention, subscribeDesktopAttentionActivation } from "../desktopBridge"
+import { subscribeAndroidAttentionActivation, type AndroidAttentionActivation } from "../native-session-attention-android"
 import { discoverAgentNativeSessionPage, nativeSessionSurfaceTarget, type NativeSessionSurfaceTarget } from "../native-session-discovery"
 import { loadNativeSessionAttentionIndex, type NativeSessionAttentionIndex, type NativeSessionAttentionIndexItem } from "../native-session-attention-index"
 import { startNativeSessionAttentionLiveRefresh, type NativeSessionAttentionLiveTarget } from "../native-session-attention-live"
@@ -175,6 +176,7 @@ export function NativeSessionHome(props: Props) {
     scopes: { ...EMPTY_NATIVE_SESSION_ATTENTION_NOTIFICATION_STATE.scopes }
   })
   const notificationContextRef = useRef<Map<string, NativeSessionAttentionNotificationContext>>(new Map())
+  const pendingActivationRef = useRef<AndroidAttentionActivation | null>(null)
 
   const attentionTargets = useMemo<AttentionTarget[]>(() => props.sources.flatMap(({ machine, snapshot, state }) => {
     if (!snapshot || state !== "online") return []
@@ -247,6 +249,33 @@ export function NativeSessionHome(props: Props) {
       setOpeningKey(null)
     }
   }, [openingKey, props.selectedKey, rememberAndOpen])
+
+  const activateAttention = useCallback((activation: AndroidAttentionActivation) => {
+    const target = [...targetsRef.current.values()].find((candidate) =>
+      candidate.machineID === activation.machineID && candidate.agent.id === activation.agentID
+    )
+    if (!target) {
+      // A cold Android launch can deliver the notification before machine discovery has settled.
+      // Keep the exact identity and retry when the matching capability-scoped target appears.
+      pendingActivationRef.current = activation
+      return
+    }
+    pendingActivationRef.current = null
+    void openAttentionSession(target, activation.sessionID)
+  }, [openAttentionSession])
+
+  useEffect(() => subscribeAndroidAttentionActivation(activateAttention), [activateAttention])
+
+  useEffect(() => {
+    const pending = pendingActivationRef.current
+    if (!pending) return
+    const target = attentionTargets.find((candidate) =>
+      candidate.machineID === pending.machineID && candidate.agent.id === pending.agentID
+    )
+    if (!target) return
+    pendingActivationRef.current = null
+    void openAttentionSession(target, pending.sessionID)
+  }, [attentionTargets, openAttentionSession])
 
   const notifyAttention = useCallback(async (
     notification: NativeSessionAttentionNotificationEvent,
