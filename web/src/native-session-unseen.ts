@@ -48,6 +48,27 @@ export function countVisibleFinishedKeys(
   return visible
 }
 
+/**
+ * The marks Attention does not already count. An unseen Ready result now belongs to the Attention
+ * bucket, so publishing it here too would count the same Session twice in the window title. Marks
+ * outside the current Attention scope stay, because the scoped Attention count cannot see them.
+ */
+export function unseenKeysOutsideAttention(
+  unseen: ReadonlySet<string>,
+  attention: ReadonlySet<string>
+): ReadonlySet<string> {
+  let overlaps = false
+  for (const key of unseen) {
+    if (!attention.has(key)) continue
+    overlaps = true
+    break
+  }
+  if (!overlaps) return unseen
+  const remaining = new Set<string>()
+  for (const key of unseen) if (!attention.has(key)) remaining.add(key)
+  return remaining
+}
+
 /** The marked Sessions once the user has clicked `key`. */
 export function withoutFinishedKey(finished: ReadonlySet<string>, key: string): ReadonlySet<string> {
   if (!finished.has(key)) return finished

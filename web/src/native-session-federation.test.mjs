@@ -49,6 +49,17 @@ test("live presentation wins over stale discovery state without inventing strong
   assert.equal(federatedSessionBucket({ type: "working" }, "stopped"), "failed")
 })
 
+test("an unopened Ready result joins Attention without overriding a stronger terminal state", () => {
+  assert.equal(federatedSessionBucket({ type: "working" }, "ready", true), "attention", "a finished turn stays actionable until it is opened")
+  assert.equal(federatedSessionBucket({ type: "idle" }, "ready", true), "attention")
+  assert.equal(federatedSessionBucket(undefined, undefined, true), "attention", "the rail's Ready edge is evidence even without a discovery status")
+  assert.equal(federatedSessionBucket({ type: "idle" }, "ready", false), "recent", "an already idle Session stays Recent, not Attention")
+  assert.equal(federatedSessionBucket({ type: "completed" }, undefined, true), "completed", "a native completed status keeps its own bucket")
+  assert.equal(federatedSessionBucket({ type: "failed" }, undefined, true), "failed", "a failure keeps its own bucket")
+  assert.equal(federatedSessionBucket({ type: "idle" }, "working", true), "active", "a new turn is Active, not Attention")
+  assert.equal(federatedSessionBucket({ type: "idle" }, "attention", true), "attention")
+})
+
 test("project identity remains machine-scoped and uses already-known project metadata", () => {
   assert.deepEqual(federatedProjectIdentity({
     machineID: "machine-a",
@@ -88,6 +99,18 @@ test("federated projection extends search to machine, Project, harness and model
     assert.equal(matchesFederatedSessionQuery(projection, query), true, query)
   }
   assert.equal(matchesFederatedSessionQuery(projection, "claude"), false)
+})
+
+test("federated projection carries the unopened Ready mark into Attention", () => {
+  const identity = {
+    machineID: "machine-a",
+    machineName: "Studio PC",
+    agentID: "codex",
+    agentLabel: "Codex",
+    session: session({ status: { type: "idle" } })
+  }
+  assert.equal(projectFederatedSession(identity, "ready", false).bucket, "recent")
+  assert.equal(projectFederatedSession(identity, "ready", true).bucket, "attention")
 })
 
 test("operational state labels cover every supported language", () => {
