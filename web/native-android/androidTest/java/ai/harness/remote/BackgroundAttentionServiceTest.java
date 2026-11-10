@@ -10,6 +10,7 @@ import android.os.Build;
 import android.os.ParcelFileDescriptor;
 import android.os.PowerManager;
 import android.service.notification.StatusBarNotification;
+import android.webkit.WebStorage;
 
 import androidx.core.content.ContextCompat;
 import androidx.test.ext.junit.runners.AndroidJUnit4;
@@ -39,6 +40,9 @@ public class BackgroundAttentionServiceTest {
     @Before
     public void setUp() throws Exception {
         context = InstrumentationRegistry.getInstrumentation().getTargetContext();
+        // A previous run may have left a WebView machine list behind. The Doze test starts from a
+        // clean shell so its one-time empty handoff is deterministic, as it is on a fresh install.
+        InstrumentationRegistry.getInstrumentation().runOnMainSync(() -> WebStorage.getInstance().deleteAllData());
         grantNotificationPermission();
         server = new FakeMachineServer();
         server.start();
