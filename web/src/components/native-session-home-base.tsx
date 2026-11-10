@@ -22,7 +22,7 @@ import {
 } from "../native-session-federation-labels"
 import type { MachineAgentHost, MachineSnapshot } from "../types"
 import { nativeSessionDisplayTitle } from "../native-session-title"
-import { countVisibleFinishedKeys, nextFinishedKeys, withoutFinishedKey, type SessionRailState } from "../native-session-unseen"
+import { countVisibleFinishedKeys, nextFinishedKeys, unseenKeysOutsideAttention, withoutFinishedKey, type SessionRailState } from "../native-session-unseen"
 import { useLanguage, useTranslator } from "../useTranslator"
 import type { Translator } from "../i18n"
 import type { WorkspaceMachine } from "../workspaceMachines"
@@ -125,7 +125,8 @@ type Props = {
   lifecycleRevision?: number
   /** The rail already counts Sessions needing input; the mobile nav needs that count outside it. */
   onAttentionCountChange?: (count: number) => void
-  /** Finished Sessions the user has not opened since, for the window title. */
+  /** Finished Sessions the user has not opened since, excluding those Attention already counts,
+   * for the window title. */
   onUnseenReadyCountChange?: (count: number) => void
   /** Structured pending permission/question identities from the global attention index. */
   attentionSessionKeys?: ReadonlySet<string>
@@ -869,7 +870,7 @@ export function NativeSessionHome({
     session: item.record.session,
     projectName: item.project?.name,
     projectPath: item.project?.path
-  }, liveStateForItem(item)), [liveStateForItem])
+  }, liveStateForItem(item), unseenKeys.has(recordKey(item))), [liveStateForItem, unseenKeys])
 
   // Compact skin: Sessions whose title matches a hide pattern (helper agents, reviewers, bots) leave
   // the list, its counters and Recent unless the user asks to see them.
@@ -882,15 +883,6 @@ export function NativeSessionHome({
     [hiddenKeys, records, showHidden]
   )
   const hiddenCount = hiddenKeys.size
-  // Hidden Sessions keep their unseen mark in `unseenKeys` for when they are shown again; only
-  // the published count (window title / global counter) excludes them while they are hidden.
-  const visibleUnseenCount = useMemo(
-    () => countVisibleFinishedKeys(unseenKeys, hiddenKeys, showHidden),
-    [hiddenKeys, showHidden, unseenKeys]
-  )
-  useEffect(() => {
-    onUnseenReadyCountChange?.(visibleUnseenCount)
-  }, [onUnseenReadyCountChange, visibleUnseenCount])
 
   const groups = useMemo(() => projectGroups(shownRecords), [shownRecords])
 
@@ -1053,6 +1045,16 @@ export function NativeSessionHome({
       .map(recordKey)
   ), [projectionForItem, scopedRecords])
   const attentionCount = attentionKeys.size
+  // Hidden Sessions keep their unseen mark in `unseenKeys` for when they are shown again; only
+  // the published count (window title / global counter) excludes them while they are hidden. An
+  // unseen finish already in Attention is not published here too, or the title would count it twice.
+  const visibleUnseenOnlyCount = useMemo(
+    () => countVisibleFinishedKeys(unseenKeysOutsideAttention(unseenKeys, attentionKeys), hiddenKeys, showHidden),
+    [attentionKeys, hiddenKeys, showHidden, unseenKeys]
+  )
+  useEffect(() => {
+    onUnseenReadyCountChange?.(visibleUnseenOnlyCount)
+  }, [onUnseenReadyCountChange, visibleUnseenOnlyCount])
   const operationalFilter: FederatedOperationalBucket | "" =
     filter === "failed" || filter === "completed" || filter === "recent" ? filter : ""
   const showOperationalFilter = bucketCounts.failed + bucketCounts.completed + bucketCounts.recent > 0 || Boolean(operationalFilter)

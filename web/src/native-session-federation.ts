@@ -80,24 +80,32 @@ function normalizedStatus(status?: SessionStatus): string {
  * wins over stale discovery metadata because it reflects what the currently observed native
  * Session is doing now. Unknown states deliberately remain Recent rather than being guessed into a
  * stronger operational meaning.
+ *
+ * An unseen Ready result still needs the user's eyes: the rail observed the Session go from
+ * Working to Ready and the user has not opened it since. It therefore belongs to Attention for
+ * filtering and counts, while its row keeps the Ready presentation. A stronger native terminal
+ * state (Completed/Failed) is not reclassified, and a new turn or input request already has its
+ * own bucket.
  */
 export function federatedSessionBucket(
   status?: SessionStatus,
-  liveState?: FederatedSessionPresentationState
+  liveState?: FederatedSessionPresentationState,
+  unseenReady = false
 ): FederatedSessionBucket {
   if (liveState === "working") return "active"
   if (liveState === "attention") return "attention"
   if (liveState === "stopped") return "failed"
   // Ready is a live observation that the Session is no longer working. It is intentionally Recent
   // rather than Completed because the detail presentation alone cannot prove native completion.
-  if (liveState === "ready") return "recent"
+  // Until the result is opened it stays in Attention, because its new output still needs a look.
+  if (liveState === "ready") return unseenReady ? "attention" : "recent"
 
   const type = normalizedStatus(status)
   if (FAILED_STATUS.has(type)) return "failed"
   if (ATTENTION_STATUS.has(type)) return "attention"
   if (COMPLETED_STATUS.has(type)) return "completed"
   if (ACTIVE_STATUS.has(type)) return "active"
-  return "recent"
+  return unseenReady ? "attention" : "recent"
 }
 
 export function federatedProjectIdentity({
@@ -143,7 +151,8 @@ function searchValue(value: string | undefined): string {
  */
 export function projectFederatedSession(
   identity: FederatedSessionIdentity,
-  liveState?: FederatedSessionPresentationState
+  liveState?: FederatedSessionPresentationState,
+  unseenReady = false
 ): FederatedSessionProjection {
   const project = federatedProjectIdentity(identity)
   const model = federatedModelIdentity(identity.session.model)
@@ -162,7 +171,7 @@ export function projectFederatedSession(
 
   return {
     ...identity,
-    bucket: federatedSessionBucket(identity.session.status, liveState),
+    bucket: federatedSessionBucket(identity.session.status, liveState, unseenReady),
     projectKey: project.key,
     projectLabel: project.label,
     modelKey: model.key,

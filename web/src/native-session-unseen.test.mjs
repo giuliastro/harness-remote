@@ -1,6 +1,6 @@
 import assert from "node:assert/strict"
 import test from "node:test"
-import { countVisibleFinishedKeys, nextFinishedKeys, withoutFinishedKey } from "./native-session-unseen.ts"
+import { countVisibleFinishedKeys, nextFinishedKeys, unseenKeysOutsideAttention, withoutFinishedKey } from "./native-session-unseen.ts"
 
 const states = (entries) => new Map(Object.entries(entries))
 const none = new Set()
@@ -48,4 +48,13 @@ test("a hidden finished Session does not count until it is shown again", () => {
 test("clicking a Session that is not marked changes nothing", () => {
   const finished = new Set(["a"])
   assert.equal(withoutFinishedKey(finished, "b"), finished)
+})
+
+test("an unseen finish already counted as Attention is not published twice", () => {
+  const finished = new Set(["a", "b", "c"])
+  const attention = new Set(["b"])
+  assert.deepEqual([...unseenKeysOutsideAttention(finished, attention)], ["a", "c"])
+  // Marks outside the current Attention scope stay, because that scoped count cannot see them.
+  assert.deepEqual([...unseenKeysOutsideAttention(finished, new Set(["outside"]))], ["a", "b", "c"])
+  assert.equal(unseenKeysOutsideAttention(finished, new Set()), finished)
 })
