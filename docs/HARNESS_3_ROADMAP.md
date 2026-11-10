@@ -2,6 +2,8 @@
 
 This document describes the durable product model, engineering boundaries and execution priorities for Harness Remote as they ship on `main`.
 
+> **Superseded for planning (2026-11-10):** the P0–P3 gates below are complete. Current priorities are in [ROADMAP_4.md](ROADMAP_4.md), which also amends §14–§15. The product thesis, architecture boundary and reliability rules here still apply.
+
 > **Status (2026-09-06):** Harness Remote 3.x is the canonical product line and `main` is the only baseline for new work. The latest published release is `v3.0.1`; `v3.0.0` remains the immutable initial Session-first release point. The former `checkpoint/v3-session-first-working-2026-08-25` and archive branches are historical/recovery references, not feature-development baselines.
 >
 > The old post-release list is superseded. Repository branch hygiene (#290) is complete. Current work is organized by explicit execution gates: **P0 reliability/startup (#368), P1 remote-first UX (#369), P2 Native Session Federation (#371), and P3 ACP/provider expansion (#372)**. Cross-machine handoff (#347), architecture simplification (#330), CI hardening (#366/#367) and startup correctness (#356) feed those gates.
