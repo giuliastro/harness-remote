@@ -8,6 +8,7 @@ const CHECKPOINTS_ROUTE = /^\/v1\/work-threads\/([^/]+)\/checkpoints$/
 const RESTORE_ROUTE = /^\/v1\/work-threads\/([^/]+)\/checkpoints\/([^/]+)\/restore$/
 
 async function readJSONBody(request) {
+  request.setEncoding("utf8")
   let body = ""
   for await (const chunk of request) {
     body += chunk

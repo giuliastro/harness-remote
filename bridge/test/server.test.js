@@ -1,6 +1,7 @@
 import assert from "node:assert/strict"
 import { EventEmitter } from "node:events"
 import { mkdir, mkdtemp, realpath, rm, writeFile } from "node:fs/promises"
+import http from "node:http"
 import { tmpdir } from "node:os"
 import path from "node:path"
 import test from "node:test"
@@ -2458,5 +2459,33 @@ test("lightweight Session index preserves non-paginated behavior across ACP back
     } finally {
       await bridge.close()
     }
+  }
+})
+
+test("a prompt body split inside a multibyte character reaches the agent intact", async () => {
+  const acp = new HeldTurnOmpAcp()
+  const bridge = await startServer({ acp })
+  const text = "日本語のプロンプト ✅"
+  const body = Buffer.from(JSON.stringify({ parts: [{ type: "text", text }] }))
+  const split = body.indexOf(Buffer.from("本")) + 1
+  try {
+    const started = acp.turnStarted()
+    const { port } = new URL(bridge.baseURL)
+    const status = await new Promise((resolve, reject) => {
+      const request = http.request({ host: "127.0.0.1", port, method: "POST", path: "/session/session-1/prompt_async", headers: { ...jsonHeaders(), "content-length": body.length } }, (response) => {
+        response.resume()
+        resolve(response.statusCode)
+      })
+      request.on("error", reject)
+      request.write(body.subarray(0, split))
+      setTimeout(() => request.end(body.subarray(split)), 50)
+    })
+    assert.equal(status, 200)
+    await started
+    assert.deepEqual(acp.prompts, [text])
+    acp.releaseTurn()
+    await waitForIdle(bridge.baseURL, "session-1")
+  } finally {
+    await bridge.close()
   }
 })
