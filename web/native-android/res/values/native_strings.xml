@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="hr_bg_channel_name">Background connection</string>
+    <string name="hr_bg_channel_description">Keeps Harness Remote connected to your paired machines without Google push.</string>
+    <plurals name="hr_bg_connected_machines">
+        <item quantity="one">%d machine connected</item>
+        <item quantity="other">%d machines connected</item>
+    </plurals>
+    <plurals name="hr_bg_connecting_machines">
+        <item quantity="one">Connecting to %d machine…</item>
+        <item quantity="other">Connecting to %d machines…</item>
+    </plurals>
+    <string name="hr_bg_no_machines">No machines configured</string>
+</resources>

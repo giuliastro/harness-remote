@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="hr_bg_channel_name">背景連線</string>
+    <string name="hr_bg_channel_description">讓 Harness Remote 不需 Google 推播也能保持與已配對機器的連線。</string>
+    <plurals name="hr_bg_connected_machines">
+        <item quantity="other">已連線 %d 台機器</item>
+    </plurals>
+    <plurals name="hr_bg_connecting_machines">
+        <item quantity="other">正在連線 %d 台機器…</item>
+    </plurals>
+    <string name="hr_bg_no_machines">尚未設定機器</string>
+</resources>

@@ -3,6 +3,7 @@ import ReactDOM from "react-dom/client"
 import { Capacitor } from "@capacitor/core"
 import type { DesktopLocalRuntimeState } from "../electron/ipc-contract"
 import { installAppPreferences } from "./appPreferences"
+import { syncBackgroundAttention } from "./background-attention"
 import { installCompletionAudioGuard } from "./completion-audio"
 import { StandaloneUniversalWorkspace } from "./components/standalone-universal-workspace"
 import {
@@ -106,6 +107,14 @@ function HarnessRemoteBoundary() {
   const [pairingSuccessRevision, setPairingSuccessRevision] = useState(0)
   const [pairingSuccessMachineName, setPairingSuccessMachineName] = useState<string | null>(null)
 
+  // The native foreground service is the only component that keeps paired-machine streams alive
+  // after Android backgrounds the WebView. A launch resumes an already granted service; only a
+  // user-driven pairing asks for the notification and battery permissions.
+  useEffect(() => {
+    if (!machinesReady) return
+    void syncBackgroundAttention(persistedMachines).catch(() => undefined)
+  }, [machinesReady, revision])
+
   // Success needs no action, so it clears itself. Errors carry what to fix and stay until dismissed;
   // "connecting" is replaced by the outcome.
   useEffect(() => {
@@ -200,6 +209,7 @@ function HarnessRemoteBoundary() {
       const nextMachines = upsertPairedMachine(machinesRef.current, paired)
       machinesRef.current = nextMachines
       persistMachines(nextMachines)
+      void syncBackgroundAttention(nextMachines, { prompt: true }).catch(() => undefined)
       setPairingSuccessMachineName(paired.name)
       setPairingSuccessRevision((value) => value + 1)
       setPairingNotice({ kind: "success", text: t("sf.pairingConnected", { name: paired.name }) })

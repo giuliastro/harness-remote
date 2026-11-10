@@ -169,7 +169,7 @@ test("a pairing grant status parses pending, claimed and expired answers", () =>
   assert.equal(parseMachinePairingGrantStatus({ version: 1, expiresAt, claimed: "yes", expired: false }), null)
 })
 
-test("Android packaging exposes deep-link and in-app QR pairing without CAMERA or notification permission", () => {
+test("Android packaging exposes deep-link and in-app QR pairing without CAMERA and keeps notification permission out of the scanner", () => {
   const sync = readFileSync(new URL("../scripts/sync-native-live-events.mjs", import.meta.url), "utf8")
   const main = readFileSync(new URL("./main.tsx", import.meta.url), "utf8")
   const workspace = readFileSync(new URL("./components/standalone-universal-workspace.tsx", import.meta.url), "utf8")
@@ -180,7 +180,11 @@ test("Android packaging exposes deep-link and in-app QR pairing without CAMERA o
   assert.match(sync, /play-services-code-scanner:16\.1\.0/)
   assert.match(sync, /barcode_ui/)
   assert.doesNotMatch(sync, /android\.permission\.CAMERA/)
-  assert.doesNotMatch(sync, /POST_NOTIFICATIONS/)
+  // Notification permission belongs to the background Attention service, not to pairing. The QR
+  // scanner must keep working on a device where the user declined or never saw that prompt.
+  assert.match(sync, /android\.permission\.POST_NOTIFICATIONS/)
+  assert.match(sync, /foregroundServiceType="remoteMessaging"/)
+  assert.doesNotMatch(scanner, /POST_NOTIFICATIONS|requestPermissions/)
   assert.match(activity, /registerPlugin\(PairingScannerPlugin\.class\)/)
   assert.match(scanner, /Barcode\.FORMAT_QR_CODE/)
   assert.match(scanner, /enableAutoZoom\(\)/)
