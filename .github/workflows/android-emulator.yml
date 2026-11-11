@@ -56,9 +56,15 @@ jobs:
 
       - name: Add Capacitor Android platform
         run: |
-          if [ ! -d android ]; then
-            npx cap add android
-          fi
+          # The generated android/ directory is ignored, so a clean runner should not have it. If a
+          # previous step left a partial directory, recreate it instead of accepting a tree without
+          # the Gradle wrapper.
+          rm -rf android
+          npx cap add android
+        working-directory: web
+
+      - name: Make Gradle wrapper executable
+        run: chmod +x android/gradlew
         working-directory: web
 
       - name: Generate Android app icon assets
