@@ -39,7 +39,9 @@ final class SessionOutcomeParser {
             } else {
                 return null;
             }
-        } else if ("session.error".equals(type) && "opencode".equals(backend)) {
+        } else if ("session.error".equals(type)) {
+            // Every harness can end a turn with a session error. Restricting this to OpenCode made
+            // DeepSeek/ACP “cannot reach …” failures completely silent on the phone.
             kind = SessionOutcomeEvent.Kind.FAILED;
             errorMessage = errorMessage(properties);
         } else {
