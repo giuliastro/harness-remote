@@ -399,8 +399,11 @@ public final class BackgroundAttentionService extends Service {
         final BackgroundAttentionConfig.Machine machine;
         final AtomicBoolean stopped = new AtomicBoolean(false);
         final Map<String, AgentStream> streams = new HashMap<>();
+        final Map<String, String> observedStatuses = new HashMap<>();
         final Object pauseLock = new Object();
         volatile Thread worker;
+        volatile Thread statusWorker;
+        volatile List<AgentInfo> activeAgents = new ArrayList<>();
         volatile boolean snapshotReachable;
         volatile int capableAgents;
         volatile boolean everConnected;
@@ -417,6 +420,9 @@ public final class BackgroundAttentionService extends Service {
             worker = new Thread(this::run, "hr-machine-" + safeLabel(machine.id));
             worker.setDaemon(true);
             worker.start();
+            statusWorker = new Thread(this::watchStatuses, "hr-status-" + safeLabel(machine.id));
+            statusWorker.setDaemon(true);
+            statusWorker.start();
         }
 
         void stop() {
@@ -427,6 +433,8 @@ public final class BackgroundAttentionService extends Service {
             }
             Thread active = worker;
             if (active != null) active.interrupt();
+            Thread status = statusWorker;
+            if (status != null) status.interrupt();
             BackgroundAttentionStatus.setMachineConnected(machine.id, false);
         }
 
@@ -448,18 +456,98 @@ public final class BackgroundAttentionService extends Service {
                     List<AgentInfo> agents = loadAgents();
                     snapshotReachable = true;
                     capableAgents = agents.size();
+                    activeAgents = agents;
                     reconcile(agents);
                     backoff.reset();
                     BackgroundAttentionStatus.setLastError(null);
                 } catch (Exception error) {
                     snapshotReachable = false;
                     capableAgents = 0;
+                    activeAgents = new ArrayList<>();
                     stopAllStreams();
                     updateConnected();
                     BackgroundAttentionStatus.setLastError(machine.name + ": " + describe(error));
                 }
                 pause(snapshotReachable ? SNAPSHOT_REFRESH_MS : backoff.next());
             }
+        }
+
+        /**
+         * Real ACP/DeepSeek streams only send message.updated/session.updated, and the WebView can
+         * hold the single global stream while the app is backgrounded. Poll the authoritative
+         * Session list so busy -> idle/error is observed regardless of which client owns the stream.
+         */
+        private void watchStatuses() {
+            while (!stopped.get() && !MachineRuntime.this.stopped.get()) {
+                List<AgentInfo> agents = activeAgents;
+                ExecutorService pool = executor;
+                for (AgentInfo agent : agents) {
+                    if (stopped.get() || MachineRuntime.this.stopped.get()) return;
+                    // Poll agents concurrently: sequential session-list reads can take longer than a
+                    // short turn and starve the last agent (DeepSeek is last in the daemon list).
+                    if (pool != null) pool.submit(() -> pollAgentStatus(agent));
+                }
+                try {
+                    Thread.sleep(4_000);
+                } catch (InterruptedException interrupted) {
+                    Thread.currentThread().interrupt();
+                    return;
+                }
+            }
+        }
+
+        private void pollAgentStatus(AgentInfo agent) {
+            SessionOutcomeCenter center = sessionOutcomes;
+            if (center == null) return;
+            HttpURLConnection poll = null;
+            try {
+                poll = openJson(machine.baseUrl + "/v1/agents/" + encode(agent.id) + "/session");
+                if (poll.getResponseCode() != HttpURLConnection.HTTP_OK) return;
+                JSONArray sessions = new JSONArray(readBody(poll.getInputStream(), 4_000_000));
+                for (int index = 0; index < sessions.length(); index++) {
+                    JSONObject session = sessions.optJSONObject(index);
+                    if (session == null) continue;
+                    String sessionID = cleanIdentifier(session.optString("id", ""));
+                    if (sessionID == null) continue;
+                    String status = session.optString("status", "").trim().toLowerCase(Locale.US);
+                    if (status.isEmpty()) continue;
+                    String key = agent.id + "\u0000" + sessionID;
+                    String previous;
+                    synchronized (observedStatuses) { previous = observedStatuses.put(key, status); }
+                    if (isWorkingStatus(status) && !isWorkingStatus(previous)) {
+                        // Reset the outcome dedupe for this new turn; without this the first visible
+                        // idle marks READY forever and later background completions are suppressed.
+                        center.onEvent(new SessionOutcomeEvent(
+                            SessionOutcomeEvent.Kind.WORKING,
+                            nativeMachineID, nativeMachineName, agent.id, agent.label, sessionID, null
+                        ));
+                        continue;
+                    }
+                    if (previous == null) continue;
+                    if (isWorkingStatus(previous) && "idle".equals(status)) {
+                        center.onEvent(new SessionOutcomeEvent(
+                            SessionOutcomeEvent.Kind.IDLE,
+                            nativeMachineID, nativeMachineName, agent.id, agent.label, sessionID, null
+                        ));
+                    } else if (("error".equals(status) || "failed".equals(status))
+                        && !"error".equals(previous) && !"failed".equals(previous)) {
+                        center.onEvent(new SessionOutcomeEvent(
+                            SessionOutcomeEvent.Kind.FAILED,
+                            nativeMachineID, nativeMachineName, agent.id, agent.label, sessionID,
+                            "The Session stopped with an error."
+                        ));
+                    }
+                }
+            } catch (Exception ignored) {
+                // A asleep/reconnecting machine is retried on the next poll.
+            } finally {
+                if (poll != null) poll.disconnect();
+            }
+        }
+
+        private static boolean isWorkingStatus(String status) {
+            return "busy".equals(status) || "starting".equals(status)
+                || "retry".equals(status) || "working".equals(status);
         }
 
         private List<AgentInfo> loadAgents() throws Exception {
@@ -478,6 +566,20 @@ public final class BackgroundAttentionService extends Service {
                     if (!nativeName.isEmpty()) nativeMachineName = nativeName;
                 }
                 JSONArray agents = snapshot.optJSONArray("agents");
+                if (agents == null) {
+                    // The desktop daemon returns only {machine} from /v1/machine; agent capabilities
+                    // live on /v1/agents. Without this fallback capableAgents was zero, so no stream
+                    // ever subscribed and no real Session could produce a notification.
+                    HttpURLConnection agentsConnection = null;
+                    try {
+                        agentsConnection = openJson(machine.baseUrl + "/v1/agents");
+                        if (agentsConnection.getResponseCode() == HttpURLConnection.HTTP_OK) {
+                            agents = new JSONArray(readBody(agentsConnection.getInputStream(), 1_000_000));
+                        }
+                    } finally {
+                        if (agentsConnection != null) agentsConnection.disconnect();
+                    }
+                }
                 List<AgentInfo> capable = new ArrayList<>();
                 if (agents == null) return capable;
                 for (int index = 0; index < agents.length() && capable.size() < BackgroundAttentionConfig.MAX_AGENTS_PER_MACHINE; index++) {
@@ -738,6 +840,11 @@ public final class BackgroundAttentionService extends Service {
                     return;
                 }
                 if (sessionID == null) return;
+                Log.i(TAG, "outcome poll schedule " + agent.id + " " + sessionID);
+                scheduleOutcomePoll(sessionID, 1_500);
+            }
+
+            private void scheduleOutcomePoll(String sessionID, long delayMs) {
                 synchronized (pendingOutcomePolls) {
                     if (!pendingOutcomePolls.add(sessionID)) return;
                 }
@@ -746,7 +853,7 @@ public final class BackgroundAttentionService extends Service {
                     synchronized (pendingOutcomePolls) { pendingOutcomePolls.remove(sessionID); }
                     return;
                 }
-                handler.postDelayed(() -> pollOutcome(sessionID), 1_500);
+                handler.postDelayed(() -> pollOutcome(sessionID), delayMs);
             }
 
             private void pollOutcome(String sessionID) {
@@ -757,12 +864,20 @@ public final class BackgroundAttentionService extends Service {
                     poll = openJson(machine.baseUrl + "/v1/agents/" + encode(agent.id) + "/session");
                     if (poll.getResponseCode() != HttpURLConnection.HTTP_OK) return;
                     JSONArray sessions = new JSONArray(readBody(poll.getInputStream(), 4_000_000));
+                    Log.i(TAG, "outcome poll result " + sessions.length());
                     for (int index = 0; index < sessions.length(); index++) {
                         JSONObject session = sessions.optJSONObject(index);
                         if (session == null || !sessionID.equals(session.optString("id", ""))) continue;
                         String status = session.optString("status", "").trim().toLowerCase(Locale.US);
+                        Log.i(TAG, "outcome poll status " + sessionID + " " + status);
                         SessionOutcomeCenter center = sessionOutcomes;
                         if (center == null) return;
+                        if ("busy".equals(status) || "starting".equals(status) || "retry".equals(status)) {
+                            // The final message.updated can arrive before the turn flips to idle;
+                            // there is no later idle frame on ACP, so keep polling until terminal.
+                            scheduleOutcomePoll(sessionID, 2_000);
+                            return;
+                        }
                         if ("idle".equals(status)) {
                             center.onEvent(new SessionOutcomeEvent(
                                 SessionOutcomeEvent.Kind.IDLE,

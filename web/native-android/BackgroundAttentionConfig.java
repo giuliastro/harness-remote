@@ -27,7 +27,7 @@ final class BackgroundAttentionConfig {
     static final String KEY_NOTIFICATION_PROMPTED = "notification_prompted";
     static final String KEY_NOTIFICATION_PROMPT_PENDING = "notification_prompt_pending";
     static final int MAX_MACHINES = 6;
-    static final int MAX_AGENTS_PER_MACHINE = 6;
+    static final int MAX_AGENTS_PER_MACHINE = 12;
 
     private static final int MAX_ID = 256;
     private static final int MAX_NAME = 256;
