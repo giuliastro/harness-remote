@@ -1,6 +1,7 @@
 import assert from "node:assert/strict"
 import {
   backgroundAttentionMachines,
+  restoreBackgroundAttentionNotification,
   selectedNativeSessionFromKey,
   syncBackgroundAttention,
   syncVisibleNativeSession
@@ -110,6 +111,27 @@ const status = {
   const result = await syncBackgroundAttention([machine("one")], { platform: "web", plugin })
   assert.equal(result, null)
   assert.equal(called, false, "web and desktop must not touch the Android service")
+}
+
+{
+  const calls = []
+  const plugin = {
+    async restoreNotification() {
+      calls.push("restore")
+      return status
+    }
+  }
+  const result = await restoreBackgroundAttentionNotification({ platform: "android", plugin })
+  assert.deepEqual(result, status)
+  assert.deepEqual(calls, ["restore"], "the explicit recovery path must ask the native service to re-post")
+}
+
+{
+  let called = false
+  const plugin = { async restoreNotification() { called = true; return status } }
+  const result = await restoreBackgroundAttentionNotification({ platform: "web", plugin })
+  assert.equal(result, null)
+  assert.equal(called, false, "web and desktop never call the Android notification recovery bridge")
 }
 
 {

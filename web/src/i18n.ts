@@ -612,6 +612,11 @@ export type TranslationKey =
   | 'act.verb.todo.done'
   | 'act.verb.todo.live'
   | 'settings.activityTitle'
+  | 'settings.backgroundTitle'
+  | 'settings.backgroundShow'
+  | 'settings.backgroundHint'
+  | 'settings.backgroundRestored'
+  | 'settings.backgroundUnavailable'
   | 'settings.activityHint'
   | 'settings.activityLive'
   | 'settings.activityLive.latest'
@@ -1391,6 +1396,11 @@ const translations: Record<LanguageCode, Partial<Record<TranslationKey, string>>
     'act.verb.todo.done': 'Updated the plan',
     'act.verb.todo.live': 'Updating the plan',
     'settings.activityTitle': 'Conversation activity',
+    'settings.backgroundTitle': 'Background connection',
+    'settings.backgroundShow': 'Show connection notification',
+    'settings.backgroundHint': 'Restore the persistent notification if you hid it.',
+    'settings.backgroundRestored': 'Notification restored',
+    'settings.backgroundUnavailable': 'Notification unavailable. Check notification permission.',
     'settings.activityHint': 'What the agent does between your message and its answer: its updates, its reasoning and the tools it runs. Changes apply to open conversations immediately.',
     'settings.activityLive': 'While the agent works',
     'settings.activityLive.latest': 'Show its latest update',
@@ -2170,6 +2180,11 @@ const translations: Record<LanguageCode, Partial<Record<TranslationKey, string>>
     'act.verb.todo.done': 'Piano aggiornato',
     'act.verb.todo.live': 'Aggiornamento del piano',
     'settings.activityTitle': 'Attività nelle conversazioni',
+    'settings.backgroundTitle': 'Connessione in background',
+    'settings.backgroundShow': 'Mostra la notifica di connessione',
+    'settings.backgroundHint': 'Ripristina la notifica persistente se l’hai nascosta.',
+    'settings.backgroundRestored': 'Notifica ripristinata',
+    'settings.backgroundUnavailable': 'Notifica non disponibile. Controlla il permesso notifiche.',
     'settings.activityHint': "Ciò che l'agente fa tra il tuo messaggio e la risposta: i suoi aggiornamenti, il ragionamento e gli strumenti che usa. Le modifiche valgono subito anche per le conversazioni aperte.",
     'settings.activityLive': "Mentre l'agente lavora",
     'settings.activityLive.latest': "Mostra l'ultimo aggiornamento",
@@ -2949,6 +2964,11 @@ const translations: Record<LanguageCode, Partial<Record<TranslationKey, string>>
     'act.verb.todo.done': '更新計畫',
     'act.verb.todo.live': '正在更新計畫',
     'settings.activityTitle': '對話活動',
+    'settings.backgroundTitle': '背景連線',
+    'settings.backgroundShow': '顯示連線通知',
+    'settings.backgroundHint': '如果你隱藏了常駐通知，請在此恢復。',
+    'settings.backgroundRestored': '通知已恢復',
+    'settings.backgroundUnavailable': '通知不可用。請檢查通知權限。',
     'settings.activityHint': '代理在你的訊息與它的回覆之間所做的事：進度訊息、推理與執行的工具。變更會立即套用到已開啟的對話。',
     'settings.activityLive': '代理工作時',
     'settings.activityLive.latest': '顯示最新進度',
@@ -3728,6 +3748,11 @@ const translations: Record<LanguageCode, Partial<Record<TranslationKey, string>>
     'act.verb.todo.done': '更新计划',
     'act.verb.todo.live': '正在更新计划',
     'settings.activityTitle': '对话活动',
+    'settings.backgroundTitle': '后台连接',
+    'settings.backgroundShow': '显示连接通知',
+    'settings.backgroundHint': '如果你隐藏了常驻通知，请在此恢复。',
+    'settings.backgroundRestored': '通知已恢复',
+    'settings.backgroundUnavailable': '通知不可用。请检查通知权限。',
     'settings.activityHint': '代理在你的消息与它的回复之间所做的事：进度消息、推理与运行的工具。更改会立即应用到已打开的对话。',
     'settings.activityLive': '代理工作时',
     'settings.activityLive.latest': '显示最新进度',
@@ -4507,6 +4532,11 @@ const translations: Record<LanguageCode, Partial<Record<TranslationKey, string>>
     'act.verb.todo.done': 'Atualizou o plano',
     'act.verb.todo.live': 'Atualizando o plano',
     'settings.activityTitle': 'Atividade da conversa',
+    'settings.backgroundTitle': 'Conexão em segundo plano',
+    'settings.backgroundShow': 'Mostrar notificação de conexão',
+    'settings.backgroundHint': 'Restaure a notificação persistente se você a ocultou.',
+    'settings.backgroundRestored': 'Notificação restaurada',
+    'settings.backgroundUnavailable': 'Notificação indisponível. Verifique a permissão de notificações.',
     'settings.activityHint': 'O que o agente faz entre a sua mensagem e a resposta dele: atualizações, raciocínio e ferramentas que executa. As alterações valem imediatamente para as conversas abertas.',
     'settings.activityLive': 'Enquanto o agente trabalha',
     'settings.activityLive.latest': 'Mostrar a atualização mais recente',

@@ -51,6 +51,7 @@ public final class BackgroundAttentionService extends Service {
     static final String ACTION_START = "ai.harness.remote.action.START_BACKGROUND_ATTENTION";
     static final String ACTION_CONFIGURE = "ai.harness.remote.action.CONFIGURE_BACKGROUND_ATTENTION";
     static final String ACTION_STOP = "ai.harness.remote.action.STOP_BACKGROUND_ATTENTION";
+    static final String ACTION_SHOW_NOTIFICATION = "ai.harness.remote.action.SHOW_BACKGROUND_ATTENTION_NOTIFICATION";
     static final String ACTION_VISIBILITY = "ai.harness.remote.action.VISIBLE_ATTENTION_SESSION";
     static final String ACTION_PERMISSION_REPLY = "ai.harness.remote.action.PERMISSION_REPLY";
     static final String EXTRA_MACHINES = "machines";
@@ -111,6 +112,17 @@ public final class BackgroundAttentionService extends Service {
         if (ACTION_STOP.equals(action)) {
             stopSelf();
             return START_NOT_STICKY;
+        }
+        if (ACTION_SHOW_NOTIFICATION.equals(action)) {
+            // HyperOS can hide the ongoing notification while the service stays alive. Re-post it
+            // explicitly instead of waiting for a connection-count change to update it.
+            if (BackgroundAttentionStatus.running) {
+                startInForeground(
+                    BackgroundAttentionStatus.connectedMachines(),
+                    BackgroundAttentionStatus.configuredMachines
+                );
+            }
+            return START_STICKY;
         }
         if (ACTION_VISIBILITY.equals(action)) {
             if (sessionOutcomes != null) {

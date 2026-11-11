@@ -1,0 +1,110 @@
+/* Phone composer: the footer is a real second row, not an overlay.
+   The old absolute footer reserved only the Send button's width, so the Ready pill, the paperclip
+   and the effort control painted over the draft text. Keeping the controls in flow also gives the
+   textarea the full width and lets a narrow phone wrap the optional controls instead of clipping
+   them. Desktop keeps the compact overlay treatment. */
+@media (max-width: 780px) {
+  :root[data-skin] .hr-control-plane .tdw-work-thread-conversation .uw-composer-footer,
+  :root[data-skin] .hr-native-session-observer .uw-composer-footer {
+    position: static !important;
+    right: auto !important;
+    bottom: auto !important;
+    width: 100% !important;
+    max-width: none !important;
+    min-height: 0 !important;
+    height: auto !important;
+    display: flex !important;
+    flex-wrap: wrap !important;
+    align-items: center !important;
+    justify-content: flex-start !important;
+    gap: 6px !important;
+    padding: 4px 8px max(6px, env(safe-area-inset-bottom)) 8px !important;
+    border: 0 !important;
+    background: transparent !important;
+    pointer-events: auto !important;
+  }
+
+  :root[data-skin] .hr-control-plane .tdw-work-thread-conversation .uw-composer-footer > span,
+  :root[data-skin] .hr-native-session-observer .uw-composer-footer > span,
+  :root[data-skin] .hr-control-plane .tdw-work-thread-conversation .uw-composer-footer small,
+  :root[data-skin] .hr-native-session-observer .uw-composer-footer small {
+    display: none !important;
+  }
+
+  :root[data-skin] .hr-control-plane .tdw-work-thread-conversation .uw-composer-footer > div,
+  :root[data-skin] .hr-native-session-observer .uw-composer-footer > div {
+    width: 100% !important;
+    min-width: 0 !important;
+    display: flex !important;
+    flex-wrap: wrap !important;
+    align-items: center !important;
+    justify-content: flex-end !important;
+    gap: 6px !important;
+    pointer-events: auto !important;
+  }
+
+  :root[data-skin] .hr-control-plane .tdw-work-thread-conversation .uw-composer-shell textarea,
+  :root[data-skin] .hr-native-session-observer .uw-composer-shell textarea {
+    min-height: 54px !important;
+    max-height: min(132px, 26dvh) !important;
+    padding: 10px 12px 8px !important;
+    resize: none !important;
+    font-size: 16px !important;
+    line-height: 1.45 !important;
+  }
+
+  :root[data-skin] .hr-control-plane .tdw-work-thread-conversation .tdw-composer-status,
+  :root[data-skin] .hr-native-session-observer .tdw-composer-status {
+    order: -2;
+    display: inline-flex !important;
+    align-items: center;
+    min-width: 0;
+    max-width: 46%;
+    margin-right: auto;
+  }
+
+  :root[data-skin] .hr-control-plane .tdw-work-thread-conversation .tdw-composer-status .tdw-conversation-state,
+  :root[data-skin] .hr-native-session-observer .tdw-composer-status .tdw-conversation-state {
+    display: inline-flex !important;
+    min-width: 0;
+    max-width: 100% !important;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  :root[data-skin] .hr-control-plane .tdw-work-thread-conversation .tdw-effort-anchor,
+  :root[data-skin] .hr-native-session-observer .tdw-effort-anchor {
+    min-width: 0 !important;
+    max-width: 55% !important;
+    margin-left: 0 !important;
+  }
+
+  :root[data-skin] .hr-control-plane .tdw-work-thread-conversation .uw-composer-footer .uw-button,
+  :root[data-skin] .hr-native-session-observer .uw-composer-footer .uw-button {
+    width: 36px !important;
+    min-width: 36px !important;
+    height: 36px !important;
+    min-height: 36px !important;
+    border-radius: 10px !important;
+  }
+
+  :root[data-skin] .hr-control-plane .tdw-work-thread-conversation .uw-composer-footer .uw-button-primary,
+  :root[data-skin] .hr-control-plane .tdw-work-thread-conversation .uw-composer-footer .uw-button-danger,
+  :root[data-skin] .hr-native-session-observer .uw-composer-footer .uw-button-primary,
+  :root[data-skin] .hr-native-session-observer .uw-composer-footer .uw-button-danger {
+    margin-left: auto;
+  }
+}
+
+@media (max-width: 360px) {
+  :root[data-skin] .hr-control-plane .tdw-work-thread-conversation .tdw-composer-status,
+  :root[data-skin] .hr-native-session-observer .tdw-composer-status {
+    max-width: 40%;
+  }
+
+  :root[data-skin] .hr-control-plane .tdw-work-thread-conversation .tdw-effort-anchor,
+  :root[data-skin] .hr-native-session-observer .tdw-effort-anchor {
+    max-width: 48%;
+  }
+}
