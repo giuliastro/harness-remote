@@ -1,4 +1,4 @@
-import { app, BrowserWindow, clipboard, dialog, Menu, Notification, nativeImage, powerSaveBlocker, screen, session, shell, ipcMain, type IpcMainInvokeEvent } from "electron"
+import { app, BrowserWindow, clipboard, dialog, Menu, Notification, nativeImage, powerSaveBlocker, screen, session, shell, Tray, ipcMain, type IpcMainInvokeEvent } from "electron"
 import { readFileSync, writeFileSync } from "node:fs"
 import { homedir } from "node:os"
 import { dirname, join } from "node:path"
@@ -6,6 +6,7 @@ import { fileURLToPath, pathToFileURL } from "node:url"
 import { desktopTranslator, networkPairingDialogs, projectFolderDialogs } from "./desktop-locale.js"
 import { executeConfigurationProbe } from "./configuration-probe.js"
 import { buildApplicationMenu } from "./app-menu.js"
+import { buildTrayMenu, shouldHideWindowOnClose } from "./desktop-tray.js"
 import { buildContextMenu } from "./context-menu.js"
 import { EmbeddedDaemonRuntime, EMBEDDED_DAEMON_HOST, EMBEDDED_DAEMON_LAN_HOST, EMBEDDED_DAEMON_PROFILE_ID, embeddedDaemonEntry, type EmbeddedDaemonExit } from "./embedded-daemon.js"
 import { ActiveTurnSleepBlocker, readActiveAcpTurns } from "./active-turn-sleep-blocker.js"
@@ -57,6 +58,7 @@ function restoredBounds(state: SavedWindowState) {
 }
 
 let mainWindow: BrowserWindow | undefined
+let tray: Tray | undefined
 let registry: ProfileRegistry
 let projectRoots: ProjectRootsStore
 let networkSettings: NetworkSettingsStore
@@ -283,9 +285,13 @@ function createWindow(): BrowserWindow {
   window.on("move", scheduleWindowStateSave)
   window.on("maximize", scheduleWindowStateSave)
   window.on("unmaximize", scheduleWindowStateSave)
-  window.on("close", () => {
+  window.on("close", (event) => {
     saveWindowState()
     cancelWindowStateSave()
+    if (shouldHideWindowOnClose(quitting, tray !== undefined)) {
+      event.preventDefault()
+      window.hide()
+    }
   })
   window.on("focus", () => {
     // Guarded rather than left to fail quietly: setOverlayIcon is absent on macOS and Linux, not
@@ -344,6 +350,39 @@ function createWindow(): BrowserWindow {
   })
   void window.loadFile(rendererEntry).catch((error: unknown) => log(`renderer load rejected: ${error instanceof Error ? error.message : "unknown error"}`))
   return window
+}
+
+function showMainWindow(): void {
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    mainWindow = createWindow()
+    return
+  }
+  if (mainWindow.isMinimized()) mainWindow.restore()
+  if (!mainWindow.isVisible()) mainWindow.show()
+  mainWindow.focus()
+}
+
+function createTray(): void {
+  try {
+    const image = nativeImage.createFromPath(join(app.getAppPath(), "dist/app-icon.png"))
+    if (image.isEmpty()) {
+      log("tray icon is unavailable")
+      return
+    }
+    const icon = image.resize({ width: isMac ? 18 : 16, height: isMac ? 18 : 16 })
+    if (isMac) icon.setTemplateImage(true)
+    const t = desktopTranslator(app.getLocale())
+    tray = new Tray(icon)
+    tray.setToolTip(t("tray.tooltip"))
+    tray.setContextMenu(Menu.buildFromTemplate(buildTrayMenu(
+      { open: t("tray.open"), quit: t("tray.quit"), tooltip: t("tray.tooltip") },
+      { open: showMainWindow, quit: () => app.quit() }
+    )))
+    tray.on("click", showMainWindow)
+  } catch (error) {
+    tray = undefined
+    log(`tray could not be created: ${error instanceof Error ? error.message : "unknown error"}`)
+  }
 }
 
 function installIPC(): void {
@@ -553,6 +592,7 @@ async function start(): Promise<void> {
   if (!isDevelopment && !isMac) Menu.setApplicationMenu(null)
   session.defaultSession.setPermissionRequestHandler((_webContents, _permission, callback) => callback(false))
   mainWindow = createWindow()
+  createTray()
   if (app.isPackaged) {
     void latestUpdate().then((update) => {
       if (update.status !== "available" || !Notification.isSupported()) return
@@ -583,8 +623,9 @@ app.on("before-quit", (event) => {
 // Closing the last window ends the app everywhere except macOS, where an app with no windows is
 // still running and is expected to reopen one from the dock — which is what "activate" below does.
 app.on("window-all-closed", () => {
-  if (!isMac) app.quit()
+  if (isMac || quitting) return
+  if (!tray) app.quit()
 })
 app.on("activate", () => {
-  if (!mainWindow) mainWindow = createWindow()
+  showMainWindow()
 })
