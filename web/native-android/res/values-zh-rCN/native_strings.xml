@@ -9,4 +9,13 @@
         <item quantity="other">正在连接 %d 台机器…</item>
     </plurals>
     <string name="hr_bg_no_machines">未配置机器</string>
+    <string name="hr_attention_channel_name">需要处理</string>
+    <string name="hr_attention_channel_description">需要你处理的权限和问题</string>
+    <string name="hr_attention_permission_title">需要授权</string>
+    <string name="hr_attention_question_title">需要输入</string>
+    <string name="hr_attention_permission_fallback">有权限请求</string>
+    <string name="hr_attention_question_fallback">编程代理正在等待你的输入。</string>
+    <string name="hr_attention_permission_consequence">在你允许或拒绝此请求之前，Session 会保持阻塞。</string>
+    <string name="hr_attention_question_consequence">在你回答此问题之前，Session 会保持阻塞。</string>
+    <string name="hr_attention_boundary">范围：%1$s</string>
 </resources>

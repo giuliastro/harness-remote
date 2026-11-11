@@ -11,6 +11,9 @@ import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.TimeUnit;
 
 /** Minimal authenticated-machine stand-in: one snapshot and one streaming agent endpoint. */
 final class FakeMachineServer implements AutoCloseable {
@@ -24,6 +27,7 @@ final class FakeMachineServer implements AutoCloseable {
     private final ServerSocket server;
     private final Thread acceptThread;
     private final List<Socket> clients = Collections.synchronizedList(new ArrayList<>());
+    private final BlockingQueue<String> events = new LinkedBlockingQueue<>();
     private volatile boolean closed;
     volatile int streamConnections;
 
@@ -39,6 +43,10 @@ final class FakeMachineServer implements AutoCloseable {
 
     String baseUrl() {
         return "http://127.0.0.1:" + server.getLocalPort();
+    }
+
+    void sendEvent(String data) {
+        events.add(data);
     }
 
     void dropStreams() {
@@ -97,8 +105,9 @@ final class FakeMachineServer implements AutoCloseable {
                     + "Transfer-Encoding: chunked\r\nConnection: close\r\n\r\n").getBytes(StandardCharsets.UTF_8));
                 writeChunk(output, ": connected\n\n");
                 while (!closed && !socket.isClosed()) {
-                    Thread.sleep(250);
-                    writeChunk(output, ": ping\n\n");
+                    String event = events.poll(250, TimeUnit.MILLISECONDS);
+                    if (event != null) writeChunk(output, "data: " + event + "\n\n");
+                    else writeChunk(output, ": ping\n\n");
                 }
             }
         } catch (Exception ignored) {

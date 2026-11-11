@@ -1,11 +1,14 @@
 package ai.harness.remote;
 
 import android.app.Activity;
+import android.app.Instrumentation.ActivityMonitor;
 import android.app.Notification;
 import android.app.NotificationManager;
 import android.app.UiAutomation;
 import android.content.Context;
 import android.content.Intent;
+import android.content.IntentFilter;
+import android.net.Uri;
 import android.os.Build;
 import android.os.ParcelFileDescriptor;
 import android.os.PowerManager;
@@ -134,6 +137,133 @@ public class BackgroundAttentionServiceTest {
         assertEquals(1, parsed.size());
         assertEquals("m1", parsed.get(0).id);
         assertNull(BackgroundAttentionConfig.parse("not json"));
+    }
+
+    @Test
+    public void notifiesPermissionAndQuestionOnceWithExactContext() throws Exception {
+        startService();
+        waitFor("machine connected", () -> BackgroundAttentionStatus.isMachineConnected(FakeMachineServer.MACHINE_ID), 15_000);
+
+        server.sendEvent(permissionAsked("perm-1"));
+        String permissionTitle = context.getString(R.string.hr_attention_permission_title);
+        waitFor("permission notification", () -> attentionNotification(permissionTitle) != null, 5_000);
+        Notification permission = attentionNotification(permissionTitle);
+        assertNotNull(permission);
+        assertNotNull("the notification must carry an exact Session PendingIntent", permission.contentIntent);
+        String permissionBody = notificationBody(permission);
+        assertTrue(permissionBody.contains("bash"));
+        assertTrue(permissionBody.contains("Needs to edit files"));
+        assertTrue(permissionBody.contains(context.getString(R.string.hr_attention_boundary, "src/**")));
+        assertTrue(permissionBody.contains(context.getString(R.string.hr_attention_permission_consequence)));
+        assertTrue(permissionBody.contains("Test Machine · OpenCode"));
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            assertEquals(AttentionNotificationCenter.ATTENTION_CHANNEL_ID, permission.getChannelId());
+        }
+
+        server.sendEvent(permissionAsked("perm-1"));
+        Thread.sleep(750);
+        assertEquals("a repeated frame must not duplicate the request", 1, attentionNotificationCount(permissionTitle));
+
+        server.sendEvent(questionAsked("q-1"));
+        String questionTitle = context.getString(R.string.hr_attention_question_title);
+        waitFor("question notification", () -> attentionNotification(questionTitle) != null, 5_000);
+        Notification question = attentionNotification(questionTitle);
+        assertNotNull(question);
+        String questionBody = notificationBody(question);
+        assertTrue(questionBody.contains("Which branch?"));
+        assertTrue(questionBody.contains(context.getString(R.string.hr_attention_question_consequence)));
+        assertTrue(questionBody.contains("Test Machine · OpenCode"));
+    }
+
+    @Test
+    public void notificationOpensTheExactAttentionDeepLink() throws Exception {
+        startService();
+        waitFor("machine connected", () -> BackgroundAttentionStatus.isMachineConnected(FakeMachineServer.MACHINE_ID), 15_000);
+        String permissionTitle = context.getString(R.string.hr_attention_permission_title);
+        String asked = permissionAsked("perm-link");
+        server.sendEvent(asked);
+        waitFor("permission notification", () -> attentionNotification(permissionTitle) != null, 5_000);
+        Notification notification = attentionNotification(permissionTitle);
+        assertNotNull(notification);
+        assertNotNull(notification.contentIntent);
+
+        IntentFilter filter = new IntentFilter(Intent.ACTION_VIEW);
+        filter.addCategory(Intent.CATEGORY_DEFAULT);
+        filter.addDataScheme("harnessremote");
+        filter.addDataAuthority("attention", null);
+        ActivityMonitor monitor = InstrumentationRegistry.getInstrumentation().addMonitor(filter, null, false);
+        try {
+            notification.contentIntent.send();
+            Activity activity = monitor.waitForActivityWithTimeout(5_000);
+            assertNotNull("the notification must open MainActivity", activity);
+            Uri data = activity.getIntent().getData();
+            assertNotNull(data);
+            assertEquals("harnessremote", data.getScheme());
+            assertEquals("attention", data.getHost());
+            assertEquals(FakeMachineServer.MACHINE_ID, data.getQueryParameter("machineID"));
+            assertEquals(FakeMachineServer.AGENT_ID, data.getQueryParameter("agentID"));
+            assertEquals("session-1", data.getQueryParameter("sessionID"));
+            InstrumentationRegistry.getInstrumentation().runOnMainSync(activity::finish);
+        } finally {
+            InstrumentationRegistry.getInstrumentation().removeMonitor(monitor);
+        }
+    }
+
+    @Test
+    public void cancelsPermissionNotificationWhenTheHarnessResolvesIt() throws Exception {
+        startService();
+        waitFor("machine connected", () -> BackgroundAttentionStatus.isMachineConnected(FakeMachineServer.MACHINE_ID), 15_000);
+        String permissionTitle = context.getString(R.string.hr_attention_permission_title);
+        server.sendEvent(permissionAsked("perm-2"));
+        waitFor("permission notification", () -> attentionNotification(permissionTitle) != null, 5_000);
+
+        server.sendEvent(permissionReplied("perm-2"));
+        waitFor("permission notification cleared", () -> attentionNotificationCount(permissionTitle) == 0, 5_000);
+    }
+
+    private static String permissionAsked(String id) {
+        return "{\"directory\":\"/tmp\",\"payload\":{\"type\":\"permission.asked\",\"properties\":{"
+            + "\"sessionID\":\"session-1\",\"id\":\"" + id + "\",\"permission\":\"bash\","
+            + "\"patterns\":[\"src/**\"],\"metadata\":{\"reason\":\"Needs to edit files\"}}}}";
+    }
+
+    private static String questionAsked(String id) {
+        return "{\"directory\":\"/tmp\",\"payload\":{\"type\":\"question.asked\",\"properties\":{"
+            + "\"sessionID\":\"session-1\",\"id\":\"" + id + "\","
+            + "\"questions\":[{\"question\":\"Which branch?\",\"header\":\"Branch\"}]}}}";
+    }
+
+    private static String permissionReplied(String id) {
+        return "{\"directory\":\"/tmp\",\"payload\":{\"type\":\"permission.replied\",\"properties\":{"
+            + "\"sessionID\":\"session-1\",\"id\":\"" + id + "\"}}}";
+    }
+
+    private Notification attentionNotification(String title) {
+        NotificationManager manager = (NotificationManager) context.getSystemService(Context.NOTIFICATION_SERVICE);
+        if (manager == null) return null;
+        for (StatusBarNotification status : manager.getActiveNotifications()) {
+            Notification notification = status.getNotification();
+            CharSequence actual = notification.extras.getCharSequence(Notification.EXTRA_TITLE);
+            if (actual != null && title.contentEquals(actual)) return notification;
+        }
+        return null;
+    }
+
+    private int attentionNotificationCount(String title) {
+        NotificationManager manager = (NotificationManager) context.getSystemService(Context.NOTIFICATION_SERVICE);
+        if (manager == null) return 0;
+        int count = 0;
+        for (StatusBarNotification status : manager.getActiveNotifications()) {
+            CharSequence actual = status.getNotification().extras.getCharSequence(Notification.EXTRA_TITLE);
+            if (actual != null && title.contentEquals(actual)) count += 1;
+        }
+        return count;
+    }
+
+    private static String notificationBody(Notification notification) {
+        CharSequence big = notification.extras.getCharSequence(Notification.EXTRA_BIG_TEXT);
+        CharSequence text = big != null ? big : notification.extras.getCharSequence(Notification.EXTRA_TEXT);
+        return text == null ? "" : text.toString();
     }
 
     private void startService() {

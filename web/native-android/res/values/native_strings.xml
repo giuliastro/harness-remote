@@ -11,4 +11,13 @@
         <item quantity="other">Connecting to %d machines…</item>
     </plurals>
     <string name="hr_bg_no_machines">No machines configured</string>
+    <string name="hr_attention_channel_name">Attention</string>
+    <string name="hr_attention_channel_description">Permissions and questions that need your attention</string>
+    <string name="hr_attention_permission_title">Authorization required</string>
+    <string name="hr_attention_question_title">Input required</string>
+    <string name="hr_attention_permission_fallback">Permission requested</string>
+    <string name="hr_attention_question_fallback">The coding agent is waiting for your input.</string>
+    <string name="hr_attention_permission_consequence">The Session remains blocked until you allow or deny this request.</string>
+    <string name="hr_attention_question_consequence">The Session remains blocked until you answer this question.</string>
+    <string name="hr_attention_boundary">Boundary: %1$s</string>
 </resources>

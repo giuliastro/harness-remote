@@ -63,6 +63,7 @@ public final class BackgroundAttentionService extends Service {
     private ExecutorService executor;
     private Handler mainHandler;
     private ConnectivityManager.NetworkCallback networkCallback;
+    private AttentionNotificationCenter attentionNotifications;
     private volatile boolean shuttingDown;
     private int lastNotificationConnected = -1;
     private int lastNotificationConfigured = -1;
@@ -76,6 +77,7 @@ public final class BackgroundAttentionService extends Service {
         BackgroundAttentionStatus.reset();
         BackgroundAttentionStatus.running = true;
         BackgroundAttentionNotifications.ensureChannels(this);
+        attentionNotifications = new AttentionNotificationCenter(this);
         int configured = BackgroundAttentionConfig.load(this).size();
         startInForeground(0, configured);
         executor = Executors.newCachedThreadPool(runnable -> {
@@ -254,6 +256,7 @@ public final class BackgroundAttentionService extends Service {
         stopForeground(STOP_FOREGROUND_REMOVE);
         NotificationManager manager = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
         if (manager != null) manager.cancel(BackgroundAttentionNotifications.SERVICE_NOTIFICATION_ID);
+        if (attentionNotifications != null) attentionNotifications.cancelAll();
         BackgroundAttentionStatus.clearConnections();
     }
 
@@ -265,9 +268,13 @@ public final class BackgroundAttentionService extends Service {
         volatile Thread worker;
         volatile boolean snapshotReachable;
         volatile int capableAgents;
+        volatile String nativeMachineID;
+        volatile String nativeMachineName;
 
         MachineRuntime(BackgroundAttentionConfig.Machine machine) {
             this.machine = machine;
+            this.nativeMachineID = machine.id;
+            this.nativeMachineName = machine.name;
         }
 
         void start() {
@@ -327,6 +334,13 @@ public final class BackgroundAttentionService extends Service {
                 if (status != HttpURLConnection.HTTP_OK) throw new IOException("HTTP " + status);
                 String body = readBody(connection.getInputStream(), 1_000_000);
                 JSONObject snapshot = new JSONObject(body);
+                JSONObject machineInfo = snapshot.optJSONObject("machine");
+                if (machineInfo != null) {
+                    String nativeID = cleanIdentifier(machineInfo.optString("id", ""));
+                    if (!nativeID.isEmpty()) nativeMachineID = nativeID;
+                    String nativeName = cleanDisplay(machineInfo.optString("name", ""));
+                    if (!nativeName.isEmpty()) nativeMachineName = nativeName;
+                }
                 JSONArray agents = snapshot.optJSONArray("agents");
                 List<AgentInfo> capable = new ArrayList<>();
                 if (agents == null) return capable;
@@ -343,7 +357,12 @@ public final class BackgroundAttentionService extends Service {
                         || capabilities.optBoolean("permissions", false);
                     if (!attention) continue;
                     String label = agent.optString("label", id).trim();
-                    capable.add(new AgentInfo(id, label.isEmpty() ? id : label));
+                    capable.add(new AgentInfo(
+                        id,
+                        label.isEmpty() ? id : label,
+                        capabilities.optBoolean("questions", false),
+                        capabilities.optBoolean("permissions", false)
+                    ));
                 }
                 return capable;
             } finally {
@@ -475,11 +494,28 @@ public final class BackgroundAttentionService extends Service {
                         try (BufferedReader reader = new BufferedReader(
                             new InputStreamReader(current.getInputStream(), StandardCharsets.UTF_8)
                         )) {
+                            StringBuilder frame = new StringBuilder();
                             String line;
                             while (!stopped.get()
                                 && !MachineRuntime.this.stopped.get()
                                 && (line = reader.readLine()) != null) {
                                 BackgroundAttentionStatus.noteFrame(machine.id);
+                                if (line.isEmpty()) {
+                                    if (frame.length() > 0) {
+                                        dispatchFrame(frame.toString());
+                                        frame.setLength(0);
+                                    }
+                                    continue;
+                                }
+                                if (line.startsWith("data:")) {
+                                    if (frame.length() > 0) frame.append('\n');
+                                    String value = line.substring(5);
+                                    frame.append(value.startsWith(" ") ? value.substring(1) : value);
+                                    if (frame.length() > 1_000_000) frame.setLength(0);
+                                }
+                            }
+                            if (frame.length() > 0 && !stopped.get() && !MachineRuntime.this.stopped.get()) {
+                                dispatchFrame(frame.toString());
                             }
                         }
                         if (!stopped.get() && !MachineRuntime.this.stopped.get()) {
@@ -503,6 +539,24 @@ public final class BackgroundAttentionService extends Service {
                     }
                     pause(backoff.next());
                 }
+            }
+
+            private void dispatchFrame(String data) {
+                if (data == null || data.isEmpty()) return;
+                AttentionNotificationCenter center = attentionNotifications;
+                if (center == null) return;
+                AttentionRequest request = AttentionEventParser.parse(
+                    nativeMachineID,
+                    nativeMachineName,
+                    agent.id,
+                    agent.label,
+                    agent.questions,
+                    agent.permissions,
+                    data
+                );
+                if (request == null) return;
+                if (request.transition == AttentionRequest.Transition.ASKED) center.show(request);
+                else center.resolve(request);
             }
 
             private HttpURLConnection openEventStream() throws IOException {
@@ -541,10 +595,14 @@ public final class BackgroundAttentionService extends Service {
     private static final class AgentInfo {
         final String id;
         final String label;
+        final boolean questions;
+        final boolean permissions;
 
-        AgentInfo(String id, String label) {
+        AgentInfo(String id, String label, boolean questions, boolean permissions) {
             this.id = id;
             this.label = label;
+            this.questions = questions;
+            this.permissions = permissions;
         }
     }
 
@@ -562,6 +620,16 @@ public final class BackgroundAttentionService extends Service {
     }
 
     private static String cleanIdentifier(String value) {
+        String normalized = value == null ? "" : value.trim();
+        if (normalized.isEmpty() || normalized.length() > 256) return "";
+        for (int index = 0; index < normalized.length(); index++) {
+            char character = normalized.charAt(index);
+            if (character < 0x20 || character == 0x7f) return "";
+        }
+        return normalized;
+    }
+
+    private static String cleanDisplay(String value) {
         String normalized = value == null ? "" : value.trim();
         if (normalized.isEmpty() || normalized.length() > 256) return "";
         for (int index = 0; index < normalized.length(); index++) {
