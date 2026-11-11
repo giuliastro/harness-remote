@@ -11,6 +11,7 @@
         <item quantity="other">Connecting to %d machines…</item>
     </plurals>
     <string name="hr_bg_no_machines">No machines configured</string>
+    <string name="hr_bg_stop">Stop</string>
     <string name="hr_attention_channel_name">Attention</string>
     <string name="hr_attention_channel_description">Permissions and questions that need your attention</string>
     <string name="hr_attention_permission_title">Authorization required</string>

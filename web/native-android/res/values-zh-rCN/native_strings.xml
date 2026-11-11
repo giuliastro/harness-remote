@@ -9,6 +9,7 @@
         <item quantity="other">正在连接 %d 台机器…</item>
     </plurals>
     <string name="hr_bg_no_machines">未配置机器</string>
+    <string name="hr_bg_stop">停止</string>
     <string name="hr_attention_channel_name">需要处理</string>
     <string name="hr_attention_channel_description">需要你处理的权限和问题</string>
     <string name="hr_attention_permission_title">需要授权</string>

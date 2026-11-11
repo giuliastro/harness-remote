@@ -266,6 +266,32 @@ public class BackgroundAttentionServiceTest {
         return text == null ? "" : text.toString();
     }
 
+    @Test
+    public void stopsTheForegroundServiceFromItsNotificationAction() throws Exception {
+        startService();
+        waitFor("foreground notification", () -> serviceNotification() != null, 5_000);
+        Notification notification = serviceNotification();
+        assertNotNull(notification);
+        assertNotNull(notification.actions);
+        assertEquals(1, notification.actions.length);
+        assertEquals(context.getString(R.string.hr_bg_stop), String.valueOf(notification.actions[0].title));
+
+        notification.actions[0].actionIntent.send();
+        waitFor("service stopped", () -> !BackgroundAttentionStatus.running, 5_000);
+        waitFor("foreground notification removed", () -> serviceNotification() == null, 5_000);
+    }
+
+    private Notification serviceNotification() {
+        NotificationManager manager = (NotificationManager) context.getSystemService(Context.NOTIFICATION_SERVICE);
+        if (manager == null) return null;
+        for (StatusBarNotification status : manager.getActiveNotifications()) {
+            if (status.getId() == BackgroundAttentionNotifications.SERVICE_NOTIFICATION_ID) {
+                return status.getNotification();
+            }
+        }
+        return null;
+    }
+
     private void startService() {
         ContextCompat.startForegroundService(
             context,

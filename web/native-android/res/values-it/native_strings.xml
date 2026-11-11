@@ -11,6 +11,7 @@
         <item quantity="other">Connessione a %d macchine…</item>
     </plurals>
     <string name="hr_bg_no_machines">Nessuna macchina configurata</string>
+    <string name="hr_bg_stop">Ferma</string>
     <string name="hr_attention_channel_name">Attenzione</string>
     <string name="hr_attention_channel_description">Permessi e domande che richiedono la tua attenzione</string>
     <string name="hr_attention_permission_title">Autorizzazione richiesta</string>

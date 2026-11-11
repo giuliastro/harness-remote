@@ -6,6 +6,7 @@ import android.app.NotificationManager;
 import android.app.PendingIntent;
 import android.content.Context;
 import android.content.Intent;
+import android.graphics.drawable.Icon;
 import android.os.Build;
 
 /** The persistent, low-priority notification Android requires for the foreground service. */
@@ -47,6 +48,14 @@ final class BackgroundAttentionNotifications {
         int pendingFlags = PendingIntent.FLAG_UPDATE_CURRENT;
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) pendingFlags |= PendingIntent.FLAG_IMMUTABLE;
         PendingIntent contentIntent = PendingIntent.getActivity(context, 0, open, pendingFlags);
+        Intent stop = new Intent(context, BackgroundAttentionService.class)
+            .setAction(BackgroundAttentionService.ACTION_STOP);
+        PendingIntent stopIntent = PendingIntent.getService(context, 1, stop, pendingFlags);
+        Notification.Action stopAction = new Notification.Action.Builder(
+            Icon.createWithResource(context, android.R.drawable.ic_menu_close_clear_cancel),
+            context.getString(R.string.hr_bg_stop),
+            stopIntent
+        ).build();
 
         Notification.Builder builder = Build.VERSION.SDK_INT >= Build.VERSION_CODES.O
             ? new Notification.Builder(context, SERVICE_CHANNEL_ID)
@@ -60,7 +69,8 @@ final class BackgroundAttentionNotifications {
             .setOnlyAlertOnce(true)
             .setShowWhen(false)
             .setCategory(Notification.CATEGORY_SERVICE)
-            .setVisibility(Notification.VISIBILITY_PUBLIC);
+            .setVisibility(Notification.VISIBILITY_PUBLIC)
+            .addAction(stopAction);
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             builder.setForegroundServiceBehavior(Notification.FOREGROUND_SERVICE_IMMEDIATE);
         }
