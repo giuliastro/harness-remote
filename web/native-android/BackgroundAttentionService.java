@@ -585,6 +585,7 @@ public final class BackgroundAttentionService extends Service {
             final AtomicBoolean stopped = new AtomicBoolean(false);
             final Object pauseLock = new Object();
             final AtomicBoolean restartRequested = new AtomicBoolean(false);
+            final Set<String> pendingOutcomePolls = new HashSet<>();
             volatile Thread worker;
             volatile HttpURLConnection connection;
             volatile boolean connected;
@@ -715,7 +716,72 @@ public final class BackgroundAttentionService extends Service {
                     agent.backend,
                     data
                 );
-                if (outcome != null) outcomes.onEvent(outcome);
+                if (outcome != null) {
+                    outcomes.onEvent(outcome);
+                } else {
+                    scheduleOutcomePoll(data);
+                }
+            }
+
+            /**
+             * The ACP daemon used by DeepSeek/Claude/Codex emits message.updated and session.updated
+             * but not the OpenCode-style session.idle/session.status frames. Poll the authoritative
+             * Session list (debounced per active Session) so a completed turn still produces Ready.
+             */
+            private void scheduleOutcomePoll(String raw) {
+                if (raw == null || (!raw.contains("\"message.updated\"") && !raw.contains("\"session.updated\""))) return;
+                String sessionID;
+                try {
+                    JSONObject event = new JSONObject(raw);
+                    sessionID = cleanIdentifier(event.optString("sessionId", event.optString("sessionID", "")));
+                } catch (Exception ignored) {
+                    return;
+                }
+                if (sessionID == null) return;
+                synchronized (pendingOutcomePolls) {
+                    if (!pendingOutcomePolls.add(sessionID)) return;
+                }
+                Handler handler = mainHandler;
+                if (handler == null) {
+                    synchronized (pendingOutcomePolls) { pendingOutcomePolls.remove(sessionID); }
+                    return;
+                }
+                handler.postDelayed(() -> pollOutcome(sessionID), 1_500);
+            }
+
+            private void pollOutcome(String sessionID) {
+                synchronized (pendingOutcomePolls) { pendingOutcomePolls.remove(sessionID); }
+                if (stopped.get() || MachineRuntime.this.stopped.get()) return;
+                HttpURLConnection poll = null;
+                try {
+                    poll = openJson(machine.baseUrl + "/v1/agents/" + encode(agent.id) + "/session");
+                    if (poll.getResponseCode() != HttpURLConnection.HTTP_OK) return;
+                    JSONArray sessions = new JSONArray(readBody(poll.getInputStream(), 4_000_000));
+                    for (int index = 0; index < sessions.length(); index++) {
+                        JSONObject session = sessions.optJSONObject(index);
+                        if (session == null || !sessionID.equals(session.optString("id", ""))) continue;
+                        String status = session.optString("status", "").trim().toLowerCase(Locale.US);
+                        SessionOutcomeCenter center = sessionOutcomes;
+                        if (center == null) return;
+                        if ("idle".equals(status)) {
+                            center.onEvent(new SessionOutcomeEvent(
+                                SessionOutcomeEvent.Kind.IDLE,
+                                nativeMachineID, nativeMachineName, agent.id, agent.label, sessionID, null
+                            ));
+                        } else if ("error".equals(status) || "failed".equals(status)) {
+                            center.onEvent(new SessionOutcomeEvent(
+                                SessionOutcomeEvent.Kind.FAILED,
+                                nativeMachineID, nativeMachineName, agent.id, agent.label, sessionID,
+                                "The Session stopped with an error."
+                            ));
+                        }
+                        return;
+                    }
+                } catch (Exception ignored) {
+                    // The next message.updated frame retries; this poll is best-effort.
+                } finally {
+                    if (poll != null) poll.disconnect();
+                }
             }
 
             private HttpURLConnection openEventStream() throws IOException {
