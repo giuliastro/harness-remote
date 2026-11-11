@@ -58,7 +58,9 @@ final class SessionOutcomeCenter {
                 cancel(state);
                 break;
             case IDLE:
-                if (!state.working) return;
+                // A reconnect can miss the busy edge while the WebView was gone. The idle edge is
+                // still the terminal truth, so deliver it instead of requiring a working frame this
+                // process may never have seen.
                 state.working = false;
                 if (BackgroundAttentionVisibility.isVisible(event.machineID, event.agentID, event.sessionID)) {
                     state.lastOutcome = "READY";

@@ -79,6 +79,7 @@ public final class BackgroundAttentionService extends Service {
     private ConnectivityManager.NetworkCallback networkCallback;
     private AttentionNotificationCenter attentionNotifications;
     private SessionOutcomeCenter sessionOutcomes;
+    private MachineAlertCenter machineAlerts;
     private final PermissionReplyTracker permissionReplies = new PermissionReplyTracker();
     private volatile boolean shuttingDown;
     private int lastNotificationConnected = -1;
@@ -95,6 +96,7 @@ public final class BackgroundAttentionService extends Service {
         BackgroundAttentionNotifications.ensureChannels(this);
         attentionNotifications = new AttentionNotificationCenter(this);
         sessionOutcomes = new SessionOutcomeCenter(this, attentionNotifications);
+        machineAlerts = new MachineAlertCenter(this);
         int configured = BackgroundAttentionConfig.load(this).size();
         startInForeground(0, configured);
         executor = Executors.newCachedThreadPool(runnable -> {
@@ -300,6 +302,7 @@ public final class BackgroundAttentionService extends Service {
         if (manager != null) manager.cancel(BackgroundAttentionNotifications.SERVICE_NOTIFICATION_ID);
         if (attentionNotifications != null) attentionNotifications.cancelAll();
         if (sessionOutcomes != null) sessionOutcomes.cancelAll();
+        if (machineAlerts != null) machineAlerts.clearAll();
         permissionReplies.clear();
         BackgroundAttentionStatus.clearConnections();
     }
@@ -400,6 +403,7 @@ public final class BackgroundAttentionService extends Service {
         volatile Thread worker;
         volatile boolean snapshotReachable;
         volatile int capableAgents;
+        volatile boolean everConnected;
         volatile String nativeMachineID;
         volatile String nativeMachineName;
 
@@ -541,6 +545,15 @@ public final class BackgroundAttentionService extends Service {
             boolean connected = !stopped.get()
                 && (active > 0 || (snapshotReachable && capableAgents == 0));
             BackgroundAttentionStatus.setMachineConnected(machine.id, connected);
+            MachineAlertCenter alerts = machineAlerts;
+            if (connected) {
+                everConnected = true;
+                if (alerts != null) alerts.clear(machine.id);
+            } else if (everConnected && !stopped.get() && alerts != null) {
+                // The stream cannot produce a session.error if the machine itself vanished from
+                // Wi-Fi/standby. Surface that loss once and cancel it when any stream reconnects.
+                alerts.show(machine.id, machine.name, machine.baseUrl);
+            }
             updateNotificationSoon();
         }
 

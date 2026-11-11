@@ -27,7 +27,8 @@ const javaFiles = [
   "PermissionReplyTracker.java",
   "SessionOutcomeCenter.java",
   "SessionOutcomeEvent.java",
-  "SessionOutcomeParser.java"
+  "SessionOutcomeParser.java",
+  "MachineAlertCenter.java"
 ]
 for (const file of javaFiles) {
   cpSync(resolve(source, file), resolve(target, file))

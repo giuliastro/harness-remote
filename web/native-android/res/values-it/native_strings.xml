@@ -29,4 +29,8 @@
     <string name="hr_attention_boundary">Ambito: %1$s</string>
     <string name="hr_attention_allow_once">Consenti una volta</string>
     <string name="hr_attention_deny">Nega</string>
+    <string name="hr_bg_unreachable_channel_name">Connessione macchine</string>
+    <string name="hr_bg_unreachable_channel_description">Avvisa quando una macchina abbinata smette di rispondere in background.</string>
+    <string name="hr_bg_unreachable_title">Macchina non raggiungibile</string>
+    <string name="hr_bg_unreachable_body">%1$s · %2$s</string>
 </resources>
