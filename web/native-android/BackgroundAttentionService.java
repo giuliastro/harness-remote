@@ -485,9 +485,9 @@ public final class BackgroundAttentionService extends Service {
                     if (!state.isEmpty() && !"available".equals(state) && !"configured".equals(state)) continue;
                     JSONObject capabilities = agent.optJSONObject("capabilities");
                     if (capabilities == null) continue;
-                    boolean attention = capabilities.optBoolean("questions", false)
-                        || capabilities.optBoolean("permissions", false);
-                    if (!attention) continue;
+                    // Outcome notifications (finished/failed) matter for every agent. Questions and
+                    // permissions only control whether Attention notifications are parsed; an agent
+                    // such as Claude Code or Codex has neither capability yet still completes turns.
                     String label = agent.optString("label", id).trim();
                     capable.add(new AgentInfo(
                         id,

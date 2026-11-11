@@ -1175,7 +1175,12 @@ function NativeSessionsWorkspace({
         && runtime.snapshot?.agents.some((agent) => agent.state === "unavailable"))
     })
     const timer = window.setInterval(() => {
-      if (document.visibilityState === "visible") setRevision((value) => value + 1)
+      if (document.visibilityState === "visible") {
+        setRevision((value) => value + 1)
+        // Another client (notably the phone) can delete or stop a Session without emitting a live
+        // event into this window. Refresh the index on the same cadence so the desktop rail converges.
+        setListRevision((value) => value + 1)
+      }
     }, interval)
     const onVisibility = () => {
       if (document.visibilityState !== "visible") return
