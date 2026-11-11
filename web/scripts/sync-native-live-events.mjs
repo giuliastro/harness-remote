@@ -24,6 +24,7 @@ const javaFiles = [
   "AttentionEventParser.java",
   "AttentionNotificationCenter.java",
   "AttentionRequest.java",
+  "PermissionReplyTracker.java",
   "SessionOutcomeCenter.java",
   "SessionOutcomeEvent.java",
   "SessionOutcomeParser.java"

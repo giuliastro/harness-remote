@@ -25,4 +25,6 @@
     <string name="hr_attention_permission_consequence">在你允許或拒絕此要求之前，Session 會保持封鎖。</string>
     <string name="hr_attention_question_consequence">在你回答此問題之前，Session 會保持封鎖。</string>
     <string name="hr_attention_boundary">範圍：%1$s</string>
+    <string name="hr_attention_allow_once">允許一次</string>
+    <string name="hr_attention_deny">拒絕</string>
 </resources>

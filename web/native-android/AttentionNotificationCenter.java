@@ -6,6 +6,7 @@ import android.app.NotificationManager;
 import android.app.PendingIntent;
 import android.content.Context;
 import android.content.Intent;
+import android.graphics.drawable.Icon;
 import android.net.Uri;
 import android.os.Build;
 
@@ -94,6 +95,11 @@ final class AttentionNotificationCenter {
         if (notificationID != null && manager != null) manager.cancel(notificationID);
     }
 
+    synchronized void cancelPermission(String machineID, String agentID, String sessionID, String requestID) {
+        if (machineID == null || agentID == null || sessionID == null || requestID == null || requestID.isEmpty()) return;
+        cancel(machineID + "\u0000" + agentID + "\u0000" + sessionID + "\u0000permission\u0000" + requestID);
+    }
+
     private Notification buildNotification(AttentionRequest request, int notificationID) {
         String deepLink = AttentionDeepLink.forRequest(request.machineID, request.agentID, request.sessionID);
         if (deepLink == null) return null;
@@ -128,7 +134,53 @@ final class AttentionNotificationCenter {
             .setCategory(Notification.CATEGORY_MESSAGE)
             .setVisibility(Notification.VISIBILITY_PRIVATE)
             .setWhen(System.currentTimeMillis());
+        if (request.kind == AttentionRequest.Kind.PERMISSION
+            && request.requestID != null
+            && !request.requestID.isEmpty()) {
+            builder.addAction(permissionAction(
+                request,
+                notificationID,
+                "once",
+                R.string.hr_attention_allow_once,
+                android.R.drawable.ic_menu_edit
+            ));
+            builder.addAction(permissionAction(
+                request,
+                notificationID,
+                "reject",
+                R.string.hr_attention_deny,
+                android.R.drawable.ic_menu_close_clear_cancel
+            ));
+        }
         return builder.build();
+    }
+
+    private Notification.Action permissionAction(
+        AttentionRequest request,
+        int notificationID,
+        String reply,
+        int label,
+        int icon
+    ) {
+        Intent action = new Intent(context, BackgroundAttentionService.class)
+            .setAction(BackgroundAttentionService.ACTION_PERMISSION_REPLY)
+            .setData(Uri.parse("harnessremote://permission-reply/" + notificationID + "/" + reply))
+            .putExtra(BackgroundAttentionService.EXTRA_PERMISSION_MACHINE, request.machineID)
+            .putExtra(BackgroundAttentionService.EXTRA_PERMISSION_AGENT, request.agentID)
+            .putExtra(BackgroundAttentionService.EXTRA_PERMISSION_SESSION, request.sessionID)
+            .putExtra(BackgroundAttentionService.EXTRA_PERMISSION_REQUEST, request.requestID)
+            .putExtra(BackgroundAttentionService.EXTRA_PERMISSION_REPLY, reply);
+        if (request.directory != null) {
+            action.putExtra(BackgroundAttentionService.EXTRA_PERMISSION_DIRECTORY, request.directory);
+        }
+        int pendingFlags = PendingIntent.FLAG_UPDATE_CURRENT;
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) pendingFlags |= PendingIntent.FLAG_IMMUTABLE;
+        PendingIntent pending = PendingIntent.getService(context, notificationID, action, pendingFlags);
+        return new Notification.Action.Builder(
+            Icon.createWithResource(context, icon),
+            context.getString(label),
+            pending
+        ).build();
     }
 
     private String body(AttentionRequest request) {

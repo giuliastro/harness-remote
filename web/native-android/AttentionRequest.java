@@ -19,6 +19,7 @@ final class AttentionRequest {
     final String agentID;
     final String agentLabel;
     final String sessionID;
+    final String directory;
     final String requestID;
     final String action;
     final String explanation;
@@ -34,6 +35,7 @@ final class AttentionRequest {
         String agentID,
         String agentLabel,
         String sessionID,
+        String directory,
         String requestID,
         String action,
         String explanation,
@@ -48,6 +50,7 @@ final class AttentionRequest {
         this.agentID = agentID;
         this.agentLabel = agentLabel;
         this.sessionID = sessionID;
+        this.directory = directory;
         this.requestID = requestID;
         this.action = action;
         this.explanation = explanation;

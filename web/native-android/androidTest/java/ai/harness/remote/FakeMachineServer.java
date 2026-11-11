@@ -28,6 +28,7 @@ final class FakeMachineServer implements AutoCloseable {
     private final Thread acceptThread;
     private final List<Socket> clients = Collections.synchronizedList(new ArrayList<>());
     private final BlockingQueue<String> events = new LinkedBlockingQueue<>();
+    final BlockingQueue<String> permissionReplies = new LinkedBlockingQueue<>();
     private volatile boolean closed;
     volatile int streamConnections;
 
@@ -84,13 +85,32 @@ final class FakeMachineServer implements AutoCloseable {
             InputStream input = socket.getInputStream();
             String requestLine = readLine(input);
             if (requestLine == null) return;
+            int contentLength = 0;
             String header;
             while ((header = readLine(input)) != null && !header.isEmpty()) {
-                // The service authenticates, but this fake only needs the request path.
+                int separator = header.indexOf(':');
+                if (separator <= 0) continue;
+                if ("content-length".equalsIgnoreCase(header.substring(0, separator).trim())) {
+                    try {
+                        contentLength = Integer.parseInt(header.substring(separator + 1).trim());
+                    } catch (NumberFormatException ignored) {
+                        contentLength = 0;
+                    }
+                }
             }
             String[] parts = requestLine.split(" ");
+            String method = parts.length > 0 ? parts[0] : "";
             String path = parts.length > 1 ? parts[1] : "";
             OutputStream output = socket.getOutputStream();
+            if ("POST".equals(method) && path.contains("/permission/") && path.contains("/reply")) {
+                permissionReplies.add(readBody(input, contentLength));
+                byte[] body = "true".getBytes(StandardCharsets.UTF_8);
+                output.write(("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: "
+                    + body.length + "\r\nConnection: close\r\n\r\n").getBytes(StandardCharsets.UTF_8));
+                output.write(body);
+                output.flush();
+                return;
+            }
             if (path.startsWith("/v1/machine")) {
                 byte[] body = SNAPSHOT.getBytes(StandardCharsets.UTF_8);
                 output.write(("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: "
@@ -124,6 +144,19 @@ final class FakeMachineServer implements AutoCloseable {
         output.write(bytes);
         output.write("\r\n".getBytes(StandardCharsets.UTF_8));
         output.flush();
+    }
+
+    private static String readBody(InputStream input, int length) throws IOException {
+        ByteArrayOutputStream body = new ByteArrayOutputStream();
+        byte[] buffer = new byte[1024];
+        int remaining = Math.max(0, length);
+        while (remaining > 0) {
+            int read = input.read(buffer, 0, Math.min(buffer.length, remaining));
+            if (read == -1) break;
+            body.write(buffer, 0, read);
+            remaining -= read;
+        }
+        return body.toString(StandardCharsets.UTF_8.name());
     }
 
     private static String readLine(InputStream input) throws IOException {
