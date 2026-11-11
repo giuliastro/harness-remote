@@ -10,6 +10,12 @@
     </plurals>
     <string name="hr_bg_no_machines">尚未設定機器</string>
     <string name="hr_bg_stop">停止</string>
+    <string name="hr_outcome_channel_name">Session 結果</string>
+    <string name="hr_outcome_channel_description">背景代理已就緒或失敗的 Session。</string>
+    <string name="hr_outcome_ready_title">Session 已就緒</string>
+    <string name="hr_outcome_failed_title">Session 失敗</string>
+    <string name="hr_outcome_ready_body">回合已結束。開啟 Session 查看結果。</string>
+    <string name="hr_outcome_failed_body">Session 因錯誤而停止。</string>
     <string name="hr_attention_channel_name">需要處理</string>
     <string name="hr_attention_channel_description">需要你處理的權限與問題</string>
     <string name="hr_attention_permission_title">需要授權</string>

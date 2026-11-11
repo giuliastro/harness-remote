@@ -12,6 +12,12 @@
     </plurals>
     <string name="hr_bg_no_machines">Nessuna macchina configurata</string>
     <string name="hr_bg_stop">Ferma</string>
+    <string name="hr_outcome_channel_name">Esiti delle Session</string>
+    <string name="hr_outcome_channel_description">Session pronte e fallite dai tuoi agenti in background.</string>
+    <string name="hr_outcome_ready_title">Session pronta</string>
+    <string name="hr_outcome_failed_title">Session fallita</string>
+    <string name="hr_outcome_ready_body">Un turno è terminato. Apri la Session per rivedere il risultato.</string>
+    <string name="hr_outcome_failed_body">La Session si è fermata con un errore.</string>
     <string name="hr_attention_channel_name">Attenzione</string>
     <string name="hr_attention_channel_description">Permessi e domande che richiedono la tua attenzione</string>
     <string name="hr_attention_permission_title">Autorizzazione richiesta</string>

@@ -221,6 +221,49 @@ public class BackgroundAttentionServiceTest {
         waitFor("permission notification cleared", () -> attentionNotificationCount(permissionTitle) == 0, 5_000);
     }
 
+    @Test
+    public void notifiesReadyAndFailedSessionOutcomesOnce() throws Exception {
+        startService();
+        waitFor("machine connected", () -> BackgroundAttentionStatus.isMachineConnected(FakeMachineServer.MACHINE_ID), 15_000);
+        String readyTitle = context.getString(R.string.hr_outcome_ready_title);
+        String failedTitle = context.getString(R.string.hr_outcome_failed_title);
+
+        server.sendEvent(sessionStatus("outcome-1", "busy"));
+        server.sendEvent(sessionIdle("outcome-1"));
+        waitFor("ready notification", () -> attentionNotification(readyTitle) != null, 5_000);
+        Notification ready = attentionNotification(readyTitle);
+        assertNotNull(ready);
+        assertTrue(notificationBody(ready).contains("Test Machine · OpenCode"));
+
+        server.sendEvent(sessionIdle("outcome-1"));
+        Thread.sleep(600);
+        assertEquals("repeated idle must not duplicate Ready", 1, attentionNotificationCount(readyTitle));
+
+        server.sendEvent(sessionError("outcome-1", "Provider failed"));
+        waitFor("failed notification", () -> attentionNotification(failedTitle) != null, 5_000);
+        Notification failed = attentionNotification(failedTitle);
+        assertNotNull(failed);
+        assertTrue(notificationBody(failed).contains("Provider failed"));
+        waitFor("ready notification replaced", () -> attentionNotificationCount(readyTitle) == 0, 5_000);
+
+        server.sendEvent(sessionStatus("outcome-1", "busy"));
+        waitFor("failed notification cleared on a new turn", () -> attentionNotificationCount(failedTitle) == 0, 5_000);
+    }
+
+    @Test
+    public void doesNotReadyNotifyWhilePermissionIsPending() throws Exception {
+        startService();
+        waitFor("machine connected", () -> BackgroundAttentionStatus.isMachineConnected(FakeMachineServer.MACHINE_ID), 15_000);
+        String permissionTitle = context.getString(R.string.hr_attention_permission_title);
+        server.sendEvent(permissionAsked("perm-outcome"));
+        waitFor("permission notification", () -> attentionNotification(permissionTitle) != null, 5_000);
+
+        server.sendEvent(sessionStatus("session-1", "busy"));
+        server.sendEvent(sessionIdle("session-1"));
+        Thread.sleep(700);
+        assertEquals(0, attentionNotificationCount(context.getString(R.string.hr_outcome_ready_title)));
+    }
+
     private static String permissionAsked(String id) {
         return "{\"directory\":\"/tmp\",\"payload\":{\"type\":\"permission.asked\",\"properties\":{"
             + "\"sessionID\":\"session-1\",\"id\":\"" + id + "\",\"permission\":\"bash\","
@@ -236,6 +279,21 @@ public class BackgroundAttentionServiceTest {
     private static String permissionReplied(String id) {
         return "{\"directory\":\"/tmp\",\"payload\":{\"type\":\"permission.replied\",\"properties\":{"
             + "\"sessionID\":\"session-1\",\"id\":\"" + id + "\"}}}";
+    }
+
+    private static String sessionStatus(String sessionID, String status) {
+        return "{\"payload\":{\"type\":\"session.status\",\"properties\":{\"sessionID\":\""
+            + sessionID + "\",\"status\":{\"type\":\"" + status + "\"}}}}";
+    }
+
+    private static String sessionIdle(String sessionID) {
+        return "{\"payload\":{\"type\":\"session.idle\",\"properties\":{\"sessionID\":\""
+            + sessionID + "\"}}}";
+    }
+
+    private static String sessionError(String sessionID, String message) {
+        return "{\"payload\":{\"type\":\"session.error\",\"properties\":{\"sessionID\":\""
+            + sessionID + "\",\"error\":{\"message\":\"" + message + "\"}}}}";
     }
 
     private Notification attentionNotification(String title) {

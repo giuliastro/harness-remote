@@ -12,6 +12,12 @@
     </plurals>
     <string name="hr_bg_no_machines">No machines configured</string>
     <string name="hr_bg_stop">Stop</string>
+    <string name="hr_outcome_channel_name">Session outcomes</string>
+    <string name="hr_outcome_channel_description">Ready and failed Sessions from your background agents.</string>
+    <string name="hr_outcome_ready_title">Session ready</string>
+    <string name="hr_outcome_failed_title">Session failed</string>
+    <string name="hr_outcome_ready_body">A turn finished. Open the Session to review the result.</string>
+    <string name="hr_outcome_failed_body">The Session stopped with an error.</string>
     <string name="hr_attention_channel_name">Attention</string>
     <string name="hr_attention_channel_description">Permissions and questions that need your attention</string>
     <string name="hr_attention_permission_title">Authorization required</string>

@@ -64,6 +64,7 @@ public final class BackgroundAttentionService extends Service {
     private Handler mainHandler;
     private ConnectivityManager.NetworkCallback networkCallback;
     private AttentionNotificationCenter attentionNotifications;
+    private SessionOutcomeCenter sessionOutcomes;
     private volatile boolean shuttingDown;
     private int lastNotificationConnected = -1;
     private int lastNotificationConfigured = -1;
@@ -78,6 +79,7 @@ public final class BackgroundAttentionService extends Service {
         BackgroundAttentionStatus.running = true;
         BackgroundAttentionNotifications.ensureChannels(this);
         attentionNotifications = new AttentionNotificationCenter(this);
+        sessionOutcomes = new SessionOutcomeCenter(this, attentionNotifications);
         int configured = BackgroundAttentionConfig.load(this).size();
         startInForeground(0, configured);
         executor = Executors.newCachedThreadPool(runnable -> {
@@ -257,6 +259,7 @@ public final class BackgroundAttentionService extends Service {
         NotificationManager manager = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
         if (manager != null) manager.cancel(BackgroundAttentionNotifications.SERVICE_NOTIFICATION_ID);
         if (attentionNotifications != null) attentionNotifications.cancelAll();
+        if (sessionOutcomes != null) sessionOutcomes.cancelAll();
         BackgroundAttentionStatus.clearConnections();
     }
 
@@ -360,6 +363,7 @@ public final class BackgroundAttentionService extends Service {
                     capable.add(new AgentInfo(
                         id,
                         label.isEmpty() ? id : label,
+                        agent.optString("backend", "").trim(),
                         capabilities.optBoolean("questions", false),
                         capabilities.optBoolean("permissions", false)
                     ));
@@ -544,19 +548,32 @@ public final class BackgroundAttentionService extends Service {
             private void dispatchFrame(String data) {
                 if (data == null || data.isEmpty()) return;
                 AttentionNotificationCenter center = attentionNotifications;
-                if (center == null) return;
-                AttentionRequest request = AttentionEventParser.parse(
+                if (center != null) {
+                    AttentionRequest request = AttentionEventParser.parse(
+                        nativeMachineID,
+                        nativeMachineName,
+                        agent.id,
+                        agent.label,
+                        agent.questions,
+                        agent.permissions,
+                        data
+                    );
+                    if (request != null) {
+                        if (request.transition == AttentionRequest.Transition.ASKED) center.show(request);
+                        else center.resolve(request);
+                    }
+                }
+                SessionOutcomeCenter outcomes = sessionOutcomes;
+                if (outcomes == null) return;
+                SessionOutcomeEvent outcome = SessionOutcomeParser.parse(
                     nativeMachineID,
                     nativeMachineName,
                     agent.id,
                     agent.label,
-                    agent.questions,
-                    agent.permissions,
+                    agent.backend,
                     data
                 );
-                if (request == null) return;
-                if (request.transition == AttentionRequest.Transition.ASKED) center.show(request);
-                else center.resolve(request);
+                if (outcome != null) outcomes.onEvent(outcome);
             }
 
             private HttpURLConnection openEventStream() throws IOException {
@@ -595,12 +612,14 @@ public final class BackgroundAttentionService extends Service {
     private static final class AgentInfo {
         final String id;
         final String label;
+        final String backend;
         final boolean questions;
         final boolean permissions;
 
-        AgentInfo(String id, String label, boolean questions, boolean permissions) {
+        AgentInfo(String id, String label, String backend, boolean questions, boolean permissions) {
             this.id = id;
             this.label = label;
+            this.backend = backend;
             this.questions = questions;
             this.permissions = permissions;
         }
