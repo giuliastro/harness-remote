@@ -27,4 +27,6 @@
     <string name="hr_attention_permission_consequence">The Session remains blocked until you allow or deny this request.</string>
     <string name="hr_attention_question_consequence">The Session remains blocked until you answer this question.</string>
     <string name="hr_attention_boundary">Boundary: %1$s</string>
+    <string name="hr_attention_allow_once">Allow once</string>
+    <string name="hr_attention_deny">Deny</string>
 </resources>

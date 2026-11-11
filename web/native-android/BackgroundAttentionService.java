@@ -22,8 +22,10 @@ import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
+import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
+import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -50,10 +52,17 @@ public final class BackgroundAttentionService extends Service {
     static final String ACTION_CONFIGURE = "ai.harness.remote.action.CONFIGURE_BACKGROUND_ATTENTION";
     static final String ACTION_STOP = "ai.harness.remote.action.STOP_BACKGROUND_ATTENTION";
     static final String ACTION_VISIBILITY = "ai.harness.remote.action.VISIBLE_ATTENTION_SESSION";
+    static final String ACTION_PERMISSION_REPLY = "ai.harness.remote.action.PERMISSION_REPLY";
     static final String EXTRA_MACHINES = "machines";
     static final String EXTRA_VISIBLE_MACHINE = "visibleMachine";
     static final String EXTRA_VISIBLE_AGENT = "visibleAgent";
     static final String EXTRA_VISIBLE_SESSION = "visibleSession";
+    static final String EXTRA_PERMISSION_MACHINE = "permissionMachine";
+    static final String EXTRA_PERMISSION_AGENT = "permissionAgent";
+    static final String EXTRA_PERMISSION_SESSION = "permissionSession";
+    static final String EXTRA_PERMISSION_REQUEST = "permissionRequest";
+    static final String EXTRA_PERMISSION_DIRECTORY = "permissionDirectory";
+    static final String EXTRA_PERMISSION_REPLY = "permissionReply";
 
     private static final String TAG = "HarnessBackground";
     private static final int CONNECT_TIMEOUT_MS = 10_000;
@@ -69,6 +78,7 @@ public final class BackgroundAttentionService extends Service {
     private ConnectivityManager.NetworkCallback networkCallback;
     private AttentionNotificationCenter attentionNotifications;
     private SessionOutcomeCenter sessionOutcomes;
+    private final PermissionReplyTracker permissionReplies = new PermissionReplyTracker();
     private volatile boolean shuttingDown;
     private int lastNotificationConnected = -1;
     private int lastNotificationConfigured = -1;
@@ -110,6 +120,10 @@ public final class BackgroundAttentionService extends Service {
                     intent.getStringExtra(EXTRA_VISIBLE_SESSION)
                 );
             }
+            return START_STICKY;
+        }
+        if (ACTION_PERMISSION_REPLY.equals(action)) {
+            handlePermissionReply(intent);
             return START_STICKY;
         }
 
@@ -274,7 +288,96 @@ public final class BackgroundAttentionService extends Service {
         if (manager != null) manager.cancel(BackgroundAttentionNotifications.SERVICE_NOTIFICATION_ID);
         if (attentionNotifications != null) attentionNotifications.cancelAll();
         if (sessionOutcomes != null) sessionOutcomes.cancelAll();
+        permissionReplies.clear();
         BackgroundAttentionStatus.clearConnections();
+    }
+
+    private void handlePermissionReply(Intent intent) {
+        if (intent == null) return;
+        String machineID = intent.getStringExtra(EXTRA_PERMISSION_MACHINE);
+        String agentID = intent.getStringExtra(EXTRA_PERMISSION_AGENT);
+        String sessionID = intent.getStringExtra(EXTRA_PERMISSION_SESSION);
+        String requestID = intent.getStringExtra(EXTRA_PERMISSION_REQUEST);
+        String reply = intent.getStringExtra(EXTRA_PERMISSION_REPLY);
+        String directory = intent.getStringExtra(EXTRA_PERMISSION_DIRECTORY);
+        if (machineID == null || agentID == null || sessionID == null || requestID == null || requestID.isEmpty()) return;
+        if (!"once".equals(reply) && !"reject".equals(reply)) return;
+        String key = machineID + "\u0000" + agentID + "\u0000" + requestID;
+        if (!permissionReplies.begin(key)) return;
+        ExecutorService work = executor;
+        if (work == null) {
+            permissionReplies.finish(key, false);
+            return;
+        }
+        work.execute(() -> {
+            boolean success = false;
+            try {
+                success = sendPermissionReply(machineID, agentID, requestID, reply, directory);
+            } catch (Exception error) {
+                BackgroundAttentionStatus.setLastError("Permission reply failed: " + describe(error));
+            }
+            permissionReplies.finish(key, success);
+            if (success && attentionNotifications != null) {
+                attentionNotifications.cancelPermission(machineID, agentID, sessionID, requestID);
+            }
+        });
+    }
+
+    private boolean sendPermissionReply(
+        String machineID,
+        String agentID,
+        String requestID,
+        String reply,
+        String directory
+    ) throws IOException {
+        BackgroundAttentionConfig.Machine machine = machineForNativeID(machineID);
+        if (machine == null) return false;
+        StringBuilder target = new StringBuilder(machine.baseUrl)
+            .append("/v1/agents/").append(encode(agentID))
+            .append("/permission/").append(encode(requestID)).append("/reply");
+        if (directory != null && !directory.isEmpty()) {
+            target.append("?directory=").append(encode(directory));
+        }
+        HttpURLConnection connection = null;
+        try {
+            connection = (HttpURLConnection) new URL(target.toString()).openConnection();
+            connection.setRequestMethod("POST");
+            connection.setRequestProperty("Accept", "application/json");
+            connection.setRequestProperty("Content-Type", "application/json");
+            connection.setRequestProperty(
+                "Authorization",
+                BackgroundAttentionUrls.basicAuthorization(machine.username, machine.password)
+            );
+            connection.setConnectTimeout(CONNECT_TIMEOUT_MS);
+            connection.setReadTimeout(10_000);
+            connection.setDoOutput(true);
+            byte[] body = ("{\"reply\":\"" + reply + "\"}").getBytes(StandardCharsets.UTF_8);
+            connection.setFixedLengthStreamingMode(body.length);
+            try (OutputStream output = connection.getOutputStream()) {
+                output.write(body);
+            }
+            int status = connection.getResponseCode();
+            return status == HttpURLConnection.HTTP_OK || status == HttpURLConnection.HTTP_NO_CONTENT;
+        } finally {
+            if (connection != null) connection.disconnect();
+        }
+    }
+
+    private BackgroundAttentionConfig.Machine machineForNativeID(String nativeID) {
+        synchronized (runtimeLock) {
+            for (MachineRuntime runtime : runtimes.values()) {
+                if (nativeID.equals(runtime.nativeMachineID)) return runtime.machine;
+            }
+        }
+        return null;
+    }
+
+    private static String encode(String value) {
+        try {
+            return URLEncoder.encode(value, "UTF-8").replace("+", "%20");
+        } catch (Exception impossible) {
+            throw new AssertionError(impossible);
+        }
     }
 
     private final class MachineRuntime {

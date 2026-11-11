@@ -29,6 +29,7 @@ import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.Collections;
 import java.util.List;
+import java.util.concurrent.TimeUnit;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
@@ -312,6 +313,49 @@ public class BackgroundAttentionServiceTest {
             .putExtra(BackgroundAttentionService.EXTRA_VISIBLE_AGENT, FakeMachineServer.AGENT_ID)
             .putExtra(BackgroundAttentionService.EXTRA_VISIBLE_SESSION, "outcome-visible"));
         waitFor("ready notification cleared", () -> attentionNotificationCount(readyTitle) == 0, 5_000);
+    }
+
+    @Test
+    public void repliesToPermissionExactlyOnceFromNotificationActions() throws Exception {
+        startService();
+        waitFor("machine connected", () -> BackgroundAttentionStatus.isMachineConnected(FakeMachineServer.MACHINE_ID), 15_000);
+        String permissionTitle = context.getString(R.string.hr_attention_permission_title);
+        server.sendEvent(permissionAsked("perm-actions"));
+        waitFor("permission notification", () -> attentionNotification(permissionTitle) != null, 5_000);
+        Notification notification = attentionNotification(permissionTitle);
+        assertNotNull(notification);
+        assertNotNull(notification.actions);
+        assertEquals(2, notification.actions.length);
+
+        Notification.Action allow = notificationAction(notification, context.getString(R.string.hr_attention_allow_once));
+        Notification.Action deny = notificationAction(notification, context.getString(R.string.hr_attention_deny));
+        assertNotNull(allow);
+        assertNotNull(deny);
+
+        allow.actionIntent.send();
+        assertEquals("{\"reply\":\"once\"}", server.permissionReplies.poll(5, TimeUnit.SECONDS));
+        waitFor("permission notification cleared after allow", () -> attentionNotificationCount(permissionTitle) == 0, 5_000);
+
+        allow.actionIntent.send();
+        assertNull("a repeated action must not reply twice", server.permissionReplies.poll(500, TimeUnit.MILLISECONDS));
+
+        server.sendEvent(permissionAsked("perm-deny"));
+        waitFor("second permission notification", () -> attentionNotification(permissionTitle) != null, 5_000);
+        Notification second = attentionNotification(permissionTitle);
+        assertNotNull(second);
+        Notification.Action reject = notificationAction(second, context.getString(R.string.hr_attention_deny));
+        assertNotNull(reject);
+        reject.actionIntent.send();
+        assertEquals("{\"reply\":\"reject\"}", server.permissionReplies.poll(5, TimeUnit.SECONDS));
+        waitFor("permission notification cleared after deny", () -> attentionNotificationCount(permissionTitle) == 0, 5_000);
+    }
+
+    private static Notification.Action notificationAction(Notification notification, String title) {
+        if (notification.actions == null) return null;
+        for (Notification.Action action : notification.actions) {
+            if (action.title != null && title.contentEquals(action.title)) return action;
+        }
+        return null;
     }
 
     private static String permissionAsked(String id) {

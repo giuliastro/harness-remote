@@ -25,4 +25,6 @@
     <string name="hr_attention_permission_consequence">在你允许或拒绝此请求之前，Session 会保持阻塞。</string>
     <string name="hr_attention_question_consequence">在你回答此问题之前，Session 会保持阻塞。</string>
     <string name="hr_attention_boundary">范围：%1$s</string>
+    <string name="hr_attention_allow_once">允许一次</string>
+    <string name="hr_attention_deny">拒绝</string>
 </resources>

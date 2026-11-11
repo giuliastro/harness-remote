@@ -59,6 +59,7 @@ final class AttentionEventParser {
             JSONObject request = properties.optJSONObject("request");
             if (request != null) requestID = firstID(request, "id", "requestID");
         }
+        String directory = directory(raw, properties);
 
         String action = null;
         String explanation = null;
@@ -91,6 +92,7 @@ final class AttentionEventParser {
             agentID,
             agentLabel == null || agentLabel.trim().isEmpty() ? agentID : agentLabel.trim(),
             sessionID,
+            directory,
             requestID,
             action,
             explanation,
@@ -108,6 +110,17 @@ final class AttentionEventParser {
         } catch (Exception ignored) {
             return null;
         }
+    }
+
+    private static String directory(String raw, JSONObject properties) {
+        try {
+            JSONObject envelope = new JSONObject(raw);
+            String value = cleanText(envelope.optString("directory", ""), 1000);
+            if (value != null) return value;
+        } catch (Exception ignored) {
+            // Fall through to the properties envelope.
+        }
+        return properties == null ? null : cleanText(properties.optString("directory", ""), 1000);
     }
 
     private static String firstID(JSONObject object, String... names) {

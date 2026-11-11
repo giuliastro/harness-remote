@@ -27,4 +27,6 @@
     <string name="hr_attention_permission_consequence">La Session resta bloccata finché non autorizzi o rifiuti questa richiesta.</string>
     <string name="hr_attention_question_consequence">La Session resta bloccata finché non rispondi a questa domanda.</string>
     <string name="hr_attention_boundary">Ambito: %1$s</string>
+    <string name="hr_attention_allow_once">Consenti una volta</string>
+    <string name="hr_attention_deny">Nega</string>
 </resources>
