@@ -13,6 +13,7 @@ import android.os.Build;
 import android.os.Handler;
 import android.os.IBinder;
 import android.os.Looper;
+import android.os.PowerManager;
 import android.util.Log;
 
 import org.json.JSONArray;
@@ -80,6 +81,7 @@ public final class BackgroundAttentionService extends Service {
     private AttentionNotificationCenter attentionNotifications;
     private SessionOutcomeCenter sessionOutcomes;
     private MachineAlertCenter machineAlerts;
+    private PowerManager.WakeLock wakeLock;
     private final PermissionReplyTracker permissionReplies = new PermissionReplyTracker();
     private volatile boolean shuttingDown;
     private int lastNotificationConnected = -1;
@@ -97,6 +99,12 @@ public final class BackgroundAttentionService extends Service {
         attentionNotifications = new AttentionNotificationCenter(this);
         sessionOutcomes = new SessionOutcomeCenter(this, attentionNotifications);
         machineAlerts = new MachineAlertCenter(this);
+        PowerManager power = (PowerManager) getSystemService(POWER_SERVICE);
+        if (power != null) {
+            wakeLock = power.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "HarnessRemote:background");
+            wakeLock.setReferenceCounted(false);
+            wakeLock.acquire();
+        }
         int configured = BackgroundAttentionConfig.load(this).size();
         startInForeground(0, configured);
         executor = Executors.newCachedThreadPool(runnable -> {
@@ -303,6 +311,7 @@ public final class BackgroundAttentionService extends Service {
         if (attentionNotifications != null) attentionNotifications.cancelAll();
         if (sessionOutcomes != null) sessionOutcomes.cancelAll();
         if (machineAlerts != null) machineAlerts.clearAll();
+        if (wakeLock != null && wakeLock.isHeld()) wakeLock.release();
         permissionReplies.clear();
         BackgroundAttentionStatus.clearConnections();
     }
