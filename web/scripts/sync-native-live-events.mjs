@@ -22,7 +22,10 @@ const javaFiles = [
   "AttentionDeepLink.java",
   "AttentionEventParser.java",
   "AttentionNotificationCenter.java",
-  "AttentionRequest.java"
+  "AttentionRequest.java",
+  "SessionOutcomeCenter.java",
+  "SessionOutcomeEvent.java",
+  "SessionOutcomeParser.java"
 ]
 for (const file of javaFiles) {
   cpSync(resolve(source, file), resolve(target, file))

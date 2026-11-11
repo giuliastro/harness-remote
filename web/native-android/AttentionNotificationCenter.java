@@ -80,6 +80,15 @@ final class AttentionNotificationCenter {
         active.clear();
     }
 
+    synchronized boolean hasActiveForSession(String machineID, String agentID, String sessionID) {
+        if (machineID == null || agentID == null || sessionID == null) return false;
+        String prefix = machineID + "\u0000" + agentID + "\u0000" + sessionID + "\u0000";
+        for (String key : active.keySet()) {
+            if (key.startsWith(prefix)) return true;
+        }
+        return false;
+    }
+
     private void cancel(String key) {
         Integer notificationID = active.remove(key);
         if (notificationID != null && manager != null) manager.cancel(notificationID);
