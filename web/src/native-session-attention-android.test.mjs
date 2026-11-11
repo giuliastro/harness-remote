@@ -37,6 +37,7 @@ assert.match(moduleSource, /MAX_SEEN_ACTIVATIONS = 50/, "activation replay memor
 assert.match(moduleSource, /attentionAuthority\(parsed\) !== "attention"/)
 
 assert.match(homeSource, /subscribeAndroidAttentionActivation\(activateAttention\)/)
+assert.match(homeSource, /selectedNativeSessionFromKey\(props\.selectedKey\)[\s\S]*syncVisibleNativeSession\(visible\)/)
 assert.match(homeSource, /candidate\.machineID === activation\.machineID && candidate\.agent\.id === activation\.agentID/)
 assert.match(homeSource, /pendingActivationRef\.current = activation/)
 assert.match(homeSource, /pendingActivationRef\.current = null[\s\S]*openAttentionSession\(target, pending\.sessionID\)/)

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ComponentProps } from "react"
+import { selectedNativeSessionFromKey, syncVisibleNativeSession } from "../background-attention"
 import { notifyDesktopAttention, subscribeDesktopAttentionActivation } from "../desktopBridge"
 import { subscribeAndroidAttentionActivation, type AndroidAttentionActivation } from "../native-session-attention-android"
 import { discoverAgentNativeSessionPage, nativeSessionSurfaceTarget, type NativeSessionSurfaceTarget } from "../native-session-discovery"
@@ -265,6 +266,14 @@ export function NativeSessionHome(props: Props) {
   }, [openAttentionSession])
 
   useEffect(() => subscribeAndroidAttentionActivation(activateAttention), [activateAttention])
+
+  useEffect(() => {
+    const visible = selectedNativeSessionFromKey(props.selectedKey)
+    void syncVisibleNativeSession(visible).catch(() => undefined)
+    return () => {
+      void syncVisibleNativeSession(null).catch(() => undefined)
+    }
+  }, [props.selectedKey])
 
   useEffect(() => {
     const pending = pendingActivationRef.current

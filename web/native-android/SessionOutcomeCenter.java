@@ -60,6 +60,11 @@ final class SessionOutcomeCenter {
             case IDLE:
                 if (!state.working) return;
                 state.working = false;
+                if (BackgroundAttentionVisibility.isVisible(event.machineID, event.agentID, event.sessionID)) {
+                    state.lastOutcome = "READY";
+                    cancel(state);
+                    return;
+                }
                 if (attention != null && attention.hasActiveForSession(event.machineID, event.agentID, event.sessionID)) {
                     return;
                 }
@@ -69,6 +74,11 @@ final class SessionOutcomeCenter {
                 break;
             case FAILED:
                 state.working = false;
+                if (BackgroundAttentionVisibility.isVisible(event.machineID, event.agentID, event.sessionID)) {
+                    state.lastOutcome = "FAILED";
+                    cancel(state);
+                    return;
+                }
                 if ("FAILED".equals(state.lastOutcome)) return;
                 cancel(state);
                 post(event, "FAILED");
@@ -79,6 +89,12 @@ final class SessionOutcomeCenter {
     synchronized void cancelAll() {
         for (SessionState state : sessions.values()) cancel(state);
         sessions.clear();
+    }
+
+    synchronized void onVisibilityChanged(String machineID, String agentID, String sessionID) {
+        if (machineID == null || agentID == null || sessionID == null) return;
+        SessionState state = sessions.get(machineID + "\u0000" + agentID + "\u0000" + sessionID);
+        if (state != null) cancel(state);
     }
 
     private void post(SessionOutcomeEvent event, String outcome) {

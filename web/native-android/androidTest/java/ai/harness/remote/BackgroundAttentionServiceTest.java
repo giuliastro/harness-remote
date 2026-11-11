@@ -51,6 +51,8 @@ public class BackgroundAttentionServiceTest {
         server.start();
         BackgroundAttentionConfig.save(context, Collections.singletonList(machine()));
         BackgroundAttentionConfig.setBatteryPrompted(context, true);
+        BackgroundAttentionVisibility.setForeground(false);
+        BackgroundAttentionVisibility.clear();
         BackgroundAttentionStatus.reset();
         PowerManager powerManager = (PowerManager) context.getSystemService(Context.POWER_SERVICE);
         assertNotNull(powerManager);
@@ -63,6 +65,8 @@ public class BackgroundAttentionServiceTest {
     @After
     public void tearDown() throws Exception {
         context.stopService(new Intent(context, BackgroundAttentionService.class));
+        BackgroundAttentionVisibility.setForeground(false);
+        BackgroundAttentionVisibility.clear();
         server.close();
         forceIdle(false);
         waitFor("service stopped", () -> !BackgroundAttentionStatus.running, 5_000);
@@ -262,6 +266,52 @@ public class BackgroundAttentionServiceTest {
         server.sendEvent(sessionIdle("session-1"));
         Thread.sleep(700);
         assertEquals(0, attentionNotificationCount(context.getString(R.string.hr_outcome_ready_title)));
+    }
+
+    @Test
+    public void suppressesReadyForTheVisibleSessionAndResumesWhenBackgrounded() throws Exception {
+        BackgroundAttentionVisibility.setVisibleSession(
+            FakeMachineServer.MACHINE_ID,
+            FakeMachineServer.AGENT_ID,
+            "outcome-visible"
+        );
+        BackgroundAttentionVisibility.setForeground(true);
+        startService();
+        waitFor("machine connected", () -> BackgroundAttentionStatus.isMachineConnected(FakeMachineServer.MACHINE_ID), 15_000);
+        String readyTitle = context.getString(R.string.hr_outcome_ready_title);
+
+        server.sendEvent(sessionStatus("outcome-visible", "busy"));
+        server.sendEvent(sessionIdle("outcome-visible"));
+        Thread.sleep(700);
+        assertEquals("a visible Session must not duplicate its Ready state as a notification", 0, attentionNotificationCount(readyTitle));
+
+        BackgroundAttentionVisibility.setForeground(false);
+        server.sendEvent(sessionStatus("outcome-visible", "busy"));
+        server.sendEvent(sessionIdle("outcome-visible"));
+        waitFor("ready after background", () -> attentionNotification(readyTitle) != null, 5_000);
+    }
+
+    @Test
+    public void clearsReadyWhenItsSessionBecomesVisible() throws Exception {
+        startService();
+        waitFor("machine connected", () -> BackgroundAttentionStatus.isMachineConnected(FakeMachineServer.MACHINE_ID), 15_000);
+        String readyTitle = context.getString(R.string.hr_outcome_ready_title);
+        server.sendEvent(sessionStatus("outcome-visible", "busy"));
+        server.sendEvent(sessionIdle("outcome-visible"));
+        waitFor("ready notification", () -> attentionNotification(readyTitle) != null, 5_000);
+
+        BackgroundAttentionVisibility.setVisibleSession(
+            FakeMachineServer.MACHINE_ID,
+            FakeMachineServer.AGENT_ID,
+            "outcome-visible"
+        );
+        BackgroundAttentionVisibility.setForeground(true);
+        context.startService(new Intent(context, BackgroundAttentionService.class)
+            .setAction(BackgroundAttentionService.ACTION_VISIBILITY)
+            .putExtra(BackgroundAttentionService.EXTRA_VISIBLE_MACHINE, FakeMachineServer.MACHINE_ID)
+            .putExtra(BackgroundAttentionService.EXTRA_VISIBLE_AGENT, FakeMachineServer.AGENT_ID)
+            .putExtra(BackgroundAttentionService.EXTRA_VISIBLE_SESSION, "outcome-visible"));
+        waitFor("ready notification cleared", () -> attentionNotificationCount(readyTitle) == 0, 5_000);
     }
 
     private static String permissionAsked(String id) {

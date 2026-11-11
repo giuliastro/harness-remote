@@ -21,11 +21,18 @@ export type BackgroundAttentionStatus = {
   lastError: string
 }
 
+export type VisibleNativeSession = {
+  machineID: string
+  agentID: string
+  sessionID: string
+}
+
 export type BackgroundAttentionNativePlugin = {
   configure(options: { machines: BackgroundAttentionMachine[] }): Promise<BackgroundAttentionStatus>
   start(options: { prompt?: boolean }): Promise<BackgroundAttentionStatus>
   stop(): Promise<BackgroundAttentionStatus>
   status(): Promise<BackgroundAttentionStatus>
+  setVisibleSession(options: { machineID?: string; agentID?: string; sessionID?: string }): Promise<BackgroundAttentionStatus>
 }
 
 const MAX_BACKGROUND_MACHINES = 6
@@ -94,4 +101,35 @@ export async function syncBackgroundAttention(
   await plugin.configure({ machines: targets })
   if (targets.length === 0) return plugin.stop()
   return plugin.start({ prompt: options.prompt === true })
+}
+
+/**
+ * The selected Session key is the existing `machineID:agentID:sessionID` identity. Native machine
+ * ids, agent ids and native Session ids do not contain the separator, so only the first and last
+ * colon are structural.
+ */
+export function selectedNativeSessionFromKey(key: string | null | undefined): VisibleNativeSession | null {
+  if (!key) return null
+  const first = key.indexOf(":")
+  const last = key.lastIndexOf(":")
+  if (first <= 0 || last <= first + 1 || last >= key.length - 1) return null
+  const machineID = key.slice(0, first).trim()
+  const agentID = key.slice(first + 1, last).trim()
+  const sessionID = key.slice(last + 1).trim()
+  return machineID && agentID && sessionID ? { machineID, agentID, sessionID } : null
+}
+
+/** Tell the native service which Session is on screen. Foreground/background itself is tracked by
+ * the Android plugin lifecycle, so a paused app can still receive completion notifications. */
+export async function syncVisibleNativeSession(
+  session: VisibleNativeSession | null,
+  options: {
+    platform?: string
+    plugin?: Pick<BackgroundAttentionNativePlugin, "setVisibleSession">
+  } = {}
+): Promise<BackgroundAttentionStatus | null> {
+  const platform = options.platform ?? Capacitor.getPlatform()
+  if (platform !== "android") return null
+  const plugin = options.plugin ?? BackgroundAttention
+  return plugin.setVisibleSession(session ? { ...session } : {})
 }

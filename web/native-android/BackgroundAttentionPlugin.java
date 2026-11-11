@@ -94,6 +94,32 @@ public class BackgroundAttentionPlugin extends Plugin {
         call.resolve(statusObject());
     }
 
+    @PluginMethod
+    public void setVisibleSession(PluginCall call) {
+        String machineID = call.getString("machineID");
+        String agentID = call.getString("agentID");
+        String sessionID = call.getString("sessionID");
+        if (machineID == null || agentID == null || sessionID == null) {
+            BackgroundAttentionVisibility.clear();
+            call.resolve(statusObject());
+            return;
+        }
+        BackgroundAttentionVisibility.setVisibleSession(machineID, agentID, sessionID);
+        if (BackgroundAttentionStatus.running) {
+            Intent intent = new Intent(getContext(), BackgroundAttentionService.class)
+                .setAction(BackgroundAttentionService.ACTION_VISIBILITY)
+                .putExtra(BackgroundAttentionService.EXTRA_VISIBLE_MACHINE, machineID)
+                .putExtra(BackgroundAttentionService.EXTRA_VISIBLE_AGENT, agentID)
+                .putExtra(BackgroundAttentionService.EXTRA_VISIBLE_SESSION, sessionID);
+            try {
+                getContext().startService(intent);
+            } catch (Exception error) {
+                Log.w(TAG, "visible Session could not reach the background service");
+            }
+        }
+        call.resolve(statusObject());
+    }
+
     @Override
     protected void handleRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
         super.handleRequestPermissionsResult(requestCode, permissions, grantResults);
@@ -105,6 +131,7 @@ public class BackgroundAttentionPlugin extends Plugin {
     @Override
     protected void handleOnResume() {
         super.handleOnResume();
+        BackgroundAttentionVisibility.setForeground(true);
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return;
         Context context = getContext();
         if (notificationPermission()) {
@@ -124,7 +151,14 @@ public class BackgroundAttentionPlugin extends Plugin {
     }
 
     @Override
+    protected void handleOnPause() {
+        BackgroundAttentionVisibility.setForeground(false);
+        super.handleOnPause();
+    }
+
+    @Override
     protected void handleOnDestroy() {
+        BackgroundAttentionVisibility.setForeground(false);
         PluginCall call = pendingPermissionCall;
         pendingPermissionCall = null;
         if (call != null) call.resolve(statusObject());

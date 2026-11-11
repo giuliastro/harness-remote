@@ -49,7 +49,11 @@ public final class BackgroundAttentionService extends Service {
     static final String ACTION_START = "ai.harness.remote.action.START_BACKGROUND_ATTENTION";
     static final String ACTION_CONFIGURE = "ai.harness.remote.action.CONFIGURE_BACKGROUND_ATTENTION";
     static final String ACTION_STOP = "ai.harness.remote.action.STOP_BACKGROUND_ATTENTION";
+    static final String ACTION_VISIBILITY = "ai.harness.remote.action.VISIBLE_ATTENTION_SESSION";
     static final String EXTRA_MACHINES = "machines";
+    static final String EXTRA_VISIBLE_MACHINE = "visibleMachine";
+    static final String EXTRA_VISIBLE_AGENT = "visibleAgent";
+    static final String EXTRA_VISIBLE_SESSION = "visibleSession";
 
     private static final String TAG = "HarnessBackground";
     private static final int CONNECT_TIMEOUT_MS = 10_000;
@@ -97,6 +101,16 @@ public final class BackgroundAttentionService extends Service {
         if (ACTION_STOP.equals(action)) {
             stopSelf();
             return START_NOT_STICKY;
+        }
+        if (ACTION_VISIBILITY.equals(action)) {
+            if (sessionOutcomes != null) {
+                sessionOutcomes.onVisibilityChanged(
+                    intent.getStringExtra(EXTRA_VISIBLE_MACHINE),
+                    intent.getStringExtra(EXTRA_VISIBLE_AGENT),
+                    intent.getStringExtra(EXTRA_VISIBLE_SESSION)
+                );
+            }
+            return START_STICKY;
         }
 
         if (ACTION_CONFIGURE.equals(action) && intent.hasExtra(EXTRA_MACHINES)) {
