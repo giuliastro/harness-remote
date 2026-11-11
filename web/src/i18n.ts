@@ -723,6 +723,9 @@ export type TranslationKey =
   | 'sf.manageMachines'
   | 'sf.openNativeSession'
   | 'sf.openNativeSessionBody'
+  | 'tray.open'
+  | 'tray.quit'
+  | 'tray.tooltip'
   | 'sf.onlineCount'
   | 'sf.offlineCount'
   | 'sf.nativeSessionTruth'
@@ -1499,6 +1502,9 @@ const translations: Record<LanguageCode, Partial<Record<TranslationKey, string>>
     'sf.manageMachines': 'Manage machines',
     'sf.openNativeSession': 'Open a native Session',
     'sf.openNativeSessionBody': 'Select a Session from the left, or start a new one inside a Project. You will continue the same Session owned by its coding agent.',
+    'tray.open': 'Open Harness Remote',
+    'tray.quit': 'Quit Harness Remote',
+    'tray.tooltip': 'Harness Remote · background notifications active',
     'sf.onlineCount': '{count} online',
     'sf.offlineCount': '{count} offline',
     'sf.nativeSessionTruth': 'Native Session truth',
@@ -2275,6 +2281,9 @@ const translations: Record<LanguageCode, Partial<Record<TranslationKey, string>>
     'sf.manageMachines': 'Gestisci macchine',
     'sf.openNativeSession': 'Apri una sessione nativa',
     'sf.openNativeSessionBody': 'Seleziona una sessione a sinistra, o avviane una nuova in un progetto. Continuerai la stessa sessione posseduta dal suo coding agent.',
+    'tray.open': 'Apri Harness Remote',
+    'tray.quit': 'Esci da Harness Remote',
+    'tray.tooltip': 'Harness Remote · notifiche in background attive',
     'sf.onlineCount': '{count} online',
     'sf.offlineCount': '{count} offline',
     'sf.nativeSessionTruth': 'Verità della sessione nativa',
@@ -3051,6 +3060,9 @@ const translations: Record<LanguageCode, Partial<Record<TranslationKey, string>>
     'sf.manageMachines': '管理機器',
     'sf.openNativeSession': '開啟原生工作階段',
     'sf.openNativeSessionBody': '從左側選擇工作階段，或在專案中啟動新的工作階段。你將延續由其編碼代理擁有的同一個工作階段。',
+    'tray.open': '開啟 Harness Remote',
+    'tray.quit': '結束 Harness Remote',
+    'tray.tooltip': 'Harness Remote · 背景通知已啟用',
     'sf.onlineCount': '{count} 個上線',
     'sf.offlineCount': '{count} 個離線',
     'sf.nativeSessionTruth': '原生工作階段真實狀態',
@@ -3827,6 +3839,9 @@ const translations: Record<LanguageCode, Partial<Record<TranslationKey, string>>
     'sf.manageMachines': '管理机器',
     'sf.openNativeSession': '打开原生会话',
     'sf.openNativeSessionBody': '从左侧选择会话，或在项目中启动新会话。你将继续由其编码代理拥有的同一个会话。',
+    'tray.open': '打开 Harness Remote',
+    'tray.quit': '退出 Harness Remote',
+    'tray.tooltip': 'Harness Remote · 后台通知已启用',
     'sf.onlineCount': '{count} 个在线',
     'sf.offlineCount': '{count} 个离线',
     'sf.nativeSessionTruth': '原生会话真实状态',
@@ -4603,6 +4618,9 @@ const translations: Record<LanguageCode, Partial<Record<TranslationKey, string>>
     'sf.manageMachines': 'Gerenciar máquinas',
     'sf.openNativeSession': 'Abrir uma Sessão nativa',
     'sf.openNativeSessionBody': 'Selecione uma Sessão à esquerda ou inicie uma nova dentro de um Projeto. Você continuará a mesma Sessão pertencente ao agente de código dela.',
+    'tray.open': 'Abrir Harness Remote',
+    'tray.quit': 'Sair do Harness Remote',
+    'tray.tooltip': 'Harness Remote · notificações em segundo plano ativas',
     'sf.onlineCount': '{count} online',
     'sf.offlineCount': '{count} offline',
     'sf.nativeSessionTruth': 'Fonte da verdade da Sessão nativa',
