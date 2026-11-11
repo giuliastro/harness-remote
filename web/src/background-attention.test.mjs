@@ -1,5 +1,10 @@
 import assert from "node:assert/strict"
-import { backgroundAttentionMachines, syncBackgroundAttention } from "./background-attention.ts"
+import {
+  backgroundAttentionMachines,
+  selectedNativeSessionFromKey,
+  syncBackgroundAttention,
+  syncVisibleNativeSession
+} from "./background-attention.ts"
 
 function machine(id, host = "127.0.0.1", port = 4097, overrides = {}) {
   return {
@@ -105,4 +110,48 @@ const status = {
   const result = await syncBackgroundAttention([machine("one")], { platform: "web", plugin })
   assert.equal(result, null)
   assert.equal(called, false, "web and desktop must not touch the Android service")
+}
+
+{
+  assert.deepEqual(
+    selectedNativeSessionFromKey("machine-1:opencode:session-1"),
+    { machineID: "machine-1", agentID: "opencode", sessionID: "session-1" },
+    "the existing selected-Session key is the native visibility identity"
+  )
+  assert.equal(selectedNativeSessionFromKey(null), null)
+  assert.equal(selectedNativeSessionFromKey("machine-1:opencode"), null)
+  assert.equal(selectedNativeSessionFromKey(":opencode:session-1"), null)
+  assert.equal(selectedNativeSessionFromKey("machine-1::session-1"), null)
+}
+
+{
+  const calls = []
+  const plugin = {
+    async setVisibleSession(options) {
+      calls.push(options)
+      return status
+    }
+  }
+  await syncVisibleNativeSession(
+    { machineID: "machine-1", agentID: "opencode", sessionID: "session-1" },
+    { platform: "android", plugin }
+  )
+  await syncVisibleNativeSession(null, { platform: "android", plugin })
+  assert.deepEqual(calls, [
+    { machineID: "machine-1", agentID: "opencode", sessionID: "session-1" },
+    {}
+  ], "selection changes reach the native service and clearing is explicit")
+}
+
+{
+  let called = false
+  const plugin = {
+    async setVisibleSession() { called = true; return status }
+  }
+  const result = await syncVisibleNativeSession(
+    { machineID: "machine-1", agentID: "opencode", sessionID: "session-1" },
+    { platform: "web", plugin }
+  )
+  assert.equal(result, null)
+  assert.equal(called, false, "web and desktop never call the Android visibility bridge")
 }
