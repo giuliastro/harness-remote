@@ -476,6 +476,10 @@ public class BackgroundAttentionServiceTest {
     }
 
     private void grantNotificationPermission() throws Exception {
+        // The notification PendingIntent is the production trigger; the instrumentation process
+        // sends it directly, so Android 14 needs the app's background-activity app-op to behave like
+        // a real notification tap rather than rejecting the test's launch.
+        shell("cmd appops set " + context.getPackageName() + " START_ACTIVITIES_FROM_BACKGROUND allow");
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return;
         shell("pm grant " + context.getPackageName() + " android.permission.POST_NOTIFICATIONS");
         shell("dumpsys deviceidle whitelist +" + context.getPackageName());
