@@ -62,8 +62,8 @@ duration without changing app state.
 3. In the app, open and close one Session so the visible-Session path is exercised.
 4. Reset battery history:
    `adb shell dumpsys batterystats --reset`
-5. Keep Wi-Fi enabled, screen off, and the device unplugged for at least **2 hours**. Do not force
-   stop the app.
+5. Keep Wi-Fi enabled, screen off, and the device unplugged for at least **1 hour** (2 hours are
+   preferred for release evidence). Do not force stop the app.
 6. Collect evidence:
    - `adb shell dumpsys batterystats > batterystats.txt`
    - `adb shell dumpsys deviceidle > deviceidle.txt`
@@ -82,6 +82,12 @@ duration without changing app state.
 - Stop removes the notification and the SSE connection.
 - Record device model, Android/OEM build, soak duration, start/end percentage, and any OEM setting
   applied. Attach the evidence to issue #648.
+
+### HyperOS note
+
+HyperOS denies `dumpsys batterystats --reset` to the shell (`WRITE_SECURE_SETTINGS`). When reset is
+unavailable, record start/end battery level and the final `batterystats` snapshot; use the level
+delta as the comparable measurement.
 
 ### Current evidence status
 

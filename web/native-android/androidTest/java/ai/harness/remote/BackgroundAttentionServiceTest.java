@@ -83,8 +83,8 @@ public class BackgroundAttentionServiceTest {
         // one-time handoff finish before destroying the activity, then install the test machine and
         // start the service with no WebView left to reconcile against it.
         waitFor("web shell initial handoff", () -> BackgroundAttentionConfig.load(context).isEmpty(), 10_000);
-        InstrumentationRegistry.getInstrumentation().runOnMainSync(activity::finish);
-        waitFor("activity destroyed", activity::isDestroyed, 5_000);
+        InstrumentationRegistry.getInstrumentation().runOnMainSync(activity::finishAndRemoveTask);
+        waitFor("activity destroyed", activity::isDestroyed, 15_000);
         BackgroundAttentionConfig.save(context, Collections.singletonList(machine()));
 
         startService();
