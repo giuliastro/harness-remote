@@ -33,8 +33,7 @@ final class MachineAlertCenter {
     synchronized void show(String machineID, String machineName, String baseUrl) {
         if (manager == null || machineID == null || machineID.isEmpty()) return;
         int id = notificationID(machineID);
-        Intent open = new Intent(context, MainActivity.class)
-            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP);
+        Intent open = BackgroundAttentionNotifications.resumeAppIntent(context);
         int pendingFlags = PendingIntent.FLAG_UPDATE_CURRENT;
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) pendingFlags |= PendingIntent.FLAG_IMMUTABLE;
         PendingIntent contentIntent = PendingIntent.getActivity(context, id, open, pendingFlags);

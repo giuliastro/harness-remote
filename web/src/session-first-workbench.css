@@ -562,6 +562,30 @@
   background: var(--td3-red-soft);
 }
 
+/* A harness whose Sessions are still on their way. Same footprint as the empty row, so the list
+   does not jump when the Sessions land. */
+.hr-native-machine-loading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 2px 4px;
+  padding: 7px 9px;
+  border-radius: 8px;
+  color: var(--td3-muted);
+  background: var(--td3-raise-1);
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.hr-native-machine-loading > span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.hr-native-machine-loading.retrying {
+  color: var(--td3-amber-text, var(--td3-muted));
+}
+
 
 .hr-native-machine-group .hr-native-project-group + .hr-native-project-group {
   margin-top: 12px;

@@ -100,13 +100,31 @@ jobs:
         run: ./gradlew assembleRelease --stacktrace --no-daemon
         working-directory: web/android
 
+      # Same test build as the PR checks: its own "Harness Remote Debug" id next to the installed
+      # release app, signed with the shared debug key so each new test APK installs as an update.
+      - name: Give the test build its own application id
+        run: node web/scripts/set-debug-app-id.mjs
+
+      - name: Use the shared debug signing key
+        env:
+          ANDROID_DEBUG_KEYSTORE_BASE64: ${{ secrets.ANDROID_DEBUG_KEYSTORE_BASE64 }}
+        run: |
+          # Passed to Gradle explicitly below: the default ~/.android location is not reliably the
+          # one the Android Gradle plugin reads on the runner.
+          if [ -n "$ANDROID_DEBUG_KEYSTORE_BASE64" ]; then
+            echo "$ANDROID_DEBUG_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/debug.keystore"
+            {
+              echo "DEBUG_SIGNING=-Pandroid.injected.signing.store.file=$RUNNER_TEMP/debug.keystore -Pandroid.injected.signing.store.password=android -Pandroid.injected.signing.key.alias=androiddebugkey -Pandroid.injected.signing.key.password=android"
+            } >> "$GITHUB_ENV"
+          fi
+
       - name: Build test APK (debug signed)
-        run: ./gradlew assembleDebug --stacktrace --no-daemon
+        run: ./gradlew assembleDebug $DEBUG_SIGNING --stacktrace --no-daemon
         working-directory: web/android
 
       - name: Verify test APK signature
         run: |
-          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose web/android/app/build/outputs/apk/debug/app-debug.apk
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose --print-certs web/android/app/build/outputs/apk/debug/app-debug.apk
 
       - name: Upload test APK artifact
         uses: actions/upload-artifact@v7
