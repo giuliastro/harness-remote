@@ -559,7 +559,7 @@ public final class BackgroundAttentionService extends Service {
                     if (session == null) continue;
                     String sessionID = cleanIdentifier(session.optString("id", ""));
                     if (sessionID == null) continue;
-                    String status = session.optString("status", "").trim().toLowerCase(Locale.US);
+                    String status = sessionStatus(session);
                     if (status.isEmpty()) continue;
                     if (isWorkingStatus(status)) keepAwakeForWork();
                     String key = agent.id + "\u0000" + sessionID;
@@ -942,7 +942,7 @@ public final class BackgroundAttentionService extends Service {
                     for (int index = 0; index < sessions.length(); index++) {
                         JSONObject session = sessions.optJSONObject(index);
                         if (session == null || !sessionID.equals(session.optString("id", ""))) continue;
-                        String status = session.optString("status", "").trim().toLowerCase(Locale.US);
+                        String status = sessionStatus(session);
                         SessionOutcomeCenter center = sessionOutcomes;
                         if (center == null) return;
                         if (isWorkingStatus(status)) {
@@ -1069,6 +1069,20 @@ public final class BackgroundAttentionService extends Service {
         if (message == null || message.trim().isEmpty()) return error.getClass().getSimpleName();
         String normalized = message.trim();
         return normalized.length() > 180 ? normalized.substring(0, 180) : normalized;
+    }
+
+    /**
+     * A Session's status in the daemon list is a plain string for most harnesses ("busy") but an
+     * OpenCode-style object for others (Claude Code: {"type":"busy"}). Reading only the string form
+     * made every Claude Code turn invisible to the poller, so no Ready was ever posted.
+     */
+    static String sessionStatus(JSONObject session) {
+        if (session == null) return "";
+        Object value = session.opt("status");
+        String status = "";
+        if (value instanceof JSONObject) status = ((JSONObject) value).optString("type", "");
+        else if (value instanceof String) status = (String) value;
+        return status.trim().toLowerCase(Locale.US);
     }
 
     private static String safeLabel(String value) {
