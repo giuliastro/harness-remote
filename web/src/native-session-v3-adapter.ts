@@ -677,18 +677,22 @@ function notifyTranscript(entry: NativeConversationEntry): void {
 
 function captureUserTurns(entry: NativeConversationEntry, page: MessagePage, before?: string): void {
   // The first page describes the Session state that existed when the v3 controller mounted. Older
-  // pages are admitted when the user explicitly pages backward. Codex and OpenCode 2 Sessions can
-  // continue in the desktop app while this view stays open: each newly persisted user envelope must
-  // become a turn here as well, or its assistant messages have no turn to attach to in the timeline.
-  const tailDiscoversRuns = entry.target.backend === "codex" || entry.target.backend === "opencode2"
+  // pages are admitted when the user explicitly pages backward. Every harness can continue elsewhere
+  // while this view stays open - from the phone, another window, or the harness's own app or
+  // terminal - so each newly persisted user envelope on a tail read must become a turn here as well.
+  // Otherwise its replies have no turn to attach to and the open Session keeps showing old messages
+  // until the user opens another Session and comes back. This used to be limited to Codex and
+  // OpenCode 2, which left Claude Code, DeepSeek, OMP, PI and OpenCode frozen on another client's turns.
+  const tailDiscoversRuns = true
   const mayDiscoverRuns = !entry.initialPageCaptured || Boolean(before) || tailDiscoversRuns
   if (!mayDiscoverRuns) return
 
   // A tail page is also the only place a transport identity change becomes visible. Bind an unseen
   // native user row to the turn already representing the same prompt when that turn's own id is no
-  // longer on the page, rather than minting a duplicate from the new id space. Only OpenCode 2 changes
-  // id space mid-Session; Codex ids are stable, so a matching prompt there is a genuine repeat.
-  const reconcileIdentities = entry.target.backend === "opencode2" && entry.initialPageCaptured && !before
+  // longer on the page, rather than minting a duplicate from the new id space. OpenCode 2 changes id
+  // space mid-Session, and an ACP replay can mint fresh ids; Codex ids are stable, so a matching
+  // prompt there is a genuine repeat.
+  const reconcileIdentities = entry.target.backend !== "codex" && entry.initialPageCaptured && !before
   const pageUserIDs = new Set(page.messages
     .filter((message) => message.info.role === "user" && message.info.id)
     .map((message) => message.info.id))
@@ -723,7 +727,10 @@ function captureUserTurns(entry: NativeConversationEntry, page: MessagePage, bef
         // accept clock need not agree with the harness journal's timestamp.
         const acceptedTurn = turn.id.includes(":request:") && !turn.nativeMessageID
         const distance = Math.abs(turn.created - created)
-        if (!acceptedTurn && distance > PENDING_TRANSCRIPT_CLOCK_SKEW_MS) continue
+        // OpenCode 2 keeps the original timestamps when it changes ids, so the clock bounds the match.
+        // An ACP replay stamps the messages it re-mints with the moment of the reload, so for those
+        // harnesses the vanished id alone identifies the same prompt.
+        if (!acceptedTurn && distance > PENDING_TRANSCRIPT_CLOCK_SKEW_MS && entry.target.backend === "opencode2") continue
         if (distance >= reusableDistance) continue
         reusable = turn
         reusableDistance = distance

@@ -56,8 +56,10 @@ assert.equal(lineagePanel.includes('entry.other.directory'), false, 'the lineage
 
 assert.ok(adapter.includes('async loadMessagePage(config, sessionID, directory, before, limit, refreshHistory)'), 'adapter must observe the pages requested by the v3 controller through its scoped boundary')
 assert.equal(adapter.includes('api.loadMessagePage ='), false, 'native Session mounting must not mutate the shared API client')
-assert.ok(adapter.includes('const tailDiscoversRuns = entry.target.backend === "codex" || entry.target.backend === "opencode2"'), 'Codex and OpenCode 2 tail reads must discover turns added by another client after opening the Session')
-assert.ok(adapter.includes('if (!mayDiscoverRuns) return'), 'other harness tail replay must not manufacture duplicate Runs from changed replay ids')
+// Every harness's tail read discovers turns added by another client; claude-external-tail-sync and
+// codex-external-tail-sync cover the behaviour, including replayed ids that must not duplicate turns.
+assert.ok(adapter.includes('const tailDiscoversRuns = true'), 'every harness tail read must discover turns added by another client after opening the Session')
+assert.ok(adapter.includes('const reconcileIdentities = entry.target.backend !== "codex"'), 'a replay that re-mints ids must bind to existing turns instead of drawing them twice')
 assert.ok(adapter.includes(':request:${clientRequestId}'), 'new native prompts must use durable client request identity for the compatibility Run')
 assert.ok(adapter.includes('probeNativeSessionContinuation(entry.target)'), 'ACP writer acquisition must be deferred to the mutation boundary')
 assert.ok(adapter.includes('await ensureWriter(entry)'), 'Send and Stop must acquire writer ownership transparently when needed')

@@ -2,7 +2,7 @@ import { memo, useCallback, useEffect, useMemo, useRef, useState, type CSSProper
 import { api } from "../api"
 import { ChevronDownIcon, RefreshIcon } from "../Icons"
 import type { AttachmentPart } from "../attachments"
-import { createCoalescedTailRefresh } from "../coalesced-tail-refresh"
+import { createCoalescedTailRefresh, TAIL_REFRESH_STALL_MS } from "../coalesced-tail-refresh"
 import type { ConversationController } from "../conversation-controller"
 import { conversationTurnSessionID, conversationTurns, type ConversationRuntime, type ConversationTurn } from "../conversation-runtime"
 import { midTurnPromptPolicy, messageRowText, type QueuedPromptEntry } from "../mid-turn-policy"
@@ -399,8 +399,10 @@ export function WorkThreadConversation({
   const sendInFlightRef = useRef(false)
   const stopInFlightRef = useRef(false)
   const tailRefreshRef = useRef(createCoalescedTailRefresh())
-  const attentionInFlightRef = useRef(false)
-  const reconcileInFlightRef = useRef(false)
+  // Start times (0 when idle), not booleans: a read that never settles must not block every later
+  // poll and foreground reconciliation. After the stall window a new pass may start.
+  const attentionInFlightRef = useRef(0)
+  const reconcileInFlightRef = useRef(0)
   const conversationRef = useRef(conversation)
   const agentsRef = useRef(agents)
   const onConversationUpdateRef = useRef(onConversationUpdate)
@@ -496,8 +498,8 @@ export function WorkThreadConversation({
     modelSelectionTouchedRef.current = false
     sendInFlightRef.current = false
     stopInFlightRef.current = false
-    attentionInFlightRef.current = false
-    reconcileInFlightRef.current = false
+    attentionInFlightRef.current = 0
+    reconcileInFlightRef.current = 0
   }, [conversation.id, routing?.currentMachineID])
 
   // Re-opening the Session surface retires the "getting started" label for good: it belongs to the
@@ -768,7 +770,7 @@ export function WorkThreadConversation({
   }, [interactionEnabled, refreshCurrentTail, transcriptRefreshToken])
 
   const refreshAttention = useCallback(async (sourceConversation?: ConversationRuntime) => {
-    if (attentionInFlightRef.current) return
+    if (attentionInFlightRef.current && Date.now() - attentionInFlightRef.current < TAIL_REFRESH_STALL_MS) return
     const currentConversation = sourceConversation ?? conversationRef.current
     const turn = currentConversation.currentTurn
     const session = conversationTurnSessionID(turn)
@@ -781,7 +783,8 @@ export function WorkThreadConversation({
     const agentID = agentForTurn(currentConversation, turn)
     const config = configForAgent(baseConfig, currentAgents, agentID)
     const directory = turn?.directory || currentConversation.directory
-    attentionInFlightRef.current = true
+    const attentionStartedAt = Date.now()
+    attentionInFlightRef.current = attentionStartedAt
     try {
       const [nextQuestions, nextPermissions] = await Promise.all([
         api.loadQuestions(config, directory).catch(() => []),
@@ -792,13 +795,14 @@ export function WorkThreadConversation({
       setQuestions((current) => sameRequests(current, scopedQuestions) ? current : scopedQuestions)
       setPermissions((current) => sameRequests(current, scopedPermissions) ? current : scopedPermissions)
     } finally {
-      attentionInFlightRef.current = false
+      if (attentionInFlightRef.current === attentionStartedAt) attentionInFlightRef.current = 0
     }
   }, [baseConfig])
 
   const reconcile = useCallback(async () => {
-    if (reconcileInFlightRef.current) return
-    reconcileInFlightRef.current = true
+    if (reconcileInFlightRef.current && Date.now() - reconcileInFlightRef.current < TAIL_REFRESH_STALL_MS) return
+    const reconcileStartedAt = Date.now()
+    reconcileInFlightRef.current = reconcileStartedAt
     const prior = conversationRef.current
     // Transcript durability and lifecycle status are independent OpenCode streams. Start the
     // selected tail read before status enrichment so a stalled /session/status cannot hide a
@@ -816,7 +820,7 @@ export function WorkThreadConversation({
       // A transient reconcile failure must never clear a valid conversation.
     } finally {
       await Promise.allSettled([tailRefresh, attentionRefresh])
-      reconcileInFlightRef.current = false
+      if (reconcileInFlightRef.current === reconcileStartedAt) reconcileInFlightRef.current = 0
     }
   }, [baseConfig, controller, refreshCurrentTail, refreshAttention])
 
