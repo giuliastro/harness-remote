@@ -7,8 +7,6 @@ import android.content.Intent;
 import android.content.pm.ServiceInfo;
 import android.net.ConnectivityManager;
 import android.net.Network;
-import android.net.NetworkCapabilities;
-import android.net.NetworkRequest;
 import android.os.Build;
 import android.os.Handler;
 import android.os.IBinder;
@@ -72,6 +70,11 @@ public final class BackgroundAttentionService extends Service {
     // is stale after sleep, a Wi-Fi handoff or a short network loss.
     private static final int READ_TIMEOUT_MS = 35_000;
     private static final long SNAPSHOT_REFRESH_MS = 60_000;
+    private static final long STATUS_POLL_MS = 4_000;
+    private static final long WORK_WAKE_LOCK_MS = 10 * 60_000;
+    // A single stream drop (Wi-Fi handoff, daemon restart, read timeout) reconnects within seconds.
+    // Only a machine that stays unreachable this long deserves an alert.
+    private static final long UNREACHABLE_ALERT_DELAY_MS = 60_000;
 
     private final Object runtimeLock = new Object();
     private final Map<String, MachineRuntime> runtimes = new LinkedHashMap<>();
@@ -103,8 +106,8 @@ public final class BackgroundAttentionService extends Service {
         if (power != null) {
             wakeLock = power.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "HarnessRemote:background");
             wakeLock.setReferenceCounted(false);
-            wakeLock.acquire();
         }
+        keepAwakeForWork();
         int configured = BackgroundAttentionConfig.load(this).size();
         startInForeground(0, configured);
         executor = Executors.newCachedThreadPool(runnable -> {
@@ -249,16 +252,15 @@ public final class BackgroundAttentionService extends Service {
         try {
             ConnectivityManager manager = (ConnectivityManager) getSystemService(CONNECTIVITY_SERVICE);
             if (manager == null) return;
-            NetworkRequest request = new NetworkRequest.Builder()
-                .addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
-                .build();
+            // Follow only the default network. A per-request callback also fires for secondary
+            // networks (mobile data next to Wi-Fi), and every onAvailable restarted healthy streams.
             networkCallback = new ConnectivityManager.NetworkCallback() {
                 @Override
                 public void onAvailable(Network network) {
                     wakeAll();
                 }
             };
-            manager.registerNetworkCallback(request, networkCallback);
+            manager.registerDefaultNetworkCallback(networkCallback);
         } catch (Exception error) {
             Log.w(TAG, "network callback could not be registered");
         }
@@ -273,6 +275,22 @@ public final class BackgroundAttentionService extends Service {
             // The process may be going away; nothing to recover here.
         }
         networkCallback = null;
+    }
+
+    /**
+     * Hold a bounded partial wake lock while a turn is observed, so HyperOS/Doze does not freeze the
+     * status poller between busy and idle. It is never held indefinitely: every observation extends
+     * it by WORK_WAKE_LOCK_MS and it lapses on its own once all Sessions are quiet. A new turn wakes
+     * the CPU again through the live stream's network traffic.
+     */
+    private void keepAwakeForWork() {
+        PowerManager.WakeLock lock = wakeLock;
+        if (lock == null || shuttingDown) return;
+        try {
+            lock.acquire(WORK_WAKE_LOCK_MS);
+        } catch (RuntimeException ignored) {
+            // A wake lock is an optimisation for timely outcomes, never a reason to stop the service.
+        }
     }
 
     private void updateNotificationSoon() {
@@ -409,6 +427,9 @@ public final class BackgroundAttentionService extends Service {
         final AtomicBoolean stopped = new AtomicBoolean(false);
         final Map<String, AgentStream> streams = new HashMap<>();
         final Map<String, String> observedStatuses = new HashMap<>();
+        final Set<String> inFlightStatusPolls = new HashSet<>();
+        final Runnable unreachableCheck = this::showUnreachableIfStillDown;
+        volatile boolean unreachablePending;
         final Object pauseLock = new Object();
         volatile Thread worker;
         volatile Thread statusWorker;
@@ -445,6 +466,9 @@ public final class BackgroundAttentionService extends Service {
             Thread status = statusWorker;
             if (status != null) status.interrupt();
             BackgroundAttentionStatus.setMachineConnected(machine.id, false);
+            // A machine removed or re-paired while unreachable must not leave its alert behind.
+            MachineAlertCenter alerts = machineAlerts;
+            if (alerts != null) alerts.clear(machine.id);
         }
 
         void wake() {
@@ -492,12 +516,29 @@ public final class BackgroundAttentionService extends Service {
                 ExecutorService pool = executor;
                 for (AgentInfo agent : agents) {
                     if (stopped.get() || MachineRuntime.this.stopped.get()) return;
+                    if (pool == null) break;
+                    // One poll in flight per agent: a slow or asleep machine must not pile up a new
+                    // request every few seconds until the read timeout.
+                    synchronized (inFlightStatusPolls) {
+                        if (!inFlightStatusPolls.add(agent.id)) continue;
+                    }
                     // Poll agents concurrently: sequential session-list reads can take longer than a
                     // short turn and starve the last agent (DeepSeek is last in the daemon list).
-                    if (pool != null) pool.submit(() -> pollAgentStatus(agent));
+                    try {
+                        pool.execute(() -> {
+                            try {
+                                pollAgentStatus(agent);
+                            } finally {
+                                synchronized (inFlightStatusPolls) { inFlightStatusPolls.remove(agent.id); }
+                            }
+                        });
+                    } catch (RuntimeException rejected) {
+                        // The service is shutting down; an uncaught rejection would kill the process.
+                        return;
+                    }
                 }
                 try {
-                    Thread.sleep(4_000);
+                    Thread.sleep(STATUS_POLL_MS);
                 } catch (InterruptedException interrupted) {
                     Thread.currentThread().interrupt();
                     return;
@@ -520,6 +561,7 @@ public final class BackgroundAttentionService extends Service {
                     if (sessionID == null) continue;
                     String status = session.optString("status", "").trim().toLowerCase(Locale.US);
                     if (status.isEmpty()) continue;
+                    if (isWorkingStatus(status)) keepAwakeForWork();
                     String key = agent.id + "\u0000" + sessionID;
                     String previous;
                     synchronized (observedStatuses) { previous = observedStatuses.put(key, status); }
@@ -657,15 +699,28 @@ public final class BackgroundAttentionService extends Service {
                 && (active > 0 || (snapshotReachable && capableAgents == 0));
             BackgroundAttentionStatus.setMachineConnected(machine.id, connected);
             MachineAlertCenter alerts = machineAlerts;
+            Handler handler = mainHandler;
             if (connected) {
                 everConnected = true;
+                if (unreachablePending && handler != null) handler.removeCallbacks(unreachableCheck);
+                unreachablePending = false;
                 if (alerts != null) alerts.clear(machine.id);
-            } else if (everConnected && !stopped.get() && alerts != null) {
+            } else if (everConnected && !stopped.get() && alerts != null && handler != null && !unreachablePending) {
                 // The stream cannot produce a session.error if the machine itself vanished from
-                // Wi-Fi/standby. Surface that loss once and cancel it when any stream reconnects.
-                alerts.show(machine.id, machine.name, machine.baseUrl);
+                // Wi-Fi/standby. Surface that loss once it persists, and cancel it when any stream
+                // reconnects. Routine reconnects stay silent.
+                unreachablePending = true;
+                handler.postDelayed(unreachableCheck, UNREACHABLE_ALERT_DELAY_MS);
             }
             updateNotificationSoon();
+        }
+
+        private void showUnreachableIfStillDown() {
+            unreachablePending = false;
+            if (stopped.get() || shuttingDown) return;
+            if (BackgroundAttentionStatus.isMachineConnected(machine.id)) return;
+            MachineAlertCenter alerts = machineAlerts;
+            if (alerts != null) alerts.show(machine.id, machine.name, machine.baseUrl);
         }
 
         private void pause(long milliseconds) {
@@ -849,7 +904,7 @@ public final class BackgroundAttentionService extends Service {
                     return;
                 }
                 if (sessionID == null) return;
-                Log.i(TAG, "outcome poll schedule " + agent.id + " " + sessionID);
+                keepAwakeForWork();
                 scheduleOutcomePoll(sessionID, 1_500);
             }
 
@@ -862,7 +917,17 @@ public final class BackgroundAttentionService extends Service {
                     synchronized (pendingOutcomePolls) { pendingOutcomePolls.remove(sessionID); }
                     return;
                 }
-                handler.postDelayed(() -> pollOutcome(sessionID), delayMs);
+                // The delay lives on the main looper, but the HTTP read must not: Android throws
+                // NetworkOnMainThreadException there, which the best-effort catch would swallow.
+                handler.postDelayed(() -> {
+                    ExecutorService pool = executor;
+                    try {
+                        if (pool == null) throw new IllegalStateException("no executor");
+                        pool.execute(() -> pollOutcome(sessionID));
+                    } catch (RuntimeException rejected) {
+                        synchronized (pendingOutcomePolls) { pendingOutcomePolls.remove(sessionID); }
+                    }
+                }, delayMs);
             }
 
             private void pollOutcome(String sessionID) {
@@ -873,15 +938,14 @@ public final class BackgroundAttentionService extends Service {
                     poll = openJson(machine.baseUrl + "/v1/agents/" + encode(agent.id) + "/session");
                     if (poll.getResponseCode() != HttpURLConnection.HTTP_OK) return;
                     JSONArray sessions = new JSONArray(readBody(poll.getInputStream(), 4_000_000));
-                    Log.i(TAG, "outcome poll result " + sessions.length());
                     for (int index = 0; index < sessions.length(); index++) {
                         JSONObject session = sessions.optJSONObject(index);
                         if (session == null || !sessionID.equals(session.optString("id", ""))) continue;
                         String status = session.optString("status", "").trim().toLowerCase(Locale.US);
-                        Log.i(TAG, "outcome poll status " + sessionID + " " + status);
                         SessionOutcomeCenter center = sessionOutcomes;
                         if (center == null) return;
-                        if ("busy".equals(status) || "starting".equals(status) || "retry".equals(status)) {
+                        if (isWorkingStatus(status)) {
+                            keepAwakeForWork();
                             // The final message.updated can arrive before the turn flips to idle;
                             // there is no later idle frame on ACP, so keep polling until terminal.
                             scheduleOutcomePoll(sessionID, 2_000);

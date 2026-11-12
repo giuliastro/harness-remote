@@ -68,6 +68,19 @@ const status = {
 }
 
 {
+  // A daemon behind an HTTPS reverse proxy or Tailscale serve listens on the default port, which
+  // `new URL` normalises away. It must still reach the background service.
+  const result = backgroundAttentionMachines([
+    machine("proxy", "https://studio.example.ts.net", 443),
+    machine("plain", "http://10.0.0.9", 80)
+  ])
+  assert.deepEqual(result.map((entry) => entry.baseUrl), [
+    "https://studio.example.ts.net:443",
+    "http://10.0.0.9:80"
+  ])
+}
+
+{
   const machines = Array.from({ length: 9 }, (_, index) => machine(`m${index}`, `10.0.0.${index + 1}`))
   assert.equal(backgroundAttentionMachines(machines).length, 6, "the native payload stays bounded")
 }

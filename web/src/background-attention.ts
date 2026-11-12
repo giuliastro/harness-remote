@@ -44,7 +44,8 @@ function validBaseUrl(value: string): boolean {
   try {
     const endpoint = new URL(value)
     if (endpoint.protocol !== "http:" && endpoint.protocol !== "https:") return false
-    if (!endpoint.hostname || !endpoint.port) return false
+    // `new URL` drops a default port (https:443, http:80), so an empty port is valid here.
+    if (!endpoint.hostname) return false
     if (endpoint.username || endpoint.password || endpoint.search || endpoint.hash) return false
     return endpoint.pathname === "" || endpoint.pathname === "/"
   } catch {
