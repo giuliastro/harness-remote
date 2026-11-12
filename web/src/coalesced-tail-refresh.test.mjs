@@ -35,3 +35,18 @@ test("an in-flight tail read cannot swallow the final authoritative transcript r
   assert.equal(reads, 2, "the burst should coalesce into the in-flight read plus one trailing read")
   assert.equal(visibleText, authoritativeText, "the still-open Session must converge to the authoritative final transcript")
 })
+
+test("a tail read that never settles cannot freeze every later refresh of the open Session", async () => {
+  // The browser request used to lose its deadline once headers arrived, so a body stalled by sleep
+  // or a network change stayed pending forever and every later live event, poll and foreground
+  // return queued behind it. The Session showed old messages until the user navigated away.
+  const refresh = createCoalescedTailRefresh({ stallMs: 20 })
+  let visibleText = "old messages"
+  void refresh(() => new Promise(() => {}))
+  await refresh(async () => { visibleText = "messages written from the phone" })
+  assert.equal(visibleText, "messages written from the phone", "the newest read must still run after a stuck one")
+
+  // The queue is free again: a later event is applied without waiting for the abandoned read.
+  await refresh(async () => { visibleText = "a later reply" })
+  assert.equal(visibleText, "a later reply")
+})
