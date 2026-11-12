@@ -1760,7 +1760,7 @@ export function NativeSessionHome({
                     {state === "loading" ? (
                       <div className="hr-native-machine-loading" role="status" aria-live="polite">
                         <LoadingIcon size={13} />
-                        <span>{t("sf.connectingMachines")}</span>
+                        <span>{t("sf.machineConnecting")}</span>
                       </div>
                     ) : null}
                     {state === "online" && pendingAgents.some(({ load }) => load === "loading") ? (
