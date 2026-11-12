@@ -25,6 +25,7 @@ import {
   type ThemePreference
 } from "../appPreferences"
 import { ChatIcon, LoadingIcon, PencilIcon, PhoneIcon, RefreshIcon, SearchIcon, ServerIcon, SettingsIcon, TrashIcon } from "../Icons"
+import { restoreBackgroundAttentionNotification } from "../background-attention"
 import { harnessIconUrl } from "../harness-icons"
 import { createTranslator, languageOptions, type LanguageCode, type Translator } from "../i18n"
 import { chooseDesktopProjectFolder, desktopNetworkSettings, desktopProjectRoots, desktopUpdateStatus, openDesktopUpdate, setDesktopNetworkSettings, setDesktopProjectRoots } from "../desktopBridge"
@@ -667,6 +668,8 @@ function MobileSettingsPage({ onClose, onOpenPlugins }: { onClose: () => void; o
   const [networkError, setNetworkError] = useState<string | null>(null)
   const [update, setUpdate] = useState<DesktopUpdateStatus | null>(null)
   const [updateBusy, setUpdateBusy] = useState(false)
+  const [backgroundBusy, setBackgroundBusy] = useState(false)
+  const [backgroundResult, setBackgroundResult] = useState<"restored" | "noMachines" | "unavailable" | null>(null)
   const t = useMemo(() => createTranslator(language), [language])
   const pageRef = useRef<HTMLElement>(null)
   useDialogDismiss(pageRef, onClose, { autoFocus: false })
@@ -687,6 +690,22 @@ function MobileSettingsPage({ onClose, onOpenPlugins }: { onClose: () => void; o
     try { setUpdate(await desktopUpdateStatus(true)) }
     catch { setUpdate({ status: "error", currentVersion: update?.currentVersion ?? "" }) }
     finally { setUpdateBusy(false) }
+  }
+
+  async function showBackgroundNotification() {
+    if (backgroundBusy) return
+    setBackgroundBusy(true)
+    setBackgroundResult(null)
+    try {
+      const status = await restoreBackgroundAttentionNotification()
+      if (!status) setBackgroundResult("unavailable")
+      else if (status.configuredMachines === 0) setBackgroundResult("noMachines")
+      else setBackgroundResult(status.running ? "restored" : "unavailable")
+    } catch {
+      setBackgroundResult("unavailable")
+    } finally {
+      setBackgroundBusy(false)
+    }
   }
 
   /**
@@ -800,6 +819,31 @@ function MobileSettingsPage({ onClose, onOpenPlugins }: { onClose: () => void; o
             <label data-icon="language"><strong>{t("settings.language")}</strong><select value={language} onChange={(event) => changeLanguage(event.target.value)}>{languageOptions.map((option) => <option value={option.code} key={option.code}>{option.label}</option>)}</select></label>
           </div>
           <p>{t("sf.appearanceShared")}</p>
+          {Capacitor.getPlatform() === "android" ? (
+            <div className="hr-mobile-settings-group" data-settings-background>
+              <span>{t("settings.backgroundTitle")}</span>
+              <button
+                type="button"
+                className="hr-settings-row-button"
+                data-icon="live"
+                disabled={backgroundBusy}
+                onClick={() => void showBackgroundNotification()}
+              >
+                <strong>{t("settings.backgroundShow")}</strong>
+                <span role="status" aria-live="polite">
+                  {backgroundBusy
+                    ? "…"
+                    : backgroundResult === "restored"
+                      ? t("settings.backgroundRestored")
+                      : backgroundResult === "noMachines"
+                        ? t("sf.noMachinesConfigured")
+                        : backgroundResult === "unavailable"
+                          ? t("settings.backgroundUnavailable")
+                          : t("settings.backgroundHint")}
+                </span>
+              </button>
+            </div>
+          ) : null}
           <div className="hr-mobile-settings-group" data-settings-activity>
             <span>{t("settings.activityTitle")}</span>
             <label data-icon="live"><strong>{t("settings.activityLive")}</strong><select value={activity.live} onChange={(event) => changeActivity({ live: event.target.value as LiveActivityMode })}>{LIVE_ACTIVITY_MODES.map((mode) => <option value={mode} key={mode}>{t(`settings.activityLive.${mode}`)}</option>)}</select></label>
@@ -1131,7 +1175,12 @@ function NativeSessionsWorkspace({
         && runtime.snapshot?.agents.some((agent) => agent.state === "unavailable"))
     })
     const timer = window.setInterval(() => {
-      if (document.visibilityState === "visible") setRevision((value) => value + 1)
+      if (document.visibilityState === "visible") {
+        setRevision((value) => value + 1)
+        // Another client (notably the phone) can delete or stop a Session without emitting a live
+        // event into this window. Refresh the index on the same cadence so the desktop rail converges.
+        setListRevision((value) => value + 1)
+      }
     }, interval)
     const onVisibility = () => {
       if (document.visibilityState !== "visible") return

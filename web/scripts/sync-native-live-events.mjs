@@ -27,7 +27,8 @@ const javaFiles = [
   "PermissionReplyTracker.java",
   "SessionOutcomeCenter.java",
   "SessionOutcomeEvent.java",
-  "SessionOutcomeParser.java"
+  "SessionOutcomeParser.java",
+  "MachineAlertCenter.java"
 ]
 for (const file of javaFiles) {
   cpSync(resolve(source, file), resolve(target, file))
@@ -65,7 +66,8 @@ const requiredPermissions = [
   "android.permission.FOREGROUND_SERVICE",
   "android.permission.FOREGROUND_SERVICE_REMOTE_MESSAGING",
   "android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS",
-  "android.permission.ACCESS_NETWORK_STATE"
+  "android.permission.ACCESS_NETWORK_STATE",
+  "android.permission.WAKE_LOCK"
 ]
 for (const permission of requiredPermissions) {
   if (manifestText.includes(`android:name="${permission}"`)) continue

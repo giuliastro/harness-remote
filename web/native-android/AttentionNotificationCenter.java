@@ -105,10 +105,11 @@ final class AttentionNotificationCenter {
         if (deepLink == null) return null;
         Intent intent = new Intent(context, MainActivity.class)
             // Capacitor App only emits appUrlOpen for ACTION_VIEW. An explicit component still
-            // launches MainActivity, so this also works for a cold start.
+            // launches MainActivity, so this also works for a cold start. Rebuild the task when the
+            // previous WebView was destroyed in Doze instead of opening its blank page.
             .setAction(Intent.ACTION_VIEW)
             .setData(Uri.parse(deepLink))
-            .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP);
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP);
         int pendingFlags = PendingIntent.FLAG_UPDATE_CURRENT;
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) pendingFlags |= PendingIntent.FLAG_IMMUTABLE;
         PendingIntent contentIntent = PendingIntent.getActivity(context, notificationID, intent, pendingFlags);

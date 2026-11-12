@@ -44,7 +44,10 @@ final class BackgroundAttentionNotifications {
         }
 
         Intent open = new Intent(context, MainActivity.class)
-            .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP);
+            // A cold notification tap after Doze can otherwise bring back a task whose WebView was
+            // destroyed by the system and render an empty page. Rebuild the task from the bundled
+            // app instead of delivering the tap to that stale WebView.
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP);
         int pendingFlags = PendingIntent.FLAG_UPDATE_CURRENT;
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) pendingFlags |= PendingIntent.FLAG_IMMUTABLE;
         PendingIntent contentIntent = PendingIntent.getActivity(context, 0, open, pendingFlags);

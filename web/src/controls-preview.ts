@@ -44,6 +44,7 @@ import "./activity-timeline.css"
 import "./session-header-narrow.css"
 import "./mobile-compact-chat.css"
 import "./compact-final-touch.css"
+import "./mobile-composer.css"
 import "./plugin-center.css"
 
 /** Same list, same order as `main.tsx` - `beautiful-ui-controls.test.mjs` asserts the two match, so

@@ -32,6 +32,7 @@ export type BackgroundAttentionNativePlugin = {
   start(options: { prompt?: boolean }): Promise<BackgroundAttentionStatus>
   stop(): Promise<BackgroundAttentionStatus>
   status(): Promise<BackgroundAttentionStatus>
+  restoreNotification(): Promise<BackgroundAttentionStatus>
   setVisibleSession(options: { machineID?: string; agentID?: string; sessionID?: string }): Promise<BackgroundAttentionStatus>
 }
 
@@ -43,7 +44,8 @@ function validBaseUrl(value: string): boolean {
   try {
     const endpoint = new URL(value)
     if (endpoint.protocol !== "http:" && endpoint.protocol !== "https:") return false
-    if (!endpoint.hostname || !endpoint.port) return false
+    // `new URL` drops a default port (https:443, http:80), so an empty port is valid here.
+    if (!endpoint.hostname) return false
     if (endpoint.username || endpoint.password || endpoint.search || endpoint.hash) return false
     return endpoint.pathname === "" || endpoint.pathname === "/"
   } catch {
@@ -101,6 +103,23 @@ export async function syncBackgroundAttention(
   await plugin.configure({ machines: targets })
   if (targets.length === 0) return plugin.stop()
   return plugin.start({ prompt: options.prompt === true })
+}
+
+/**
+ * Re-post the foreground-service notification after the user or an OEM surface hid it. The service
+ * keeps running without the notification on some HyperOS builds, so opening the app was previously
+ * the only accidental way to get it back.
+ */
+export async function restoreBackgroundAttentionNotification(
+  options: {
+    platform?: string
+    plugin?: Pick<BackgroundAttentionNativePlugin, "restoreNotification">
+  } = {}
+): Promise<BackgroundAttentionStatus | null> {
+  const platform = options.platform ?? Capacitor.getPlatform()
+  if (platform !== "android") return null
+  const plugin = options.plugin ?? BackgroundAttention
+  return plugin.restoreNotification()
 }
 
 /**

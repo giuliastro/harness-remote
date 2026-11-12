@@ -607,10 +607,20 @@ async function start(): Promise<void> {
   }
 }
 
-app.whenReady().then(() => start()).catch((error: unknown) => {
-  log(`startup failed: ${error instanceof Error ? error.message : "unknown error"}`)
+// Closing the window now only hides it in the tray, so launching the app again must reopen that
+// window instead of starting a second process with its own embedded daemon and tray icon.
+if (!app.requestSingleInstanceLock()) {
+  quitting = true
   app.quit()
-})
+} else {
+  app.on("second-instance", () => {
+    if (app.isReady()) showMainWindow()
+  })
+  app.whenReady().then(() => start()).catch((error: unknown) => {
+    log(`startup failed: ${error instanceof Error ? error.message : "unknown error"}`)
+    app.quit()
+  })
+}
 
 app.on("before-quit", (event) => {
   activeTurnSleepBlocker?.stop()

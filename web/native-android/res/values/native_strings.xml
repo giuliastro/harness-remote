@@ -29,4 +29,8 @@
     <string name="hr_attention_boundary">Boundary: %1$s</string>
     <string name="hr_attention_allow_once">Allow once</string>
     <string name="hr_attention_deny">Deny</string>
+    <string name="hr_bg_unreachable_channel_name">Machine connection</string>
+    <string name="hr_bg_unreachable_channel_description">Tells you when a paired machine stops answering in the background.</string>
+    <string name="hr_bg_unreachable_title">Machine unreachable</string>
+    <string name="hr_bg_unreachable_body">%1$s · %2$s</string>
 </resources>

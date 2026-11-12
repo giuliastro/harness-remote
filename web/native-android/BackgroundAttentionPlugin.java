@@ -89,6 +89,33 @@ public class BackgroundAttentionPlugin extends Plugin {
         call.resolve(statusObject());
     }
 
+    /**
+     * Restore the foreground notification after it was hidden. Some OEM surfaces let the ongoing
+     * notification be swiped away while the service keeps running; opening the app was the only way
+     * to get it back before this bridge.
+     */
+    @PluginMethod
+    public void restoreNotification(PluginCall call) {
+        if (!notificationPermission()) {
+            call.resolve(statusObject());
+            return;
+        }
+        Context context = getContext();
+        Intent intent = new Intent(context, BackgroundAttentionService.class);
+        try {
+            if (BackgroundAttentionStatus.running) {
+                intent.setAction(BackgroundAttentionService.ACTION_SHOW_NOTIFICATION);
+                context.startService(intent);
+            } else {
+                intent.setAction(BackgroundAttentionService.ACTION_START);
+                ContextCompat.startForegroundService(context, intent);
+            }
+            call.resolve(statusObject());
+        } catch (Exception error) {
+            call.reject("The connection notification could not be restored", error);
+        }
+    }
+
     @PluginMethod
     public void status(PluginCall call) {
         call.resolve(statusObject());

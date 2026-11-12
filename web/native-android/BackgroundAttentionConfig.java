@@ -27,7 +27,7 @@ final class BackgroundAttentionConfig {
     static final String KEY_NOTIFICATION_PROMPTED = "notification_prompted";
     static final String KEY_NOTIFICATION_PROMPT_PENDING = "notification_prompt_pending";
     static final int MAX_MACHINES = 6;
-    static final int MAX_AGENTS_PER_MACHINE = 6;
+    static final int MAX_AGENTS_PER_MACHINE = 12;
 
     private static final int MAX_ID = 256;
     private static final int MAX_NAME = 256;
@@ -185,7 +185,8 @@ final class BackgroundAttentionConfig {
             String protocol = url.getProtocol() == null ? "" : url.getProtocol().toLowerCase(Locale.US);
             if (!"http".equals(protocol) && !"https".equals(protocol)) return false;
             if (url.getHost() == null || url.getHost().isEmpty()) return false;
-            if (url.getPort() < 1 || url.getPort() > 65_535) return false;
+            int port = url.getPort() == -1 ? url.getDefaultPort() : url.getPort();
+            if (port < 1 || port > 65_535) return false;
             if (url.getUserInfo() != null || url.getQuery() != null || url.getRef() != null) return false;
             String path = url.getPath();
             return path == null || path.isEmpty() || "/".equals(path);
