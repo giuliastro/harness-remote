@@ -297,6 +297,24 @@ public class BackgroundAttentionServiceTest {
     }
 
     @Test
+    public void postsReadyForAnObjectShapedStatusFromThePeriodicPoll() throws Exception {
+        // Claude Code reports {"type":"busy"} instead of "busy", and its stream may send no frame the
+        // service recognises. The periodic status poll alone must still see the turn end.
+        String readyTitle = context.getString(R.string.hr_outcome_ready_title);
+        server.sessionList = "[{\"id\":\"claude-1\",\"status\":{\"type\":\"idle\"}}]";
+        startService();
+        waitFor("machine connected", () -> BackgroundAttentionStatus.isMachineConnected(FakeMachineServer.MACHINE_ID), 15_000);
+        Thread.sleep(5_000);
+        server.sessionList = "[{\"id\":\"claude-1\",\"status\":{\"type\":\"busy\"}}]";
+        Thread.sleep(5_000);
+        assertEquals(0, attentionNotificationCount(readyTitle));
+        server.sessionList = "[{\"id\":\"claude-1\",\"status\":{\"type\":\"idle\"}}]";
+        waitFor("ready notification", () -> attentionNotification(readyTitle) != null, 10_000);
+        Thread.sleep(5_000);
+        assertEquals(1, attentionNotificationCount(readyTitle));
+    }
+
+    @Test
     public void doesNotReadyNotifyWhilePermissionIsPending() throws Exception {
         startService();
         waitFor("machine connected", () -> BackgroundAttentionStatus.isMachineConnected(FakeMachineServer.MACHINE_ID), 15_000);
