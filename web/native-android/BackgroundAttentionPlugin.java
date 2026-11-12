@@ -59,7 +59,10 @@ public class BackgroundAttentionPlugin extends Plugin {
 
     @PluginMethod
     public void start(PluginCall call) {
-        boolean prompt = Boolean.TRUE.equals(call.getBoolean("prompt", false));
+        startWithPrompt(call, Boolean.TRUE.equals(call.getBoolean("prompt", false)));
+    }
+
+    private void startWithPrompt(PluginCall call, boolean prompt) {
         if (notificationPermission()) {
             // The user has already answered the system prompt (or is on an older Android). Never ask
             // again for the lifetime of this install.
@@ -97,6 +100,15 @@ public class BackgroundAttentionPlugin extends Plugin {
     @PluginMethod
     public void restoreNotification(PluginCall call) {
         if (!notificationPermission()) {
+            Context context = getContext();
+            if (!BackgroundAttentionConfig.notificationPrompted(context) && getActivity() != null) {
+                // An explicit tap is the clearest moment to ask: show the system dialog and start
+                // the service when it is granted.
+                startWithPrompt(call, true);
+                return;
+            }
+            // Android does not show the dialog again after a denial; only App info can change it.
+            openNotificationSettings();
             call.resolve(statusObject());
             return;
         }
@@ -113,6 +125,24 @@ public class BackgroundAttentionPlugin extends Plugin {
             call.resolve(statusObject());
         } catch (Exception error) {
             call.reject("The connection notification could not be restored", error);
+        }
+    }
+
+    private void openNotificationSettings() {
+        Context context = getContext();
+        Intent intent;
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            intent = new Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS)
+                .putExtra(Settings.EXTRA_APP_PACKAGE, context.getPackageName());
+        } else {
+            intent = new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS)
+                .setData(Uri.parse("package:" + context.getPackageName()));
+        }
+        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+        try {
+            context.startActivity(intent);
+        } catch (Exception error) {
+            Log.w("HarnessBackground", "notification settings could not be opened");
         }
     }
 

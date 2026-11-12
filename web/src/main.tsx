@@ -109,11 +109,13 @@ function HarnessRemoteBoundary() {
   const [pairingSuccessMachineName, setPairingSuccessMachineName] = useState<string | null>(null)
 
   // The native foreground service is the only component that keeps paired-machine streams alive
-  // after Android backgrounds the WebView. A launch resumes an already granted service; only a
-  // user-driven pairing asks for the notification and battery permissions.
+  // after Android backgrounds the WebView. A launch with paired machines asks for the notification
+  // permission when this install has never asked: someone who updated from a version without
+  // background notifications already has machines and would otherwise never see the prompt. The
+  // native side asks at most once per install and never again after a grant or a denial.
   useEffect(() => {
     if (!machinesReady) return
-    void syncBackgroundAttention(persistedMachines).catch(() => undefined)
+    void syncBackgroundAttention(persistedMachines, { prompt: true }).catch(() => undefined)
   }, [machinesReady, revision])
 
   // Success needs no action, so it clears itself. Errors carry what to fix and stay until dismissed;
