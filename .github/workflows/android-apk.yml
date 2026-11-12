@@ -100,13 +100,28 @@ jobs:
         run: ./gradlew assembleRelease --stacktrace --no-daemon
         working-directory: web/android
 
+      # Same test build as the PR checks: its own "Harness Remote Debug" id next to the installed
+      # release app, signed with the shared debug key so each new test APK installs as an update.
+      - name: Give the test build its own application id
+        run: node web/scripts/set-debug-app-id.mjs
+
+      - name: Use the shared debug signing key
+        env:
+          ANDROID_DEBUG_KEYSTORE_BASE64: ${{ secrets.ANDROID_DEBUG_KEYSTORE_BASE64 }}
+        run: |
+          if [ -n "$ANDROID_DEBUG_KEYSTORE_BASE64" ]; then
+            dir="${ANDROID_USER_HOME:-$HOME/.android}"
+            mkdir -p "$dir"
+            echo "$ANDROID_DEBUG_KEYSTORE_BASE64" | base64 --decode > "$dir/debug.keystore"
+          fi
+
       - name: Build test APK (debug signed)
         run: ./gradlew assembleDebug --stacktrace --no-daemon
         working-directory: web/android
 
       - name: Verify test APK signature
         run: |
-          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose web/android/app/build/outputs/apk/debug/app-debug.apk
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose --print-certs web/android/app/build/outputs/apk/debug/app-debug.apk
 
       - name: Upload test APK artifact
         uses: actions/upload-artifact@v7
