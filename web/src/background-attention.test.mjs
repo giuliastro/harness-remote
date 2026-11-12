@@ -190,3 +190,15 @@ const status = {
   assert.equal(result, null)
   assert.equal(called, false, "web and desktop never call the Android visibility bridge")
 }
+
+{
+  // Someone who updates from a version without background notifications already has paired
+  // machines and never goes through pairing again. The launch must offer the one-time prompt.
+  const { readFileSync } = await import("node:fs")
+  const main = readFileSync(new URL("./main.tsx", import.meta.url), "utf8")
+  assert.match(
+    main,
+    /syncBackgroundAttention\(persistedMachines, \{ prompt: true \}\)/,
+    "a launch with paired machines asks for the notification permission once"
+  )
+}
