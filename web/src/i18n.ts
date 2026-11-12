@@ -721,6 +721,8 @@ export type TranslationKey =
   | 'sf.connectingBody'
   | 'sf.loadingSessions'
   | 'sf.loadingSessionsBody'
+  | 'sf.loadingHarnessSessions'
+  | 'sf.waitingHarnessSessions'
   | 'sf.configuredMachines'
   | 'sf.machinesUnavailable'
   | 'sf.couldNotConnect'
@@ -1505,6 +1507,8 @@ const translations: Record<LanguageCode, Partial<Record<TranslationKey, string>>
     'sf.connectingBody': 'Discovering Projects, installed coding agents and native Sessions. An ACP harness may need a few seconds to start.',
     'sf.loadingSessions': 'Loading Sessions',
     'sf.loadingSessionsBody': 'Reading the native Sessions the connected machines\' coding agents own.',
+    'sf.loadingHarnessSessions': 'Loading Sessions: {names}',
+    'sf.waitingHarnessSessions': 'Still waiting for {names}, retrying…',
     'sf.configuredMachines': '{count} configured machines',
     'sf.machinesUnavailable': 'Machines unavailable',
     'sf.couldNotConnect': 'Harness Remote could not connect',
@@ -2289,6 +2293,8 @@ const translations: Record<LanguageCode, Partial<Record<TranslationKey, string>>
     'sf.connectingBody': 'Individuazione di progetti, coding agent installati e sessioni native. Un harness ACP può richiedere alcuni secondi per avviarsi.',
     'sf.loadingSessions': 'Caricamento sessioni',
     'sf.loadingSessionsBody': 'Lettura delle sessioni native possedute dai coding agent di ogni macchina.',
+    'sf.loadingHarnessSessions': 'Caricamento sessioni: {names}',
+    'sf.waitingHarnessSessions': 'In attesa di {names}, nuovo tentativo…',
     'sf.configuredMachines': '{count} macchine configurate',
     'sf.machinesUnavailable': 'Macchine non raggiungibili',
     'sf.couldNotConnect': 'Harness Remote non è riuscito a connettersi',
@@ -3073,6 +3079,8 @@ const translations: Record<LanguageCode, Partial<Record<TranslationKey, string>>
     'sf.connectingBody': '正在探索專案、已安裝的編碼代理與原生工作階段。ACP harness 可能需要幾秒鐘啟動。',
     'sf.loadingSessions': '載入工作階段',
     'sf.loadingSessionsBody': '正在讀取各機器的程式代理所擁有的原生工作階段。',
+    'sf.loadingHarnessSessions': '正在載入工作階段：{names}',
+    'sf.waitingHarnessSessions': '仍在等待 {names}，正在重試…',
     'sf.configuredMachines': '已設定 {count} 部機器',
     'sf.machinesUnavailable': '機器無法使用',
     'sf.couldNotConnect': 'Harness Remote 無法連線',
@@ -3857,6 +3865,8 @@ const translations: Record<LanguageCode, Partial<Record<TranslationKey, string>>
     'sf.connectingBody': '正在发现项目、已安装的编码代理和原生会话。ACP harness 可能需要几秒钟启动。',
     'sf.loadingSessions': '加载会话',
     'sf.loadingSessionsBody': '正在读取各机器的编码代理所拥有的原生会话。',
+    'sf.loadingHarnessSessions': '正在加载会话：{names}',
+    'sf.waitingHarnessSessions': '仍在等待 {names}，正在重试…',
     'sf.configuredMachines': '已配置 {count} 台机器',
     'sf.machinesUnavailable': '机器不可用',
     'sf.couldNotConnect': 'Harness Remote 无法连接',
@@ -4641,6 +4651,8 @@ const translations: Record<LanguageCode, Partial<Record<TranslationKey, string>>
     'sf.connectingBody': 'Descobrindo Projetos, agentes de código instalados e Sessões nativas. Um harness ACP pode levar alguns segundos para iniciar.',
     'sf.loadingSessions': 'Carregando Sessões',
     'sf.loadingSessionsBody': 'Lendo as Sessões nativas que pertencem aos agentes de código das máquinas conectadas.',
+    'sf.loadingHarnessSessions': 'Carregando Sessões: {names}',
+    'sf.waitingHarnessSessions': 'Ainda aguardando {names}, tentando novamente…',
     'sf.configuredMachines': '{count} máquinas configuradas',
     'sf.machinesUnavailable': 'Máquinas indisponíveis',
     'sf.couldNotConnect': 'O Harness Remote não conseguiu conectar',

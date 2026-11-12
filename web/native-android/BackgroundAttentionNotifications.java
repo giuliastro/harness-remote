@@ -33,6 +33,19 @@ final class BackgroundAttentionNotifications {
         manager.createNotificationChannel(channel);
     }
 
+    /**
+     * Open the app the way its launcher icon does: an already running app is brought to the front
+     * exactly as it was, and only a cold start loads it. Clearing the task here made every tap,
+     * even with the app open, restart the WebView and reload every Session. A WebView whose renderer
+     * the system killed is rebuilt by MainActivity instead.
+     */
+    static Intent resumeAppIntent(Context context) {
+        return new Intent(context, MainActivity.class)
+            .setAction(Intent.ACTION_MAIN)
+            .addCategory(Intent.CATEGORY_LAUNCHER)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED);
+    }
+
     static Notification buildServiceNotification(Context context, int connected, int configured) {
         String text;
         if (configured <= 0) {
@@ -43,11 +56,7 @@ final class BackgroundAttentionNotifications {
             text = context.getResources().getQuantityString(R.plurals.hr_bg_connecting_machines, configured, configured);
         }
 
-        Intent open = new Intent(context, MainActivity.class)
-            // A cold notification tap after Doze can otherwise bring back a task whose WebView was
-            // destroyed by the system and render an empty page. Rebuild the task from the bundled
-            // app instead of delivering the tap to that stale WebView.
-            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP);
+        Intent open = resumeAppIntent(context);
         int pendingFlags = PendingIntent.FLAG_UPDATE_CURRENT;
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) pendingFlags |= PendingIntent.FLAG_IMMUTABLE;
         PendingIntent contentIntent = PendingIntent.getActivity(context, 0, open, pendingFlags);
