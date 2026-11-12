@@ -230,10 +230,13 @@ jobs:
           # Every runner otherwise generates its own debug key, and Android refuses to update an
           # installed test build signed with a different key: each new APK meant uninstalling the
           # previous one and pairing again. Fork PRs have no secret and keep a throwaway key.
+          # Passed to Gradle explicitly below: the default ~/.android location is not reliably the
+          # one the Android Gradle plugin reads on the runner.
           if [ -n "$ANDROID_DEBUG_KEYSTORE_BASE64" ]; then
-            dir="${ANDROID_USER_HOME:-$HOME/.android}"
-            mkdir -p "$dir"
-            echo "$ANDROID_DEBUG_KEYSTORE_BASE64" | base64 --decode > "$dir/debug.keystore"
+            echo "$ANDROID_DEBUG_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/debug.keystore"
+            {
+              echo "DEBUG_SIGNING=-Pandroid.injected.signing.store.file=$RUNNER_TEMP/debug.keystore -Pandroid.injected.signing.store.password=android -Pandroid.injected.signing.key.alias=androiddebugkey -Pandroid.injected.signing.key.password=android"
+            } >> "$GITHUB_ENV"
           fi
 
       - name: Build debug APK
@@ -241,7 +244,7 @@ jobs:
           # Capacitor generates the wrapper with a 10-second download timeout. Fresh runners
           # often need longer to fetch the Gradle distribution before any build work can start.
           sed -i 's/^networkTimeout=.*/networkTimeout=60000/' gradle/wrapper/gradle-wrapper.properties
-          ./gradlew assembleDebug --stacktrace --no-daemon
+          ./gradlew assembleDebug $DEBUG_SIGNING --stacktrace --no-daemon
         working-directory: web/android
 
       - name: Verify debug APK signature
