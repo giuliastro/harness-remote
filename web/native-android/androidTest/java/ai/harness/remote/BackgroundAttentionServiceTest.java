@@ -265,6 +265,38 @@ public class BackgroundAttentionServiceTest {
     }
 
     @Test
+    public void loadingAnIdleSessionDoesNotPostReady() throws Exception {
+        // The daemon emits session.updated/message.updated when a client opens, loads or renames a
+        // Session. At app start that happens for many idle Sessions and must not look like a turn.
+        server.sessionList = "[{\"id\":\"loaded-1\",\"status\":\"idle\"}]";
+        startService();
+        waitFor("machine connected", () -> BackgroundAttentionStatus.isMachineConnected(FakeMachineServer.MACHINE_ID), 15_000);
+        server.sendEvent("{\"type\":\"session.updated\",\"sessionId\":\"loaded-1\"}");
+        server.sendEvent("{\"type\":\"message.updated\",\"sessionId\":\"loaded-1\"}");
+        server.sendEvent(sessionIdle("loaded-1"));
+        Thread.sleep(3_000);
+        assertEquals(0, attentionNotificationCount(context.getString(R.string.hr_outcome_ready_title)));
+    }
+
+    @Test
+    public void postsReadyOnceForAPolledAcpTurn() throws Exception {
+        String readyTitle = context.getString(R.string.hr_outcome_ready_title);
+        startService();
+        waitFor("machine connected", () -> BackgroundAttentionStatus.isMachineConnected(FakeMachineServer.MACHINE_ID), 15_000);
+        server.sessionList = "[{\"id\":\"acp-1\",\"status\":\"busy\"}]";
+        server.sendEvent("{\"type\":\"message.updated\",\"sessionId\":\"acp-1\"}");
+        Thread.sleep(1_500);
+        assertEquals(0, attentionNotificationCount(readyTitle));
+        server.sessionList = "[{\"id\":\"acp-1\",\"status\":\"idle\"}]";
+        server.sendEvent("{\"type\":\"session.updated\",\"sessionId\":\"acp-1\"}");
+        waitFor("ready notification", () -> attentionNotification(readyTitle) != null, 8_000);
+        // Both the stream poll and the periodic status poll observe this idle edge.
+        server.sendEvent("{\"type\":\"session.updated\",\"sessionId\":\"acp-1\"}");
+        Thread.sleep(5_000);
+        assertEquals("one turn produces one Ready", 1, attentionNotificationCount(readyTitle));
+    }
+
+    @Test
     public void doesNotReadyNotifyWhilePermissionIsPending() throws Exception {
         startService();
         waitFor("machine connected", () -> BackgroundAttentionStatus.isMachineConnected(FakeMachineServer.MACHINE_ID), 15_000);

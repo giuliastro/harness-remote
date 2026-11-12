@@ -905,7 +905,8 @@ public final class BackgroundAttentionService extends Service {
                 }
                 if (sessionID == null) return;
                 keepAwakeForWork();
-                scheduleOutcomePoll(sessionID, 1_500);
+                // Poll soon after the first frame so a short turn is still seen busy.
+                scheduleOutcomePoll(sessionID, 600);
             }
 
             private void scheduleOutcomePoll(String sessionID, long delayMs) {
@@ -946,11 +947,20 @@ public final class BackgroundAttentionService extends Service {
                         if (center == null) return;
                         if (isWorkingStatus(status)) {
                             keepAwakeForWork();
+                            // Record the busy edge: Ready is only posted for a turn this service saw
+                            // working, so loading or renaming an idle Session stays silent.
+                            center.onEvent(new SessionOutcomeEvent(
+                                SessionOutcomeEvent.Kind.WORKING,
+                                nativeMachineID, nativeMachineName, agent.id, agent.label, sessionID, null
+                            ));
                             // The final message.updated can arrive before the turn flips to idle;
                             // there is no later idle frame on ACP, so keep polling until terminal.
                             scheduleOutcomePoll(sessionID, 2_000);
                             return;
                         }
+                        // A load, rename or replay of an idle Session also emits these frames. Without
+                        // an observed busy edge there is no finished turn to report.
+                        if (!center.isWorking(nativeMachineID, agent.id, sessionID)) return;
                         if ("idle".equals(status)) {
                             center.onEvent(new SessionOutcomeEvent(
                                 SessionOutcomeEvent.Kind.IDLE,

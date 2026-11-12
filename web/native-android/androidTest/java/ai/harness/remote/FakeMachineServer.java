@@ -31,6 +31,8 @@ final class FakeMachineServer implements AutoCloseable {
     final BlockingQueue<String> permissionReplies = new LinkedBlockingQueue<>();
     private volatile boolean closed;
     volatile int streamConnections;
+    /** JSON array served from /v1/agents/{id}/session, the authoritative Session status list. */
+    volatile String sessionList = "[]";
 
     FakeMachineServer() throws IOException {
         server = new ServerSocket(0, 8, InetAddress.getByName("127.0.0.1"));
@@ -105,6 +107,14 @@ final class FakeMachineServer implements AutoCloseable {
             if ("POST".equals(method) && path.contains("/permission/") && path.contains("/reply")) {
                 permissionReplies.add(readBody(input, contentLength));
                 byte[] body = "true".getBytes(StandardCharsets.UTF_8);
+                output.write(("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: "
+                    + body.length + "\r\nConnection: close\r\n\r\n").getBytes(StandardCharsets.UTF_8));
+                output.write(body);
+                output.flush();
+                return;
+            }
+            if ("GET".equals(method) && path.startsWith("/v1/agents/") && path.endsWith("/session")) {
+                byte[] body = sessionList.getBytes(StandardCharsets.UTF_8);
                 output.write(("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: "
                     + body.length + "\r\nConnection: close\r\n\r\n").getBytes(StandardCharsets.UTF_8));
                 output.write(body);

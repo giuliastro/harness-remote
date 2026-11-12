@@ -58,9 +58,10 @@ final class SessionOutcomeCenter {
                 cancel(state);
                 break;
             case IDLE:
-                // A reconnect can miss the busy edge while the WebView was gone. The idle edge is
-                // still the terminal truth, so deliver it instead of requiring a working frame this
-                // process may never have seen.
+                // Idle alone is not a finished turn: the daemon also reports idle after loading,
+                // opening or renaming a Session, which happens for many Sessions at every app start.
+                // The busy edge comes from the live stream or from the service's status polls.
+                if (!state.working) return;
                 state.working = false;
                 if (BackgroundAttentionVisibility.isVisible(event.machineID, event.agentID, event.sessionID)) {
                     state.lastOutcome = "READY";
@@ -86,6 +87,12 @@ final class SessionOutcomeCenter {
                 post(event, "FAILED");
                 break;
         }
+    }
+
+    synchronized boolean isWorking(String machineID, String agentID, String sessionID) {
+        if (machineID == null || agentID == null || sessionID == null) return false;
+        SessionState state = sessions.get(machineID + "\u0000" + agentID + "\u0000" + sessionID);
+        return state != null && state.working;
     }
 
     synchronized void cancelAll() {
