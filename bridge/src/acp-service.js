@@ -88,7 +88,7 @@ function sessionView(session, status = "idle", title = session.title, external =
  * turn is the natural delimiter, so those adjacent envelopes are one visible reply. Keeping them
  * separate breaks Markdown whenever a marker or word straddles two updates.
  */
-function mergeFragmentedPiSnapshot(messages) {
+export function mergeFragmentedPiSnapshot(messages) {
   const merged = []
   for (const message of messages) {
     const previous = merged.at(-1)
@@ -100,14 +100,20 @@ function mergeFragmentedPiSnapshot(messages) {
       && /^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i.test(message.info.id)
       && /^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i.test(previous.info.id)
     ) {
+      // Build a new envelope; never write into the ones passed in. Callers hand over objects owned by
+      // caches - the DeepSeek history loader serves the very same message objects to every later read,
+      // including the page the app shows. Appending this text into the cached first message made every
+      // following page carry the reply twice: once inside that message and once in its own.
+      const parts = [...(previous.parts ?? [])]
       for (const part of message.parts ?? []) {
-        const lastPart = previous.parts.at(-1)
+        const lastPart = parts.at(-1)
         if (lastPart?.type === part?.type && typeof lastPart.text === "string" && typeof part.text === "string") {
-          lastPart.text += part.text
+          parts[parts.length - 1] = { ...lastPart, text: lastPart.text + part.text }
         } else {
-          previous.parts.push(part)
+          parts.push(part)
         }
       }
+      merged[merged.length - 1] = { ...previous, parts }
       continue
     }
     merged.push(message)
