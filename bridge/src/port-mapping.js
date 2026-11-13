@@ -78,7 +78,7 @@ function defaultHttpRequest(url, { method = "GET", headers = {}, body = "", time
   })
 }
 
-function defaultSsdpSearch({ timeoutMs = 1200, socketFactory = dgram.createSocket } = {}) {
+export function defaultSsdpSearch({ timeoutMs = 1200, socketFactory = dgram.createSocket } = {}) {
   return new Promise((resolve, reject) => {
     const socket = socketFactory("udp4")
     const found = new Map()
@@ -92,7 +92,6 @@ function defaultSsdpSearch({ timeoutMs = 1200, socketFactory = dgram.createSocke
       else resolve([...found.values()])
     }
     const timer = setTimeout(() => finish(), timeoutMs)
-    timer.unref?.()
     socket.on("error", (error) => finish(error))
     socket.on("message", (message, rinfo) => {
       const location = message.toString("utf8").match(/^location\s*:\s*(.+)$/im)?.[1]?.trim()

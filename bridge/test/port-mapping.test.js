@@ -1,6 +1,20 @@
 import assert from "node:assert/strict"
+import { EventEmitter } from "node:events"
 import test from "node:test"
-import { createNatPmpAdapter, createPcpAdapter, createPortMappingManager, createUpnpIgdAdapter } from "../src/port-mapping.js"
+import { createNatPmpAdapter, createPcpAdapter, createPortMappingManager, createUpnpIgdAdapter, defaultSsdpSearch } from "../src/port-mapping.js"
+
+test("SSDP discovery retains each response's router address", async () => {
+  class FakeSocket extends EventEmitter {
+    bind(_port, callback) { callback() }
+    send(_packet, _port, _address, callback) {
+      this.emit("message", Buffer.from("HTTP/1.1 200 OK\r\nLOCATION: http://192.168.1.1/igd.xml\r\n\r\n"), { address: "192.168.1.1" })
+      callback()
+    }
+    close() {}
+  }
+  const found = await defaultSsdpSearch({ timeoutMs: 5, socketFactory: () => new FakeSocket() })
+  assert.deepEqual(found, [{ location: "http://192.168.1.1/igd.xml", sourceAddress: "192.168.1.1" }])
+})
 
 function fakeAdapter(protocol, { externalAddress = "203.0.113.20", externalPort = 48001 } = {}) {
   const calls = []
@@ -222,7 +236,7 @@ function natPmpResponse(request) {
   return response
 }
 
-test("NAT-PMP adapter obtains, renews, and removes only its router-assigned port tuple", async () => {
+test("NAT-PMP adapter obtains and renews its assigned tuple, then lets the lease expire", async () => {
   const packets = []
   const adapter = createNatPmpAdapter({
     gatewayAddress: "192.168.1.1", localAddress: "192.168.1.20",
