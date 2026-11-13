@@ -4,9 +4,9 @@ E1's user-visible promise is Android access on mobile data without asking the us
 
 ## Trust boundary
 
-The Internet-facing listener must be distinct from the LAN HTTP listener. It must accept only a bounded device-key handshake before authentication, then carry every request, SSE event and permission response over a channel encrypted and mutually authenticated with the paired device key. The phone pins the machine identity obtained through the local QR. An unpaired or revoked key must not reach the HTTP router or an agent. On every frame, check the in-memory revocation state before forwarding. A reconnect must establish fresh session keys and reject replayed handshake material.
+The Internet-facing listener must be distinct from the LAN HTTP listener. The current implementation direction uses TLS 1.3 with a persistent self-signed P-256 machine certificate. The phone obtains its DNS identity and SHA-256 SPKI pin from the local QR and validates both before sending a pairing token or request. Every request then carries a P-256 device signature over the machine identity, certificate pin, method, exact target, body digest, timestamp and fresh nonce. The gateway rejects replays and revoked devices before forwarding to the loopback HTTP daemon; an active SSE stream is closed on revocation. Pairing is the only unsigned route and accepts a bounded one-time token over the pinned TLS channel. No Basic credentials are returned by that route.
 
-The P-256 key in Android Keystore and the persistent paired-device registry are foundation pieces. They do not create a secure channel by themselves. The registry never authorizes the existing HTTP port. A reviewer must verify the exact handshake transcript, key derivation, nonce handling, bounds, rate limits, revocation and storage before any Internet listener or router mapping is enabled.
+The P-256 key in Android Keystore, persistent registry, TLS identity, signed-request authenticator, HTTPS ingress and Android pin verifier are foundation pieces. They are not yet wired into the daemon and app's actual request paths. The registry never authorizes the existing HTTP port. A reviewer must verify the pairing QR, TLS pin validation, signed transcript, nonce handling, bounds, rate limits, revocation and storage before any Internet listener or router mapping is enabled.
 
 ## Activation order
 

@@ -20,6 +20,7 @@ const javaFiles = [
   "BackgroundAttentionNotifications.java",
   "BackgroundAttentionVisibility.java",
   "BackgroundAttentionUrls.java",
+  "PinnedMachineTls.java",
   "ReconnectBackoff.java",
   "AttentionDeepLink.java",
   "AttentionEventParser.java",
