@@ -32,6 +32,38 @@ npx --yes github:giuliastro/harness-remote
 
 Keep the terminal open while using that machine remotely.
 
+### Keep a gateway running in the background
+
+Install a per-user service on Linux (systemd user), macOS (launchd) or Windows
+(Task Scheduler):
+
+```bash
+npx --yes github:giuliastro/harness-remote service install
+npx --yes github:giuliastro/harness-remote service status
+```
+
+The install command starts the service and prints its connection username and
+password. Save those details, then add the machine in Harness Remote. The service
+uses the same gateway options as the foreground command, for example:
+
+This keeps the existing LAN/VPN gateway running; it does not make the current
+HTTP gateway safe or reachable from the public Internet. Do not forward its port
+on your router.
+
+```bash
+npx --yes github:giuliastro/harness-remote service install --backend codex --port 4900
+```
+
+Remove it with `npx --yes github:giuliastro/harness-remote service uninstall`.
+On Linux, install enables systemd user lingering if it was off, so the gateway can
+start at boot before the next login; authenticate the operating-system prompt if
+requested. Uninstall disables lingering only when this install enabled it. A
+setting that was already enabled is left alone. On Windows the
+scheduled task uses S4U so it can keep running after sign-out without storing the
+Windows password; Windows does not grant S4U tasks access to network resources or
+encrypted files, so a harness that depends on those may need to stay in the logged-in
+session. On macOS, a per-user LaunchAgent starts with the user's login session.
+
 The launcher automatically handles the normal setup:
 
 - detects supported CLIs on `PATH`;

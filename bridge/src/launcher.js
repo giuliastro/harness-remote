@@ -11,6 +11,7 @@ import { fileURLToPath } from "node:url"
 import { ManagedOpenCodeHost } from "./opencode-host.js"
 import { discoverOpenCodeExecutables, resolveOpenCodeCommand } from "./opencode-discovery.js"
 import { allowNodeThroughWindowsFirewall } from "./windows-firewall-rule.js"
+import { runServiceCommand } from "./user-service.js"
 
 const OPENCODE_BACKEND = { id: "opencode", detectCommands: ["opencode"] }
 
@@ -240,7 +241,8 @@ export function formatStartupSummary({ plan, addresses, port, username, password
 }
 
 export function launcherUsage() {
-  return `Usage: harness-remote [options]\n\nQuick start options:\n  --backend <name>       Select one of: ${supportedBackendText()} (on multi-agent machines, selects the daemon primary)\n  --single               Force the legacy single-backend path instead of the machine daemon\n  --host <host>          Bind host (quick-start default: 0.0.0.0)\n  --port <port>          Preferred port (OpenCode single-host default: 4096; daemon/ACP default: 4097)\n  --username <username>  Override generated Basic Auth username\n  --password <password>  Override generated Basic Auth password\n  --cors <origin>        Allow a browser client from this exact origin; repeatable\n  --verbose              Forward all harness diagnostics, not only errors\n  --allow-firewall       Windows only: allow phones through Windows Firewall (asks for administrator permission)\n  --help                 Show this help\n\nWith one detected agent, Harness starts the existing single-backend path. With multiple detected agents and at least one ACP backend, it starts the machine daemon automatically and exposes every detected ACP harness through the machine endpoint; OpenCode is included when installed and receives a free loopback port automatically.`
+  return `Usage: harness-remote [options]\n       harness-remote service <install|uninstall|status> [options]\n\nQuick start options:\n  --backend <name>       Select one of: ${supportedBackendText()} (on multi-agent machines, selects the daemon primary)\n  --single               Force the legacy single-backend path instead of the machine daemon\n  --host <host>          Bind host (quick-start default: 0.0.0.0)\n  --port <port>          Preferred port (OpenCode single-host default: 4096; daemon/ACP default: 4097)\n  --username <username>  Override generated Basic Auth username\n  --password <password>  Override generated Basic Auth password\n  --cors <origin>        Allow a browser client from this exact origin; repeatable\n  --verbose              Forward all harness diagnostics, not only errors\n  --allow-firewall       Windows only: allow phones through Windows Firewall (asks for administrator permission)\n  --help                 Show this help\n\n` +
+    `User service options:\n  service install        Install and start this user's background gateway service\n  service status         Show whether the service is installed and running\n  service uninstall      Stop and remove the Harness Remote service\n\nWith one detected agent, Harness starts the existing single-backend path. With multiple detected agents and at least one ACP backend, it starts the machine daemon automatically and exposes every detected ACP harness through the machine endpoint; OpenCode is included when installed and receives a free loopback port automatically.`
 }
 
 export async function startManagedOpenCode({ host, port, username, password, command = "opencode", Host = ManagedOpenCodeHost } = {}) {
@@ -274,8 +276,20 @@ function spawnNodeEntrypoint(entrypoint, args, username, password) {
     process.stderr.write(`Failed to start Harness runtime: ${error.message}\n`)
     process.exitCode = 1
   })
+  let stoppingSignal
+  const forwardSignal = (signal) => {
+    stoppingSignal ??= signal
+    if (!child.killed) child.kill(signal)
+  }
+  const onSigint = () => forwardSignal("SIGINT")
+  const onSigterm = () => forwardSignal("SIGTERM")
+  process.on("SIGINT", onSigint)
+  process.on("SIGTERM", onSigterm)
   child.once("exit", (code, signal) => {
-    if (signal) process.kill(process.pid, signal)
+    process.removeListener("SIGINT", onSigint)
+    process.removeListener("SIGTERM", onSigterm)
+    if (stoppingSignal) process.exitCode = stoppingSignal === "SIGINT" ? 130 : 143
+    else if (signal) process.kill(process.pid, signal)
     else process.exitCode = code ?? 1
   })
   return child
@@ -285,6 +299,11 @@ async function main() {
   const args = process.argv.slice(2)
   if (hasOption(args, "--help")) {
     process.stdout.write(`${launcherUsage()}\n`)
+    return
+  }
+
+  if (args[0] === "service") {
+    runServiceCommand(args.slice(1))
     return
   }
 

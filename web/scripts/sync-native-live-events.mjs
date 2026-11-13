@@ -12,6 +12,7 @@ const javaFiles = [
   "MainActivity.java",
   "LiveEventsPlugin.java",
   "PairingScannerPlugin.java",
+  "DeviceKeyPlugin.java",
   "BackgroundAttentionPlugin.java",
   "BackgroundAttentionService.java",
   "BackgroundAttentionConfig.java",
