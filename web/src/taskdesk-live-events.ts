@@ -1,3 +1,4 @@
+import { createAgentEventMultiplexer } from "./agent-event-multiplex"
 import { api } from "./api"
 import { createDesktopOpenCodeEventSubscription, isDesktopPlatform } from "./desktopBridge"
 import {
@@ -9,6 +10,7 @@ import {
   type EventStreamStatus
 } from "./opencode-events"
 import { noteSessionIndexLiveEvent, noteSessionIndexStreamConnected } from "./session-index-live-state"
+import { machineBaseUrl } from "./serverConfig"
 import { createSharedBrowserEventSubscriptions } from "./shared-browser-event-stream"
 import type { ServerConfig } from "./types"
 
@@ -24,6 +26,8 @@ export type TaskDeskLiveEvent = {
 
 type Subscription = { close(): void }
 const browserStreams = createSharedBrowserEventSubscriptions(createFetchOpenCodeEventSubscription)
+// Browser-only: per-harness streams of one machine share one connection (six-connection limit).
+const agentStreams = createAgentEventMultiplexer(createFetchOpenCodeEventSubscription)
 
 function text(value: unknown): string | undefined {
   return typeof value === "string" && value.trim() ? value.trim() : undefined
@@ -148,10 +152,21 @@ export function subscribeTaskDeskLiveEvents({
     })
   }
 
-  return browserStreams.subscribe({
+  const direct = () => browserStreams.subscribe({
     url: stream.url,
     headers: stream.headers,
     onEvent: (event) => emit(event.name, event.data),
     onStatus: emitStatus
+  })
+  const agentID = config.agentId?.trim()
+  if (!agentID) return direct()
+  const authorization = Object.entries(stream.headers ?? {}).find(([name]) => name.toLowerCase() === "authorization")?.[1]
+  return agentStreams.subscribe({
+    machineURL: machineBaseUrl(config),
+    headers: authorization ? { Authorization: authorization } : undefined,
+    agentID,
+    onEvent: (event) => emit(event.name, event.data),
+    onStatus: emitStatus,
+    fallback: direct
   })
 }
