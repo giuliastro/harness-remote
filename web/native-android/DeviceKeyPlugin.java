@@ -25,7 +25,7 @@ public final class DeviceKeyPlugin extends Plugin {
     private static final String ALIAS = "harness_remote_device_p256_v1";
     private static final int BASE64_FLAGS = Base64.URL_SAFE | Base64.NO_WRAP | Base64.NO_PADDING;
 
-    private static synchronized KeyPair keyPair() throws Exception {
+    static synchronized KeyPair keyPair() throws Exception {
         KeyStore store = KeyStore.getInstance("AndroidKeyStore");
         store.load(null);
         if (!store.containsAlias(ALIAS)) {
