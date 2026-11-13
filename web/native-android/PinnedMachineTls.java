@@ -123,14 +123,7 @@ public final class PinnedMachineTls {
     }
 
     static boolean dnsSanMatches(String expectedDns, String san) {
-        if (expectedDns == null || san == null) return false;
-        String expected = expectedDns.toLowerCase(Locale.ROOT);
-        String candidate = san.toLowerCase(Locale.ROOT);
-        if (!candidate.startsWith("*.")) return expected.equals(candidate);
-        String suffix = candidate.substring(2);
-        if (suffix.isEmpty() || !expected.endsWith("." + suffix)) return false;
-        String prefix = expected.substring(0, expected.length() - suffix.length() - 1);
-        return !prefix.isEmpty() && prefix.indexOf('.') < 0;
+        return expectedDns != null && san != null && expectedDns.equalsIgnoreCase(san);
     }
 
     private static final class PinningTrustManager implements X509TrustManager {

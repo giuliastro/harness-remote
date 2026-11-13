@@ -33,9 +33,9 @@ public class PinnedMachineTlsTest {
     }
 
     @Test
-    public void dnsSanMatchingAllowsExactNameOrOneLabelWildcardOnly() {
+    public void dnsSanMatchingRequiresExactMachineName() {
         assertTrue(PinnedMachineTls.dnsSanMatches("studio.example.test", "studio.example.test"));
-        assertTrue(PinnedMachineTls.dnsSanMatches("studio.example.test", "*.example.test"));
+        assertFalse(PinnedMachineTls.dnsSanMatches("studio.example.test", "*.example.test"));
         assertFalse(PinnedMachineTls.dnsSanMatches("example.test", "*.example.test"));
         assertFalse(PinnedMachineTls.dnsSanMatches("deep.studio.example.test", "*.example.test"));
         assertFalse(PinnedMachineTls.dnsSanMatches("studio.example.test", "other.example.test"));

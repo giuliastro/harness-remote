@@ -8,7 +8,7 @@ const PUBLIC_KEY_DER_LENGTH = 91
 
 /**
  * Trust is deliberately separate from the existing HTTP Basic credentials. The public Internet
- * listener must consult this registry only after its encrypted, mutually authenticated handshake;
+ * listener must consult this registry only after pinned TLS and per-request signature verification;
  * storing a key here must never make the current plain-HTTP listener Internet-safe.
  */
 export class PairedDeviceRegistry {
@@ -53,7 +53,7 @@ export class PairedDeviceRegistry {
     return entry && !entry.revokedAt ? entry.publicKey : null
   }
 
-  // The transport must separately bind this signature to its handshake, encryption keys and a
+  // The transport must bind this signature to the TLS machine pin, exact request transcript and a
   // fresh nonce. Signature verification alone does not protect against replay or disclosure.
   verifySignature(id, message, signature) {
     const publicKey = this.activeKey(id)
