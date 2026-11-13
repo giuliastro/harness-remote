@@ -1,5 +1,6 @@
 import http from "node:http"
 import { allowedOrigin, applyCorsHeaders, matchesCredentials, guardRequestHandler, writeJSON } from "./http-policy.js"
+import { AGENT_EVENT_MULTIPLEX_PATH, parseRequestedAgents, serveAgentEventMultiplex } from "./agent-event-multiplex.js"
 import { ManagedEventFanout } from "./managed-event-fanout.js"
 import { inspectGitProjectIdentity } from "./project-identity.js"
 import { inspectGitProjectOutcome } from "./project-outcome.js"
@@ -244,6 +245,35 @@ export function createAgentRoutingServer({
       }
       response.once("finish", finishTracking)
       response.once("close", finishTracking)
+    }
+
+    if (requestURL.pathname === AGENT_EVENT_MULTIPLEX_PATH) {
+      if (!authenticateMachineRequest(request, response, config)) return
+      if (request.method !== "GET") {
+        response.writeHead(405, { Allow: "GET, OPTIONS" })
+        response.end()
+        return
+      }
+      const agentIDs = parseRequestedAgents(requestURL.searchParams, daemon.snapshot().agents.map((agent) => agent.id))
+      if (agentIDs.length === 0) {
+        writeJSON(response, 400, { error: "At least one known agent id is required" })
+        return
+      }
+      // Each harness stream is read through this daemon's own routes, so it keeps every routing and
+      // fan-out rule a direct client gets. The caller's credentials were just verified above.
+      const address = server.address()
+      const bound = typeof address === "object" && address ? address.address : ""
+      serveAgentEventMultiplex({
+        request,
+        response,
+        agentIDs,
+        upstream: {
+          host: !bound || bound === "0.0.0.0" || bound === "::" ? "127.0.0.1" : bound,
+          port: typeof address === "object" && address ? address.port : 0,
+          authorization: typeof request.headers.authorization === "string" ? request.headers.authorization : undefined
+        }
+      })
+      return
     }
 
     const worktreeMatch = TASK_WORKTREE_ROUTE.exec(requestURL.pathname)

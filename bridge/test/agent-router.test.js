@@ -450,3 +450,88 @@ test("a malformed percent-escape in the agent path is a 400 for that request, no
     await close(server)
   }
 })
+
+test("one multiplexed stream carries every requested harness's events, tagged by harness", async () => {
+  // A browser has six connections per origin. One stream per harness filled them on a machine with
+  // six harnesses and queued every other request; the multiplex keeps one connection per machine.
+  const streams = new Map()
+  const acpServer = (agentID) => {
+    const server = new BridgeServer()
+    server.on("request", (request, response) => {
+      assert.equal(request.url, "/global/event")
+      response.writeHead(200, { "Content-Type": "text/event-stream" })
+      response.write(": connected\n\n")
+      streams.set(agentID, response)
+    })
+    return server
+  }
+  const bridges = { claude: acpServer("claude"), deepseek: acpServer("deepseek") }
+  const server = createAgentRoutingServer({
+    daemon: daemonWith(
+      { claude: { id: "claude", kind: "acp" }, deepseek: { id: "deepseek", kind: "acp" } },
+      { claude: "available", deepseek: "available" }
+    ),
+    config: { username: "user", password: "secret", corsOrigins: [] },
+    primaryAgentID: "codex",
+    bridgeServer: new BridgeServer(),
+    acpBridgeServer: (agentID) => bridges[agentID]
+  })
+  const port = await listen(server)
+  const received = []
+  let request
+  try {
+    const unauthorized = await fetch(`http://127.0.0.1:${port}/v1/events/agents?agents=claude`)
+    assert.equal(unauthorized.status, 401, "the multiplex keeps daemon authentication")
+    const unknownOnly = await fetch(`http://127.0.0.1:${port}/v1/events/agents?agents=ghost`, { headers: { Authorization: basic("user", "secret") } })
+    assert.equal(unknownOnly.status, 400)
+
+    await new Promise((resolve, reject) => {
+      request = http.get({
+        host: "127.0.0.1",
+        port,
+        path: "/v1/events/agents?agents=claude,deepseek,ghost",
+        headers: { Authorization: basic("user", "secret") }
+      }, (response) => {
+        assert.equal(response.statusCode, 200)
+        response.setEncoding("utf8")
+        let buffer = ""
+        response.on("data", (chunk) => {
+          buffer += chunk
+          let boundary = buffer.indexOf("\n\n")
+          while (boundary !== -1) {
+            const frame = buffer.slice(0, boundary)
+            buffer = buffer.slice(boundary + 2)
+            const name = /^event: (.*)$/m.exec(frame)?.[1]
+            const data = /^data: (.*)$/m.exec(frame)?.[1]
+            if (name && data) received.push({ name, data: JSON.parse(data) })
+            boundary = buffer.indexOf("\n\n")
+          }
+        })
+        resolve()
+      })
+      request.once("error", reject)
+    })
+    const deadline = Date.now() + 5_000
+    while (streams.size < 2 && Date.now() < deadline) await new Promise((resolve) => setTimeout(resolve, 20))
+    assert.equal(streams.size, 2, "one internal stream per requested known harness")
+    streams.get("claude").write("event: message.updated\ndata: {\"sessionID\":\"c1\"}\n\n")
+    streams.get("deepseek").write("data: {\"type\":\"session.updated\",\"sessionID\":\"d1\"}\n\n")
+    while (received.filter((entry) => entry.name === "hr.agent-event").length < 2 && Date.now() < deadline) {
+      await new Promise((resolve) => setTimeout(resolve, 20))
+    }
+    assert.deepEqual(received.filter((entry) => entry.name === "hr.agent-event").map((entry) => entry.data), [
+      { agentID: "claude", frame: "event: message.updated\ndata: {\"sessionID\":\"c1\"}" },
+      { agentID: "deepseek", frame: "data: {\"type\":\"session.updated\",\"sessionID\":\"d1\"}" }
+    ])
+    assert.deepEqual(
+      received.filter((entry) => entry.name === "hr.agent-status").map((entry) => entry.data.agentID).sort(),
+      ["claude", "deepseek"],
+      "each harness reports its own connection"
+    )
+  } finally {
+    request?.destroy()
+    for (const response of streams.values()) response.destroy()
+    server.closeAllConnections?.()
+    await close(server)
+  }
+})
