@@ -29,11 +29,37 @@ function visibleText(message: MessageEnvelope): string {
  * catches up. Only reject an unambiguous textual regression for the exact same assistant message id;
  * divergent native rewrites are still accepted.
  */
-function regressesAssistantText(current: MessageEnvelope, incoming: MessageEnvelope): boolean {
+function regressesAssistantText(current: MessageEnvelope, incoming: MessageEnvelope, page: MessageEnvelope[] = []): boolean {
   if (current.info.role !== "assistant" || incoming.info.role !== "assistant") return false
   const currentText = visibleText(current)
   const incomingText = visibleText(incoming)
-  return currentText.length > incomingText.length && currentText.startsWith(incomingText)
+  if (!(currentText.length > incomingText.length && currentText.startsWith(incomingText))) return false
+  // Text that moved rather than shrank: a harness can serve one reply as a single message while it
+  // runs and split it later (DeepSeek files a tool turn's final text as its own message). The text
+  // missing here then lives in another message of the same page; keeping the old copy would draw it
+  // twice.
+  return !textMovedToAnotherMessage(current, incoming, currentText.slice(incomingText.length), page)
+}
+
+function textMovedToAnotherMessage(current: MessageEnvelope, incoming: MessageEnvelope, missing: string, page: MessageEnvelope[]): boolean {
+  const missingText = missing.trim()
+  if (!missingText) return false
+  // A text part filed under another message id names its real owner, so that message carrying it is
+  // proof the text moved.
+  const owners = new Set(current.parts
+    .filter((part) => part.type === "text" && typeof part.id === "string")
+    .map((part) => part.id!.split(":")[0])
+    .filter((owner) => owner && owner !== current.info.id))
+  // Only the rest of the same turn can have received it: an identical short reply ("OK") in another
+  // turn says nothing about this one.
+  const start = page.findIndex((message) => message === incoming || message.info.id === incoming.info.id)
+  if (start < 0) return false
+  for (const message of page.slice(start + 1)) {
+    if (message.info.role === "user") break
+    if (message.info.role !== "assistant") continue
+    if (owners.has(message.info.id) || visibleText(message).includes(missingText)) return true
+  }
+  return false
 }
 
 /**
@@ -60,7 +86,7 @@ export function mergeLatestMessagePage(
   const reuse = (incoming: MessageEnvelope) => {
     const current = existingByID.get(incoming.info.id)
     if (!current) return incoming
-    return sameEnvelope(current, incoming) || regressesAssistantText(current, incoming) ? current : incoming
+    return sameEnvelope(current, incoming) || regressesAssistantText(current, incoming, latest) ? current : incoming
   }
   const firstOverlap = existing.findIndex((message) => latestIDs.has(message.info.id))
   const older = complete
