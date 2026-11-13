@@ -93,7 +93,11 @@ test("Attention Inbox enriches only emitted notifications with bounded native me
   assert.match(source, /const existingContext = notificationContextRef\.current\.get\(target\.key\)/)
   assert.match(source, /\.\.\.existingContext,[\s\S]*sessionTitle: target\.title/, "remembering a Session must not discard an already resolved Project label")
   assert.match(source, /subscribeDesktopAttentionActivation/)
-  assert.match(source, /candidate\.machineID === activation\.machineID && candidate\.agent\.id === activation\.agentID/)
+  // Activation resolves by exact identity among every available harness, so a Ready notification
+  // from a harness without questions/permissions (Claude Code) still opens its Session.
+  assert.match(source, /candidate\.machineID === machineID && candidate\.agent\.id === agentID/)
+  assert.match(source, /findSessionTarget\(activation\.machineID, activation\.agentID\)/)
+  assert.match(source, /agent\.state === "available" && agent\.capabilities\.sessions !== false/)
   assert.match(source, /openAttentionSession\(target, activation\.sessionID\)/)
   assert.doesNotMatch(source, /loadMessagePage|loadMessages|loadTranscript/)
 })

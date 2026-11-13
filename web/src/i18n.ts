@@ -617,6 +617,18 @@ export type TranslationKey =
   | 'settings.backgroundHint'
   | 'settings.backgroundRestored'
   | 'settings.backgroundUnavailable'
+  | 'notify.sessionReady'
+  | 'notify.sessionFailed'
+  | 'settings.notificationsTitle'
+  | 'settings.notificationsEnabled'
+  | 'settings.notificationsReady'
+  | 'settings.notificationsFailed'
+  | 'settings.notificationsAttention'
+  | 'settings.notificationsHintDesktop'
+  | 'settings.notificationsHintWeb'
+  | 'settings.notificationsHintAndroid'
+  | 'settings.notificationsBlocked'
+  | 'settings.notificationsUnsupported'
   | 'settings.activityHint'
   | 'settings.activityLive'
   | 'settings.activityLive.latest'
@@ -1403,6 +1415,18 @@ const translations: Record<LanguageCode, Partial<Record<TranslationKey, string>>
     'settings.backgroundHint': 'Restore the persistent notification if you hid it.',
     'settings.backgroundRestored': 'Notification restored',
     'settings.backgroundUnavailable': 'Notification unavailable. Check notification permission.',
+    'notify.sessionReady': 'Session ready',
+    'notify.sessionFailed': 'Session failed',
+    'settings.notificationsTitle': 'Notifications',
+    'settings.notificationsEnabled': 'Notifications on this device',
+    'settings.notificationsReady': 'Session ready',
+    'settings.notificationsFailed': 'Session failed',
+    'settings.notificationsAttention': 'Needs attention',
+    'settings.notificationsHintDesktop': 'You can also turn them off in the system notification settings for Harness Remote.',
+    'settings.notificationsHintWeb': 'Shown while a Harness Remote tab is open in this browser.',
+    'settings.notificationsHintAndroid': 'Shown by the background connection, even with the app closed.',
+    'settings.notificationsBlocked': 'Blocked by the browser. Allow notifications for this site in the browser settings, then turn them on again here.',
+    'settings.notificationsUnsupported': 'This browser cannot show notifications.',
     'settings.activityHint': 'What the agent does between your message and its answer: its updates, its reasoning and the tools it runs. Changes apply to open conversations immediately.',
     'settings.activityLive': 'While the agent works',
     'settings.activityLive.latest': 'Show its latest update',
@@ -2189,6 +2213,18 @@ const translations: Record<LanguageCode, Partial<Record<TranslationKey, string>>
     'settings.backgroundHint': 'Ripristina la notifica persistente se l’hai nascosta.',
     'settings.backgroundRestored': 'Notifica ripristinata',
     'settings.backgroundUnavailable': 'Notifica non disponibile. Controlla il permesso notifiche.',
+    'notify.sessionReady': 'Session pronta',
+    'notify.sessionFailed': 'Session fallita',
+    'settings.notificationsTitle': 'Notifiche',
+    'settings.notificationsEnabled': 'Notifiche su questo dispositivo',
+    'settings.notificationsReady': 'Session pronta',
+    'settings.notificationsFailed': 'Session fallita',
+    'settings.notificationsAttention': 'Serve attenzione',
+    'settings.notificationsHintDesktop': 'Puoi anche disattivarle dalle impostazioni notifiche del sistema per Harness Remote.',
+    'settings.notificationsHintWeb': 'Mostrate finché una scheda di Harness Remote è aperta in questo browser.',
+    'settings.notificationsHintAndroid': 'Mostrate dalla connessione in background, anche con l’app chiusa.',
+    'settings.notificationsBlocked': 'Bloccate dal browser. Consenti le notifiche per questo sito nelle impostazioni del browser, poi riattivale qui.',
+    'settings.notificationsUnsupported': 'Questo browser non può mostrare notifiche.',
     'settings.activityHint': "Ciò che l'agente fa tra il tuo messaggio e la risposta: i suoi aggiornamenti, il ragionamento e gli strumenti che usa. Le modifiche valgono subito anche per le conversazioni aperte.",
     'settings.activityLive': "Mentre l'agente lavora",
     'settings.activityLive.latest': "Mostra l'ultimo aggiornamento",
@@ -2975,6 +3011,18 @@ const translations: Record<LanguageCode, Partial<Record<TranslationKey, string>>
     'settings.backgroundHint': '如果你隱藏了常駐通知，請在此恢復。',
     'settings.backgroundRestored': '通知已恢復',
     'settings.backgroundUnavailable': '通知不可用。請檢查通知權限。',
+    'notify.sessionReady': '工作階段已就緒',
+    'notify.sessionFailed': '工作階段失敗',
+    'settings.notificationsTitle': '通知',
+    'settings.notificationsEnabled': '此裝置上的通知',
+    'settings.notificationsReady': '工作階段已就緒',
+    'settings.notificationsFailed': '工作階段失敗',
+    'settings.notificationsAttention': '需要注意',
+    'settings.notificationsHintDesktop': '你也可以在系統的 Harness Remote 通知設定中關閉。',
+    'settings.notificationsHintWeb': '在此瀏覽器開著 Harness Remote 分頁時顯示。',
+    'settings.notificationsHintAndroid': '由背景連線顯示，即使應用程式已關閉。',
+    'settings.notificationsBlocked': '已被瀏覽器封鎖。請在瀏覽器設定中允許此網站的通知，然後在這裡重新開啟。',
+    'settings.notificationsUnsupported': '此瀏覽器無法顯示通知。',
     'settings.activityHint': '代理在你的訊息與它的回覆之間所做的事：進度訊息、推理與執行的工具。變更會立即套用到已開啟的對話。',
     'settings.activityLive': '代理工作時',
     'settings.activityLive.latest': '顯示最新進度',
@@ -3761,6 +3809,18 @@ const translations: Record<LanguageCode, Partial<Record<TranslationKey, string>>
     'settings.backgroundHint': '如果你隐藏了常驻通知，请在此恢复。',
     'settings.backgroundRestored': '通知已恢复',
     'settings.backgroundUnavailable': '通知不可用。请检查通知权限。',
+    'notify.sessionReady': '会话已就绪',
+    'notify.sessionFailed': '会话失败',
+    'settings.notificationsTitle': '通知',
+    'settings.notificationsEnabled': '此设备上的通知',
+    'settings.notificationsReady': '会话已就绪',
+    'settings.notificationsFailed': '会话失败',
+    'settings.notificationsAttention': '需要注意',
+    'settings.notificationsHintDesktop': '你也可以在系统的 Harness Remote 通知设置中关闭。',
+    'settings.notificationsHintWeb': '在此浏览器打开 Harness Remote 标签页时显示。',
+    'settings.notificationsHintAndroid': '由后台连接显示，即使应用已关闭。',
+    'settings.notificationsBlocked': '已被浏览器阻止。请在浏览器设置中允许此网站的通知，然后在这里重新开启。',
+    'settings.notificationsUnsupported': '此浏览器无法显示通知。',
     'settings.activityHint': '代理在你的消息与它的回复之间所做的事：进度消息、推理与运行的工具。更改会立即应用到已打开的对话。',
     'settings.activityLive': '代理工作时',
     'settings.activityLive.latest': '显示最新进度',
@@ -4547,6 +4607,18 @@ const translations: Record<LanguageCode, Partial<Record<TranslationKey, string>>
     'settings.backgroundHint': 'Restaure a notificação persistente se você a ocultou.',
     'settings.backgroundRestored': 'Notificação restaurada',
     'settings.backgroundUnavailable': 'Notificação indisponível. Verifique a permissão de notificações.',
+    'notify.sessionReady': 'Sessão pronta',
+    'notify.sessionFailed': 'Sessão falhou',
+    'settings.notificationsTitle': 'Notificações',
+    'settings.notificationsEnabled': 'Notificações neste dispositivo',
+    'settings.notificationsReady': 'Sessão pronta',
+    'settings.notificationsFailed': 'Sessão falhou',
+    'settings.notificationsAttention': 'Precisa de atenção',
+    'settings.notificationsHintDesktop': 'Você também pode desativá-las nas configurações de notificação do sistema para o Harness Remote.',
+    'settings.notificationsHintWeb': 'Exibidas enquanto uma aba do Harness Remote estiver aberta neste navegador.',
+    'settings.notificationsHintAndroid': 'Exibidas pela conexão em segundo plano, mesmo com o app fechado.',
+    'settings.notificationsBlocked': 'Bloqueadas pelo navegador. Permita notificações para este site nas configurações do navegador e ative-as novamente aqui.',
+    'settings.notificationsUnsupported': 'Este navegador não pode exibir notificações.',
     'settings.activityHint': 'O que o agente faz entre a sua mensagem e a resposta dele: atualizações, raciocínio e ferramentas que executa. As alterações valem imediatamente para as conversas abertas.',
     'settings.activityLive': 'Enquanto o agente trabalha',
     'settings.activityLive.latest': 'Mostrar a atualização mais recente',

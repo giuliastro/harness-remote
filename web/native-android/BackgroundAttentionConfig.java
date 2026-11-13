@@ -139,6 +139,27 @@ final class BackgroundAttentionConfig {
             .apply();
     }
 
+    static final String KEY_NOTIFY_READY = "notify_ready";
+    static final String KEY_NOTIFY_FAILED = "notify_failed";
+    static final String KEY_NOTIFY_ATTENTION = "notify_attention";
+
+    /**
+     * Settings → Notifications on this device. Stored natively because the service posts while the
+     * WebView is suspended or gone. Every kind defaults to on, matching the app's defaults.
+     */
+    static void setNotificationKinds(Context context, boolean ready, boolean failed, boolean attention) {
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .edit()
+            .putBoolean(KEY_NOTIFY_READY, ready)
+            .putBoolean(KEY_NOTIFY_FAILED, failed)
+            .putBoolean(KEY_NOTIFY_ATTENTION, attention)
+            .apply();
+    }
+
+    static boolean notificationKindEnabled(Context context, String key) {
+        return context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).getBoolean(key, true);
+    }
+
     static boolean notificationPrompted(Context context) {
         return context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
             .getBoolean(KEY_NOTIFICATION_PROMPTED, false);

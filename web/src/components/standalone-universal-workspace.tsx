@@ -26,6 +26,7 @@ import {
 } from "../appPreferences"
 import { ChatIcon, LoadingIcon, PencilIcon, PhoneIcon, RefreshIcon, SearchIcon, ServerIcon, SettingsIcon, TrashIcon } from "../Icons"
 import { restoreBackgroundAttentionNotification } from "../background-attention"
+import { NotificationSettingsGroup } from "./notification-settings"
 import { harnessIconUrl } from "../harness-icons"
 import { createTranslator, languageOptions, type LanguageCode, type Translator } from "../i18n"
 import { chooseDesktopProjectFolder, desktopNetworkSettings, desktopProjectRoots, desktopUpdateStatus, openDesktopUpdate, setDesktopNetworkSettings, setDesktopProjectRoots } from "../desktopBridge"
@@ -819,6 +820,7 @@ function MobileSettingsPage({ onClose, onOpenPlugins }: { onClose: () => void; o
             <label data-icon="language"><strong>{t("settings.language")}</strong><select value={language} onChange={(event) => changeLanguage(event.target.value)}>{languageOptions.map((option) => <option value={option.code} key={option.code}>{option.label}</option>)}</select></label>
           </div>
           <p>{t("sf.appearanceShared")}</p>
+          <NotificationSettingsGroup t={t} />
           {Capacitor.getPlatform() === "android" ? (
             <div className="hr-mobile-settings-group" data-settings-background>
               <span>{t("settings.backgroundTitle")}</span>

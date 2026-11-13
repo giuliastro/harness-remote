@@ -107,9 +107,19 @@ final class SessionOutcomeCenter {
     }
 
     private void post(SessionOutcomeEvent event, String outcome) {
+        String key = event.sessionKey();
+        // Settings → Notifications: a kind the user turned off is still recorded as delivered, so
+        // turning it back on later does not replay an old outcome.
+        String kindKey = "READY".equals(outcome)
+            ? BackgroundAttentionConfig.KEY_NOTIFY_READY
+            : BackgroundAttentionConfig.KEY_NOTIFY_FAILED;
+        if (!BackgroundAttentionConfig.notificationKindEnabled(context, kindKey)) {
+            SessionState muted = sessions.get(key);
+            if (muted != null) muted.lastOutcome = outcome;
+            return;
+        }
         String deepLink = AttentionDeepLink.forRequest(event.machineID, event.agentID, event.sessionID);
         if (deepLink == null) return;
-        String key = event.sessionKey();
         int notificationID = notificationID(key);
         Intent intent = new Intent(context, MainActivity.class)
             .setAction(Intent.ACTION_VIEW)

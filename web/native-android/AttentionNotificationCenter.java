@@ -36,6 +36,8 @@ final class AttentionNotificationCenter {
 
     synchronized void show(AttentionRequest request) {
         if (manager == null || request == null || request.transition != AttentionRequest.Transition.ASKED) return;
+        // Settings → Notifications → Needs attention. The in-app Attention Inbox still lists the request.
+        if (!BackgroundAttentionConfig.notificationKindEnabled(context, BackgroundAttentionConfig.KEY_NOTIFY_ATTENTION)) return;
         String key = request.notificationKey();
         if (active.containsKey(key)) return;
         int notificationID = notificationID(key);

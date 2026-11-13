@@ -193,6 +193,11 @@ export function syncDesktopProfiles(profiles: readonly DesktopProfileSource[]): 
   return synchronization
 }
 
+/** True inside the Electron app, whatever the operating system. */
+export function isDesktopShell(): boolean {
+  return desktopPlatform() !== null
+}
+
 export function desktopPlatform(): DesktopPlatform | null {
   const value = bridge()?.platform
   return value?.isDesktop ? value : null
