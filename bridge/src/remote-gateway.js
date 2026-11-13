@@ -3,6 +3,7 @@ import https from "node:https"
 import { REMOTE_AUTH_HEADERS } from "./remote-request-auth.js"
 
 const MAX_BODY_BYTES = 24 * 1024 * 1024
+const MAX_ACTIVE_REQUESTS = 8
 const MAX_BAD_REQUESTS = 10
 const FAILURE_WINDOW_MS = 5 * 60_000
 const FORWARD_HEADERS = ["accept", "content-type", "x-harness-backend", "last-event-id", "if-none-match"]
@@ -46,7 +47,14 @@ export function createRemoteGatewayServer({
     throw new Error("Incomplete remote pairing configuration")
   }
   const failures = new Map()
+  let activeRequests = 0
   const server = createServer({ key: tls.key, cert: tls.cert, minVersion: "TLSv1.3" }, async (request, response) => {
+    if (activeRequests >= MAX_ACTIVE_REQUESTS) {
+      writeError(response, 503, "Remote gateway is busy")
+      return
+    }
+    activeRequests += 1
+    response.once("close", () => { activeRequests -= 1 })
     const address = clientAddress(request)
     const current = now()
     for (const [peer, entry] of failures) {
@@ -170,5 +178,6 @@ export function createRemoteGatewayServer({
   server.requestTimeout = 30_000
   server.headersTimeout = 10_000
   server.maxHeadersCount = 64
+  server.maxConnections = 32
   return server
 }
