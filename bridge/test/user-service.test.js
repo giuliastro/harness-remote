@@ -76,7 +76,8 @@ for (const platform of ["linux", "darwin", "win32"]) {
         : platform === "darwin"
           ? fs.readFileSync(path.join(home, "Library", "LaunchAgents", "com.harnessremote.gateway.plist"), "utf8")
           : windowsTaskDefinition
-      assert.ok(registration.includes(runtimeDir), `service definition must use the stable runtime path ${runtimeDir}`)
+      assert.ok(registration.includes(runtimeDir) || registration.includes(runtimeDir.replaceAll("\\", "\\\\")),
+        `service definition must use the stable runtime path ${runtimeDir}`)
       fs.rmSync(sourceRoot, { recursive: true, force: true })
       assert.deepEqual(manager.status(), { installed: true, running: true })
       assert.equal(manager.uninstall(), true)
@@ -165,10 +166,21 @@ test("Windows task lookup errors and foreign tasks fail closed", () => {
 
 test("the persistent runtime loads its copied ESM launcher and dependencies independently of npx", async () => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "harness-remote-runtime-"))
+  const sourceRoot = path.join(home, "npx-cache", "harness-remote")
+  const sourceLauncher = path.join(sourceRoot, "bridge", "src", "launcher.js")
+  fs.mkdirSync(path.join(sourceRoot, "bridge"), { recursive: true })
+  fs.cpSync(path.resolve(import.meta.dirname, "../src"), path.dirname(sourceLauncher), { recursive: true })
+  fs.copyFileSync(path.resolve(import.meta.dirname, "../../package.json"), path.join(sourceRoot, "package.json"))
+  fs.copyFileSync(path.resolve(import.meta.dirname, "../package.json"), path.join(sourceRoot, "bridge", "package.json"))
+  const qrPackage = path.join(sourceRoot, "node_modules", "qrcode-terminal")
+  fs.mkdirSync(qrPackage, { recursive: true })
+  fs.writeFileSync(path.join(qrPackage, "package.json"), JSON.stringify({ name: "qrcode-terminal", main: "index.js" }))
+  fs.writeFileSync(path.join(qrPackage, "index.js"), "module.exports = { generate() {} }\n")
   let active = false
   const manager = createUserServiceManager({
     platform: "linux",
     home,
+    launcherPath: sourceLauncher,
     command(file, args) {
       if (file === "loginctl" && args[0] === "show-user") return "no"
       if (file === "loginctl") return ""
@@ -180,6 +192,7 @@ test("the persistent runtime loads its copied ESM launcher and dependencies inde
   })
   try {
     manager.install(["--backend", "codex"])
+    fs.rmSync(sourceRoot, { recursive: true, force: true })
     const copiedLauncher = path.join(home, ".local", "share", "harness-remote", "runtime", "bridge", "src", "launcher.js")
     const copiedModule = await import(pathToFileURL(copiedLauncher).href)
     assert.match(copiedModule.launcherUsage(), /service <install\|uninstall\|status>/)
