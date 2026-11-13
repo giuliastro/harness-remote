@@ -142,6 +142,10 @@ jobs:
         run: node scripts/session-outcome-notification-browser-smoke.mjs
         working-directory: web
 
+      - name: Run split DeepSeek reply smoke
+        run: node scripts/split-reply-browser-smoke.mjs
+        working-directory: web
+
       - name: Run per-harness Session loading indicator smoke
         run: node scripts/session-loading-indicator-browser-smoke.mjs
         working-directory: web

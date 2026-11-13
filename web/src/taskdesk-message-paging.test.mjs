@@ -64,6 +64,48 @@ test("newest-page reconcile never cuts a streamed assistant reply back to a stal
   assert.equal(caughtUp[0], laterJournal, "a journal that catches up and extends the answer remains authoritative")
 })
 
+test("a reply whose text moved to its own message is not kept twice (DeepSeek tool turns)", () => {
+  // Live, DeepSeek serves a tool turn as one message whose final text part belongs to another id.
+  // After a reload the same turn is split: reasoning and tool in the first message, the text in its
+  // own message. The stale-prefix guard read the first message as "lost its text", kept the old
+  // copy, and the text was drawn twice ("OK" / "OK") until the view was rebuilt.
+  const prompt = userMessage("prompt", "Attendi 10 secondi poi rispondi OK")
+  const live = {
+    info: { id: "0e8a9276", role: "assistant", time: { created: 2 } },
+    parts: [
+      { id: "0e8a9276:reasoning:0", type: "reasoning", text: "Wait, then answer." },
+      { id: "0e8a9276:tool:1", type: "tool", tool: "web_fetch", state: { status: "completed" } },
+      { id: "7082d780:text:1", type: "text", text: "OK" }
+    ]
+  }
+  const splitTool = {
+    info: { id: "0e8a9276", role: "assistant", time: { created: 2 } },
+    parts: [
+      { id: "0e8a9276:reasoning:0", type: "reasoning", text: "Wait, then answer." },
+      { id: "0e8a9276:tool:1", type: "tool", tool: "web_fetch", state: { status: "completed" } }
+    ]
+  }
+  const splitText = {
+    info: { id: "7082d780", role: "assistant", time: { created: 3 } },
+    parts: [{ id: "7082d780:text:1", type: "text", text: "OK" }]
+  }
+
+  for (const complete of [true, false]) {
+    const merged = mergeLatestMessagePage([prompt, live], [prompt, splitTool, splitText], { complete })
+    const texts = merged.flatMap((entry) => entry.parts.filter((part) => part.type === "text" && entry.info.role === "assistant").map((part) => part.text))
+    assert.deepEqual(texts, ["OK"], `the reply text is shown once (complete page: ${complete})`)
+    assert.deepEqual(merged.map((entry) => entry.info.id), ["prompt", "0e8a9276", "7082d780"])
+  }
+})
+
+test("the same short reply in another turn does not disable the stale-prefix guard", () => {
+  const live = message("reply-2", "OK, done")
+  const stale = message("reply-2", "OK")
+  const earlierTurn = [userMessage("p1", "first"), message("reply-1", "OK, done"), userMessage("p2", "second")]
+  const merged = mergeLatestMessagePage([...earlierTurn, live], [...earlierTurn, stale], { complete: true })
+  assert.equal(merged.at(-1), live, "a stale journal prefix of this turn must still be held back")
+})
+
 test("a divergent native rewrite is not mistaken for a stale prefix", () => {
   const current = message("reply", "draft answer that was streamed")
   const rewritten = message("reply", "final answer from native history")
