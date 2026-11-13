@@ -253,7 +253,10 @@ function createWindow(): BrowserWindow {
       sandbox: true,
       nodeIntegration: false,
       webSecurity: true,
-      spellcheck: false
+      spellcheck: false,
+      // The window lives on in the tray. Chromium otherwise slows a hidden page's timers down to
+      // once a minute, which would delay "Session ready" by up to that long.
+      backgroundThrottling: false
     }
   })
   // Held separately because `closed` fires after the native window is gone, and reading

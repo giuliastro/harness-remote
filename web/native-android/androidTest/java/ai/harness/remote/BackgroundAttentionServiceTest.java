@@ -66,6 +66,7 @@ public class BackgroundAttentionServiceTest {
 
     @After
     public void tearDown() throws Exception {
+        BackgroundAttentionConfig.setNotificationKinds(context, true, true, true);
         context.stopService(new Intent(context, BackgroundAttentionService.class));
         BackgroundAttentionVisibility.setForeground(false);
         BackgroundAttentionVisibility.clear();
@@ -312,6 +313,24 @@ public class BackgroundAttentionServiceTest {
         waitFor("ready notification", () -> attentionNotification(readyTitle) != null, 10_000);
         Thread.sleep(5_000);
         assertEquals(1, attentionNotificationCount(readyTitle));
+    }
+
+    @Test
+    public void respectsTheNotificationKindsChosenInSettings() throws Exception {
+        // Settings -> Notifications on Android. Session ready off: a finished turn posts nothing.
+        // Session failed stays on and still posts.
+        BackgroundAttentionConfig.setNotificationKinds(context, false, true, true);
+        startService();
+        waitFor("machine connected", () -> BackgroundAttentionStatus.isMachineConnected(FakeMachineServer.MACHINE_ID), 15_000);
+        String readyTitle = context.getString(R.string.hr_outcome_ready_title);
+        String failedTitle = context.getString(R.string.hr_outcome_failed_title);
+        server.sendEvent(sessionStatus("kinds-1", "busy"));
+        server.sendEvent(sessionIdle("kinds-1"));
+        Thread.sleep(1_500);
+        assertEquals("Session ready turned off must not post", 0, attentionNotificationCount(readyTitle));
+        server.sendEvent(sessionStatus("kinds-1", "busy"));
+        server.sendEvent(sessionError("kinds-1", "Provider failed"));
+        waitFor("failed notification", () -> attentionNotification(failedTitle) != null, 5_000);
     }
 
     @Test

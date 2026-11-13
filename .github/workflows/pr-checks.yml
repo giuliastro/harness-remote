@@ -138,6 +138,10 @@ jobs:
         run: node scripts/open-session-stalled-read-browser-smoke.mjs
         working-directory: web
 
+      - name: Run web Session notification smoke
+        run: node scripts/session-outcome-notification-browser-smoke.mjs
+        working-directory: web
+
       - name: Run per-harness Session loading indicator smoke
         run: node scripts/session-loading-indicator-browser-smoke.mjs
         working-directory: web

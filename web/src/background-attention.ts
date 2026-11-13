@@ -34,7 +34,10 @@ export type BackgroundAttentionNativePlugin = {
   status(): Promise<BackgroundAttentionStatus>
   restoreNotification(): Promise<BackgroundAttentionStatus>
   setVisibleSession(options: { machineID?: string; agentID?: string; sessionID?: string }): Promise<BackgroundAttentionStatus>
+  setNotificationKinds?(options: { ready: boolean; failed: boolean; attention: boolean }): Promise<BackgroundAttentionStatus>
 }
+
+export type BackgroundNotificationPreferences = { enabled: boolean; ready: boolean; failed: boolean; attention: boolean }
 
 const MAX_BACKGROUND_MACHINES = 6
 
@@ -94,14 +97,20 @@ export async function syncBackgroundAttention(
     platform?: string
     prompt?: boolean
     plugin?: BackgroundAttentionNativePlugin
+    /** Settings → Notifications. Off stops the service: it exists only to deliver notifications. */
+    preferences?: BackgroundNotificationPreferences
   } = {}
 ): Promise<BackgroundAttentionStatus | null> {
   const platform = options.platform ?? Capacitor.getPlatform()
   if (platform !== "android") return null
   const plugin = options.plugin ?? BackgroundAttention
-  const targets = backgroundAttentionMachines(machines)
+  const preferences = options.preferences
+  const targets = preferences && !preferences.enabled ? [] : backgroundAttentionMachines(machines)
   await plugin.configure({ machines: targets })
   if (targets.length === 0) return plugin.stop()
+  if (preferences && plugin.setNotificationKinds) {
+    await plugin.setNotificationKinds({ ready: preferences.ready, failed: preferences.failed, attention: preferences.attention })
+  }
   return plugin.start({ prompt: options.prompt === true })
 }
 

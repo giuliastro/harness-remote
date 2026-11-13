@@ -4,6 +4,7 @@ import { Capacitor } from "@capacitor/core"
 import type { DesktopLocalRuntimeState } from "../electron/ipc-contract"
 import { installAppPreferences } from "./appPreferences"
 import { syncBackgroundAttention } from "./background-attention"
+import { useNotificationPreferences } from "./notification-preferences"
 import { installCompletionAudioGuard } from "./completion-audio"
 import { StandaloneUniversalWorkspace } from "./components/standalone-universal-workspace"
 import {
@@ -113,10 +114,11 @@ function HarnessRemoteBoundary() {
   // permission when this install has never asked: someone who updated from a version without
   // background notifications already has machines and would otherwise never see the prompt. The
   // native side asks at most once per install and never again after a grant or a denial.
+  const notificationPreferences = useNotificationPreferences()
   useEffect(() => {
     if (!machinesReady) return
-    void syncBackgroundAttention(persistedMachines, { prompt: true }).catch(() => undefined)
-  }, [machinesReady, revision])
+    void syncBackgroundAttention(persistedMachines, { prompt: true, preferences: notificationPreferences }).catch(() => undefined)
+  }, [machinesReady, revision, notificationPreferences])
 
   // Success needs no action, so it clears itself. Errors carry what to fix and stay until dismissed;
   // "connecting" is replaced by the outcome.

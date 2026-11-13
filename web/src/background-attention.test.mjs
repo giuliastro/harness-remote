@@ -198,7 +198,38 @@ const status = {
   const main = readFileSync(new URL("./main.tsx", import.meta.url), "utf8")
   assert.match(
     main,
-    /syncBackgroundAttention\(persistedMachines, \{ prompt: true \}\)/,
+    /syncBackgroundAttention\(persistedMachines, \{ prompt: true, preferences: notificationPreferences \}\)/,
     "a launch with paired machines asks for the notification permission once"
   )
+}
+
+{
+  // Settings → Notifications on Android. The master switch off stops the service, which exists only
+  // to deliver notifications; the per-kind switches reach the native service, which posts while the
+  // WebView is gone.
+  const calls = []
+  const plugin = {
+    async configure(options) { calls.push(["configure", options.machines.length]); return status },
+    async start() { calls.push(["start"]); return status },
+    async stop() { calls.push(["stop"]); return status },
+    async setNotificationKinds(kinds) { calls.push(["kinds", kinds]); return status }
+  }
+  await syncBackgroundAttention([machine("one")], {
+    platform: "android",
+    plugin,
+    preferences: { enabled: false, ready: true, failed: true, attention: true }
+  })
+  assert.deepEqual(calls, [["configure", 0], ["stop"]], "notifications off on this device stops the background service")
+
+  calls.length = 0
+  await syncBackgroundAttention([machine("one")], {
+    platform: "android",
+    plugin,
+    preferences: { enabled: true, ready: false, failed: true, attention: false }
+  })
+  assert.deepEqual(calls, [
+    ["configure", 1],
+    ["kinds", { ready: false, failed: true, attention: false }],
+    ["start"]
+  ], "the per-kind switches reach the native service before it starts")
 }

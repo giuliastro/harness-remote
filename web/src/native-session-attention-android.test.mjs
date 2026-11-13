@@ -38,7 +38,8 @@ assert.match(moduleSource, /attentionAuthority\(parsed\) !== "attention"/)
 
 assert.match(homeSource, /subscribeAndroidAttentionActivation\(activateAttention\)/)
 assert.match(homeSource, /selectedNativeSessionFromKey\(props\.selectedKey\)[\s\S]*syncVisibleNativeSession\(visible\)/)
-assert.match(homeSource, /candidate\.machineID === activation\.machineID && candidate\.agent\.id === activation\.agentID/)
+// A Ready/Failed tap can come from any harness, so the target is resolved among every available one.
+assert.match(homeSource, /const target = findSessionTarget\(activation\.machineID, activation\.agentID\)/)
 assert.match(homeSource, /pendingActivationRef\.current = activation/)
 assert.match(homeSource, /pendingActivationRef\.current = null[\s\S]*openAttentionSession\(target, pending\.sessionID\)/)
 assert.doesNotMatch(homeSource, /subscribeAndroidAttentionActivation[\s\S]*loadMessages/)

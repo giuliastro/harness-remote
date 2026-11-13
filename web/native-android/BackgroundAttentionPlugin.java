@@ -152,6 +152,17 @@ public class BackgroundAttentionPlugin extends Plugin {
     }
 
     @PluginMethod
+    public void setNotificationKinds(PluginCall call) {
+        BackgroundAttentionConfig.setNotificationKinds(
+            getContext(),
+            !Boolean.FALSE.equals(call.getBoolean("ready", true)),
+            !Boolean.FALSE.equals(call.getBoolean("failed", true)),
+            !Boolean.FALSE.equals(call.getBoolean("attention", true))
+        );
+        call.resolve(statusObject());
+    }
+
+    @PluginMethod
     public void setVisibleSession(PluginCall call) {
         String machineID = call.getString("machineID");
         String agentID = call.getString("agentID");

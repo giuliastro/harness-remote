@@ -1,8 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ComponentProps } from "react"
 import { selectedNativeSessionFromKey, syncVisibleNativeSession } from "../background-attention"
-import { notifyDesktopAttention, subscribeDesktopAttentionActivation } from "../desktopBridge"
+import { subscribeDesktopAttentionActivation } from "../desktopBridge"
+import { api } from "../api"
+import { notificationKindEnabled, notificationPlatform, useNotificationPreferences } from "../notification-preferences"
+import { SessionOutcomeTracker, type SessionOutcome } from "../session-outcome-tracker"
+import { showSessionNotification, subscribeWebNotificationActivation, windowIsInFront } from "../user-notifications"
+import { useTranslator } from "../useTranslator"
 import { subscribeAndroidAttentionActivation, type AndroidAttentionActivation } from "../native-session-attention-android"
-import { discoverAgentNativeSessionPage, nativeSessionSurfaceTarget, type NativeSessionSurfaceTarget } from "../native-session-discovery"
+import { discoverAgentNativeSessionPage, nativeSessionConfig, nativeSessionSurfaceTarget, type NativeSessionSurfaceTarget } from "../native-session-discovery"
 import { loadNativeSessionAttentionIndex, type NativeSessionAttentionIndex, type NativeSessionAttentionIndexItem } from "../native-session-attention-index"
 import { startNativeSessionAttentionLiveRefresh, type NativeSessionAttentionLiveTarget } from "../native-session-attention-live"
 import { desktopAttentionNotification, type NativeSessionAttentionNotificationContext } from "../native-session-attention-notification-presentation"
@@ -44,6 +49,9 @@ export type AttentionInboxCounts = {
 
 const ATTENTION_FALLBACK_MS = 30_000
 const NOTIFICATION_CONTEXT_MAX_PAGES = 4
+// Desktop and web read every harness's Session status list this often to notice a finished turn.
+// Android does the same in its native service and is not polled from here.
+const OUTCOME_POLL_MS = 5_000
 
 function supportsAttention(agent: MachineAgentHost): boolean {
   return agent.state === "available"
@@ -208,6 +216,37 @@ export function NativeSessionHome(props: Props) {
   const targetsRef = useRef<Map<string, AttentionTarget>>(new Map())
   targetsRef.current = new Map(attentionTargets.map((target) => [target.key, target]))
 
+  // Every available harness, not only those with questions or permissions. A Ready or Failed
+  // notification can come from any harness (Claude Code included), and its click must find the
+  // harness to open the Session; restricting this to attention-capable harnesses made those clicks
+  // do nothing.
+  const sessionTargets = useMemo<AttentionTarget[]>(() => props.sources.flatMap(({ machine, snapshot, state }) => {
+    if (!snapshot || state !== "online") return []
+    return snapshot.agents
+      .filter((agent) => agent.state === "available" && agent.capabilities.sessions !== false)
+      .map((agent) => ({
+        key: targetKey(machine.id, agent.id),
+        baseConfig: machine.config as ServerConfig,
+        agent,
+        machineID: snapshot.machine.id,
+        machineName: snapshot.machine.name || machine.name
+      }))
+  }), [props.sources])
+  const sessionTargetSignature = sessionTargets.map((target) => [
+    target.key, target.machineID, target.baseConfig.host, target.baseConfig.port,
+    target.baseConfig.username, target.baseConfig.password, target.agent.processID ?? ""
+  ].join(":")).join("|")
+  const sessionTargetsRef = useRef<Map<string, AttentionTarget>>(new Map())
+  sessionTargetsRef.current = new Map(sessionTargets.map((target) => [target.key, target]))
+  const findSessionTarget = useCallback((machineID: string, agentID: string) =>
+    [...sessionTargetsRef.current.values()].find((candidate) => candidate.machineID === machineID && candidate.agent.id === agentID),
+  [])
+  const t = useTranslator()
+  const notificationPreferences = useNotificationPreferences()
+  const selectedKeyRef = useRef(props.selectedKey)
+  selectedKeyRef.current = props.selectedKey
+  const outcomeTrackerRef = useRef(new SessionOutcomeTracker())
+
   const rememberAndOpen = useCallback((target: NativeSessionSurfaceTarget) => {
     setKnownTargets((current) => ({ ...current, [target.key]: target }))
     const existingContext = notificationContextRef.current.get(target.key)
@@ -252,9 +291,7 @@ export function NativeSessionHome(props: Props) {
   }, [openingKey, props.selectedKey, rememberAndOpen])
 
   const activateAttention = useCallback((activation: AndroidAttentionActivation) => {
-    const target = [...targetsRef.current.values()].find((candidate) =>
-      candidate.machineID === activation.machineID && candidate.agent.id === activation.agentID
-    )
+    const target = findSessionTarget(activation.machineID, activation.agentID)
     if (!target) {
       // A cold Android launch can deliver the notification before machine discovery has settled.
       // Keep the exact identity and retry when the matching capability-scoped target appears.
@@ -263,9 +300,10 @@ export function NativeSessionHome(props: Props) {
     }
     pendingActivationRef.current = null
     void openAttentionSession(target, activation.sessionID)
-  }, [openAttentionSession])
+  }, [findSessionTarget, openAttentionSession])
 
   useEffect(() => subscribeAndroidAttentionActivation(activateAttention), [activateAttention])
+  useEffect(() => subscribeWebNotificationActivation(activateAttention), [activateAttention])
 
   useEffect(() => {
     const visible = selectedNativeSessionFromKey(props.selectedKey)
@@ -278,18 +316,20 @@ export function NativeSessionHome(props: Props) {
   useEffect(() => {
     const pending = pendingActivationRef.current
     if (!pending) return
-    const target = attentionTargets.find((candidate) =>
+    const target = sessionTargets.find((candidate) =>
       candidate.machineID === pending.machineID && candidate.agent.id === pending.agentID
     )
     if (!target) return
     pendingActivationRef.current = null
     void openAttentionSession(target, pending.sessionID)
-  }, [attentionTargets, openAttentionSession])
+  }, [sessionTargets, openAttentionSession])
 
   const notifyAttention = useCallback(async (
     notification: NativeSessionAttentionNotificationEvent,
     target: AttentionTarget
   ) => {
+    // Android posts these from its native service; desktop and web follow the device preferences.
+    if (notificationPlatform() === "android" || !notificationKindEnabled("attention")) return
     const key = sessionKey(target, notification.sessionID)
     let context = notificationContextRef.current.get(key)
     if (!context) {
@@ -300,8 +340,72 @@ export function NativeSessionHome(props: Props) {
         // Notification safety is more important than metadata enrichment. Keep the proven fallback.
       }
     }
-    notifyDesktopAttention(desktopAttentionNotification(notification, context))
+    showSessionNotification(desktopAttentionNotification(notification, context))
   }, [])
+
+  const notifyOutcome = useCallback(async (outcome: SessionOutcome, target: AttentionTarget) => {
+    if (!notificationKindEnabled(outcome.kind)) return
+    const key = sessionKey(target, outcome.sessionID)
+    // The Session on screen in a focused window needs no notification: its transcript already shows it.
+    if (key === selectedKeyRef.current && windowIsInFront()) return
+    let context = notificationContextRef.current.get(key)
+    if (!context) {
+      try {
+        context = await loadAttentionNotificationContext(target, outcome.sessionID)
+        if (context) notificationContextRef.current.set(key, context)
+      } catch {
+        // The title is enrichment; the notification still names the machine and harness.
+      }
+    }
+    const title = t(outcome.kind === "ready" ? "notify.sessionReady" : "notify.sessionFailed")
+    const where = `${target.machineName} · ${target.agent.label}`
+    const sessionTitle = context?.sessionTitle?.trim() || `Session ${shortSessionID(outcome.sessionID)}`
+    const body = [sessionTitle, context?.projectLabel ? `${where} · ${context.projectLabel}` : where].join("\n")
+    showSessionNotification({
+      title,
+      body,
+      overlayDescription: `${title} · ${sessionTitle}`.slice(0, 240),
+      target: { machineID: target.machineID, agentID: target.agent.id, sessionID: outcome.sessionID }
+    })
+  }, [t])
+
+  /**
+   * Desktop and web notice a finished turn by reading each harness's Session status list, the same
+   * authoritative source the Android service polls. Live events alone cannot be trusted for this:
+   * several harnesses only send session.updated, and another client may own the turn. A Session
+   * must be seen working before its end is announced, so opening the app stays silent.
+   */
+  useEffect(() => {
+    if (notificationPlatform() === "android") return
+    if (!notificationPreferences.enabled || (!notificationPreferences.ready && !notificationPreferences.failed)) return
+    let disposed = false
+    const inFlight = new Set<string>()
+    const tracker = outcomeTrackerRef.current
+    const poll = async (target: AttentionTarget) => {
+      if (inFlight.has(target.key)) return
+      inFlight.add(target.key)
+      try {
+        const statuses = await api.listStatuses(nativeSessionConfig(target.baseConfig, target.agent))
+        if (disposed) return
+        for (const outcome of tracker.observe(target.key, statuses)) void notifyOutcome(outcome, target)
+      } catch {
+        // An unreachable machine is retried on the next tick; its rail shows the connection state.
+      } finally {
+        inFlight.delete(target.key)
+      }
+    }
+    const pollAll = () => {
+      const targets = [...sessionTargetsRef.current.values()]
+      tracker.retain(targets.map((target) => target.key))
+      for (const target of targets) void poll(target)
+    }
+    pollAll()
+    const timer = window.setInterval(pollAll, OUTCOME_POLL_MS)
+    return () => {
+      disposed = true
+      window.clearInterval(timer)
+    }
+  }, [notificationPreferences.enabled, notificationPreferences.ready, notificationPreferences.failed, sessionTargetSignature, notifyOutcome])
 
   const refreshAttentionTarget = useCallback(async (candidate: NativeSessionAttentionLiveTarget, generation: number) => {
     const target = targetsRef.current.get(candidate.key)
@@ -333,15 +437,13 @@ export function NativeSessionHome(props: Props) {
   }, [notifyAttention])
 
   useEffect(() => subscribeDesktopAttentionActivation((activation) => {
-    const target = [...targetsRef.current.values()].find((candidate) =>
-      candidate.machineID === activation.machineID && candidate.agent.id === activation.agentID
-    )
+    const target = findSessionTarget(activation.machineID, activation.agentID)
     if (!target) {
       setOpenError("The machine or harness for this notification is not currently available.")
       return
     }
     void openAttentionSession(target, activation.sessionID)
-  }), [openAttentionSession])
+  }), [findSessionTarget, openAttentionSession])
 
   useEffect(() => {
     const generation = ++generationRef.current
