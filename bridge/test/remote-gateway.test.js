@@ -1,12 +1,17 @@
 import assert from "node:assert/strict"
 import { createHash, generateKeyPairSync, sign } from "node:crypto"
 import http from "node:http"
+import https from "node:https"
 import { once } from "node:events"
+import { mkdtemp, rm } from "node:fs/promises"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
 import { test } from "node:test"
 import { PairedDeviceRegistry } from "../src/paired-device-registry.js"
 import { OneTimePairingGrant } from "../src/pairing-server.js"
 import { createRemoteGatewayServer } from "../src/remote-gateway.js"
 import { RemoteRequestAuthenticator, REMOTE_AUTH_HEADERS, remoteRequestMessage } from "../src/remote-request-auth.js"
+import { loadTlsMachineIdentity } from "../src/tls-machine-identity.js"
 
 async function listen(server) {
   server.listen(0, "127.0.0.1")
@@ -98,5 +103,57 @@ test("signed HTTPS ingress forwards only verified requests and injects local cre
   } finally {
     gateway.close()
     upstream.close()
+  }
+})
+
+test("real HTTPS ingress serves only on its pinned TLS machine identity", async () => {
+  const stateDirectory = await mkdtemp(join(tmpdir(), "hr-remote-gateway-tls-"))
+  const machineID = "machine-tls-test"
+  const identity = await loadTlsMachineIdentity(stateDirectory, machineID)
+  const upstream = http.createServer((_request, response) => response.writeHead(200).end("machine"))
+  const upstreamPort = await listen(upstream)
+  const { publicKey, privateKey } = generateKeyPairSync("ec", { namedCurve: "prime256v1" })
+  const der = publicKey.export({ format: "der", type: "spki" })
+  const deviceID = createHash("sha256").update(der).digest("base64url")
+  const registry = new PairedDeviceRegistry({ store: {
+    read: async () => null, write: async () => {}, serial: async (operation) => operation()
+  } })
+  await registry.load()
+  await registry.pair({ publicKey: der.toString("base64url"), name: "Phone" })
+  const authenticator = new RemoteRequestAuthenticator({ registry, machineID, pin: identity.spkiSha256 })
+  const gateway = createRemoteGatewayServer({
+    tls: { key: identity.privateKey, cert: identity.certificate }, authenticator, upstreamPort
+  })
+  const port = await listen(gateway)
+  try {
+    const timestamp = Date.now()
+    const nonce = "d".repeat(43)
+    const target = "/v1/machine"
+    const message = remoteRequestMessage({ machineID, pin: identity.spkiSha256,
+      deviceID, timestamp, nonce, method: "GET", target, body: Buffer.alloc(0) })
+    const headers = {
+      [REMOTE_AUTH_HEADERS.device]: deviceID,
+      [REMOTE_AUTH_HEADERS.timestamp]: String(timestamp),
+      [REMOTE_AUTH_HEADERS.nonce]: nonce,
+      [REMOTE_AUTH_HEADERS.signature]: sign("sha256", Buffer.from(message), privateKey).toString("base64url")
+    }
+    const response = await new Promise((resolve, reject) => {
+      https.get({ hostname: "127.0.0.1", port, path: target, headers,
+        ca: identity.certificate, servername: identity.dnsName }, (incoming) => {
+        let body = ""
+        incoming.setEncoding("utf8")
+        incoming.on("data", (chunk) => { body += chunk })
+        incoming.on("end", () => resolve({ status: incoming.statusCode, body }))
+      }).on("error", reject)
+    })
+    assert.deepEqual(response, { status: 200, body: "machine" })
+    await assert.rejects(new Promise((resolve, reject) => {
+      https.get({ hostname: "127.0.0.1", port, path: target, headers,
+        ca: identity.certificate, servername: "other.machine.harness-remote.invalid" }, resolve).on("error", reject)
+    }), /certificate|hostname|altname/i)
+  } finally {
+    gateway.close()
+    upstream.close()
+    await rm(stateDirectory, { recursive: true, force: true })
   }
 })
