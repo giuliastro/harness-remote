@@ -10,6 +10,7 @@ import { test } from "node:test"
 import { PairedDeviceRegistry } from "../src/paired-device-registry.js"
 import { OneTimePairingGrant } from "../src/pairing-server.js"
 import { createRemoteGatewayServer } from "../src/remote-gateway.js"
+import { remoteAddressCandidates } from "../src/remote-address-candidates.js"
 import { RemoteRequestAuthenticator, REMOTE_AUTH_HEADERS, remoteRequestMessage } from "../src/remote-request-auth.js"
 import { loadTlsMachineIdentity } from "../src/tls-machine-identity.js"
 
@@ -30,10 +31,10 @@ async function get(port, path, headers = {}) {
   })
 }
 
-async function post(port, path, body) {
+async function post(port, path, body, signedHeaders = {}) {
   return new Promise((resolve, reject) => {
     const request = http.request({ hostname: "127.0.0.1", port, path, method: "POST",
-      headers: { "content-type": "application/json" } }, (response) => {
+      headers: { "content-type": "application/json", ...signedHeaders } }, (response) => {
       let text = ""
       response.setEncoding("utf8")
       response.on("data", (chunk) => { text += chunk })
@@ -102,6 +103,18 @@ test("signed HTTPS ingress forwards only verified requests and injects local cre
     }
     assert.deepEqual(await get(port, "/v1/machine", headers), { status: 200, body: "/v1/machine" })
     assert.equal((await get(port, "/v1/machine", headers)).status, 401)
+    for (const [legacyTarget, legacyNonce] of [
+      ["/v1/pairing/grant", "g".repeat(43)],
+      ["/v1/pairing/claim?token=legacy", "h".repeat(43)]
+    ]) {
+      const legacyMessage = remoteRequestMessage({ machineID, pin, deviceID, timestamp,
+        nonce: legacyNonce, method: "POST", target: legacyTarget, body: Buffer.from("{}") })
+      assert.equal((await post(port, legacyTarget, {}, {
+        ...headers,
+        [REMOTE_AUTH_HEADERS.nonce]: legacyNonce,
+        [REMOTE_AUTH_HEADERS.signature]: sign("sha256", Buffer.from(legacyMessage), privateKey).toString("base64url")
+      })).status, 403)
+    }
     const streamNonce = "e".repeat(43)
     const streamMessage = remoteRequestMessage({ machineID, pin, deviceID, timestamp,
       nonce: streamNonce, method: "GET", target: "/v1/events", body: Buffer.alloc(0) })
@@ -141,7 +154,10 @@ test("real HTTPS ingress serves only on its pinned TLS machine identity", async 
   const stateDirectory = await mkdtemp(join(tmpdir(), "hr-remote-gateway-tls-"))
   const machineID = "machine-tls-test"
   const identity = await loadTlsMachineIdentity(stateDirectory, machineID)
-  const upstream = http.createServer((_request, response) => response.writeHead(200).end("machine"))
+  const upstream = http.createServer((request, response) => {
+    if (request.url === "/v1/remote/addresses") response.writeHead(404).end("not on LAN HTTP")
+    else response.writeHead(200).end("machine")
+  })
   const upstreamPort = await listen(upstream)
   const { publicKey, privateKey } = generateKeyPairSync("ec", { namedCurve: "prime256v1" })
   const der = publicKey.export({ format: "der", type: "spki" })
@@ -153,7 +169,11 @@ test("real HTTPS ingress serves only on its pinned TLS machine identity", async 
   await registry.pair({ publicKey: der.toString("base64url"), name: "Phone" })
   const authenticator = new RemoteRequestAuthenticator({ registry, machineID, pin: identity.spkiSha256 })
   const gateway = createRemoteGatewayServer({
-    tls: { key: identity.privateKey, cert: identity.certificate }, authenticator, upstreamPort
+    tls: { key: identity.privateKey, cert: identity.certificate }, authenticator, upstreamPort,
+    addressCandidates: remoteAddressCandidates({
+      interfaces: { eth0: [{ address: "192.168.1.10", family: "IPv4", internal: false }] },
+      port: 4497, loopbackOnly: true
+    })
   })
   const port = await listen(gateway)
   try {
@@ -178,6 +198,34 @@ test("real HTTPS ingress serves only on its pinned TLS machine identity", async 
       }).on("error", reject)
     })
     assert.deepEqual(response, { status: 200, body: "machine" })
+    assert.deepEqual(await get(upstreamPort, "/v1/remote/addresses"), { status: 404, body: "not on LAN HTTP" })
+
+    const requestAddresses = (headers = {}) => new Promise((resolve, reject) => {
+      https.get({ hostname: "127.0.0.1", port, path: "/v1/remote/addresses", headers,
+        ca: identity.certificate, servername: identity.dnsName }, (incoming) => {
+        let body = ""
+        incoming.setEncoding("utf8")
+        incoming.on("data", (chunk) => { body += chunk })
+        incoming.on("end", () => resolve({ status: incoming.statusCode, body }))
+      }).on("error", reject)
+    })
+    assert.equal((await requestAddresses()).status, 401)
+    const addressesTimestamp = Date.now()
+    const addressesNonce = "f".repeat(43)
+    const addressesTarget = "/v1/remote/addresses"
+    const addressesMessage = remoteRequestMessage({ machineID, pin: identity.spkiSha256,
+      deviceID, timestamp: addressesTimestamp, nonce: addressesNonce, method: "GET",
+      target: addressesTarget, body: Buffer.alloc(0) })
+    const addressesHeaders = {
+      [REMOTE_AUTH_HEADERS.device]: deviceID,
+      [REMOTE_AUTH_HEADERS.timestamp]: String(addressesTimestamp),
+      [REMOTE_AUTH_HEADERS.nonce]: addressesNonce,
+      [REMOTE_AUTH_HEADERS.signature]: sign("sha256", Buffer.from(addressesMessage), privateKey).toString("base64url")
+    }
+    const addresses = await requestAddresses(addressesHeaders)
+    assert.equal(addresses.status, 200)
+    assert.deepEqual(JSON.parse(addresses.body).addresses, ["https://127.0.0.1:4497"])
+    assert.ok(Number.isFinite(JSON.parse(addresses.body).generatedAt))
     await assert.rejects(new Promise((resolve, reject) => {
       https.get({ hostname: "127.0.0.1", port, path: target, headers,
         ca: identity.certificate, servername: "other.machine.harness-remote.invalid" }, resolve).on("error", reject)

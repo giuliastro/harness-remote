@@ -8,6 +8,22 @@ const MAX_BAD_REQUESTS = 10
 const FAILURE_WINDOW_MS = 5 * 60_000
 const FORWARD_HEADERS = ["accept", "content-type", "x-harness-backend", "last-event-id", "if-none-match"]
 export const REMOTE_PAIR_PATH = "/v1/remote/pair"
+export const REMOTE_ADDRESSES_PATH = "/v1/remote/addresses"
+
+function validatedAddressCandidates(values) {
+  if (!Array.isArray(values)) return []
+  const candidates = new Set()
+  for (const value of values.slice(0, 32)) {
+    if (typeof value !== "string" || value.length > 512) continue
+    try {
+      const url = new URL(value)
+      if (url.protocol !== "https:" || url.username || url.password || url.pathname !== "/" ||
+          url.search || url.hash || url.hostname !== "127.0.0.1" || !url.port) continue
+      candidates.add(`https://127.0.0.1:${url.port}`)
+    } catch { /* Ignore malformed candidates. */ }
+  }
+  return [...candidates]
+}
 
 function clientAddress(request) {
   return String(request.socket.remoteAddress ?? "unknown").slice(0, 128)
@@ -37,6 +53,7 @@ export function createRemoteGatewayServer({
   username,
   password,
   pairing,
+  addressCandidates = [],
   now = () => Date.now(),
   createServer = https.createServer,
   requestUpstream = http.request
@@ -119,6 +136,24 @@ export function createRemoteGatewayServer({
       return
     }
     failures.delete(address)
+    // Legacy pairing grants can mint reusable Basic credentials. They must never
+    // be reachable through the device-key ingress, even by a paired device.
+    const normalizedPath = new URL(request.url, "http://localhost").pathname
+    if (normalizedPath === "/v1/pairing/grant" || normalizedPath === "/v1/pairing/claim") {
+      writeError(response, 403, "Legacy pairing is unavailable remotely")
+      return
+    }
+    if (request.url === REMOTE_ADDRESSES_PATH) {
+      if (request.method !== "GET") {
+        response.writeHead(405, { Allow: "GET", "cache-control": "no-store" })
+        response.end()
+        return
+      }
+      const current = now()
+      response.writeHead(200, { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" })
+      response.end(JSON.stringify({ addresses: validatedAddressCandidates(addressCandidates), generatedAt: current }))
+      return
+    }
     // A device may revoke its own key. Let the already authenticated DELETE receive
     // its confirmation; every subsequent request still fails authentication.
     const selfRevocation = request.method === "DELETE" &&

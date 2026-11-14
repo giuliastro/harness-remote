@@ -92,8 +92,13 @@ function verifiedMappedAddress(lease, now) {
  * value. A mapping lease is included only while its active TCP lease is valid.
  * This function performs no discovery, probing, mapping, or publication.
  */
-export function remoteAddressCandidates({ interfaces, port, mappingLease, now } = {}) {
+export function remoteAddressCandidates({ interfaces, port, mappingLease, now, loopbackOnly = false } = {}) {
   if (!validPort(port)) throw new TypeError("port must be an integer from 1 to 65535")
+
+  // The E1 preview listener is deliberately bound to 127.0.0.1. Its only useful
+  // remote candidate is the adb-reversed loopback endpoint; interface addresses
+  // and router mappings would claim reachability the listener does not have.
+  if (loopbackOnly) return [`https://127.0.0.1:${port}`]
 
   const candidates = new Set()
   const localAddresses = addressList(interfaces)

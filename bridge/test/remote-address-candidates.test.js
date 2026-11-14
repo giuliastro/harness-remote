@@ -63,3 +63,9 @@ test("deduplicates interface entries and validates the configured remote port", 
   assert.equal(candidates.filter((value) => value === "https://192.168.1.21:443").length, 1)
   assert.throws(() => remoteAddressCandidates({ interfaces: duplicated, port: 65_536 }), /port must be/)
 })
+
+test("loopback preview returns only the adb-reversible loopback endpoint", () => {
+  assert.deepEqual(remoteAddressCandidates({ interfaces, port: 4497, mappingLease: {
+    state: "active", transport: "tcp", externalAddress: "93.184.216.34", externalPort: 48001, expiresAt: 200
+  }, now: 100, loopbackOnly: true }), ["https://127.0.0.1:4497"])
+})

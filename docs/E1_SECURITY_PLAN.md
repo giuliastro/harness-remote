@@ -8,6 +8,8 @@ The Internet-facing listener must be distinct from the LAN HTTP listener. The cu
 
 The P-256 key in Android Keystore, persistent registry, TLS identity, signed-request authenticator, HTTPS ingress and Android pin verifier are wired for a loopback-only preview. Android app requests, SSE and background attention can use the pinned signed path, and a separate QR pairs without returning Basic credentials. The public listener and router mapping remain disabled. The registry never authorizes the existing HTTP port. A reviewer must verify the complete pairing, TLS pin validation, signed transcript, nonce handling, bounds, rate limits, revocation and storage before any Internet listener or router mapping is enabled.
 
+An independent code review found that the first preview forwarded the legacy pairing grant and claim routes after device authentication, allowing a paired device to copy reusable Basic credentials that survived revocation. The remote ingress now blocks those routes, including query variants. The review also found a global nonce-cache exhaustion path; a per-device quota now limits one key's share. Regression tests cover both changes. The review remains open for Android certificate-handshake negatives and a real-device end-to-end run. A signed `/v1/remote/addresses` route currently reports only the loopback preview endpoint; no public address is advertised.
+
 ## Activation order
 
 1. Complete and test the encrypted, mutually authenticated Android to gateway transport, including pairing and revocation UI. Include negative tests for missing, altered, replayed and revoked keys. Keep the legacy LAN path independent.

@@ -9,6 +9,7 @@ export const REMOTE_AUTH_HEADERS = Object.freeze({
 
 const MAX_SKEW_MS = 60_000
 const MAX_NONCES = 10_000
+const MAX_NONCES_PER_DEVICE = 2_048
 const DEVICE_ID = /^[A-Za-z0-9_-]{43}$/
 const NONCE = /^[A-Za-z0-9_-]{32,64}$/
 const SIGNATURE = /^[A-Za-z0-9_-]{1,256}$/
@@ -39,16 +40,21 @@ export class RemoteRequestAuthenticator {
   #machineID
   #pin
   #now
+  #maxNoncesPerDevice
   #nonces = new Map()
 
-  constructor({ registry, machineID, pin, now = () => Date.now() }) {
+  constructor({ registry, machineID, pin, now = () => Date.now(), maxNoncesPerDevice = MAX_NONCES_PER_DEVICE }) {
     if (!registry || typeof registry.verifySignature !== "function" || typeof registry.activeKey !== "function") {
       throw new Error("Paired device registry is required")
+    }
+    if (!Number.isInteger(maxNoncesPerDevice) || maxNoncesPerDevice < 1 || maxNoncesPerDevice > MAX_NONCES) {
+      throw new Error("Invalid per-device nonce limit")
     }
     this.#registry = registry
     this.#machineID = machineID
     this.#pin = pin
     this.#now = now
+    this.#maxNoncesPerDevice = maxNoncesPerDevice
   }
 
   authenticate({ headers, method, target, body }) {
@@ -70,10 +76,13 @@ export class RemoteRequestAuthenticator {
       return null
     }
     const replayKey = `${deviceID}:${nonce}`
+    let deviceNonceCount = 0
     for (const [key, expiresAt] of this.#nonces) {
       if (expiresAt < now) this.#nonces.delete(key)
+      else if (key.startsWith(`${deviceID}:`)) deviceNonceCount += 1
     }
-    if (this.#nonces.has(replayKey) || this.#nonces.size >= MAX_NONCES) return null
+    if (this.#nonces.has(replayKey) || this.#nonces.size >= MAX_NONCES ||
+      deviceNonceCount >= this.#maxNoncesPerDevice) return null
     if (!this.#registry.verifySignature(deviceID, message, signature)) return null
     this.#nonces.set(replayKey, now + MAX_SKEW_MS * 2)
     return { deviceID }

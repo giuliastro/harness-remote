@@ -19,6 +19,7 @@ import { PairedDeviceRegistry } from "./paired-device-registry.js"
 import { createRemoteDeviceManagementServer } from "./remote-device-management-server.js"
 import { MachinePairingGrants, renderPairingQRCode } from "./pairing-server.js"
 import { createRemoteGatewayServer } from "./remote-gateway.js"
+import { remoteAddressCandidates } from "./remote-address-candidates.js"
 import { remotePairingURI } from "./remote-pairing.js"
 import { RemoteRequestAuthenticator } from "./remote-request-auth.js"
 
@@ -263,6 +264,7 @@ async function main() {
         upstreamPort: config.port,
         username: config.username,
         password: config.password,
+        addressCandidates: remoteAddressCandidates({ interfaces: {}, port: remoteLoopbackPort, loopbackOnly: true }),
         pairing: { grants, registry: devices, machineID: identity.id }
       })
       await new Promise((resolve, reject) => {

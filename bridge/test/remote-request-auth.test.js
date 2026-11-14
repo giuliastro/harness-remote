@@ -8,7 +8,7 @@ const machineID = "machine-123"
 const pin = "a".repeat(64)
 const now = 1_900_000_000_000
 
-async function fixture() {
+async function fixture(options = {}) {
   const { publicKey, privateKey } = generateKeyPairSync("ec", { namedCurve: "prime256v1" })
   const publicKeyEncoded = publicKey.export({ format: "der", type: "spki" }).toString("base64url")
   const deviceID = createHash("sha256").update(Buffer.from(publicKeyEncoded, "base64url")).digest("base64url")
@@ -19,7 +19,7 @@ async function fixture() {
   } })
   await registry.load()
   await registry.pair({ publicKey: publicKeyEncoded, name: "Phone" })
-  const authenticator = new RemoteRequestAuthenticator({ registry, machineID, pin, now: () => now })
+  const authenticator = new RemoteRequestAuthenticator({ registry, machineID, pin, now: () => now, ...options })
   const request = (overrides = {}) => {
     const fields = {
       machineID, pin, deviceID, timestamp: now,
@@ -79,4 +79,27 @@ test("revocation takes effect on the next request", async () => {
   await registry.revoke(deviceID)
   assert.equal(authenticator.active(deviceID), false)
   assert.equal(authenticator.authenticate(request({ nonce: "c".repeat(43) })), null)
+})
+
+test("one device cannot exhaust the replay cache for other paired devices", async () => {
+  const { authenticator, registry, request, deviceID } = await fixture({ maxNoncesPerDevice: 2 })
+  assert.deepEqual(authenticator.authenticate(request({ nonce: "d".repeat(43) })), { deviceID })
+  assert.deepEqual(authenticator.authenticate(request({ nonce: "e".repeat(43) })), { deviceID })
+  assert.equal(authenticator.authenticate(request({ nonce: "f".repeat(43) })), null)
+
+  const { publicKey, privateKey } = generateKeyPairSync("ec", { namedCurve: "prime256v1" })
+  const otherID = await registry.pair({
+    publicKey: publicKey.export({ format: "der", type: "spki" }).toString("base64url"), name: "Tablet"
+  })
+  const fields = { machineID, pin, deviceID: otherID, timestamp: now,
+    nonce: "g".repeat(43), method: "GET", target: "/v1/machine", body: Buffer.alloc(0) }
+  const signature = sign("sha256", Buffer.from(remoteRequestMessage(fields)), privateKey).toString("base64url")
+  assert.deepEqual(authenticator.authenticate({ method: fields.method, target: fields.target, body: fields.body,
+    headers: {
+      [REMOTE_AUTH_HEADERS.device]: otherID,
+      [REMOTE_AUTH_HEADERS.timestamp]: String(now),
+      [REMOTE_AUTH_HEADERS.nonce]: fields.nonce,
+      [REMOTE_AUTH_HEADERS.signature]: signature
+    }
+  }), { deviceID: otherID })
 })
