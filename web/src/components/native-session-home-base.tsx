@@ -654,6 +654,11 @@ export function NativeSessionHome({
       machine.config.agentId || ""
     ].join(":")
   ).join("|")
+  const projectEndpointSignature = sources.map(({ machine }) =>
+    [machine.id, machine.config.host, machine.config.port, machine.config.username,
+      machine.config.password, machine.config.remote?.machineID || "",
+      machine.config.remote?.dnsName || "", machine.config.remote?.pin || ""].join(":")
+  ).join("|")
   const loaded = discoveryReady && loadedSignature === endpointSignature
   // Whether the read for the current snapshot has landed. Only used where showing stale emptiness
   // would be wrong (e.g. "No Sessions on this machine" for a machine that just came back).
@@ -678,6 +683,23 @@ export function NativeSessionHome({
   useEffect(() => {
     if (machineFilter && !sources.some(({ machine }) => machine.id === machineFilter)) setMachineFilter("")
   }, [machineFilter, sources])
+
+  const projectEndpointRef = useRef<string | null>(null)
+  useEffect(() => {
+    let cancelled = false
+    if (projectEndpointRef.current !== projectEndpointSignature) {
+      projectEndpointRef.current = projectEndpointSignature
+      setProjectsByMachine({})
+    }
+    for (const { machine } of sources) {
+      void listMachineProjects(machine.config).then((projects) => {
+        if (!cancelled) setProjectsByMachine((current) => ({ ...current, [machine.id]: projects }))
+      }).catch(() => {
+        // A transient catalog failure must not erase a previously loaded project picker.
+      })
+    }
+    return () => { cancelled = true }
+  }, [projectEndpointSignature, refreshToken, revision])
 
   useEffect(() => {
     if (!sources.length) {
@@ -743,11 +765,6 @@ export function NativeSessionHome({
       } else if (!failed) {
         discoveryRetry.current.attempt = 0
       }
-      const loadingMachineIDs = new Set(sources.filter(({ state }) => state === "loading").map(({ machine }) => machine.id))
-      setProjectsByMachine((current) => Object.fromEntries([
-        ...Object.entries(current).filter(([machineID]) => loadingMachineIDs.has(machineID)),
-        ...results.map((result) => [result.machine.id, result.projects])
-      ]))
       // Unlike `loaded`, the page cache follows the agent processes: ACP cursors are bound to the
       // connection that issued them. The visible rows survive through the reconciliation below.
       if (pageCacheSignature.current !== machineSignature) pageCache.current.clear()
