@@ -267,7 +267,8 @@ export function createFetchOpenCodeEventSubscription(options: FetchEventSubscrip
 type NativeEventEnvelope = { subscriptionID?: string, data?: string }
 type NativeStatusEnvelope = EventStreamStatus & { subscriptionID?: string }
 type NativeLiveEventsPlugin = {
-  start(options: { subscriptionID: string; url: string; username: string; password: string; backend: string }): Promise<void>
+  start(options: { subscriptionID: string; url: string; username: string; password: string; backend: string;
+    remoteMachineID?: string; remoteDnsName?: string; remotePin?: string }): Promise<void>
   stop(options: { subscriptionID: string }): Promise<void>
   addListener(eventName: "event", listenerFunc: (event: NativeEventEnvelope) => void): Promise<PluginListenerHandle>
   addListener(eventName: "status", listenerFunc: (status: NativeStatusEnvelope) => void): Promise<PluginListenerHandle>
@@ -295,6 +296,7 @@ export function createNativeOpenCodeEventSubscription(options: {
   username: string
   password: string
   backend: string
+  remote?: { machineID: string; dnsName: string; pin: string }
   onEvent: (event: Extract<ParsedOpenCodeEvent, { ok: true }>) => void
   onStatus?: (status: EventStreamStatus) => void
 }): { close(): void } {
@@ -324,7 +326,12 @@ export function createNativeOpenCodeEventSubscription(options: {
         url: options.url,
         username: options.username,
         password: options.password,
-        backend: options.backend
+        backend: options.backend,
+        ...(options.remote ? {
+          remoteMachineID: options.remote.machineID,
+          remoteDnsName: options.remote.dnsName,
+          remotePin: options.remote.pin
+        } : {})
       })
     } catch (error) {
       if (!closed) options.onStatus?.({ type: "connection-error", error: errorMessage(error) })

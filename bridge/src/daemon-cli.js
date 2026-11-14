@@ -15,6 +15,13 @@ import { internalServerCredentials, ManagedOpenCodeHost } from "./opencode-host.
 import { resolveOpenCodeCommand } from "./opencode-discovery.js"
 import { PluginHost } from "./plugins/plugin-host.js"
 import { createPluginServer } from "./plugins/plugin-server.js"
+import { PairedDeviceRegistry } from "./paired-device-registry.js"
+import { createRemoteDeviceManagementServer } from "./remote-device-management-server.js"
+import { MachinePairingGrants, renderPairingQRCode } from "./pairing-server.js"
+import { createRemoteGatewayServer } from "./remote-gateway.js"
+import { remoteAddressCandidates } from "./remote-address-candidates.js"
+import { remotePairingURI } from "./remote-pairing.js"
+import { RemoteRequestAuthenticator } from "./remote-request-auth.js"
 
 function requireValue(args, index, option) {
   const value = args[index + 1]
@@ -66,6 +73,11 @@ export function parseDaemonOptions(args, environment = process.env, detect = res
       index += 1
       continue
     }
+    if (option === "--remote-loopback-port") {
+      options.remoteLoopbackPort = parsePort(requireValue(args, index, option), option)
+      index += 1
+      continue
+    }
     bridgeArgs.push(option)
     if (["--backend", "--host", "--port", "--username", "--password", "--acp-command", "--acp-arg", "--root", "--cors", "--state-dir"].includes(option)) {
       bridgeArgs.push(requireValue(args, index, option))
@@ -86,7 +98,7 @@ export function parseDaemonOptions(args, environment = process.env, detect = res
 }
 
 export function daemonUsage() {
-  return `${bridgeUsage()}\n\nMulti-host daemon options:\n  --opencode-command <path>  OpenCode executable (default: opencode)\n  --opencode-host <host>     Managed OpenCode bind host (default: 127.0.0.1)\n  --opencode-port <port>     Managed OpenCode port (default: 4096)\n  --opencode-timeout <ms>    How long managed OpenCode may take to become ready (default: 15000)\n  --no-opencode              Start only the primary ACP host`
+  return `${bridgeUsage()}\n\nMulti-host daemon options:\n  --opencode-command <path>  OpenCode executable (default: opencode)\n  --opencode-host <host>     Managed OpenCode bind host (default: 127.0.0.1)\n  --opencode-port <port>     Managed OpenCode port (default: 4096)\n  --opencode-timeout <ms>    How long managed OpenCode may take to become ready (default: 15000)\n  --no-opencode              Start only the primary ACP host\n  --remote-loopback-port <port>  E1 HTTPS preview on 127.0.0.1 only; no router mapping`
 }
 
 export async function ensureOpenCodePortAvailable({ port, host, canListenImpl = canListen }) {
@@ -121,15 +133,19 @@ async function main() {
   }
 
   const plan = resolveLaunchPlan(process.argv.slice(2))
-  const { openCode, openCodeCommand, openCodeHost, openCodePort, openCodeTimeout } = resolveManagedOpenCodeOptions(parsed, plan, {
+  const { openCode, openCodeCommand, openCodeHost, openCodePort, openCodeTimeout, remoteLoopbackPort } = resolveManagedOpenCodeOptions(parsed, plan, {
     explicitCommand: process.argv.includes("--opencode-command") || process.env.HARNESS_REMOTE_OPENCODE_COMMAND !== undefined
   })
 
   if (openCode && openCodePort === config.port) {
     throw new Error(`OpenCode port ${openCodePort} conflicts with the Harness daemon port`)
   }
+  if (remoteLoopbackPort && (remoteLoopbackPort === config.port || (openCode && remoteLoopbackPort === openCodePort))) {
+    throw new Error("The E1 loopback port conflicts with another gateway port")
+  }
   await ensureHarnessPortAvailable({ port: config.port, host: config.host })
   if (openCode) await ensureOpenCodePortAvailable({ port: openCodePort, host: openCodeHost })
+  if (remoteLoopbackPort) await ensureHarnessPortAvailable({ port: remoteLoopbackPort, host: "127.0.0.1" })
 
   const identity = await loadMachineIdentity(config.stateDirectory)
   const daemon = new MachineDaemon(identity)
@@ -214,11 +230,16 @@ async function main() {
   // request is delegated untouched to the existing machine stack.
   const approvalDecisionStore = new ApprovalDecisionStore({ machineID: identity.id, stateDirectory: config.stateDirectory })
   const pluginHost = new PluginHost({ stateDirectory: config.stateDirectory })
-  const server = createPluginServer({
+  const devices = remoteLoopbackPort ? new PairedDeviceRegistry({ stateDirectory: config.stateDirectory }) : null
+  if (devices) await devices.load()
+  const localServer = createPluginServer({
     innerServer: createApprovalDecisionServer({ innerServer: machineServer, config, store: approvalDecisionStore }),
     config,
     pluginHost
   })
+  const server = devices
+    ? createRemoteDeviceManagementServer({ innerServer: localServer, config, registry: devices })
+    : localServer
 
   await new Promise((resolve, reject) => {
     const onError = (error) => reject(error)
@@ -228,6 +249,52 @@ async function main() {
       resolve()
     })
   })
+
+  let remoteGateway
+  if (remoteLoopbackPort) {
+    try {
+      const { loadTlsMachineIdentity } = await import("./tls-machine-identity.js")
+      const tlsIdentity = await loadTlsMachineIdentity(config.stateDirectory, identity.id)
+      const grants = new MachinePairingGrants()
+      remoteGateway = createRemoteGatewayServer({
+        tls: { key: tlsIdentity.privateKey, cert: tlsIdentity.certificate },
+        authenticator: new RemoteRequestAuthenticator({
+          registry: devices, machineID: identity.id, pin: tlsIdentity.spkiSha256
+        }),
+        upstreamPort: config.port,
+        username: config.username,
+        password: config.password,
+        addressCandidates: remoteAddressCandidates({ interfaces: {}, port: remoteLoopbackPort, loopbackOnly: true }),
+        pairing: { grants, registry: devices, machineID: identity.id }
+      })
+      await new Promise((resolve, reject) => {
+        const onError = (error) => reject(error)
+        remoteGateway.once("error", onError)
+        remoteGateway.listen(remoteLoopbackPort, "127.0.0.1", () => {
+          remoteGateway.off("error", onError)
+          resolve()
+        })
+      })
+      const uri = remotePairingURI({
+        endpoint: `https://127.0.0.1:${remoteLoopbackPort}`,
+        grant: grants.current,
+        machineID: identity.id,
+        dnsName: tlsIdentity.dnsName,
+        pin: tlsIdentity.spkiSha256,
+        name: identity.name.slice(0, 80)
+      })
+      process.stdout.write(`\nE1 HTTPS preview on 127.0.0.1:${remoteLoopbackPort}; no router mapping.\n`)
+      const qr = renderPairingQRCode(uri)
+      if (qr) process.stdout.write(`${qr}\n`)
+      process.stdout.write("A phone needs adb reverse to reach this loopback-only preview.\n")
+    } catch (error) {
+      remoteGateway?.close()
+      server.close()
+      await daemon.close()
+      await pluginHost.close()
+      throw error
+    }
+  }
 
   const managedResults = await daemon.startManagedHosts()
   if (process.env.HARNESS_REMOTE_LAUNCHED_BY_LAUNCHER === "1") {
@@ -253,6 +320,7 @@ async function main() {
     if (shuttingDown) return
     shuttingDown = true
     const closing = Promise.allSettled([daemon.close(), pluginHost.close()])
+    remoteGateway?.close()
     server.close(() => { void closing.then(() => process.exit(0)) })
     setTimeout(() => process.exit(1), 5_000).unref()
   }

@@ -13,6 +13,8 @@ public class MainActivity extends BridgeActivity {
         registerPlugin(BackgroundAttentionPlugin.class);
         registerPlugin(LiveEventsPlugin.class);
         registerPlugin(PairingScannerPlugin.class);
+        registerPlugin(DeviceKeyPlugin.class);
+        registerPlugin(RemoteMachinePlugin.class);
         super.onCreate(savedInstanceState);
         if (bridge != null) {
             bridge.addWebViewListener(new WebViewListener() {

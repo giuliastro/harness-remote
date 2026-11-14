@@ -50,6 +50,9 @@ public class LiveEventsPlugin extends Plugin {
         String username = call.getString("username", "");
         String password = call.getString("password", "");
         String backend = call.getString("backend", "");
+        String remoteMachineID = call.getString("remoteMachineID");
+        String remoteDnsName = call.getString("remoteDnsName");
+        String remotePin = call.getString("remotePin");
         if (!validSubscriptionID(subscriptionID)) {
             call.reject("Missing or invalid subscription ID");
             return;
@@ -58,12 +61,17 @@ public class LiveEventsPlugin extends Plugin {
             call.reject("Missing event stream URL");
             return;
         }
+        if (remoteMachineID != null && (remoteDnsName == null || remotePin == null)) {
+            call.reject("Incomplete pinned remote stream identity");
+            return;
+        }
 
         // Replacing the same logical subscription is safe and does not disturb any sibling stream.
         stopStream(subscriptionID, false);
         StreamHandle handle = new StreamHandle();
         streams.put(subscriptionID, handle);
-        handle.task = executor.submit(() -> runStream(subscriptionID, handle, url, username, password, backend));
+        handle.task = executor.submit(() -> runStream(subscriptionID, handle, url, username, password, backend,
+            remoteMachineID, remoteDnsName, remotePin));
         call.resolve();
     }
 
@@ -108,18 +116,25 @@ public class LiveEventsPlugin extends Plugin {
         String endpoint,
         String username,
         String password,
-        String backend
+        String backend,
+        String remoteMachineID,
+        String remoteDnsName,
+        String remotePin
     ) {
         int delayMs = 1000;
         while (!handle.stopped.get() && streams.get(subscriptionID) == handle) {
             HttpURLConnection current = null;
             try {
-                current = (HttpURLConnection) new URL(endpoint).openConnection();
+                current = remoteMachineID == null
+                    ? (HttpURLConnection) new URL(endpoint).openConnection()
+                    : RemoteMachinePlugin.openSignedEventStream(endpoint, remoteMachineID, remoteDnsName, remotePin, backend);
                 handle.connection = current;
-                current.setRequestMethod("GET");
-                current.setRequestProperty("Accept", "text/event-stream");
-                if (backend != null && !backend.isEmpty()) current.setRequestProperty("X-Harness-Backend", backend);
-                if (!username.isEmpty() || !password.isEmpty()) {
+                if (remoteMachineID == null) {
+                    current.setRequestMethod("GET");
+                    current.setRequestProperty("Accept", "text/event-stream");
+                    if (backend != null && !backend.isEmpty()) current.setRequestProperty("X-Harness-Backend", backend);
+                }
+                if (remoteMachineID == null && (!username.isEmpty() || !password.isEmpty())) {
                     String credentials = username + ":" + password;
                     String encoded = Base64.encodeToString(credentials.getBytes(StandardCharsets.UTF_8), Base64.NO_WRAP);
                     current.setRequestProperty("Authorization", "Basic " + encoded);

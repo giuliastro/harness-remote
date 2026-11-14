@@ -371,7 +371,7 @@ public final class BackgroundAttentionService extends Service {
         String requestID,
         String reply,
         String directory
-    ) throws IOException {
+    ) throws Exception {
         BackgroundAttentionConfig.Machine machine = machineForNativeID(machineID);
         if (machine == null) return false;
         StringBuilder target = new StringBuilder(machine.baseUrl)
@@ -382,19 +382,11 @@ public final class BackgroundAttentionService extends Service {
         }
         HttpURLConnection connection = null;
         try {
-            connection = (HttpURLConnection) new URL(target.toString()).openConnection();
-            connection.setRequestMethod("POST");
+            byte[] body = ("{\"reply\":\"" + reply + "\"}").getBytes(StandardCharsets.UTF_8);
+            connection = openRequest(machine, target.toString(), "POST", body);
             connection.setRequestProperty("Accept", "application/json");
-            connection.setRequestProperty("Content-Type", "application/json");
-            connection.setRequestProperty(
-                "Authorization",
-                BackgroundAttentionUrls.basicAuthorization(machine.username, machine.password)
-            );
             connection.setConnectTimeout(CONNECT_TIMEOUT_MS);
             connection.setReadTimeout(10_000);
-            connection.setDoOutput(true);
-            byte[] body = ("{\"reply\":\"" + reply + "\"}").getBytes(StandardCharsets.UTF_8);
-            connection.setFixedLengthStreamingMode(body.length);
             try (OutputStream output = connection.getOutputStream()) {
                 output.write(body);
             }
@@ -735,11 +727,10 @@ public final class BackgroundAttentionService extends Service {
             }
         }
 
-        private HttpURLConnection openJson(String endpoint) throws IOException {
-            HttpURLConnection connection = (HttpURLConnection) new URL(endpoint).openConnection();
+        private HttpURLConnection openJson(String endpoint) throws Exception {
+            HttpURLConnection connection = openRequest(machine, endpoint, "GET", new byte[0]);
             connection.setRequestMethod("GET");
             connection.setRequestProperty("Accept", "application/json");
-            connection.setRequestProperty("Authorization", BackgroundAttentionUrls.basicAuthorization(machine.username, machine.password));
             connection.setConnectTimeout(CONNECT_TIMEOUT_MS);
             connection.setReadTimeout(READ_TIMEOUT_MS);
             connection.setUseCaches(false);
@@ -982,13 +973,19 @@ public final class BackgroundAttentionService extends Service {
                 }
             }
 
-            private HttpURLConnection openEventStream() throws IOException {
-                HttpURLConnection connection = (HttpURLConnection) new URL(
-                    BackgroundAttentionUrls.agentEvents(machine.baseUrl, agent.id)
-                ).openConnection();
+            private HttpURLConnection openEventStream() throws Exception {
+                String endpoint = BackgroundAttentionUrls.agentEvents(machine.baseUrl, agent.id);
+                HttpURLConnection connection;
+                if (machine.isRemote()) {
+                    connection = RemoteMachinePlugin.openSignedEventStream(endpoint,
+                        machine.remoteMachineID, machine.remoteDnsName, machine.remotePin,
+                        agent.backend);
+                } else {
+                    connection = (HttpURLConnection) new URL(endpoint).openConnection();
+                    connection.setRequestProperty("Authorization", BackgroundAttentionUrls.basicAuthorization(machine.username, machine.password));
+                }
                 connection.setRequestMethod("GET");
                 connection.setRequestProperty("Accept", "text/event-stream");
-                connection.setRequestProperty("Authorization", BackgroundAttentionUrls.basicAuthorization(machine.username, machine.password));
                 connection.setConnectTimeout(CONNECT_TIMEOUT_MS);
                 connection.setReadTimeout(READ_TIMEOUT_MS);
                 connection.setUseCaches(false);
@@ -1013,6 +1010,24 @@ public final class BackgroundAttentionService extends Service {
                 }
             }
         }
+    }
+
+    private static HttpURLConnection openRequest(BackgroundAttentionConfig.Machine machine,
+        String endpoint, String method, byte[] body) throws Exception {
+        if (machine.isRemote()) {
+            return SignedMachineHttp.open(endpoint, machine.remoteMachineID,
+                machine.remoteDnsName, machine.remotePin, method, body);
+        }
+        HttpURLConnection connection = (HttpURLConnection) new URL(endpoint).openConnection();
+        connection.setRequestMethod(method);
+        connection.setRequestProperty("Authorization",
+            BackgroundAttentionUrls.basicAuthorization(machine.username, machine.password));
+        if ("POST".equals(method)) {
+            connection.setRequestProperty("Content-Type", "application/json");
+            connection.setDoOutput(true);
+            connection.setFixedLengthStreamingMode(body.length);
+        }
+        return connection;
     }
 
     private static final class AgentInfo {

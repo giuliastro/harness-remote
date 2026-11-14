@@ -11,4 +11,7 @@ export function sameMachineConnection(left: ServerConfig, right: ServerConfig): 
     && left.username === right.username
     && left.password === right.password
     && (left.agentId?.trim() || "") === (right.agentId?.trim() || "")
+    && (left.remote?.machineID || "") === (right.remote?.machineID || "")
+    && (left.remote?.dnsName || "") === (right.remote?.dnsName || "")
+    && (left.remote?.pin || "") === (right.remote?.pin || "")
 }

@@ -1,12 +1,14 @@
 import { App } from "@capacitor/app"
 import { Capacitor, CapacitorHttp, registerPlugin, type PluginListenerHandle } from "@capacitor/core"
 import { machineBaseUrl, normalizeServerConfig } from "./serverConfig.ts"
+import { remoteMachinePair } from "./remoteMachine.ts"
 import type { WorkspaceMachine } from "./workspaceMachines.ts"
 
 export type MachinePairingActivation = {
   endpoint: string
   token: string
   expiresAt: number
+  remote?: { machineID: string; dnsName: string; pin: string; name: string }
 }
 
 /** One scan-ready candidate address of the granting daemon. */
@@ -86,7 +88,8 @@ function pairingAuthority(parsed: URL): string {
 export function parseMachinePairingActivation(url: string): MachinePairingActivation | null {
   let parsed: URL
   try { parsed = new URL(url) } catch { return null }
-  if (parsed.protocol !== "harnessremote:" || pairingAuthority(parsed) !== "pair") return null
+  const authority = pairingAuthority(parsed)
+  if (parsed.protocol !== "harnessremote:" || (authority !== "pair" && authority !== "remote-pair")) return null
 
   const endpointRaw = parsed.searchParams.get("endpoint")
   const token = cleanText(parsed.searchParams.get("token"), MAX_TOKEN_LENGTH)
@@ -94,6 +97,16 @@ export function parseMachinePairingActivation(url: string): MachinePairingActiva
   const endpoint = endpointRaw ? normalizedPairingEndpoint(endpointRaw) : null
   if (!endpoint || !token || !TOKEN_PATTERN.test(token)) return null
   if (!Number.isFinite(expiresAt) || expiresAt <= 0) return null
+  if (authority === "remote-pair") {
+    const machineID = cleanText(parsed.searchParams.get("machine"), 128)
+    const dnsName = cleanText(parsed.searchParams.get("dns"), 253)
+    const pin = cleanText(parsed.searchParams.get("pin"), 64)
+    const name = cleanText(parsed.searchParams.get("name"), 80)
+    if (!endpoint.startsWith("https://") || !machineID || !/^[A-Za-z0-9_-]{1,128}$/.test(machineID)
+      || !dnsName || !/^m-[a-f0-9]{32}\.[a-f0-9]{32}\.machine\.harness-remote\.invalid$/.test(dnsName)
+      || !pin || !/^[a-f0-9]{64}$/.test(pin) || !name) return null
+    return { endpoint, token, expiresAt, remote: { machineID, dnsName, pin, name } }
+  }
   return { endpoint, token, expiresAt }
 }
 
@@ -181,9 +194,41 @@ export class PairingUnreachableError extends Error {
 
 export async function claimMachinePairing(
   activation: MachinePairingActivation,
-  options: { nativeRequest?: NativePairingRequest; fetchImpl?: typeof fetch; native?: boolean } = {}
+  options: { nativeRequest?: NativePairingRequest; remotePair?: typeof remoteMachinePair; fetchImpl?: typeof fetch; native?: boolean } = {}
 ): Promise<WorkspaceMachine> {
   if (Date.now() >= activation.expiresAt) throw new Error("This pairing link has expired.")
+  if (activation.remote) {
+    if (!(options.native ?? Capacitor.isNativePlatform())) throw new Error("Remote pairing requires the Android app.")
+    let response
+    try {
+      response = await (options.remotePair ?? remoteMachinePair)(activation.endpoint, activation.remote, activation.token, activation.remote.name)
+    } catch (error) {
+      throw new PairingUnreachableError(activation.endpoint, error)
+    }
+    if (response.status < 200 || response.status >= 300) {
+      throw new Error(errorDetail(response.data, `Remote pairing failed with HTTP ${response.status}.`))
+    }
+    const payload = bodyObject(response.data)
+    if (payload?.version !== 1 || payload.machineID !== activation.remote.machineID
+      || typeof payload.deviceID !== "string" || !/^[A-Za-z0-9_-]{43}$/.test(payload.deviceID)) {
+      throw new Error("The machine returned an invalid remote pairing response.")
+    }
+    const endpoint = new URL(activation.endpoint)
+    const config = normalizeServerConfig({
+      backend: "opencode",
+      host: `https://${endpoint.hostname}`,
+      port: Number(endpoint.port),
+      username: "",
+      password: "",
+      remote: {
+        machineID: activation.remote.machineID,
+        dnsName: activation.remote.dnsName,
+        pin: activation.remote.pin
+      }
+    })
+    if (!config) throw new Error("The remote machine endpoint is invalid.")
+    return { id: activation.remote.machineID, name: activation.remote.name, config }
+  }
   const target = `${activation.endpoint}/v1/pairing/claim`
   const native = options.native ?? Capacitor.isNativePlatform()
 

@@ -24,6 +24,7 @@ import type { DesktopAttentionNotification, DesktopCompletionNotification, Deskt
 import { MIN_WINDOW_HEIGHT, MIN_WINDOW_WIDTH, restoredBounds as calculateRestoredBounds } from "./window-state.js"
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const isDevelopment = !app.isPackaged
+const exitOnTestWindowClose = process.env.HARNESS_REMOTE_TEST_EXIT_ON_CLOSE === "1"
 // The main process is the one place the three desktops genuinely differ: the taskbar overlay is
 // Windows-only, and the menu and quit-on-last-window conventions are macOS's own.
 const isWindows = process.platform === "win32"
@@ -291,6 +292,11 @@ function createWindow(): BrowserWindow {
   window.on("close", (event) => {
     saveWindowState()
     cancelWindowStateSave()
+    if (exitOnTestWindowClose && !quitting) {
+      event.preventDefault()
+      app.quit()
+      return
+    }
     if (shouldHideWindowOnClose(quitting, tray !== undefined)) {
       event.preventDefault()
       window.hide()
@@ -595,7 +601,7 @@ async function start(): Promise<void> {
   if (!isDevelopment && !isMac) Menu.setApplicationMenu(null)
   session.defaultSession.setPermissionRequestHandler((_webContents, _permission, callback) => callback(false))
   mainWindow = createWindow()
-  createTray()
+  if (!exitOnTestWindowClose) createTray()
   if (app.isPackaged) {
     void latestUpdate().then((update) => {
       if (update.status !== "available" || !Notification.isSupported()) return

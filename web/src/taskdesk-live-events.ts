@@ -131,6 +131,11 @@ export function subscribeTaskDeskLiveEvents({
     onStatus?.(status)
   }
 
+  if (config.remote && !isNativeEventTransport()) {
+    onStatus?.({ type: "connection-error", error: "Pinned remote streams require the Android app" })
+    return { close() {} }
+  }
+
   if (isDesktopPlatform()) {
     return createDesktopOpenCodeEventSubscription({
       config,
@@ -147,6 +152,7 @@ export function subscribeTaskDeskLiveEvents({
       username: config.username,
       password: config.password,
       backend: config.backend,
+      remote: config.remote,
       onEvent: (event) => emit(event.name, event.data),
       onStatus: emitStatus
     })
