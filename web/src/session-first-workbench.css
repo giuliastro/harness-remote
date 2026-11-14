@@ -1301,6 +1301,17 @@
 .hr-native-startup {
   width: min(680px, calc(100% - 36px));
   margin-inline: auto;
+  padding: clamp(22px, 4vw, 38px);
+  border: 1px solid var(--td3-border-soft);
+  border-radius: 18px;
+  background: color-mix(in srgb, var(--td3-panel) 88%, var(--td3-bg));
+  box-shadow: 0 18px 48px color-mix(in srgb, #000 12%, transparent);
+}
+
+/* The detail pane is hidden on phones until a Session opens. Mirror its startup status in the list
+   view so a reachable machine cannot look ready while its harness Session indexes are pending. */
+.hr-native-startup-mobile {
+  display: none;
 }
 
 /* The icon is the state's mark, so it is given a mark's shape rather than being left as a loose
@@ -1363,6 +1374,57 @@
   color: var(--td3-muted);
   background: var(--td3-raise-1);
   font-size: 10px;
+}
+
+@media (max-width: 780px), (pointer: coarse) and (max-height: 640px) {
+  .hr-native-startup-mobile {
+    display: grid;
+    grid-template-columns: 30px minmax(0, 1fr);
+    align-items: start;
+    gap: 10px;
+    margin: 10px 10px 4px;
+    padding: 12px;
+    border: 1px solid var(--td3-blue-border-soft);
+    border-radius: 13px;
+    color: var(--td3-text-2);
+    background: var(--td3-blue-soft-2);
+  }
+
+  .hr-native-startup-mobile > svg {
+    margin-top: 2px;
+    color: var(--td3-blue-text);
+  }
+
+  .hr-native-startup-mobile > div {
+    display: grid;
+    gap: 3px;
+    min-width: 0;
+  }
+
+  .hr-native-startup-mobile strong {
+    color: var(--td3-text);
+    font-size: 12px;
+    line-height: 1.35;
+  }
+
+  .hr-native-startup-mobile span {
+    color: var(--td3-text-3);
+    font-size: 11px;
+    line-height: 1.45;
+  }
+
+  .hr-native-startup-mobile small {
+    margin-top: 2px;
+    color: var(--td3-muted);
+    font-size: 10px;
+  }
+
+  .hr-native-startup {
+    width: calc(100% - 24px);
+    padding: 22px 16px;
+    border-radius: 16px;
+    box-shadow: 0 12px 30px color-mix(in srgb, #000 10%, transparent);
+  }
 }
 
 .hr-native-startup.ready > svg,
