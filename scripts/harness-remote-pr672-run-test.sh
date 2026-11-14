@@ -161,10 +161,10 @@ if [[ -n "$ADB" ]]; then
     }
     echo "App di test $ANDROID_PACKAGE installata su $ADB_SERIAL (separata dall'app quotidiana)."
     REVERSE_LIST="$("$ADB" -s "$ADB_SERIAL" reverse --list 2>/dev/null || true)"
-    if grep -Eq "^tcp:${E1_HTTPS_PORT}[[:space:]]+tcp:${E1_HTTPS_PORT}$" <<<"$REVERSE_LIST"; then
+    if grep -Eq "(^|[[:space:]])tcp:${E1_HTTPS_PORT}[[:space:]]+tcp:${E1_HTTPS_PORT}$" <<<"$REVERSE_LIST"; then
       ADB_REVERSE_REUSED=1
       echo "adb reverse già presente e coincidente su $ADB_SERIAL tcp:$E1_HTTPS_PORT."
-    elif grep -Eq "^tcp:${E1_HTTPS_PORT}[[:space:]]" <<<"$REVERSE_LIST"; then
+    elif grep -Eq "(^|[[:space:]])tcp:${E1_HTTPS_PORT}[[:space:]]" <<<"$REVERSE_LIST"; then
       echo "AVVISO: adb reverse tcp:$E1_HTTPS_PORT è già associato a un'altra porta; non lo modifico." >&2
     elif "$ADB" -s "$ADB_SERIAL" reverse "tcp:$E1_HTTPS_PORT" "tcp:$E1_HTTPS_PORT"; then
       ADB_REVERSE_CREATED=1
@@ -205,7 +205,7 @@ cleanup() {
     # Remove only the mapping this script created, and only if it still points to our port.
     local current_reverse
     current_reverse="$("$ADB" -s "$ADB_SERIAL" reverse --list 2>/dev/null || true)"
-    if grep -Eq "^tcp:${E1_HTTPS_PORT}[[:space:]]+tcp:${E1_HTTPS_PORT}$" <<<"$current_reverse"; then
+    if grep -Eq "(^|[[:space:]])tcp:${E1_HTTPS_PORT}[[:space:]]+tcp:${E1_HTTPS_PORT}$" <<<"$current_reverse"; then
       "$ADB" -s "$ADB_SERIAL" reverse --remove "tcp:$E1_HTTPS_PORT" >/dev/null 2>&1 || true
     fi
   fi
