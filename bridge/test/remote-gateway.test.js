@@ -54,6 +54,11 @@ test("signed HTTPS ingress forwards only verified requests and injects local cre
       response.writeHead(500).end()
       return
     }
+    if (request.url === "/v1/events") {
+      response.writeHead(200, { "content-type": "text/event-stream" })
+      response.write("data: ready\n\n")
+      return
+    }
     response.writeHead(200).end(request.url)
   })
   const upstreamPort = await listen(upstream)
@@ -97,7 +102,33 @@ test("signed HTTPS ingress forwards only verified requests and injects local cre
     }
     assert.deepEqual(await get(port, "/v1/machine", headers), { status: 200, body: "/v1/machine" })
     assert.equal((await get(port, "/v1/machine", headers)).status, 401)
+    const streamNonce = "e".repeat(43)
+    const streamMessage = remoteRequestMessage({ machineID, pin, deviceID, timestamp,
+      nonce: streamNonce, method: "GET", target: "/v1/events", body: Buffer.alloc(0) })
+    const streamHeaders = {
+      ...headers,
+      [REMOTE_AUTH_HEADERS.nonce]: streamNonce,
+      [REMOTE_AUTH_HEADERS.signature]: sign("sha256", Buffer.from(streamMessage), privateKey).toString("base64url")
+    }
+    let firstEvent
+    const firstEventSeen = new Promise((resolve) => { firstEvent = resolve })
+    let streamClosed
+    const closed = new Promise((resolve) => { streamClosed = resolve })
+    const streamRequest = http.get({ hostname: "127.0.0.1", port, path: "/v1/events", headers: streamHeaders }, (stream) => {
+      stream.once("data", firstEvent)
+      stream.once("close", streamClosed)
+    })
+    await firstEventSeen
     await registry.revoke(deviceID)
+    let closeTimeout
+    try {
+      await Promise.race([closed, new Promise((_resolve, reject) => {
+        closeTimeout = setTimeout(() => reject(new Error("Revoked SSE stream remained open")), 2_500)
+      })])
+    } finally {
+      clearTimeout(closeTimeout)
+    }
+    streamRequest.destroy()
     headers[REMOTE_AUTH_HEADERS.nonce] = "c".repeat(43)
     assert.equal((await get(port, "/v1/machine", headers)).status, 401)
   } finally {

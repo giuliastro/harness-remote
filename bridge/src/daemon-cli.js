@@ -16,11 +16,11 @@ import { resolveOpenCodeCommand } from "./opencode-discovery.js"
 import { PluginHost } from "./plugins/plugin-host.js"
 import { createPluginServer } from "./plugins/plugin-server.js"
 import { PairedDeviceRegistry } from "./paired-device-registry.js"
+import { createRemoteDeviceManagementServer } from "./remote-device-management-server.js"
 import { MachinePairingGrants, renderPairingQRCode } from "./pairing-server.js"
 import { createRemoteGatewayServer } from "./remote-gateway.js"
 import { remotePairingURI } from "./remote-pairing.js"
 import { RemoteRequestAuthenticator } from "./remote-request-auth.js"
-import { loadTlsMachineIdentity } from "./tls-machine-identity.js"
 
 function requireValue(args, index, option) {
   const value = args[index + 1]
@@ -229,10 +229,16 @@ async function main() {
   // request is delegated untouched to the existing machine stack.
   const approvalDecisionStore = new ApprovalDecisionStore({ machineID: identity.id, stateDirectory: config.stateDirectory })
   const pluginHost = new PluginHost({ stateDirectory: config.stateDirectory })
-  const server = createPluginServer({
-    innerServer: createApprovalDecisionServer({ innerServer: machineServer, config, store: approvalDecisionStore }),
+  const devices = new PairedDeviceRegistry({ stateDirectory: config.stateDirectory })
+  await devices.load()
+  const server = createRemoteDeviceManagementServer({
+    innerServer: createPluginServer({
+      innerServer: createApprovalDecisionServer({ innerServer: machineServer, config, store: approvalDecisionStore }),
+      config,
+      pluginHost
+    }),
     config,
-    pluginHost
+    registry: devices
   })
 
   await new Promise((resolve, reject) => {
@@ -247,9 +253,8 @@ async function main() {
   let remoteGateway
   if (remoteLoopbackPort) {
     try {
+      const { loadTlsMachineIdentity } = await import("./tls-machine-identity.js")
       const tlsIdentity = await loadTlsMachineIdentity(config.stateDirectory, identity.id)
-      const devices = new PairedDeviceRegistry({ stateDirectory: config.stateDirectory })
-      await devices.load()
       const grants = new MachinePairingGrants()
       remoteGateway = createRemoteGatewayServer({
         tls: { key: tlsIdentity.privateKey, cert: tlsIdentity.certificate },
