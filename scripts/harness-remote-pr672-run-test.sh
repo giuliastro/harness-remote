@@ -279,7 +279,8 @@ Sul telefono Android apri l'app Harness Remote con pacchetto $ANDROID_PACKAGE �
 contiene il grant breve, DNS identity e pin TLS, non le credenziali Basic. Se il QR scade,
 chiudi e riavvia questo script per crearne uno nuovo. Non inoltrare né fotografare il QR.
 
-Nell'app E1 sul telefono, apri la macchina abbinata e seleziona il progetto E1-remote-target.
+Nella schermata Sessioni, E1-remote-target non compare finché non ha sessioni. Tocca +
+in alto, scegli la macchina zorin-PC e il progetto E1-remote-target nel modulo Nuova sessione.
 Per il test reale crea una sessione Codex con modello gpt-6-luna, invia un prompt innocuo,
 verifica risposta, Stop e ripresa e rispondi a una richiesta di permesso.
 Non usare Claude Code. Verifica anche che un pairing QR scaduto/già usato venga rifiutato e che
