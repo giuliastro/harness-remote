@@ -3,7 +3,9 @@ import https from "node:https"
 import { REMOTE_AUTH_HEADERS } from "./remote-request-auth.js"
 
 const MAX_BODY_BYTES = 24 * 1024 * 1024
-const MAX_ACTIVE_REQUESTS = 8
+const MAX_ACTIVE_READS = 24
+const MAX_ACTIVE_MUTATIONS = 8
+const MAX_ACTIVE_STREAMS = 24
 const MAX_BAD_REQUESTS = 10
 const FAILURE_WINDOW_MS = 5 * 60_000
 const FORWARD_HEADERS = ["accept", "content-type", "x-harness-backend", "last-event-id", "if-none-match"]
@@ -34,12 +36,12 @@ function writeError(response, status, error) {
   response.end(JSON.stringify({ error }))
 }
 
-async function readBody(request) {
+async function readBody(request, maxBytes = MAX_BODY_BYTES) {
   const chunks = []
   let length = 0
   for await (const chunk of request) {
     length += chunk.length
-    if (length > MAX_BODY_BYTES) throw new Error("body_too_large")
+    if (length > maxBytes) throw new Error("body_too_large")
     chunks.push(chunk)
   }
   return Buffer.concat(chunks, length)
@@ -64,14 +66,29 @@ export function createRemoteGatewayServer({
     throw new Error("Incomplete remote pairing configuration")
   }
   const failures = new Map()
-  let activeRequests = 0
+  let activeReads = 0
+  let activeMutations = 0
+  let activeStreams = 0
   const server = createServer({ key: tls.key, cert: tls.cert, minVersion: "TLSv1.3" }, async (request, response) => {
-    if (activeRequests >= MAX_ACTIVE_REQUESTS) {
+    // SSE connections stay open for the lifetime of a machine subscription. Keep a
+    // separate bounded pool so they cannot consume the slots needed for commands.
+    const isStream = request.method === "GET" && typeof request.headers.accept === "string" &&
+      /(?:^|,)\s*text\/event-stream(?:\s*;[^,]*)?(?:,|$)/i.test(request.headers.accept)
+    const isRead = request.method === "GET" || request.method === "HEAD"
+    if ((isStream && activeStreams >= MAX_ACTIVE_STREAMS) ||
+      (!isStream && isRead && activeReads >= MAX_ACTIVE_READS) ||
+      (!isStream && !isRead && activeMutations >= MAX_ACTIVE_MUTATIONS)) {
       writeError(response, 503, "Remote gateway is busy")
       return
     }
-    activeRequests += 1
-    response.once("close", () => { activeRequests -= 1 })
+    if (isStream) activeStreams += 1
+    else if (isRead) activeReads += 1
+    else activeMutations += 1
+    response.once("close", () => {
+      if (isStream) activeStreams -= 1
+      else if (isRead) activeReads -= 1
+      else activeMutations -= 1
+    })
     const address = clientAddress(request)
     const current = now()
     for (const [peer, entry] of failures) {
@@ -90,7 +107,7 @@ export function createRemoteGatewayServer({
 
     let body
     try {
-      body = await readBody(request)
+      body = await readBody(request, isRead ? 0 : MAX_BODY_BYTES)
     } catch {
       writeError(response, 413, "Remote request is too large")
       return
@@ -218,6 +235,6 @@ export function createRemoteGatewayServer({
   server.requestTimeout = 30_000
   server.headersTimeout = 10_000
   server.maxHeadersCount = 64
-  server.maxConnections = 32
+  server.maxConnections = 80
   return server
 }

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Manual E1 test for PR672 using the real Electron app and a separate loopback-only target daemon.
+# Android E1 test for PR672. The real Electron app is optional with --desktop.
 # Test projects and profiles persist under .harnesstrim/pr672; no router or Internet listener is used.
 set -Eeuo pipefail
 umask 077
@@ -18,8 +18,8 @@ LOGS="$STATE/logs"
 ANDROID_APK="$ROOT/web/android/app/build/outputs/apk/debug/app-debug.apk"
 ANDROID_PACKAGE="ai.harness.remote.debug.e1test"
 MODE="${1:-}"
-[[ -z "$MODE" || "$MODE" == --check ]] || { echo "Uso: $0 [--check]" >&2; exit 2; }
-[[ $# -le 1 ]] || { echo "Uso: $0 [--check]" >&2; exit 2; }
+[[ -z "$MODE" || "$MODE" == --check || "$MODE" == --desktop ]] || { echo "Uso: $0 [--check|--desktop]" >&2; exit 2; }
+[[ $# -le 1 ]] || { echo "Uso: $0 [--check|--desktop]" >&2; exit 2; }
 
 for name in node npm git flock setsid ps tr awk sleep install mkdir chmod curl grep sed; do
   command -v "$name" >/dev/null 2>&1 || { echo "Comando mancante: $name" >&2; exit 1; }
@@ -165,21 +165,30 @@ if [[ -n "$ADB" ]]; then
       ADB_REVERSE_REUSED=1
       echo "adb reverse già presente e coincidente su $ADB_SERIAL tcp:$E1_HTTPS_PORT."
     elif grep -Eq "(^|[[:space:]])tcp:${E1_HTTPS_PORT}[[:space:]]" <<<"$REVERSE_LIST"; then
-      echo "AVVISO: adb reverse tcp:$E1_HTTPS_PORT è già associato a un'altra porta; non lo modifico." >&2
+      echo "adb reverse tcp:$E1_HTTPS_PORT è già associato a un'altra porta; non lo modifico." >&2
+      exit 1
     elif "$ADB" -s "$ADB_SERIAL" reverse "tcp:$E1_HTTPS_PORT" "tcp:$E1_HTTPS_PORT"; then
       ADB_REVERSE_CREATED=1
       echo "adb reverse configurato: Android localhost:$E1_HTTPS_PORT → PC 127.0.0.1:$E1_HTTPS_PORT."
     else
-      echo "AVVISO: adb reverse non riuscito; verifica cavo/USB debugging e applica il comando mostrato." >&2
+      echo "adb reverse non riuscito; verifica cavo e debug USB." >&2
+      exit 1
     fi
   elif (( ${#DEVICES[@]} > 1 )); then
-    echo "AVVISO: trovati più dispositivi adb; per evitare di modificare quello sbagliato non applico adb reverse." >&2
+    echo "Trovati più dispositivi adb; scollega quelli non usati e riprova." >&2
+    exit 1
   else
-    echo "Nessun dispositivo Android adb collegato; il daemon resta pronto per applicare adb reverse manualmente."
+    echo "Nessun dispositivo Android adb collegato. Collega il telefono e autorizza il debug USB." >&2
+    exit 1
   fi
 else
-  echo "adb non installato o non nel PATH; il gateway resta loopback-only."
+  echo "adb non trovato: il test Android richiede adb e un telefono collegato." >&2
+  exit 1
 fi
+REVERSE_LIST="$("$ADB" -s "$ADB_SERIAL" reverse --list)"
+grep -Eq "(^|[[:space:]])tcp:${E1_HTTPS_PORT}[[:space:]]+tcp:${E1_HTTPS_PORT}$" <<<"$REVERSE_LIST" || {
+  echo "adb reverse non risulta attivo sulla porta $E1_HTTPS_PORT." >&2; exit 1;
+}
 
 TARGET_PID=""
 APP_PID=""
@@ -254,18 +263,16 @@ for ((i=0; i<120; i++)); do
 done
 (( ready == 1 )) || { echo "Daemon E1 non pronto; log: $TARGET_LOG" >&2; cat "$TARGET_LOG" >&2; exit 1; }
 
-if [[ ! -f "$DESKTOP/window-state.json" ]]; then
+if [[ "$MODE" == --desktop && ! -f "$DESKTOP/window-state.json" ]]; then
   printf '%s\n' '{"width":520,"height":880,"maximized":false}' >"$DESKTOP/window-state.json"
 fi
 cat <<EOF
 
-PR #672 — test manuale E1, app desktop Electron reale
+PR #672 — test Android E1 su USB (nessuna finestra o tray desktop)
 Target E1: https://127.0.0.1:$E1_HTTPS_PORT (TLS 1.3, loopback-only; nessuna porta router/Internet aperta)
 QR/link one-time: riportato nel log qui sotto; scade dopo 5 minuti.
 ADB: adb -s ${ADB_SERIAL:-<seriale>} reverse tcp:$E1_HTTPS_PORT tcp:$E1_HTTPS_PORT
 Sandbox target da usare sul telefono: $TARGET_PROJECT
-Sandbox macchina locale Electron: $LOCAL_PROJECT
-Profilo Electron isolato: $DESKTOP
 
 Sul telefono Android apri l'app Harness Remote con pacchetto $ANDROID_PACKAGE → Machines → Pair/Add machine e scansiona il QR
 "remote-pair" del daemon E1. La connessione raggiunge solo il gateway HTTPS loopback; il QR
@@ -274,8 +281,7 @@ chiudi e riavvia questo script per crearne uno nuovo. Non inoltrare né fotograf
 
 Nell'app E1 sul telefono, apri la macchina abbinata e seleziona il progetto E1-remote-target.
 Per il test reale crea una sessione Codex con modello gpt-6-luna, invia un prompt innocuo,
-verifica risposta, Stop e ripresa e rispondi a una richiesta di permesso; controlla poi che
-la macchina locale Questo computer funzioni nella finestra Electron.
+verifica risposta, Stop e ripresa e rispondi a una richiesta di permesso.
 Non usare Claude Code. Verifica anche che un pairing QR scaduto/già usato venga rifiutato e che
 la revoca del dispositivo impedisca le richieste successive. Conferma infine che il telefono
 continui a raggiungere la macchina solo mentre adb reverse è attivo; non attivare router mapping.
@@ -283,12 +289,15 @@ continui a raggiungere la macchina solo mentre adb reverse è attivo; non attiva
 Credenziali: non occorrono credenziali Basic nella UI Android; il pairing E1 usa token one-time
 e chiave dispositivo. L'utente tecnico del daemon loopback è privato e non viene esposto.
 Log target (include QR one-time): $TARGET_LOG
-Log Electron: $APP_LOG
-Chiudi Electron o premi Ctrl+C per fermare solo i processi avviati da questo script.
+Premi Ctrl+C per fermare il daemon e rimuovere la sola mappatura adb creata da questo script.
 EOF
 sed -n '/^E1 HTTPS preview /,$p' "$TARGET_LOG"
 
 printf '%s\n' "$E1_HTTPS_PORT" >"$STATE/e1-active-port"
+if [[ "$MODE" != --desktop ]]; then
+  wait "$TARGET_PID"
+  exit $?
+fi
 cat >"$BOOTSTRAP" <<'JS'
 const { app } = require('electron')
 const path = require('node:path')
@@ -304,6 +313,7 @@ chmod 600 "$BOOTSTRAP"
 cd "$LOCAL_PROJECT"
 setsid env -u ELECTRON_RUN_AS_NODE -u HARNESS_REMOTE_ACP_COMMAND -u HARNESS_REMOTE_ACP_ARGS \
   CODEX_HOME="$DESKTOP_CODEX" HARNESS_REMOTE_ROOT="$LOCAL_PROJECT" PR672_ELECTRON_PROFILE="$DESKTOP" \
+  HARNESS_REMOTE_TEST_EXIT_ON_CLOSE=1 \
   "$ROOT/web/node_modules/.bin/electron" "$BOOTSTRAP" \
   --user-data-dir="$DESKTOP" >"$APP_LOG" 2>&1 &
 APP_PID=$!

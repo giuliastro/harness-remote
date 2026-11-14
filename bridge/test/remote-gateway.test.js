@@ -150,6 +150,86 @@ test("signed HTTPS ingress forwards only verified requests and injects local cre
   }
 })
 
+test("open event streams leave request capacity for machine commands", async () => {
+  const upstream = http.createServer((request, response) => {
+    if (request.url === "/v1/events") {
+      response.writeHead(200, { "content-type": "text/event-stream" })
+      response.write("data: ready\n\n")
+      return
+    }
+    response.writeHead(200).end("machine")
+  })
+  const upstreamPort = await listen(upstream)
+  const gateway = createRemoteGatewayServer({
+    tls: { key: "test", cert: "test" }, upstreamPort,
+    authenticator: { authenticate: () => ({ deviceID: "paired-device" }), active: () => true },
+    createServer: (_tls, handler) => http.createServer(handler)
+  })
+  const port = await listen(gateway)
+  const streamRequests = []
+  try {
+    await Promise.all(Array.from({ length: 9 }, () => new Promise((resolve, reject) => {
+      const request = http.get({ hostname: "127.0.0.1", port, path: "/v1/events",
+        headers: { accept: "text/event-stream" } }, (response) => {
+        if (response.statusCode !== 200) {
+          reject(new Error(`Event stream returned HTTP ${response.statusCode}`))
+          response.resume()
+          return
+        }
+        response.once("data", resolve)
+      })
+      streamRequests.push(request)
+      request.on("error", reject)
+    })))
+    assert.deepEqual(await get(port, "/v1/machine"), { status: 200, body: "machine" })
+  } finally {
+    for (const request of streamRequests) request.destroy()
+    gateway.closeAllConnections()
+    upstream.closeAllConnections()
+    gateway.close()
+    upstream.close()
+  }
+})
+
+test("parallel machine reads do not starve another read", async () => {
+  const upstream = http.createServer((request, response) => {
+    if (request.url === "/v1/slow") {
+      response.writeHead(200)
+      response.write("started")
+      return
+    }
+    response.writeHead(200).end("machine")
+  })
+  const upstreamPort = await listen(upstream)
+  const gateway = createRemoteGatewayServer({
+    tls: { key: "test", cert: "test" }, upstreamPort,
+    authenticator: { authenticate: () => ({ deviceID: "paired-device" }), active: () => true },
+    createServer: (_tls, handler) => http.createServer(handler)
+  })
+  const port = await listen(gateway)
+  const pending = []
+  try {
+    await Promise.all(Array.from({ length: 12 }, () => new Promise((resolve, reject) => {
+      const request = http.get({ hostname: "127.0.0.1", port, path: "/v1/slow" }, (response) => {
+        if (response.statusCode !== 200) {
+          reject(new Error(`Parallel read returned HTTP ${response.statusCode}`))
+          response.resume()
+          return
+        }
+        response.once("data", resolve)
+      })
+      pending.push(request)
+      request.on("error", reject)
+    })))
+    assert.deepEqual(await get(port, "/v1/machine"), { status: 200, body: "machine" })
+  } finally {
+    for (const request of pending) request.destroy()
+    gateway.close()
+    upstream.closeAllConnections?.()
+    upstream.close()
+  }
+})
+
 test("real HTTPS ingress serves only on its pinned TLS machine identity", async () => {
   const stateDirectory = await mkdtemp(join(tmpdir(), "hr-remote-gateway-tls-"))
   const machineID = "machine-tls-test"
