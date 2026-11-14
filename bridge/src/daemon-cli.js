@@ -229,17 +229,16 @@ async function main() {
   // request is delegated untouched to the existing machine stack.
   const approvalDecisionStore = new ApprovalDecisionStore({ machineID: identity.id, stateDirectory: config.stateDirectory })
   const pluginHost = new PluginHost({ stateDirectory: config.stateDirectory })
-  const devices = new PairedDeviceRegistry({ stateDirectory: config.stateDirectory })
-  await devices.load()
-  const server = createRemoteDeviceManagementServer({
-    innerServer: createPluginServer({
-      innerServer: createApprovalDecisionServer({ innerServer: machineServer, config, store: approvalDecisionStore }),
-      config,
-      pluginHost
-    }),
+  const devices = remoteLoopbackPort ? new PairedDeviceRegistry({ stateDirectory: config.stateDirectory }) : null
+  if (devices) await devices.load()
+  const localServer = createPluginServer({
+    innerServer: createApprovalDecisionServer({ innerServer: machineServer, config, store: approvalDecisionStore }),
     config,
-    registry: devices
+    pluginHost
   })
+  const server = devices
+    ? createRemoteDeviceManagementServer({ innerServer: localServer, config, registry: devices })
+    : localServer
 
   await new Promise((resolve, reject) => {
     const onError = (error) => reject(error)
