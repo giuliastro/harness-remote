@@ -1,4 +1,5 @@
 import { Capacitor, CapacitorHttp } from "@capacitor/core"
+import { remoteMachineRequestUrl } from "./remoteMachine"
 import { desktopRequestResult, isDesktopPlatform } from "./desktopBridge"
 import type { NativeSessionSurfaceTarget } from "./native-session-discovery"
 import { normalizeModel, sameModel } from "./native-session-model"
@@ -165,7 +166,8 @@ export async function handoffNativeSession(
     if (Capacitor.isNativePlatform()) {
       let response
       try {
-        response = await CapacitorHttp.request({
+        response = source.config.remote ? await remoteMachineRequestUrl(source.config, url, { method: "POST", body, readTimeout: 30_000 })
+          : await CapacitorHttp.request({
           url,
           method: "POST",
           headers,

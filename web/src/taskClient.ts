@@ -1,4 +1,5 @@
 import { Capacitor, CapacitorHttp } from "@capacitor/core"
+import { remoteMachineRequestUrl } from "./remoteMachine"
 import { desktopRequestResult, isDesktopPlatform } from "./desktopBridge"
 import { unwrapPayload } from "./machinePayload"
 import { MachineHttpError } from "./machine-request-error"
@@ -173,7 +174,8 @@ const modelCatalogRequests = new Map<string, Promise<AgentModelCatalog>>()
 const pendingContinueRequests = new Map<string, PendingContinue>()
 
 function cacheKey(config: ServerConfig): string {
-  return `${machineBaseUrl(config)}|${config.username || ""}`
+  const remote = config.remote ? `|${config.remote.machineID}|${config.remote.dnsName}|${config.remote.pin}` : ""
+  return `${machineBaseUrl(config)}|${config.username || ""}${remote}`
 }
 
 function modelScopeKey(scope: AgentModelScope): string {
@@ -325,7 +327,11 @@ async function machineRequest<T>(config: ServerConfig, path: string, options: Ta
   if (Capacitor.isNativePlatform()) {
     let response
     try {
-      response = await CapacitorHttp.request({
+      response = config.remote ? await remoteMachineRequestUrl(config, target, {
+        method,
+        body: options.body,
+        readTimeout: 30_000
+      }) : await CapacitorHttp.request({
         url: target,
         method,
         headers,

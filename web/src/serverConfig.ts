@@ -33,6 +33,13 @@ export function normalizeServerHost(host: string): string | null {
 export function normalizeServerConfig(config: ServerConfig): ServerConfig | null {
   const host = normalizeServerHost(config.host)
   if (!host || !Number.isInteger(config.port) || config.port < 1 || config.port > 65_535) return null
+  if (config.remote) {
+    const { machineID, dnsName, pin } = config.remote
+    if (!host.startsWith("https://") || !/^[A-Za-z0-9_-]{1,128}$/.test(machineID)
+      || !/^[a-f0-9]{64}$/.test(pin)
+      || typeof dnsName !== "string" || dnsName.length > 253
+      || !/^m-[a-f0-9]{32}\.[a-f0-9]{32}\.machine\.harness-remote\.invalid$/.test(dnsName)) return null
+  }
   const agentId = config.agentId?.trim() || undefined
   return {
     ...config,

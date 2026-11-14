@@ -8,6 +8,12 @@ export type ServerConfig = {
   password: string
   /** Present when this profile targets one agent exposed by a Harness machine daemon. */
   agentId?: string
+  /** E1 pinned TLS identity. Present only for a device-key paired Android machine. */
+  remote?: {
+    machineID: string
+    dnsName: string
+    pin: string
+  }
 }
 
 export type HarnessCapabilities = {

@@ -35,7 +35,6 @@ public final class RemoteMachinePlugin extends Plugin {
     private static final int MAX_BODY_BYTES = 24 * 1024 * 1024;
     private static final int MAX_RESPONSE_BYTES = 24 * 1024 * 1024;
     private final ExecutorService executor = Executors.newCachedThreadPool();
-    private final SecureRandom random = new SecureRandom();
 
     @Override protected void handleOnDestroy() {
         executor.shutdownNow();
@@ -71,20 +70,7 @@ public final class RemoteMachinePlugin extends Plugin {
                         connection.setRequestProperty("X-Harness-Backend", backend);
                     }
 
-                    KeyPair keyPair = DeviceKeyPlugin.keyPair();
-                    String deviceID = base64Url(sha256(keyPair.getPublic().getEncoded()));
-                    byte[] nonceBytes = new byte[32];
-                    random.nextBytes(nonceBytes);
-                    String nonce = base64Url(nonceBytes);
-                    long timestamp = System.currentTimeMillis();
-                    String message = transcript(machineID, pin, deviceID, timestamp, nonce, method, target, bodyBytes);
-                    Signature signer = Signature.getInstance("SHA256withECDSA");
-                    signer.initSign(keyPair.getPrivate());
-                    signer.update(message.getBytes(StandardCharsets.UTF_8));
-                    connection.setRequestProperty("X-Harness-Device", deviceID);
-                    connection.setRequestProperty("X-Harness-Timestamp", Long.toString(timestamp));
-                    connection.setRequestProperty("X-Harness-Nonce", nonce);
-                    connection.setRequestProperty("X-Harness-Signature", base64Url(signer.sign()));
+                    signConnection(connection, machineID, pin, method, target, bodyBytes);
                     if (body != null) {
                         connection.setDoOutput(true);
                         connection.setFixedLengthStreamingMode(bodyBytes.length);
@@ -142,6 +128,42 @@ public final class RemoteMachinePlugin extends Plugin {
         return "harness-remote-request-v1\n" + machineID + "\n" + pin + "\n" + deviceID
             + "\n" + timestamp + "\n" + nonce + "\n" + method + "\n" + target + "\n"
             + hex(sha256(body));
+    }
+
+    static HttpsURLConnection openSignedEventStream(String url, String machineID, String dnsName,
+        String pin, String backend) throws Exception {
+        if (!validMachineID(machineID) || backend == null || !backend.matches("[a-z0-9-]{1,32}")) {
+            throw new IllegalArgumentException("Invalid remote stream identity");
+        }
+        URI uri = new URI(url);
+        String target = uri.getRawPath() + (uri.getRawQuery() == null ? "" : "?" + uri.getRawQuery());
+        if (!validTarget(target) || uri.getRawFragment() != null || uri.getRawUserInfo() != null) {
+            throw new IllegalArgumentException("Invalid remote stream URL");
+        }
+        HttpsURLConnection connection = PinnedMachineTls.open(uri.toURL(), dnsName, pin);
+        connection.setRequestMethod("GET");
+        connection.setRequestProperty("Accept", "text/event-stream");
+        connection.setRequestProperty("X-Harness-Backend", backend);
+        signConnection(connection, machineID, pin, "GET", target, new byte[0]);
+        return connection;
+    }
+
+    private static void signConnection(HttpsURLConnection connection, String machineID, String pin,
+        String method, String target, byte[] body) throws Exception {
+        KeyPair keyPair = DeviceKeyPlugin.keyPair();
+        String deviceID = base64Url(sha256(keyPair.getPublic().getEncoded()));
+        byte[] nonceBytes = new byte[32];
+        new SecureRandom().nextBytes(nonceBytes);
+        String nonce = base64Url(nonceBytes);
+        long timestamp = System.currentTimeMillis();
+        String message = transcript(machineID, pin, deviceID, timestamp, nonce, method, target, body);
+        Signature signer = Signature.getInstance("SHA256withECDSA");
+        signer.initSign(keyPair.getPrivate());
+        signer.update(message.getBytes(StandardCharsets.UTF_8));
+        connection.setRequestProperty("X-Harness-Device", deviceID);
+        connection.setRequestProperty("X-Harness-Timestamp", Long.toString(timestamp));
+        connection.setRequestProperty("X-Harness-Nonce", nonce);
+        connection.setRequestProperty("X-Harness-Signature", base64Url(signer.sign()));
     }
 
     private static boolean validMachineID(String value) {

@@ -16,9 +16,9 @@ import java.util.Locale;
 import java.util.Map;
 
 /**
- * Paired machines the background service may connect to. This is deliberately app-private: the
- * service needs the same Basic credentials the WebView already stores, but it never logs them and
- * it never exposes this configuration through an exported component.
+ * Paired machines the background service may connect to. This is deliberately app-private: LAN
+ * profiles carry Basic credentials; E1 profiles carry their pinned remote identity. Neither is
+ * exposed through an exported component.
  */
 final class BackgroundAttentionConfig {
     static final String PREFS_NAME = "harness_remote_background_attention";
@@ -41,14 +41,23 @@ final class BackgroundAttentionConfig {
         final String baseUrl;
         final String username;
         final String password;
+        final String remoteMachineID;
+        final String remoteDnsName;
+        final String remotePin;
 
-        Machine(String id, String name, String baseUrl, String username, String password) {
+        Machine(String id, String name, String baseUrl, String username, String password,
+            String remoteMachineID, String remoteDnsName, String remotePin) {
             this.id = id;
             this.name = name;
             this.baseUrl = baseUrl;
             this.username = username;
             this.password = password;
+            this.remoteMachineID = remoteMachineID;
+            this.remoteDnsName = remoteDnsName;
+            this.remotePin = remotePin;
         }
+
+        boolean isRemote() { return remoteMachineID != null; }
 
         boolean sameConnection(Machine other) {
             return other != null
@@ -56,7 +65,10 @@ final class BackgroundAttentionConfig {
                 && name.equals(other.name)
                 && baseUrl.equals(other.baseUrl)
                 && username.equals(other.username)
-                && password.equals(other.password);
+                && password.equals(other.password)
+                && equal(remoteMachineID, other.remoteMachineID)
+                && equal(remoteDnsName, other.remoteDnsName)
+                && equal(remotePin, other.remotePin);
         }
 
         JSONObject toJson() {
@@ -67,6 +79,11 @@ final class BackgroundAttentionConfig {
                 object.put("baseUrl", baseUrl);
                 object.put("username", username);
                 object.put("password", password);
+                if (isRemote()) {
+                    object.put("remoteMachineID", remoteMachineID);
+                    object.put("remoteDnsName", remoteDnsName);
+                    object.put("remotePin", remotePin);
+                }
                 return object;
             } catch (JSONException impossible) {
                 throw new IllegalStateException(impossible);
@@ -80,10 +97,27 @@ final class BackgroundAttentionConfig {
             String baseUrl = cleanText(object.optString("baseUrl", ""), MAX_URL);
             String username = boundedString(object.optString("username", ""), MAX_USERNAME);
             String password = boundedString(object.optString("password", ""), MAX_PASSWORD);
+            String remoteMachineID = optionalCleanText(object, "remoteMachineID", MAX_ID);
+            String remoteDnsName = optionalCleanText(object, "remoteDnsName", 253);
+            String remotePin = optionalCleanText(object, "remotePin", 64);
             if (id == null || name == null || baseUrl == null || username == null || password == null) return null;
             if (!validBaseUrl(baseUrl)) return null;
+            boolean hasRemoteIdentity = object.has("remoteMachineID") || object.has("remoteDnsName") || object.has("remotePin");
+            if (hasRemoteIdentity && !validRemoteIdentity(baseUrl, remoteMachineID, remoteDnsName, remotePin)) return null;
             if (username.length() + password.length() > MAX_USERNAME + MAX_PASSWORD) return null;
-            return new Machine(id, name, baseUrl, username, password);
+            return new Machine(id, name, baseUrl, username, password,
+                hasRemoteIdentity ? remoteMachineID : null,
+                hasRemoteIdentity ? remoteDnsName : null,
+                hasRemoteIdentity ? remotePin : null);
+        }
+
+        private static String optionalCleanText(JSONObject object, String key, int maximum) {
+            if (!object.has(key) || object.isNull(key)) return null;
+            return cleanText(object.optString(key, null), maximum);
+        }
+
+        private static boolean equal(String left, String right) {
+            return left == null ? right == null : left.equals(right);
         }
     }
 
@@ -214,5 +248,14 @@ final class BackgroundAttentionConfig {
         } catch (MalformedURLException ignored) {
             return false;
         }
+    }
+
+    static boolean validRemoteIdentity(String baseUrl, String machineID, String dnsName, String pin) {
+        return baseUrl != null && baseUrl.regionMatches(true, 0, "https://", 0, 8)
+            && machineID != null && machineID.matches("[A-Za-z0-9_-]{1,128}")
+            && dnsName != null && dnsName.matches(
+                "m-[a-f0-9]{32}\\.[a-f0-9]{32}\\.machine\\.harness-remote\\.invalid"
+            )
+            && pin != null && pin.matches("[a-f0-9]{64}");
     }
 }

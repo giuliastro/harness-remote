@@ -1,4 +1,5 @@
 import { Capacitor, CapacitorHttp } from "@capacitor/core"
+import { remoteMachineRequestUrl } from "./remoteMachine"
 import { desktopRequestResult, isDesktopPlatform } from "./desktopBridge"
 import { authHeader, hasCredentials, machineBaseUrl } from "./serverConfig"
 import type { ServerConfig } from "./types"
@@ -90,7 +91,8 @@ export async function loadProjectIdentity(config: ServerConfig, projectId: strin
   if (Capacitor.isNativePlatform()) {
     let response
     try {
-      response = await CapacitorHttp.get({
+      response = config.remote ? await remoteMachineRequestUrl(config, target, { readTimeout: PROJECT_IDENTITY_TIMEOUT_MS })
+        : await CapacitorHttp.get({
         url: target,
         headers: requestHeaders,
         connectTimeout: PROJECT_IDENTITY_TIMEOUT_MS,

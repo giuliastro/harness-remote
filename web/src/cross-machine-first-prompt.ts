@@ -1,4 +1,5 @@
 import { Capacitor, CapacitorHttp } from "@capacitor/core"
+import { remoteMachineRequestUrl } from "./remoteMachine"
 import { desktopRequestResult, isDesktopPlatform } from "./desktopBridge"
 import type { NativeSessionSurfaceTarget } from "./native-session-discovery"
 import { authHeader, baseUrl, hasCredentials, routingHeaders } from "./serverConfig"
@@ -100,7 +101,8 @@ export async function sendCrossMachineFirstPrompt({
     if (Capacitor.isNativePlatform()) {
       let response
       try {
-        response = await CapacitorHttp.request({
+        response = target.config.remote ? await remoteMachineRequestUrl(target.config, url, { method: "POST", body, readTimeout: 30_000 })
+          : await CapacitorHttp.request({
           url,
           method: "POST",
           headers,

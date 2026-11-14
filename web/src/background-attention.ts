@@ -8,6 +8,9 @@ export type BackgroundAttentionMachine = {
   baseUrl: string
   username: string
   password: string
+  remoteMachineID?: string
+  remoteDnsName?: string
+  remotePin?: string
 }
 
 export type BackgroundAttentionStatus = {
@@ -57,8 +60,8 @@ function validBaseUrl(value: string): boolean {
 }
 
 /**
- * Map paired machines to the only data the native service needs: an authenticated endpoint plus a
- * display name. Credentials stay inside the app-private payload; the service never logs them.
+ * Map paired machines to the only data the native service needs. Legacy LAN profiles use Basic
+ * auth; E1 remote profiles pass their pinned machine identity and use signed device-key requests.
  */
 export function backgroundAttentionMachines(
   machines: readonly WorkspaceMachine[]
@@ -79,8 +82,13 @@ export function backgroundAttentionMachines(
       id,
       name: machine.name.trim() || machine.config.host,
       baseUrl,
-      username: machine.config.username ?? "",
-      password: machine.config.password ?? ""
+      username: machine.config.remote ? "" : (machine.config.username ?? ""),
+      password: machine.config.remote ? "" : (machine.config.password ?? ""),
+      ...(machine.config.remote ? {
+        remoteMachineID: machine.config.remote.machineID,
+        remoteDnsName: machine.config.remote.dnsName,
+        remotePin: machine.config.remote.pin
+      } : {})
     })
   }
   return result

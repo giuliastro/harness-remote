@@ -2,6 +2,7 @@ import { createTranslator, type Translator } from "./i18n"
 import { Capacitor, CapacitorHttp } from "@capacitor/core"
 import { desktopConfigurationProbe, desktopRequestResult, isDesktopPlatform } from "./desktopBridge"
 import { MachineHttpError } from "./machine-request-error"
+import { remoteMachineRequestUrl } from "./remoteMachine"
 import { parseMachinePairingGrant, parseMachinePairingGrantStatus, type MachinePairingGrant, type MachinePairingGrantStatus } from "./machine-pairing"
 import { authHeader, hasCredentials, machineBaseUrl } from "./serverConfig"
 import type { MachineProject } from "./taskClient"
@@ -87,14 +88,15 @@ function machineProjects(value: unknown): MachineProject[] {
 }
 
 function cacheKey(config: ServerConfig): string {
-  return `${machineBaseUrl(config)}|${config.username || ""}`
+  const remote = config.remote ? `|${config.remote.machineID}|${config.remote.dnsName}|${config.remote.pin}` : ""
+  return `${machineBaseUrl(config)}|${config.username || ""}${remote}`
 }
 
 function browserDiscoveryKey(config: ServerConfig): string {
   // A password change is a new request identity even though the public cache intentionally keeps its
   // historical username-only key. Never let a stale authenticated request cancel or satisfy a probe
   // that is using different credentials.
-  return `${machineBaseUrl(config)}|${config.username || ""}|${config.password || ""}`
+  return `${cacheKey(config)}|${config.password || ""}`
 }
 
 function remember(config: ServerConfig, snapshot: MachineSnapshot): MachineSnapshot {
@@ -223,7 +225,8 @@ export async function discoverMachine(
   if (Capacitor.isNativePlatform()) {
     let response
     try {
-      response = await CapacitorHttp.get({ url: target, headers: headers(config), connectTimeout: 12_000, readTimeout: 12_000 })
+      response = config.remote ? await remoteMachineRequestUrl(config, target, { readTimeout: 12_000 })
+        : await CapacitorHttp.get({ url: target, headers: headers(config), connectTimeout: 12_000, readTimeout: 12_000 })
     } catch {
       if (allowCachedOnTransportFailure) {
         const cached = recentCachedSnapshot(config)
@@ -267,7 +270,8 @@ export async function listMachineProjects(config: ServerConfig, options: { confi
   if (Capacitor.isNativePlatform()) {
     let response
     try {
-      response = await CapacitorHttp.get({ url: target, headers: headers(config), connectTimeout: 12_000, readTimeout: 12_000 })
+      response = config.remote ? await remoteMachineRequestUrl(config, target, { readTimeout: 12_000 })
+        : await CapacitorHttp.get({ url: target, headers: headers(config), connectTimeout: 12_000, readTimeout: 12_000 })
     } catch {
       const cached = recentCachedProjects(config)
       if (cached) return cached
@@ -317,7 +321,8 @@ export async function recordApprovalDecision(config: ServerConfig, decision: App
   if (Capacitor.isNativePlatform()) {
     let response
     try {
-      response = await CapacitorHttp.post({ url: target, headers: requestHeaders, data: decision, connectTimeout: 12_000, readTimeout: 12_000 })
+      response = config.remote ? await remoteMachineRequestUrl(config, target, { method: "POST", body: decision, readTimeout: 12_000 })
+        : await CapacitorHttp.post({ url: target, headers: requestHeaders, data: decision, connectTimeout: 12_000, readTimeout: 12_000 })
     } catch { throw new Error(`Cannot reach ${config.host}:${config.port}.`) }
     if (unsupportedOptionalMachineMetadataStatus(response.status)) return false
     if (response.status >= 400) throw new Error(`HTTP ${response.status}`)
@@ -350,7 +355,8 @@ export async function listApprovalDecisions(config: ServerConfig, identity: Appr
   if (Capacitor.isNativePlatform()) {
     let response
     try {
-      response = await CapacitorHttp.get({ url: target, headers: headers(config), connectTimeout: 12_000, readTimeout: 12_000 })
+      response = config.remote ? await remoteMachineRequestUrl(config, target, { readTimeout: 12_000 })
+        : await CapacitorHttp.get({ url: target, headers: headers(config), connectTimeout: 12_000, readTimeout: 12_000 })
     } catch { throw new Error(`Cannot reach ${config.host}:${config.port}.`) }
     if (unsupportedOptionalMachineMetadataStatus(response.status)) return []
     if (response.status >= 400) throw new Error(`HTTP ${response.status}`)
@@ -386,7 +392,8 @@ async function machinePairingGrantRoute(config: ServerConfig, method: "GET" | "P
   if (Capacitor.isNativePlatform()) {
     let response
     try {
-      response = await CapacitorHttp.request({ url: target, method, headers: headers(config), connectTimeout: 12_000, readTimeout: 12_000 })
+      response = config.remote ? await remoteMachineRequestUrl(config, target, { method, readTimeout: 12_000 })
+        : await CapacitorHttp.request({ url: target, method, headers: headers(config), connectTimeout: 12_000, readTimeout: 12_000 })
     } catch { throw new Error(`Cannot reach ${config.host}:${config.port}.`) }
     if (response.status >= 400) throw new MachineHttpError(pairingErrorDetail(response.data, response.status), response.status)
     return response.data
