@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { MachineHttpError } from "../machine-request-error"
-import { readMachinePairingGrantStatus, requestMachinePairingGrant } from "../machineClient"
+import { listMachinePairedDevices, readMachinePairingGrantStatus, requestMachinePairingGrant, revokeMachinePairedDevice, type MachinePairedDevice } from "../machineClient"
 import type { MachinePairingGrant } from "../machine-pairing"
 import { pairingQRCode } from "../pairing-qr"
 import { useDialogDismiss } from "../useDialogDismiss"
@@ -62,13 +62,55 @@ export function pairingFailureState(reason: unknown): MachinePairingDialogState 
  */
 export function MachinePairingDialog({ machine, onClose, onOpenSettings }: { machine: WorkspaceMachine; onClose: () => void; onOpenSettings?: () => void }) {
   const t = useTranslator()
-  const [state, setState] = useState<MachinePairingDialogState>({ phase: "preparing" })
+  const isRemote = Boolean(machine.config.remote)
+  const [state, setState] = useState<MachinePairingDialogState>(isRemote ? { phase: "unsupported" } : { phase: "preparing" })
+  const [devices, setDevices] = useState<MachinePairedDevice[]>([])
+  const [devicesPhase, setDevicesPhase] = useState<"loading" | "ready" | "unavailable" | "failed">("loading")
+  const [devicesError, setDevicesError] = useState("")
+  const [revokingID, setRevokingID] = useState<string | null>(null)
   const [now, setNow] = useState(() => Date.now())
   const [selectedEndpoint, setSelectedEndpoint] = useState<string | null>(null)
   const dialogRef = useRef<HTMLElement>(null)
   const issueRun = useRef(0)
   const started = useRef(false)
   useDialogDismiss(dialogRef, onClose)
+
+  const refreshDevices = useCallback(async () => {
+    setDevicesPhase("loading")
+    setDevicesError("")
+    try {
+      setDevices(await listMachinePairedDevices(machine.config))
+      setDevicesPhase("ready")
+    } catch (error) {
+      if (error instanceof MachineHttpError && error.status === 404) {
+        setDevicesPhase("unavailable")
+        return
+      }
+      setDevicesError(error instanceof Error && error.message ? error.message : t("pair.devicesFailed"))
+      setDevicesPhase("failed")
+    }
+  }, [machine.config, t])
+
+  useEffect(() => { void refreshDevices() }, [refreshDevices])
+
+  const revoke = useCallback(async (device: MachinePairedDevice) => {
+    setRevokingID(device.id)
+    setDevicesError("")
+    try {
+      await revokeMachinePairedDevice(machine.config, device.id)
+      // The current phone may revoke its own key. A follow-up request would then be
+      // rejected, so reflect the confirmed result locally and leave refresh explicit.
+      setDevices((current) => current.map((entry) => entry.id === device.id
+        ? { ...entry, revokedAt: new Date().toISOString() }
+        : entry))
+      setDevicesPhase("ready")
+    } catch (error) {
+      setDevicesError(error instanceof Error && error.message ? error.message : t("pair.devicesFailed"))
+      setDevicesPhase("failed")
+    } finally {
+      setRevokingID(null)
+    }
+  }, [machine.config, t])
 
   const issue = useCallback(async () => {
     const run = ++issueRun.current
@@ -98,7 +140,7 @@ export function MachinePairingDialog({ machine, onClose, onOpenSettings }: { mac
   const issueRef = useRef(issue)
   issueRef.current = issue
   useEffect(() => {
-    if (started.current) return
+    if (started.current || isRemote) return
     started.current = true
     void issueRef.current()
   }, [])
@@ -161,6 +203,32 @@ export function MachinePairingDialog({ machine, onClose, onOpenSettings }: { mac
           <button type="button" className="uw-manager-close" onClick={onClose} aria-label={t("sf.close")}>×</button>
         </header>
         <div className="uw-machine-pairing-body">
+          <section className="uw-machine-pairing-devices" aria-label={t("pair.devicesTitle")} data-machine-paired-devices>
+            <div className="uw-machine-pairing-devices-heading">
+              <strong>{t("pair.devicesTitle")}</strong>
+              {devicesPhase !== "loading" && devicesPhase !== "unavailable" ? (
+                <button type="button" className="uw-manager-button" data-machine-devices-refresh onClick={() => void refreshDevices()}>{t("pair.devicesRefresh")}</button>
+              ) : null}
+            </div>
+            {devicesPhase === "loading" ? <p className="uw-machine-pairing-devices-note" role="status">{t("pair.devicesLoading")}</p> : null}
+            {devicesPhase === "unavailable" ? <p className="uw-machine-pairing-devices-note" data-machine-devices-unavailable>{t("pair.devicesUnavailable")}</p> : null}
+            {devicesPhase === "failed" ? <p className="uw-machine-pairing-devices-error" role="alert">{devicesError}</p> : null}
+            {devicesPhase === "ready" && devices.length === 0 ? <p className="uw-machine-pairing-devices-note">{t("pair.devicesEmpty")}</p> : null}
+            {devicesPhase === "ready" && devices.length > 0 ? (
+              <ul className="uw-machine-pairing-device-list">
+                {devices.map((device) => (
+                  <li key={device.id} data-machine-device-id={device.id}>
+                    <div><strong>{device.name || t("pair.devicesUnnamed")}</strong><small>{t(device.revokedAt ? "pair.deviceRevoked" : "pair.devicePaired", { date: new Date(device.revokedAt || device.pairedAt).toLocaleString() })}</small></div>
+                    {device.revokedAt ? <span className="uw-machine-pairing-device-revoked">{t("pair.deviceRevokedLabel")}</span> : (
+                      <button type="button" className="uw-manager-button" data-machine-device-revoke={device.id} disabled={revokingID !== null} onClick={() => void revoke(device)}>{revokingID === device.id ? t("pair.deviceRevoking") : t("pair.deviceRevoke")}</button>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            ) : null}
+          </section>
+          {isRemote ? <p className="uw-machine-pairing-devices-note" data-machine-remote-pairing-disabled>{t("pair.remotePairingHint")}</p> : null}
+          {!isRemote ? <>
           {state.phase === "preparing" ? (
             <p className="uw-machine-pairing-status" role="status" data-machine-pairing-preparing>{t("pair.issuing")}</p>
           ) : null}
@@ -237,8 +305,10 @@ export function MachinePairingDialog({ machine, onClose, onOpenSettings }: { mac
               <span>{state.detail}</span>
             </div>
           ) : null}
+          </> : null}
         </div>
         <footer className="uw-machine-pairing-actions">
+          {!isRemote ? <>
           {state.phase === "ready" || state.phase === "expired" ? (
             <button type="button" className="uw-manager-button" data-machine-pairing-regenerate onClick={() => void issue()}>
               {t("pair.regenerate")}
@@ -259,6 +329,7 @@ export function MachinePairingDialog({ machine, onClose, onOpenSettings }: { mac
               {t("pair.retry")}
             </button>
           ) : null}
+          </> : null}
           <button type="button" className="uw-manager-button primary" onClick={onClose}>{t("sf.close")}</button>
         </footer>
       </section>

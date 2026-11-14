@@ -728,6 +728,19 @@ export type TranslationKey =
   | 'pair.noAddressTitle'
   | 'pair.noAddressBody'
   | 'pair.retry'
+  | 'pair.devicesTitle'
+  | 'pair.devicesLoading'
+  | 'pair.devicesUnavailable'
+  | 'pair.devicesFailed'
+  | 'pair.devicesEmpty'
+  | 'pair.devicesRefresh'
+  | 'pair.devicesUnnamed'
+  | 'pair.devicePaired'
+  | 'pair.deviceRevoked'
+  | 'pair.deviceRevokedLabel'
+  | 'pair.deviceRevoke'
+  | 'pair.deviceRevoking'
+  | 'pair.remotePairingHint'
   | 'sf.preparing'
   | 'sf.connectingMachines'
   | 'sf.connectingBody'
@@ -1526,6 +1539,19 @@ const translations: Record<LanguageCode, Partial<Record<TranslationKey, string>>
     'pair.noAddressTitle': 'No address a phone can reach',
     'pair.noAddressBody': 'This machine reports no network address usable for pairing. Check its network connection and try again.',
     'pair.retry': 'Try again',
+    'pair.devicesTitle': 'Paired devices',
+    'pair.devicesLoading': 'Loading paired devices…',
+    'pair.devicesUnavailable': 'Device management is not available on this daemon yet.',
+    'pair.devicesFailed': 'Could not load paired devices.',
+    'pair.devicesEmpty': 'No devices are paired with this machine.',
+    'pair.devicesRefresh': 'Refresh',
+    'pair.devicesUnnamed': 'Unnamed device',
+    'pair.devicePaired': 'Paired {date}',
+    'pair.deviceRevoked': 'Revoked {date}',
+    'pair.deviceRevokedLabel': 'Revoked',
+    'pair.deviceRevoke': 'Revoke',
+    'pair.deviceRevoking': 'Revoking…',
+    'pair.remotePairingHint': 'This machine is connected through a secure remote pairing. New phones can be paired from the machine’s local network.',
     'sf.preparing': 'Preparing Harness Remote',
     'sf.connectingMachines': 'Connecting to your machines…',
     'sf.connectingBody': 'Discovering Projects, installed coding agents and native Sessions. An ACP harness may need a few seconds to start.',
@@ -2324,6 +2350,19 @@ const translations: Record<LanguageCode, Partial<Record<TranslationKey, string>>
     'pair.noAddressTitle': 'Nessun indirizzo raggiungibile da un telefono',
     'pair.noAddressBody': 'Questa macchina non segnala indirizzi di rete utilizzabili per l’abbinamento. Controlla la connessione di rete e riprova.',
     'pair.retry': 'Riprova',
+    'pair.devicesTitle': 'Dispositivi abbinati',
+    'pair.devicesLoading': 'Caricamento dispositivi abbinati…',
+    'pair.devicesUnavailable': 'La gestione dei dispositivi non è ancora disponibile su questo daemon.',
+    'pair.devicesFailed': 'Impossibile caricare i dispositivi abbinati.',
+    'pair.devicesEmpty': 'Nessun dispositivo è abbinato a questa macchina.',
+    'pair.devicesRefresh': 'Aggiorna',
+    'pair.devicesUnnamed': 'Dispositivo senza nome',
+    'pair.devicePaired': 'Abbinato il {date}',
+    'pair.deviceRevoked': 'Revocato il {date}',
+    'pair.deviceRevokedLabel': 'Revocato',
+    'pair.deviceRevoke': 'Revoca',
+    'pair.deviceRevoking': 'Revoca in corso…',
+    'pair.remotePairingHint': 'Questa macchina è connessa tramite un abbinamento remoto sicuro. I nuovi telefoni possono essere abbinati dalla rete locale della macchina.',
     'sf.preparing': 'Preparazione di Harness Remote',
     'sf.connectingMachines': 'Connessione alle tue macchine…',
     'sf.connectingBody': 'Individuazione di progetti, coding agent installati e sessioni native. Un harness ACP può richiedere alcuni secondi per avviarsi.',
@@ -3122,6 +3161,19 @@ const translations: Record<LanguageCode, Partial<Record<TranslationKey, string>>
     'pair.noAddressTitle': '沒有手機可連線的位址',
     'pair.noAddressBody': '此機器未回報可用於配對的網路位址。請檢查網路連線後再試。',
     'pair.retry': '再試一次',
+    'pair.devicesTitle': '已配對裝置',
+    'pair.devicesLoading': '正在載入已配對裝置…',
+    'pair.devicesUnavailable': '此 daemon 尚未提供裝置管理功能。',
+    'pair.devicesFailed': '無法載入已配對裝置。',
+    'pair.devicesEmpty': '目前沒有裝置與這台機器配對。',
+    'pair.devicesRefresh': '重新整理',
+    'pair.devicesUnnamed': '未命名裝置',
+    'pair.devicePaired': '配對時間：{date}',
+    'pair.deviceRevoked': '撤銷時間：{date}',
+    'pair.deviceRevokedLabel': '已撤銷',
+    'pair.deviceRevoke': '撤銷',
+    'pair.deviceRevoking': '正在撤銷…',
+    'pair.remotePairingHint': '此機器透過安全遠端配對連線。請從機器所在的區域網路配對新手機。',
     'sf.preparing': '正在準備 Harness Remote',
     'sf.connectingMachines': '正在連線到你的機器…',
     'sf.connectingBody': '正在探索專案、已安裝的編碼代理與原生工作階段。ACP harness 可能需要幾秒鐘啟動。',
@@ -3920,6 +3972,19 @@ const translations: Record<LanguageCode, Partial<Record<TranslationKey, string>>
     'pair.noAddressTitle': '没有手机可连接的地址',
     'pair.noAddressBody': '此机器未报告可用于配对的网络地址。请检查网络连接后重试。',
     'pair.retry': '重试',
+    'pair.devicesTitle': '已配对设备',
+    'pair.devicesLoading': '正在加载已配对设备…',
+    'pair.devicesUnavailable': '此 daemon 尚未提供设备管理功能。',
+    'pair.devicesFailed': '无法加载已配对设备。',
+    'pair.devicesEmpty': '目前没有设备与这台机器配对。',
+    'pair.devicesRefresh': '刷新',
+    'pair.devicesUnnamed': '未命名设备',
+    'pair.devicePaired': '配对时间：{date}',
+    'pair.deviceRevoked': '撤销时间：{date}',
+    'pair.deviceRevokedLabel': '已撤销',
+    'pair.deviceRevoke': '撤销',
+    'pair.deviceRevoking': '正在撤销…',
+    'pair.remotePairingHint': '此机器通过安全远程配对连接。请从机器所在的局域网配对新手机。',
     'sf.preparing': '正在准备 Harness Remote',
     'sf.connectingMachines': '正在连接你的机器…',
     'sf.connectingBody': '正在发现项目、已安装的编码代理和原生会话。ACP harness 可能需要几秒钟启动。',
@@ -4718,6 +4783,19 @@ const translations: Record<LanguageCode, Partial<Record<TranslationKey, string>>
     'pair.noAddressTitle': 'Nenhum endereço que um celular consiga alcançar',
     'pair.noAddressBody': 'Esta máquina não informa nenhum endereço de rede utilizável para pareamento. Verifique a conexão de rede dela e tente novamente.',
     'pair.retry': 'Tentar novamente',
+    'pair.devicesTitle': 'Dispositivos pareados',
+    'pair.devicesLoading': 'Carregando dispositivos pareados…',
+    'pair.devicesUnavailable': 'O gerenciamento de dispositivos ainda não está disponível neste daemon.',
+    'pair.devicesFailed': 'Não foi possível carregar os dispositivos pareados.',
+    'pair.devicesEmpty': 'Nenhum dispositivo está pareado com esta máquina.',
+    'pair.devicesRefresh': 'Atualizar',
+    'pair.devicesUnnamed': 'Dispositivo sem nome',
+    'pair.devicePaired': 'Pareado em {date}',
+    'pair.deviceRevoked': 'Revogado em {date}',
+    'pair.deviceRevokedLabel': 'Revogado',
+    'pair.deviceRevoke': 'Revogar',
+    'pair.deviceRevoking': 'Revogando…',
+    'pair.remotePairingHint': 'Esta máquina está conectada por um pareamento remoto seguro. Novos celulares podem ser pareados pela rede local da máquina.',
     'sf.preparing': 'Preparando o Harness Remote',
     'sf.connectingMachines': 'Conectando às suas máquinas…',
     'sf.connectingBody': 'Descobrindo Projetos, agentes de código instalados e Sessões nativas. Um harness ACP pode levar alguns segundos para iniciar.',

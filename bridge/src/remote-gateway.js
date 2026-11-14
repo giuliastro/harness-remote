@@ -119,6 +119,10 @@ export function createRemoteGatewayServer({
       return
     }
     failures.delete(address)
+    // A device may revoke its own key. Let the already authenticated DELETE receive
+    // its confirmation; every subsequent request still fails authentication.
+    const selfRevocation = request.method === "DELETE" &&
+      request.url === `/v1/remote/devices/${auth.deviceID}`
 
     const headers = { host: `127.0.0.1:${upstreamPort}`, "content-length": String(body.length) }
     if (username) headers.authorization = `Basic ${Buffer.from(`${username}:${password ?? ""}`).toString("base64")}`
@@ -132,7 +136,8 @@ export function createRemoteGatewayServer({
     try {
       upstream = requestUpstream({ hostname: "127.0.0.1", port: upstreamPort, path: request.url,
         method: request.method, headers, agent: false }, (incoming) => {
-      if (!authenticator.active(auth.deviceID)) {
+      const confirmingSelfRevocation = selfRevocation && incoming.statusCode === 200
+      if (!authenticator.active(auth.deviceID) && !confirmingSelfRevocation) {
         incoming.destroy()
         writeError(response, 401, "Device revoked")
         return
@@ -144,14 +149,14 @@ export function createRemoteGatewayServer({
       }
       response.writeHead(incoming.statusCode ?? 502, responseHeaders)
       const revocationCheck = setInterval(() => {
-        if (!authenticator.active(auth.deviceID)) {
+        if (!authenticator.active(auth.deviceID) && !confirmingSelfRevocation) {
           incoming.destroy()
           response.destroy()
         }
       }, 1_000)
       revocationCheck.unref?.()
       incoming.on("data", (chunk) => {
-        if (!authenticator.active(auth.deviceID)) {
+        if (!authenticator.active(auth.deviceID) && !confirmingSelfRevocation) {
           incoming.destroy()
           response.destroy()
           return

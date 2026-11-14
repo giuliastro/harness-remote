@@ -48,6 +48,13 @@ export type ApprovalDecisionInput = ApprovalDecisionIdentity & {
   explanation?: string
 }
 
+export type MachinePairedDevice = {
+  id: string
+  name: string
+  pairedAt: string
+  revokedAt: string | null
+}
+
 function headers(config: ServerConfig): Record<string, string> {
   const value: Record<string, string> = { Accept: "application/json" }
   if (hasCredentials(config)) value.Authorization = authHeader(config)
@@ -145,6 +152,78 @@ function approvalDecisionRecords(value: unknown): ApprovalDecisionRecord[] {
       && typeof (decision as ApprovalDecisionRecord).requestedAction === "string"
       && ["once", "always", "reject"].includes((decision as ApprovalDecisionRecord).decision)
   ))
+}
+
+function machinePairedDevices(value: unknown): MachinePairedDevice[] {
+  const parsed = parseJSONValue(value, "paired devices")
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error("Invalid paired devices response")
+  const devices = (parsed as { devices?: unknown }).devices
+  if (!Array.isArray(devices)) throw new Error("Invalid paired devices response")
+  return devices.filter((device): device is MachinePairedDevice => Boolean(
+    device
+      && typeof device === "object"
+      && typeof (device as MachinePairedDevice).id === "string"
+      && typeof (device as MachinePairedDevice).name === "string"
+      && typeof (device as MachinePairedDevice).pairedAt === "string"
+      && ((device as MachinePairedDevice).revokedAt === null || typeof (device as MachinePairedDevice).revokedAt === "string")
+  ))
+}
+
+/** Read devices that have paired with this daemon. Remote Android profiles use the pinned native
+ * channel; desktop and LAN profiles use their established machine request transports. */
+export async function listMachinePairedDevices(config: ServerConfig): Promise<MachinePairedDevice[]> {
+  const path = "/v1/remote/devices"
+  if (isDesktopPlatform()) {
+    const result = await desktopRequestResult(config, { path })
+    if (!result.ok) throw new MachineHttpError(result.error.message, result.error.status)
+    return machinePairedDevices(result.response.data)
+  }
+  const target = `${machineBaseUrl(config)}${path}`
+  if (Capacitor.isNativePlatform()) {
+    let response
+    try {
+      response = config.remote ? await remoteMachineRequestUrl(config, target, { readTimeout: 12_000 })
+        : await CapacitorHttp.get({ url: target, headers: headers(config), connectTimeout: 12_000, readTimeout: 12_000 })
+    } catch { throw new Error(`Cannot reach ${config.host}:${config.port}.`) }
+    if (response.status >= 400) throw new MachineHttpError(`The machine rejected the paired devices request with HTTP ${response.status}.`, response.status)
+    return machinePairedDevices(response.data)
+  }
+  let response: Response
+  try { response = await fetch(target, { headers: headers(config) }) }
+  catch { throw new Error(`Cannot reach ${config.host}:${config.port}.`) }
+  if (!response.ok) throw new MachineHttpError(`The machine rejected the paired devices request with HTTP ${response.status}.`, response.status)
+  return machinePairedDevices(await response.json())
+}
+
+/** Revoke one paired device. The daemon invalidates its key immediately. */
+export async function revokeMachinePairedDevice(config: ServerConfig, id: string): Promise<void> {
+  if (!id) throw new Error("Paired device ID is missing")
+  const path = `/v1/remote/devices/${encodeURIComponent(id)}`
+  if (isDesktopPlatform()) {
+    const result = await desktopRequestResult(config, { path, method: "DELETE" })
+    if (!result.ok) throw new MachineHttpError(result.error.message, result.error.status)
+    if (!result.response.data || typeof result.response.data !== "object" || (result.response.data as { revoked?: unknown }).revoked !== true) {
+      throw new Error("The machine did not confirm device revocation.")
+    }
+    return
+  }
+  const target = `${machineBaseUrl(config)}${path}`
+  if (Capacitor.isNativePlatform()) {
+    let response
+    try {
+      response = config.remote ? await remoteMachineRequestUrl(config, target, { method: "DELETE", readTimeout: 12_000 })
+        : await CapacitorHttp.request({ url: target, method: "DELETE", headers: headers(config), connectTimeout: 12_000, readTimeout: 12_000 })
+    } catch { throw new Error(`Cannot reach ${config.host}:${config.port}.`) }
+    if (response.status >= 400) throw new MachineHttpError(`The machine rejected device revocation with HTTP ${response.status}.`, response.status)
+    if (!response.data || typeof response.data !== "object" || (response.data as { revoked?: unknown }).revoked !== true) throw new Error("The machine did not confirm device revocation.")
+    return
+  }
+  let response: Response
+  try { response = await fetch(target, { method: "DELETE", headers: headers(config) }) }
+  catch { throw new Error(`Cannot reach ${config.host}:${config.port}.`) }
+  if (!response.ok) throw new MachineHttpError(`The machine rejected device revocation with HTTP ${response.status}.`, response.status)
+  const body = await response.json() as { revoked?: unknown }
+  if (body?.revoked !== true) throw new Error("The machine did not confirm device revocation.")
 }
 
 async function discoverBrowserMachine(config: ServerConfig): Promise<MachineSnapshot | null> {

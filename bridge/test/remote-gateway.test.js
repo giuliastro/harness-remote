@@ -188,3 +188,61 @@ test("real HTTPS ingress serves only on its pinned TLS machine identity", async 
     await rm(stateDirectory, { recursive: true, force: true })
   }
 })
+
+test("a device receives confirmation when it revokes its own key", async () => {
+  const { publicKey, privateKey } = generateKeyPairSync("ec", { namedCurve: "prime256v1" })
+  const der = publicKey.export({ format: "der", type: "spki" })
+  const registry = new PairedDeviceRegistry({ store: {
+    read: async () => null, write: async () => {}, serial: async (operation) => operation()
+  } })
+  await registry.load()
+  const deviceID = await registry.pair({ publicKey: der.toString("base64url"), name: "Phone" })
+  const target = `/v1/remote/devices/${deviceID}`
+  const upstream = http.createServer(async (request, response) => {
+    if (request.method === "DELETE" && request.url === target) {
+      await registry.revoke(deviceID)
+      response.writeHead(200, { "content-type": "application/json" }).end('{"revoked":true}')
+      return
+    }
+    response.writeHead(404).end()
+  })
+  const upstreamPort = await listen(upstream)
+  const machineID = "machine-self-revoke"
+  const pin = "a".repeat(64)
+  const authenticator = new RemoteRequestAuthenticator({ registry, machineID, pin })
+  const gateway = createRemoteGatewayServer({ tls: { key: "test", cert: "test" },
+    authenticator, upstreamPort, createServer: (_tls, handler) => http.createServer(handler) })
+  const port = await listen(gateway)
+  try {
+    const timestamp = Date.now()
+    const nonce = "s".repeat(43)
+    const message = remoteRequestMessage({ machineID, pin, deviceID, timestamp, nonce,
+      method: "DELETE", target, body: Buffer.alloc(0) })
+    const headers = {
+      [REMOTE_AUTH_HEADERS.device]: deviceID,
+      [REMOTE_AUTH_HEADERS.timestamp]: String(timestamp),
+      [REMOTE_AUTH_HEADERS.nonce]: nonce,
+      [REMOTE_AUTH_HEADERS.signature]: sign("sha256", Buffer.from(message), privateKey).toString("base64url")
+    }
+    const result = await new Promise((resolve, reject) => {
+      http.request({ hostname: "127.0.0.1", port, path: target, method: "DELETE", headers }, (response) => {
+        let body = ""
+        response.setEncoding("utf8")
+        response.on("data", (chunk) => { body += chunk })
+        response.on("end", () => resolve({ status: response.statusCode, body }))
+      }).on("error", reject).end()
+    })
+    assert.deepEqual(result, { status: 200, body: '{"revoked":true}' })
+    const nextNonce = "t".repeat(43)
+    const nextMessage = remoteRequestMessage({ machineID, pin, deviceID, timestamp,
+      nonce: nextNonce, method: "GET", target, body: Buffer.alloc(0) })
+    assert.equal((await get(port, target, {
+      ...headers,
+      [REMOTE_AUTH_HEADERS.nonce]: nextNonce,
+      [REMOTE_AUTH_HEADERS.signature]: sign("sha256", Buffer.from(nextMessage), privateKey).toString("base64url")
+    })).status, 401)
+  } finally {
+    gateway.close()
+    upstream.close()
+  }
+})
