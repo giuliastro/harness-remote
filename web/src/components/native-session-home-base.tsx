@@ -381,12 +381,21 @@ function hasHiddenSegment(value: string): boolean {
   return value.split(/[\\/]+/).some((segment) => segment.startsWith(".") && segment !== "." && segment !== "..")
 }
 
+function visibleWithinConfiguredRoot(directory: string, roots: MachineProject[]): boolean {
+  const root = roots.filter((project) => pathContains(project.path, directory))
+    .sort((left, right) => normalizedPath(right.path).value.length - normalizedPath(left.path).value.length)[0]
+  const relative = root
+    ? normalizedPath(directory).value.slice(normalizedPath(root.path).value.length)
+    : directory
+  return !hasHiddenSegment(relative)
+}
+
 /**
  * Compact skin's New Session Project list: the catalog plus the folders the user actually has
  * Sessions in (only inside a configured root, so the daemon accepts them), hidden folders left out,
  * ordered by last use with the chosen agent, then last use overall, then name.
  */
-function projectsByRecentUse(catalog: MachineProject[], records: RecordWithMachine[], machineID: string, agentID: string): MachineProject[] {
+export function projectsByRecentUse(catalog: MachineProject[], records: RecordWithMachine[], machineID: string, agentID: string): MachineProject[] {
   const roots = catalog.filter((project) => project.configured)
   const members = catalog.filter((project) => !project.configured)
   const extra = new Map<string, MachineProject>()
@@ -394,7 +403,7 @@ function projectsByRecentUse(catalog: MachineProject[], records: RecordWithMachi
   const lastUseWithAgent = new Map<string, number>()
   for (const item of records) {
     const directory = item.record.session.directory || item.project?.path || ""
-    if (!directory || hasHiddenSegment(directory)) continue
+    if (!directory || !visibleWithinConfiguredRoot(directory, roots)) continue
     const member = members
       .filter((project) => pathContains(project.path, directory))
       .sort((left, right) => right.path.length - left.path.length)[0]
@@ -424,7 +433,7 @@ function projectsByRecentUse(catalog: MachineProject[], records: RecordWithMachi
     if (item.record.agentId === agentID) lastUseWithAgent.set(key, Math.max(lastUseWithAgent.get(key) || 0, at))
   }
   return [...catalog, ...extra.values()]
-    .filter((project) => !project.name.startsWith(".") && !hasHiddenSegment(project.path))
+    .filter((project) => !project.name.startsWith(".") && visibleWithinConfiguredRoot(project.path, roots))
     .sort((left, right) =>
       (lastUseWithAgent.get(right.id) || 0) - (lastUseWithAgent.get(left.id) || 0)
       || (lastUse.get(right.id) || 0) - (lastUse.get(left.id) || 0)
