@@ -3,6 +3,7 @@ package ai.harness.remote;
 import android.app.Activity;
 import android.app.Instrumentation.ActivityMonitor;
 import android.app.Notification;
+import android.app.NotificationChannel;
 import android.app.NotificationManager;
 import android.app.UiAutomation;
 import android.content.Context;
@@ -139,10 +140,14 @@ public class BackgroundAttentionServiceTest {
 
     @Test
     public void machineLossStaysInStatusWithoutAnUnreachableAlert() throws Exception {
-        startService();
-        waitFor("machine connected", () -> BackgroundAttentionStatus.isMachineConnected(FakeMachineServer.MACHINE_ID), 15_000);
         NotificationManager manager = (NotificationManager) context.getSystemService(Context.NOTIFICATION_SERVICE);
         assertNotNull(manager);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            manager.createNotificationChannel(new NotificationChannel(
+                "harness_remote_machine_connection", "Old machine alerts", NotificationManager.IMPORTANCE_DEFAULT));
+        }
+        startService();
+        waitFor("machine connected", () -> BackgroundAttentionStatus.isMachineConnected(FakeMachineServer.MACHINE_ID), 15_000);
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             assertNull("machine connection alerts must not have a notification channel",
                 manager.getNotificationChannel("harness_remote_machine_connection"));
