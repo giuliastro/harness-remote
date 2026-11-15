@@ -162,7 +162,7 @@ async function run(browser, viewport, tag) {
 
   const loadingRow = page.locator(".hr-native-machine-loading", { hasText: "DeepSeek Harness" }).first()
   await loadingRow.waitFor({ state: "visible", timeout: 15_000 })
-  assert.match(await loadingRow.innerText(), /Loading Sessions/)
+  assert.match(await loadingRow.innerText(), /Harness connection/)
   assert.match(await loadingRow.innerText(), /DeepSeek Harness/)
   assert.match(await loadingRow.innerText(), /Starting…/)
   await shoot(page, `${tag}-1-loading`)
