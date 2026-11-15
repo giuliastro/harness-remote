@@ -1,7 +1,7 @@
 import { spawn, type ChildProcess } from "node:child_process"
 import { existsSync } from "node:fs"
 import { homedir, userInfo } from "node:os"
-import { delimiter as platformPathDelimiter, join } from "node:path"
+import { delimiter as platformPathDelimiter, posix as posixPath, win32 as win32Path } from "node:path"
 
 const PATH_START_MARKER = "__HARNESS_REMOTE_PATH_START__"
 const PATH_END_MARKER = "__HARNESS_REMOTE_PATH_END__"
@@ -46,6 +46,9 @@ export function userExecutableDirectories(
   const platform = options.platform ?? process.platform
   const home = options.homeDirectory ?? environment.HOME ?? homedir()
   const exists = options.exists ?? existsSync
+  // Use the path semantics of the target platform, not the machine running the test. A Linux
+  // fallback directory must keep POSIX separators even when the test suite runs on Windows.
+  const join = platform === "win32" ? win32Path.join : posixPath.join
   const candidates = platform === "win32"
     ? [
         environment.APPDATA ? join(environment.APPDATA, "npm") : "",
