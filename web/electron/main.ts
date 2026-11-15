@@ -366,6 +366,12 @@ function showMainWindow(): void {
 }
 
 function createTray(): void {
+  // The disposable manual-test profile should exit with its window. A tray icon left behind after
+  // the test looks like a second copy of the app and keeps harness children alive.
+  if (process.env.HARNESS_REMOTE_TEST_QUIT_ON_CLOSE === "1") {
+    tray = undefined
+    return
+  }
   try {
     const image = nativeImage.createFromPath(join(app.getAppPath(), "dist/app-icon.png"))
     if (image.isEmpty()) {
@@ -636,6 +642,10 @@ app.on("before-quit", (event) => {
 // Closing the last window ends the app everywhere except macOS, where an app with no windows is
 // still running and is expected to reopen one from the dock — which is what "activate" below does.
 app.on("window-all-closed", () => {
+  if (process.env.HARNESS_REMOTE_TEST_QUIT_ON_CLOSE === "1") {
+    app.quit()
+    return
+  }
   if (isMac || quitting) return
   if (!tray) app.quit()
 })

@@ -25,6 +25,8 @@ const main = read('./main.tsx')
 const api = read('./api.ts')
 const daemon = read('../../bridge/src/machine-daemon.js')
 const daemonCli = read('../../bridge/src/daemon-cli.js')
+const compact = read('./mobile-compact-chat.css')
+const workbench = read('./session-first-workbench.css')
 
 // Product identity is Machine -> Project -> real native Session. The failed Conversation-first UI
 // is deliberately gone and these guards make its accidental reintroduction a regression.
@@ -51,6 +53,10 @@ assert.equal(home.includes('api.deleteSession('), false, 'Session navigation mus
 assert.ok(rename.includes('api.renameSession(target.config, target.sessionID'), 'open Session action must rename the real native Session')
 assert.ok(rename.includes('target.renameSupported') && actions.includes('target.deleteSupported'), 'native metadata actions must follow harness capabilities')
 assert.ok(actions.includes('t("sf.keepSession")') && actions.includes('t("sf.deleteSession")'), 'native deletion must use an inline translated confirmation')
+assert.doesNotMatch(compact, /session-header:not\(:has\(\.hr-native-session-title\.editing\)\) \.hr-native-workspace-session-actions \{[\s\S]{0,80}display: none/, 'the open-Session delete action must stay visible without entering rename mode')
+assert.match(compact, /\.hr-native-session-title\.editing \.hr-native-session-title-field \{[\s\S]{0,260}max-width: 100% !important;/, 'the inline rename field must stay inside the phone header')
+assert.match(compact, /\.hr-native-home \.hr-native-home-tools\.search-open \{[\s\S]{0,120}position: static !important;/, 'open search filters must sit above the results instead of covering them')
+assert.match(compact, /\.hr-native-search-backdrop \{[\s\S]{0,80}display: none;/, 'the search scrim must not swallow taps on results')
 
 assert.ok(observer.includes('import { WorkThreadConversation } from "./work-thread-conversation"'), 'native Session detail must mount the mature v3 controller')
 assert.ok(observer.includes('<WorkThreadConversation'), 'native Session detail must render WorkThreadConversation directly')

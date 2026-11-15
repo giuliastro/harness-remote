@@ -162,15 +162,18 @@ async function run(browser, viewport, tag) {
 
   const loadingRow = page.locator(".hr-native-machine-loading", { hasText: "DeepSeek Harness" }).first()
   await loadingRow.waitFor({ state: "visible", timeout: 15_000 })
-  assert.match(await loadingRow.innerText(), /Loading Sessions: .*DeepSeek Harness/)
+  assert.match(await loadingRow.innerText(), /Loading Sessions/)
+  assert.match(await loadingRow.innerText(), /DeepSeek Harness/)
+  assert.match(await loadingRow.innerText(), /Starting…/)
   await shoot(page, `${tag}-1-loading`)
 
-  const retryRow = page.locator(".hr-native-machine-loading.retrying", { hasText: "DeepSeek Harness" })
-  await retryRow.waitFor({ state: "visible", timeout: 20_000 })
-  // The fast harness is on screen while the slow one is still being retried.
+  const retryRow = page.locator(".hr-native-machine-loading", { hasText: "DeepSeek Harness" }).first()
+  await waitFor(async () => /Retrying…/.test(await retryRow.innerText()), "the slow harness retry state")
+  // The fast harness is on screen while the slow one is still being retried. The same card stays
+  // in place; its harness rows update instead of a second coloured panel replacing it.
   const machineCount = page.locator(".hr-native-machine-metrics small").first()
   await waitFor(async () => (await machineCount.innerText()).trim() === "1", "the fast harness Session counted")
-  assert.equal(await page.locator(".hr-native-machine-loading:not(.retrying)").count(), 0)
+  assert.equal(/Starting…/.test(await retryRow.innerText()), false)
   await shoot(page, `${tag}-2-retrying`)
 
   await waitFor(async () => (await machineCount.innerText()).trim() === "2", "the slow harness Session counted", 40_000)

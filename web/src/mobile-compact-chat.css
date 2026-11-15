@@ -372,6 +372,36 @@
   font-weight: 500;
 }
 
+/* A row whose second line is a sentence, not a value ("Restore the persistent notification...").
+   The sentence gets its own full-width line instead of competing with the label for the auto
+   column, which is what pushed it under/through the row on a phone. */
+.hr-mobile-settings-group .hr-settings-row-button .hr-settings-row-copy {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.hr-mobile-settings-group .hr-settings-row-button .hr-settings-row-copy > strong {
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.3;
+}
+
+.hr-mobile-settings-group .hr-settings-row-button .hr-settings-row-copy > span {
+  min-width: 0;
+  color: var(--td3-muted);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.hr-mobile-settings-group .hr-settings-row-button[data-multiline] {
+  align-items: start;
+  min-height: 58px;
+  padding-block: 10px;
+}
+
 .hr-rules-modal-backdrop {
   position: fixed;
   inset: 0;
@@ -801,14 +831,41 @@
     background: color-mix(in srgb, var(--td3-panel) 85%, transparent) !important;
   }
 
-  /* Status lives in the composer, beside the paperclip; the header keeps only back, title and
-     rename. */
-  :root[data-skin="compact"] .hr-control-plane.hr-native-workspace .hr-native-workspace-session-header:not(:has(.hr-native-session-title.editing)) .hr-native-workspace-session-actions {
-    display: none !important;
-  }
-
+  /* Delete belongs to the open Session and stays reachable without first entering rename mode.
+     Status already lives in the composer, so only the action buttons remain here. */
   :root[data-skin="compact"] .hr-control-plane.hr-native-workspace .hr-native-workspace-session-header {
     padding-right: 12px !important;
+  }
+
+  /* Rename is an inline edit of the heading. It must be allowed to shrink inside the floating
+     header instead of measuring its field against a width the delete button and the safe-area
+     padding have already consumed. */
+  :root[data-skin="compact"] .hr-control-plane.hr-native-workspace .hr-native-session-title.editing {
+    flex: 1 1 auto !important;
+    width: auto !important;
+    max-width: 100% !important;
+    overflow: visible !important;
+    white-space: normal !important;
+    text-overflow: clip !important;
+  }
+
+  :root[data-skin="compact"] .hr-control-plane.hr-native-workspace .hr-native-session-title.editing .hr-native-session-title-field {
+    box-sizing: border-box;
+    width: 100% !important;
+    max-width: 100% !important;
+    margin-inline-start: 0 !important;
+    padding: 2px 3px 2px 7px;
+  }
+
+  :root[data-skin="compact"] .hr-control-plane.hr-native-workspace .hr-native-session-title.editing .hr-native-session-title-field input {
+    width: 100%;
+    min-width: 0;
+  }
+
+  :root[data-skin="compact"] .hr-control-plane.hr-native-workspace .hr-native-session-title-error {
+    width: 100%;
+    overflow-wrap: anywhere;
+    white-space: normal;
   }
 
   :root[data-skin="compact"] .tdw-composer-status {
@@ -829,19 +886,6 @@
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
-  }
-
-  /* Delete shows up only while renaming, beside the confirm/cancel buttons. */
-  :root[data-skin="compact"] .hr-control-plane.hr-native-workspace .hr-native-workspace-session-header:has(.hr-native-session-title.editing) .hr-native-workspace-session-actions {
-    display: flex !important;
-  }
-
-  :root[data-skin="compact"] .hr-control-plane.hr-native-workspace .hr-native-workspace-session-header:has(.hr-native-session-title.editing) .hr-native-workspace-session-actions .tdw-icon-button {
-    width: 36px !important;
-    height: 36px !important;
-    min-width: 36px !important;
-    min-height: 36px !important;
-    border-radius: 999px !important;
   }
 
 
@@ -1348,24 +1392,24 @@
     display: none !important;
   }
 
-  /* Open: search and every filter drop down from the magnifier as one panel. */
+  /* Open: search and every filter expand in the list's own column, above the results. A fixed
+     popover used to sit on top of the matching Sessions and its scrim swallowed every tap, so the
+     results could not be opened until search was closed. In flow, the panel pushes the list down
+     and the results stay tappable while the filters are visible. */
   :root[data-skin="compact"] .hr-native-home .hr-native-home-tools.search-open {
-    position: fixed !important;
-    top: 58px;
-    left: 8px;
-    right: 8px;
-    z-index: 1001;
+    position: static !important;
+    z-index: auto;
     display: flex !important;
     flex-direction: column;
     gap: 8px !important;
-    max-height: calc(100dvh - 140px);
+    max-height: min(52dvh, 440px);
     overflow: auto;
+    margin: 0 0 10px;
     padding: 12px !important;
     border: 1px solid var(--td3-border-strong);
-    border-radius: 18px;
+    border-radius: 16px;
     background: var(--td3-panel);
-    box-shadow: 0 12px 40px rgba(0, 0, 0, .45);
-    transform-origin: top right;
+    box-shadow: var(--td3-shadow-panel);
     animation: hr-search-drop .18s cubic-bezier(.2, .8, .2, 1);
   }
 
@@ -1373,14 +1417,10 @@
     from { opacity: 0; transform: translateY(-6px) scale(.97); }
   }
 
+  /* The filter sheet is part of the page now; a full-viewport scrim would still intercept the
+     results underneath it. */
   :root[data-skin="compact"] .hr-native-search-backdrop {
-    display: block;
-    position: fixed;
-    inset: 0;
-    z-index: 1000;
-    border: 0;
-    padding: 0;
-    background: rgba(0, 0, 0, .35);
+    display: none;
   }
 
   /* Bottom navigation: fixed on the main panel; inside a conversation it folds away behind a

@@ -5,6 +5,7 @@ import { createAcpProviderRuntime, resolveAcpProviderIDs, resolveAcpProviderLaun
 import { ApprovalDecisionStore } from "./approval-decision-store.js"
 import { createApprovalDecisionServer } from "./approval-decision-server.js"
 import { parseConfig, usage as bridgeUsage } from "./config.js"
+import { ensureRuntimeExecutablePath } from "./executable-path.js"
 import { openCodeCapabilityContract } from "./harness-capability-contract.js"
 import { createHarnessLogWriter } from "./harness-log.js"
 import { harnessProfile } from "./harness-profiles.js"
@@ -105,6 +106,9 @@ export function resolveManagedOpenCodeOptions(parsed, plan, { resolve = resolveO
 }
 
 async function main() {
+  // The embedded daemon owns harness discovery and launch. Recover the user-level install
+  // directories here as well, so a desktop/service launch never hides OMP, OpenCode or Claude.
+  ensureRuntimeExecutablePath()
   let parsed
   try {
     parsed = parseDaemonOptions(process.argv.slice(2))

@@ -65,6 +65,19 @@
 
   .hr-native-workspace .hr-native-session-heading > .hr-native-session-title.editing {
     flex-wrap: wrap;
+    white-space: normal;
+    overflow: visible;
+    text-overflow: clip;
+  }
+
+  .hr-native-workspace .hr-native-session-heading > .hr-native-session-title.editing .hr-native-session-title-field {
+    box-sizing: border-box;
+    max-width: 100%;
+    margin-inline-start: 0;
+  }
+
+  .hr-native-workspace .hr-native-session-heading > .hr-native-session-title.editing .hr-native-session-title-field input {
+    min-width: 0;
   }
 
   .hr-native-workspace .hr-native-session-heading > .hr-native-session-eyebrow,

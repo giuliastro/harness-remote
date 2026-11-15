@@ -5,7 +5,8 @@ const {
   mergeExecutablePath,
   parseLoginShellPathOutput,
   readLoginShellPath,
-  resolveDesktopRuntimeEnvironment
+  resolveDesktopRuntimeEnvironment,
+  userExecutableDirectories
 } = await import("../dist-electron/electron/shell-path.js")
 
 test("extracts only the delimited exported PATH from noisy shell startup output", () => {
@@ -72,6 +73,29 @@ test("shell discovery failure falls back to the inherited environment", async ()
   })
   assert.deepEqual(resolved, inherited)
   assert.notEqual(resolved, inherited, "the caller receives an isolated environment object")
+})
+
+test("user installer directories fill a PATH that even the login shell omitted", async () => {
+  const home = "/home/person"
+  const localBin = `${home}/.local/bin`
+  const openCodeBin = `${home}/.opencode/bin`
+  const existing = new Set([localBin, openCodeBin])
+  assert.deepEqual(
+    userExecutableDirectories({ HOME: home }, { platform: "linux", homeDirectory: home, exists: (value) => existing.has(value) }),
+    [localBin, openCodeBin]
+  )
+
+  const resolved = await resolveDesktopRuntimeEnvironment(
+    { PATH: "/usr/bin:/bin", HOME: home },
+    {
+      platform: "linux",
+      delimiter: ":",
+      homeDirectory: home,
+      exists: (value) => existing.has(value),
+      readShellPath: async () => undefined
+    }
+  )
+  assert.equal(resolved.PATH, `/usr/bin:/bin:${localBin}:${openCodeBin}`)
 })
 
 test("Windows keeps its native process environment and never starts shell discovery", async () => {

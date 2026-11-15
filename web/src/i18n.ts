@@ -735,6 +735,9 @@ export type TranslationKey =
   | 'sf.loadingSessionsBody'
   | 'sf.loadingHarnessSessions'
   | 'sf.waitingHarnessSessions'
+  | 'sf.harnessConnectionTitle'
+  | 'sf.harnessLoadingState'
+  | 'sf.harnessRetryingState'
   | 'sf.configuredMachines'
   | 'sf.machinesUnavailable'
   | 'sf.couldNotConnect'
@@ -1533,6 +1536,9 @@ const translations: Record<LanguageCode, Partial<Record<TranslationKey, string>>
     'sf.loadingSessionsBody': 'Reading the native Sessions the connected machines\' coding agents own.',
     'sf.loadingHarnessSessions': 'Loading Sessions: {names}',
     'sf.waitingHarnessSessions': 'Still waiting for {names}, retrying…',
+    'sf.harnessConnectionTitle': 'Harness connection',
+    'sf.harnessLoadingState': 'Starting…',
+    'sf.harnessRetryingState': 'Retrying…',
     'sf.configuredMachines': '{count} configured machines',
     'sf.machinesUnavailable': 'Machines unavailable',
     'sf.couldNotConnect': 'Harness Remote could not connect',
@@ -2331,6 +2337,9 @@ const translations: Record<LanguageCode, Partial<Record<TranslationKey, string>>
     'sf.loadingSessionsBody': 'Lettura delle sessioni native possedute dai coding agent di ogni macchina.',
     'sf.loadingHarnessSessions': 'Caricamento sessioni: {names}',
     'sf.waitingHarnessSessions': 'In attesa di {names}, nuovo tentativo…',
+    'sf.harnessConnectionTitle': 'Connessione harness',
+    'sf.harnessLoadingState': 'Avvio…',
+    'sf.harnessRetryingState': 'Nuovo tentativo…',
     'sf.configuredMachines': '{count} macchine configurate',
     'sf.machinesUnavailable': 'Macchine non raggiungibili',
     'sf.couldNotConnect': 'Harness Remote non è riuscito a connettersi',
@@ -3129,6 +3138,9 @@ const translations: Record<LanguageCode, Partial<Record<TranslationKey, string>>
     'sf.loadingSessionsBody': '正在讀取各機器的程式代理所擁有的原生工作階段。',
     'sf.loadingHarnessSessions': '正在載入工作階段：{names}',
     'sf.waitingHarnessSessions': '仍在等待 {names}，正在重試…',
+    'sf.harnessConnectionTitle': 'Harness 連線',
+    'sf.harnessLoadingState': '正在啟動…',
+    'sf.harnessRetryingState': '正在重試…',
     'sf.configuredMachines': '已設定 {count} 部機器',
     'sf.machinesUnavailable': '機器無法使用',
     'sf.couldNotConnect': 'Harness Remote 無法連線',
@@ -3927,6 +3939,9 @@ const translations: Record<LanguageCode, Partial<Record<TranslationKey, string>>
     'sf.loadingSessionsBody': '正在读取各机器的编码代理所拥有的原生会话。',
     'sf.loadingHarnessSessions': '正在加载会话：{names}',
     'sf.waitingHarnessSessions': '仍在等待 {names}，正在重试…',
+    'sf.harnessConnectionTitle': 'Harness 连接',
+    'sf.harnessLoadingState': '正在启动…',
+    'sf.harnessRetryingState': '正在重试…',
     'sf.configuredMachines': '已配置 {count} 台机器',
     'sf.machinesUnavailable': '机器不可用',
     'sf.couldNotConnect': 'Harness Remote 无法连接',
@@ -4725,6 +4740,9 @@ const translations: Record<LanguageCode, Partial<Record<TranslationKey, string>>
     'sf.loadingSessionsBody': 'Lendo as Sessões nativas que pertencem aos agentes de código das máquinas conectadas.',
     'sf.loadingHarnessSessions': 'Carregando Sessões: {names}',
     'sf.waitingHarnessSessions': 'Ainda aguardando {names}, tentando novamente…',
+    'sf.harnessConnectionTitle': 'Conexão dos harnesses',
+    'sf.harnessLoadingState': 'Iniciando…',
+    'sf.harnessRetryingState': 'Tentando novamente…',
     'sf.configuredMachines': '{count} máquinas configuradas',
     'sf.machinesUnavailable': 'Máquinas indisponíveis',
     'sf.couldNotConnect': 'O Harness Remote não conseguiu conectar',

@@ -13,6 +13,8 @@ const serverConfig = read('./serverConfig.ts')
 const desktopRequestTransport = read('../electron/request-transport.ts')
 const desktopEventTransport = read('../electron/event-transport.ts')
 const workbench = read('./session-first-workbench.css')
+const compact = read('./mobile-compact-chat.css')
+const compactFinal = read('./compact-final-touch.css')
 
 // 3.0 starts from machine-level configuration and the Session-first product shell.
 assert.match(main, /loadWorkspaceMachines/)
@@ -67,6 +69,9 @@ assert.match(standalone, /function MobileSettingsPage[\s\S]*data-settings-networ
 assert.match(standalone, /if \(!cancelled && state\) setNetwork\(\{ lanPairing: state\.lanPairing \}\)/, 'a missing bridge hides the section instead of explaining it')
 assert.match(standalone, /setDesktopNetworkSettings\(enabled\)[\s\S]{0,200}setNetwork\(\{ lanPairing: result\.lanPairing \}\)/, 'the toggle re-syncs from the answer the main process applied')
 assert.match(workbench, /\.hr-mobile-settings-group label input\[type="checkbox"\] \{\r?\n\s*justify-self: end;/, 'the toggle must sit at the end of its settings row, not fill the column')
+assert.match(standalone, /data-multiline[\s\S]{0,220}hr-settings-row-copy/, 'the background-connection hint must have its own text block instead of sharing the value column')
+assert.match(compact, /\.hr-mobile-settings-group \.hr-settings-row-button \.hr-settings-row-copy > span[\s\S]{0,260}overflow-wrap: anywhere;/, 'the background-connection hint must wrap inside the row')
+assert.match(compactFinal, /\[data-icon\]\[data-multiline\][\s\S]{0,160}grid-template-columns: 30px minmax\(0, 1fr\)/, 'compact settings must give a sentence row one full-width text column')
 
 // One machine discovers coding agents and native Sessions. New work is created as a real native Session.
 assert.match(machineClient, /export async function discoverMachine/)

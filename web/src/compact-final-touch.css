@@ -50,6 +50,19 @@
     border-radius: 16px 16px 0 0;
   }
 
+  /* A loading card between the machine heading and its first Project is a separate block. Without
+     this rule the Project list lost its top border/radius and started flush under the card, which
+     is the sliver of Session list that appeared underneath it. */
+  :root[data-skin="compact"] .hr-native-machine-group > .hr-native-machine-loading + .hr-native-project-group {
+    margin-top: 0 !important;
+    border-top-width: 1px;
+    border-radius: 16px 16px 0 0;
+  }
+
+  :root[data-skin="compact"] .hr-native-machine-group > .hr-native-machine-loading + .hr-native-project-group:last-of-type {
+    border-radius: 16px;
+  }
+
   :root[data-skin="compact"] .hr-native-machine-group > .hr-native-project-group:last-of-type {
     margin-bottom: 14px !important;
     border-bottom-width: 1px;
@@ -256,6 +269,20 @@
 
   :root[data-skin="compact"] .hr-mobile-settings-group > label[data-icon] select:focus {
     color: var(--td3-text) !important;
+  }
+
+  /* A sentence row keeps the icon and one full-width text column; a third auto column has no room
+     for prose and was where the hint crossed the label. */
+  :root[data-skin="compact"] .hr-mobile-settings-group > .hr-settings-row-button[data-icon][data-multiline] {
+    grid-template-columns: 30px minmax(0, 1fr) !important;
+    align-items: center !important;
+    min-height: 62px !important;
+    padding-block: 10px !important;
+  }
+
+  :root[data-skin="compact"] .hr-mobile-settings-group > .hr-settings-row-button[data-icon][data-multiline] .hr-settings-row-copy > strong {
+    font-size: 14.5px !important;
+    font-weight: 600 !important;
   }
 
   :root[data-skin="compact"] .hr-mobile-settings-group > p,
