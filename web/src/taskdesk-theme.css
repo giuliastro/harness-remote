@@ -92,6 +92,7 @@
   --td3-brand-mark: linear-gradient(145deg, rgba(63, 108, 228, .35), rgba(27, 50, 111, .45));
   --td3-shadow-panel: 0 28px 100px rgba(0, 0, 0, .5);
   --td3-shadow-pane: -18px 0 50px rgba(0, 0, 0, .16);
+  --td3-shadow-startup: 0 18px 48px rgba(0, 0, 0, .12);
 }
 
 :root[data-theme="light"] {
@@ -168,6 +169,7 @@
   --td3-brand-mark: linear-gradient(145deg, #3a63d8, #2246a8);
   --td3-shadow-panel: 0 24px 70px rgba(15, 23, 42, .16);
   --td3-shadow-pane: -18px 0 50px rgba(15, 23, 42, .06);
+  --td3-shadow-startup: 0 18px 48px rgba(15, 23, 42, .08);
 }
 
 .uw-button {
