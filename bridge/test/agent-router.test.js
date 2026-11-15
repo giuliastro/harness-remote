@@ -476,7 +476,9 @@ test("one multiplexed stream carries every requested harness's events, tagged by
     bridgeServer: new BridgeServer(),
     acpBridgeServer: (agentID) => bridges[agentID]
   })
-  const port = await listen(server)
+  // daemon-cli wraps the router and only the outermost server listens; test through that seam.
+  const outer = http.createServer((request, response) => server.emit("request", request, response))
+  const port = await listen(outer)
   const received = []
   let request
   try {
@@ -531,7 +533,7 @@ test("one multiplexed stream carries every requested harness's events, tagged by
   } finally {
     request?.destroy()
     for (const response of streams.values()) response.destroy()
-    server.closeAllConnections?.()
-    await close(server)
+    outer.closeAllConnections?.()
+    await close(outer)
   }
 })

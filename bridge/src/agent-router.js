@@ -261,15 +261,15 @@ export function createAgentRoutingServer({
       }
       // Each harness stream is read through this daemon's own routes, so it keeps every routing and
       // fan-out rule a direct client gets. The caller's credentials were just verified above.
-      const address = server.address()
-      const bound = typeof address === "object" && address ? address.address : ""
+      // The daemon wraps this router in outer servers and only the outermost one listens, so connect
+      // back to the local end of the socket this request arrived on.
       serveAgentEventMultiplex({
         request,
         response,
         agentIDs,
         upstream: {
-          host: !bound || bound === "0.0.0.0" || bound === "::" ? "127.0.0.1" : bound,
-          port: typeof address === "object" && address ? address.port : 0,
+          host: request.socket.localAddress,
+          port: request.socket.localPort,
           authorization: typeof request.headers.authorization === "string" ? request.headers.authorization : undefined
         }
       })
