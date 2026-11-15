@@ -2316,9 +2316,13 @@ export class AcpService {
     // ~/.harness-remote/<backend>. The desktop daemon has its own state directory. Import those
     // names as a fallback so a Session renamed through the CLI keeps its name in the app; the
     // app's own store still wins when both contain the same id.
-    const backend = path.basename(this.#snapshotDirectory)
-    const legacy = path.join(homedir(), ".harness-remote", backend, "session-titles.json")
-    if (legacy !== this.#titleIndexPath()) await this.#mergeTitleIndexFile(legacy, false)
+    // DSH is the one backend whose title lives only in the bridge-local store: its ACP adapter
+    // exposes titles but has no rename request. The CLI/source checkout used ~/.harness-remote,
+    // while the desktop daemon uses its own state directory; import that one legacy store.
+    if (path.basename(this.#snapshotDirectory) === "deepseek") {
+      const legacy = path.join(homedir(), ".harness-remote", "deepseek", "session-titles.json")
+      if (legacy !== this.#titleIndexPath()) await this.#mergeTitleIndexFile(legacy, false)
+    }
   }
 
   async #mergeTitleIndexFile(file, required) {
