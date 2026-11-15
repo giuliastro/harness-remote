@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto"
 import { mkdir, readFile, rename, stat, unlink, writeFile } from "node:fs/promises"
+import { homedir } from "node:os"
 import path from "node:path"
 import { selectableAcpModelValue, modelConfigOptionFromSessionResponse, modelValueIsExcluded, normalizedAcpModelCandidates, splitAcpModelValue, splitInlineAcpModelVariant } from "./agent-model-catalog.js"
 import { partWeight, TranscriptCache, transcriptWeight } from "./transcript-cache.js"
@@ -2309,17 +2310,37 @@ export class AcpService {
 
   async #readTitleIndex() {
     this.#titleIndexLoaded = true
+    const merged = await this.#mergeTitleIndexFile(this.#titleIndexPath(), true)
+    if (!merged) return
+    // Older/source-checkout runs stored their bridge-local rename overrides under
+    // ~/.harness-remote/<backend>. The desktop daemon has its own state directory. Import those
+    // names as a fallback so a Session renamed through the CLI keeps its name in the app; the
+    // app's own store still wins when both contain the same id.
+    // DSH is the one backend whose title lives only in the bridge-local store: its ACP adapter
+    // exposes titles but has no rename request. The CLI/source checkout used ~/.harness-remote,
+    // while the desktop daemon uses its own state directory; import that one legacy store.
+    if (path.basename(this.#snapshotDirectory) === "deepseek") {
+      const legacy = path.join(homedir(), ".harness-remote", "deepseek", "session-titles.json")
+      if (legacy !== this.#titleIndexPath()) await this.#mergeTitleIndexFile(legacy, false)
+    }
+  }
+
+  async #mergeTitleIndexFile(file, required) {
     try {
-      const state = JSON.parse(await readFile(this.#titleIndexPath(), "utf8"))
-      if (state?.version !== 1 || !state.titles || typeof state.titles !== "object" || Array.isArray(state.titles)) return
+      const state = JSON.parse(await readFile(file, "utf8"))
+      if (state?.version !== 1 || !state.titles || typeof state.titles !== "object" || Array.isArray(state.titles)) return false
       for (const [sessionID, title] of Object.entries(state.titles)) {
-        if (sessionID && typeof title === "string" && title) this.#titles.set(sessionID, title)
+        if (sessionID && typeof title === "string" && title && !this.#titles.has(sessionID)) {
+          this.#titles.set(sessionID, title)
+        }
       }
+      return true
     } catch (error) {
-      if (error?.code !== "ENOENT") {
+      if (required && error?.code !== "ENOENT") {
         this.#titleIndexLoaded = false
         throw error
       }
+      return error?.code === "ENOENT"
     }
   }
 

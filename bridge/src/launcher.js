@@ -4,6 +4,7 @@ import fs from "node:fs"
 import net from "node:net"
 import { networkInterfaces } from "node:os"
 import path from "node:path"
+import { ensureRuntimeExecutablePath } from "./executable-path.js"
 import { findExecutable, findCodexExecutable } from "./executable-discovery.js"
 import { listAcpProviderProfiles } from "./harness-profiles.js"
 import { spawn } from "node:child_process"
@@ -282,6 +283,9 @@ function spawnNodeEntrypoint(entrypoint, args, username, password) {
 }
 
 async function main() {
+  // A desktop/service launch can arrive with a shorter PATH than the user's shell. Add the known
+  // per-user installer directories before choosing a backend, or an installed harness looks absent.
+  ensureRuntimeExecutablePath()
   const args = process.argv.slice(2)
   if (hasOption(args, "--help")) {
     process.stdout.write(`${launcherUsage()}\n`)

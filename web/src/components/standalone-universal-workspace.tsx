@@ -828,20 +828,23 @@ function MobileSettingsPage({ onClose, onOpenPlugins }: { onClose: () => void; o
                 type="button"
                 className="hr-settings-row-button"
                 data-icon="live"
+                data-multiline
                 disabled={backgroundBusy}
                 onClick={() => void showBackgroundNotification()}
               >
-                <strong>{t("settings.backgroundShow")}</strong>
-                <span role="status" aria-live="polite">
-                  {backgroundBusy
-                    ? "…"
-                    : backgroundResult === "restored"
-                      ? t("settings.backgroundRestored")
-                      : backgroundResult === "noMachines"
-                        ? t("sf.noMachinesConfigured")
-                        : backgroundResult === "unavailable"
-                          ? t("settings.backgroundUnavailable")
-                          : t("settings.backgroundHint")}
+                <span className="hr-settings-row-copy">
+                  <strong>{t("settings.backgroundShow")}</strong>
+                  <span role="status" aria-live="polite">
+                    {backgroundBusy
+                      ? "…"
+                      : backgroundResult === "restored"
+                        ? t("settings.backgroundRestored")
+                        : backgroundResult === "noMachines"
+                          ? t("sf.noMachinesConfigured")
+                          : backgroundResult === "unavailable"
+                            ? t("settings.backgroundUnavailable")
+                            : t("settings.backgroundHint")}
+                  </span>
                 </span>
               </button>
             </div>

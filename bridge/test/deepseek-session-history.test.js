@@ -61,6 +61,9 @@ test("DSH journal history keeps visible turns and joins tool results into Activi
     fs.writeFileSync(path.join(directory, "session.v4.jsonl.zstd"), journal)
 
     const loader = createDeepseekHistoryLoader(root)
+    const journalPath = path.join(directory, "session.v4.jsonl.zstd")
+    assert.equal(await loader.updatedAt(sessionID), fs.statSync(journalPath).mtimeMs, "recent ordering uses the journal mtime, not the session creation time")
+    assert.equal(await loader.updatedAt("missing-session"), undefined)
     const messages = await loader(sessionID)
     assert.deepEqual(messages.map((message) => [message.info.id, message.info.role]), [
       ["user-1", "user"],

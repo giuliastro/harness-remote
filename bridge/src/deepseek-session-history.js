@@ -243,5 +243,15 @@ export function createDeepseekHistoryLoader(sessionRoot = defaultSessionRoot()) 
     }
   }
 
+  loadDeepseekHistory.updatedAt = async (sessionID) => {
+    const file = await locateSession(sessionID)
+    if (!file) return undefined
+    try {
+      return (await stat(file)).mtimeMs
+    } catch {
+      return undefined
+    }
+  }
+
   return loadDeepseekHistory
 }

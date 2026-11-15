@@ -1,6 +1,7 @@
 import { spawn, type ChildProcess } from "node:child_process"
-import { userInfo } from "node:os"
-import { delimiter as platformPathDelimiter } from "node:path"
+import { existsSync } from "node:fs"
+import { homedir, userInfo } from "node:os"
+import { delimiter as platformPathDelimiter, posix as posixPath, win32 as win32Path } from "node:path"
 
 const PATH_START_MARKER = "__HARNESS_REMOTE_PATH_START__"
 const PATH_END_MARKER = "__HARNESS_REMOTE_PATH_END__"
@@ -26,6 +27,49 @@ export function parseLoginShellPathOutput(output: string): string | undefined {
   const value = pathLine.slice("PATH=".length)
   if (!value || /[\u0000\r\n]/.test(value)) return undefined
   return value
+}
+
+/**
+ * Native installers put harness launchers in these per-user directories. A desktop launch can miss
+ * them even when the login-shell probe succeeds, and a shell that times out leaves only the short
+ * inherited PATH. Append the ones that exist so OMP, OpenCode and Claude are discoverable next to
+ * an npm-installed Copilot.
+ */
+export function userExecutableDirectories(
+  environment: NodeJS.ProcessEnv,
+  options: {
+    platform?: NodeJS.Platform
+    homeDirectory?: string
+    exists?: (path: string) => boolean
+  } = {}
+): string[] {
+  const platform = options.platform ?? process.platform
+  const home = options.homeDirectory ?? environment.HOME ?? homedir()
+  const exists = options.exists ?? existsSync
+  // Use the path semantics of the target platform, not the machine running the test. A Linux
+  // fallback directory must keep POSIX separators even when the test suite runs on Windows.
+  const join = platform === "win32" ? win32Path.join : posixPath.join
+  const candidates = platform === "win32"
+    ? [
+        environment.APPDATA ? join(environment.APPDATA, "npm") : "",
+        environment.LOCALAPPDATA ? join(environment.LOCALAPPDATA, "Programs", "nodejs") : ""
+      ]
+    : [
+        join(home, ".local", "bin"),
+        join(home, "bin"),
+        join(home, ".opencode", "bin"),
+        join(home, ".mimocode", "bin"),
+        join(home, ".bun", "bin"),
+        join(home, ".npm-global", "bin"),
+        join(home, ".cargo", "bin")
+      ]
+  return [...new Set(candidates.filter(Boolean))].filter((candidate) => {
+    try {
+      return exists(candidate)
+    } catch {
+      return false
+    }
+  })
 }
 
 export function mergeExecutablePath(
@@ -108,6 +152,8 @@ export async function resolveDesktopRuntimeEnvironment(
   options: {
     platform?: NodeJS.Platform
     delimiter?: string
+    homeDirectory?: string
+    exists?: (path: string) => boolean
     readShellPath?: ShellPathReader
   } = {}
 ): Promise<NodeJS.ProcessEnv> {
@@ -120,10 +166,23 @@ export async function resolveDesktopRuntimeEnvironment(
     shellPath = await (options.readShellPath ?? ((env) => readLoginShellPath(env, { platform })))(environment)
   } catch {
     // Discovery is a reliability enhancement, never a startup dependency. The inherited PATH remains
-    // usable for terminals, CI and machines whose shell startup is slow or intentionally unusual.
-    return resolved
+    // usable for terminals, CI and machines whose shell startup is slow or intentionally unusual;
+    // the known user install directories below still get a chance to fill the gap.
+    shellPath = undefined
   }
-  const mergedPath = mergeExecutablePath(shellPath, environment.PATH, options.delimiter)
+  // Even a successful shell read can omit `~/.local/bin` on a distribution that only exports it
+  // for interactive prompts. The known user install directories are appended last, so they add
+  // reachability without overriding the order the user's shell chooses.
+  const fallbackDirectories = userExecutableDirectories(environment, {
+    platform,
+    ...(options.homeDirectory ? { homeDirectory: options.homeDirectory } : {}),
+    ...(options.exists ? { exists: options.exists } : {})
+  })
+  const mergedPath = mergeExecutablePath(
+    mergeExecutablePath(shellPath, environment.PATH, options.delimiter),
+    fallbackDirectories.join(options.delimiter ?? platformPathDelimiter),
+    options.delimiter
+  )
   if (mergedPath) resolved.PATH = mergedPath
   return resolved
 }

@@ -128,10 +128,10 @@ function sameListedDirectory(left, right) {
   return normalize(left) === normalize(right)
 }
 
-function listedSessionView(session, status, liveUpdatedAt = 0) {
+function listedSessionView(session, status, liveUpdatedAt = 0, historyUpdatedAt = 0) {
   const listedUpdated = Date.parse(session.updatedAt ?? "")
   const listedTimestamp = Number.isFinite(listedUpdated) ? listedUpdated : 0
-  const timestamp = Math.max(listedTimestamp, liveUpdatedAt)
+  const timestamp = Math.max(listedTimestamp, liveUpdatedAt, Number(historyUpdatedAt) || 0)
   return {
     id: session.sessionId,
     title: session.title || `Session ${String(session.sessionId).slice(0, 8)}`,
@@ -229,6 +229,9 @@ export function createBridgeServer({ config, acp, serviceOptions, machineRegistr
     midTurnPrompt: profile.capabilities?.midTurnPrompt
   })
   const hiddenSessionIDs = serviceOptions?.hiddenSessionIDs
+  const historyUpdatedAt = backend === "deepseek" && typeof serviceOptions?.historyLoader?.updatedAt === "function"
+    ? serviceOptions.historyLoader.updatedAt
+    : undefined
   const liveSessionActivity = new Map()
   let sseClients = 0
   const unsubscribeActivity = service.subscribe((event) => {
@@ -302,6 +305,13 @@ export function createBridgeServer({ config, acp, serviceOptions, machineRegistr
       .filter((session) => !hiddenSessionIDs?.has(session.sessionId))
       .filter((session) => !deletedSessionIDs.has(session.sessionId))
     const owned = service.ownedSessionIndex(directory)
+    const historyUpdatedAtByID = new Map()
+    if (historyUpdatedAt) {
+      await Promise.all(listedSessions.map(async (session) => {
+        const updatedAt = await historyUpdatedAt(session.sessionId).catch(() => undefined)
+        if (Number.isFinite(updatedAt)) historyUpdatedAtByID.set(session.sessionId, updatedAt)
+      }))
+    }
     const evidence = await externalEvidence([
       ...listedSessions.map((session) => session.sessionId),
       ...owned.map(({ session }) => session.id)
@@ -314,8 +324,9 @@ export function createBridgeServer({ config, acp, serviceOptions, machineRegistr
           const listedTimestamp = Number.isFinite(listedUpdated) ? listedUpdated : 0
           const view = listedSessionView(
             session,
-            publicSessionStatus(session.sessionId, Math.max(liveUpdatedAt, listedTimestamp), evidence.get(session.sessionId)),
-            liveUpdatedAt
+            publicSessionStatus(session.sessionId, Math.max(liveUpdatedAt, listedTimestamp, historyUpdatedAtByID.get(session.sessionId) ?? 0), evidence.get(session.sessionId)),
+            liveUpdatedAt,
+            historyUpdatedAtByID.get(session.sessionId) ?? 0
           )
           return [view.id, titleOverrides.has(view.id) ? { ...view, title: titleOverrides.get(view.id) } : view]
         })

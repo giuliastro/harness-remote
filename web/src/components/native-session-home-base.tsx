@@ -1763,20 +1763,20 @@ export function NativeSessionHome({
                         <span>{t("sf.machineConnecting")}</span>
                       </div>
                     ) : null}
-                    {state === "online" && pendingAgents.some(({ load }) => load === "loading") ? (
+                    {state === "online" && pendingAgents.length ? (
                       <div className="hr-native-machine-loading" role="status" aria-live="polite">
                         <LoadingIcon size={13} />
-                        <span>{t("sf.loadingHarnessSessions", {
-                          names: pendingAgents.filter(({ load }) => load === "loading").map(({ label }) => label).join(", ")
-                        })}</span>
-                      </div>
-                    ) : null}
-                    {state === "online" && pendingAgents.some(({ load }) => load === "retrying") ? (
-                      <div className="hr-native-machine-loading retrying" role="status" aria-live="polite">
-                        <LoadingIcon size={13} />
-                        <span>{t("sf.waitingHarnessSessions", {
-                          names: pendingAgents.filter(({ load }) => load === "retrying").map(({ label }) => label).join(", ")
-                        })}</span>
+                        <div className="hr-native-machine-loading-copy">
+                          <strong>{t("sf.harnessConnectionTitle")}</strong>
+                          <ul>
+                            {pendingAgents.map(({ label, load }) => (
+                              <li key={`${label}:${load}`}>
+                                <span>{label}</span>
+                                <small>{t(load === "retrying" ? "sf.harnessRetryingState" : "sf.harnessLoadingState")}</small>
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
                       </div>
                     ) : null}
                     {projects.length === 0 && !hasOlderSessions && state !== "loading" && pendingAgents.length === 0 && !(state === "online" && (!snapshotLoaded || reconnecting)) ? (

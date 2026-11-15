@@ -3,12 +3,14 @@ import path from "node:path"
 import { AcpClient } from "./acp-client.js"
 import { createAcpProviderRuntime } from "./acp-provider-runtime.js"
 import { parseConfig, usage } from "./config.js"
+import { ensureRuntimeExecutablePath } from "./executable-path.js"
 import { createHarnessLogWriter } from "./harness-log.js"
 import { harnessProfile } from "./harness-profiles.js"
 import { loadMachineIdentity, MachineRegistry, trackAgentHostLifecycle } from "./machine-registry.js"
 import { createBridgeServer } from "./server.js"
 
 let config
+ensureRuntimeExecutablePath()
 try {
   config = parseConfig(process.argv.slice(2))
 } catch (error) {
