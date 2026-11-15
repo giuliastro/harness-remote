@@ -138,6 +138,24 @@ public class BackgroundAttentionServiceTest {
     }
 
     @Test
+    public void machineLossStaysInStatusWithoutAnUnreachableAlert() throws Exception {
+        startService();
+        waitFor("machine connected", () -> BackgroundAttentionStatus.isMachineConnected(FakeMachineServer.MACHINE_ID), 15_000);
+        NotificationManager manager = (NotificationManager) context.getSystemService(Context.NOTIFICATION_SERVICE);
+        assertNotNull(manager);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            assertNull("machine connection alerts must not have a notification channel",
+                manager.getNotificationChannel("harness_remote_machine_connection"));
+        }
+
+        server.close();
+        waitFor("machine disconnected", () -> !BackgroundAttentionStatus.isMachineConnected(FakeMachineServer.MACHINE_ID), 20_000);
+        assertTrue("the foreground service still reports the connection loss", BackgroundAttentionStatus.running);
+        String connecting = context.getResources().getQuantityString(R.plurals.hr_bg_connecting_machines, 1, 1);
+        waitFor("foreground connection status", () -> connecting.equals(notificationText()), 5_000);
+    }
+
+    @Test
     public void acceptsOnlyAValidatedMachineConfiguration() {
         String json = "[{\"id\":\"m1\",\"name\":\"One\",\"baseUrl\":\"http://127.0.0.1:4097\","
             + "\"username\":\"u\",\"password\":\"p\"},"

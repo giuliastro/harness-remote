@@ -569,12 +569,18 @@
   align-items: center;
   gap: 8px;
   margin: 2px 4px;
-  padding: 7px 9px;
-  border-radius: 8px;
-  color: var(--td3-muted);
-  background: var(--td3-raise-1);
-  font-size: 11px;
-  line-height: 1.4;
+  padding: 9px 11px;
+  border: 1px solid var(--td3-blue-border-soft);
+  border-radius: 10px;
+  color: var(--td3-text-2);
+  background: var(--td3-blue-soft-2);
+  font-size: 11.5px;
+  line-height: 1.45;
+}
+
+.hr-native-machine-loading > svg {
+  flex: none;
+  color: var(--td3-blue-text);
 }
 
 .hr-native-machine-loading > span {
@@ -583,7 +589,13 @@
 }
 
 .hr-native-machine-loading.retrying {
-  color: var(--td3-amber-text, var(--td3-muted));
+  border-color: color-mix(in srgb, var(--td3-yellow) 35%, transparent);
+  color: var(--td3-yellow-text);
+  background: var(--td3-yellow-soft);
+}
+
+.hr-native-machine-loading.retrying > svg {
+  color: var(--td3-yellow-text);
 }
 
 

@@ -1510,7 +1510,7 @@ function NativeSessionsWorkspace({
         style={railWidth === null ? undefined : { ["--hrsf-rail-width" as string]: `${railWidth}px` }}
       >
         <aside className="hr-native-workspace-list">
-          {startupPhase !== "ready" ? (
+          {(machinesLoading || (machines.length > 0 && startupPhase !== "ready")) ? (
             <div className="hr-native-startup-mobile" role="status" aria-live="polite">
               <LoadingIcon size={18} />
               <div>
