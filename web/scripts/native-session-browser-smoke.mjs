@@ -530,16 +530,17 @@ async function assertStartupTransitionContract(browser, viewport, mobile) {
   assert.equal(typeof releaseBlockedSessionList, "function", "startup fixture never reached Session discovery")
 
   const startup = page.locator(".hr-native-workspace-empty.hr-native-startup.connecting")
-  await startup.waitFor({ state: "visible", timeout: 12_000 })
-  assert.match(await startup.innerText(), /Loading.*Session/i, "machine-connected startup must remain in Loading Sessions")
   const mobileStartup = page.locator(".hr-native-startup-mobile")
   if (mobile) {
     await mobileStartup.waitFor({ state: "visible", timeout: 12_000 })
     assert.match(await mobileStartup.innerText(), /Loading.*Session/i, "the phone list must show the same startup phase")
+    assert.equal(await startup.isVisible(), false, "the hidden phone detail must not announce the startup phase twice")
     const bounds = await mobileStartup.boundingBox()
     assert.ok(bounds && bounds.x >= 0 && bounds.x + bounds.width <= viewport.width,
       "the phone startup message must be inside the viewport")
   } else {
+    await startup.waitFor({ state: "visible", timeout: 12_000 })
+    assert.match(await startup.innerText(), /Loading.*Session/i, "machine-connected startup must remain in Loading Sessions")
     assert.equal(await mobileStartup.isVisible(), false, "desktop must use the detail-pane startup message")
   }
   assert.equal(await page.locator(".hr-native-workspace-empty.hr-native-startup.offline").count(), 0, "startup must not claim all machines are disconnected while Sessions are still loading")

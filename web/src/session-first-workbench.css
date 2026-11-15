@@ -1389,6 +1389,14 @@
 }
 
 @media (max-width: 780px), (pointer: coarse) and (max-height: 640px) {
+  .hr-native-workspace-detail:not(.mobile-open) {
+    visibility: hidden;
+  }
+
+  .hr-native-workspace-detail.mobile-open {
+    visibility: visible;
+  }
+
   .hr-native-startup-mobile {
     display: grid;
     grid-template-columns: 30px minmax(0, 1fr);
