@@ -188,6 +188,11 @@ export type SessionStatus = {
   attempt?: number
   message?: string
   next?: number
+  /** Bridge: background tasks a `listening` Session is waiting on. */
+  background?: number
+  /** Bridge: epoch ms since which a `busy` Session has produced no updates. */
+  quietSince?: number
+  source?: string
 }
 
 export type ToolState = {

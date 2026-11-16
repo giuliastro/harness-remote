@@ -264,7 +264,8 @@ export function ConversationStatePill({
   workingLabel,
   startedAt,
   status,
-  detail
+  detail,
+  listeningLabel
 }: {
   working: boolean
   attention: boolean
@@ -272,15 +273,18 @@ export function ConversationStatePill({
   startedAt?: string
   status: string
   detail?: string
+  /** Set while the agent's turn has ended but it is still waiting on background work it started. */
+  listeningLabel?: string
 }) {
   const elapsed = useElapsedSeconds(working && !attention ? startedAt : undefined)
   const outcome = working || attention ? null : conversationOutcome(status)
-  const state = attention ? "attention" : working ? "working" : outcome?.state || "ready"
+  const listening = !attention && !working && !outcome && Boolean(listeningLabel)
+  const state = attention ? "attention" : working || listening ? "working" : outcome?.state || "ready"
   const text = attention
     ? "Needs attention"
     : working
       ? `${workingLabel}${elapsed >= 2 ? ` · ${elapsed}s` : ""}`
-      : outcome?.text || "Ready"
+      : listening ? listeningLabel : outcome?.text || "Ready"
   return <span className={`tdw-conversation-state ${state}`} title={outcome && detail ? detail : undefined}><i aria-hidden="true" /><span>{text}</span></span>
 }
 
@@ -1258,7 +1262,7 @@ ${current}` : text) : current)
     || effortOptions[0]?.modelName
     || (currentModelForPicker?.modelID && currentModelForPicker.modelID !== "default" ? currentModelForPicker.modelID : "Harness default")
   const modelControlsDisabled = !interactionEnabled || working || replyPending || sending || modelsLoading || !targetAgentID
-  const statePill = <ConversationStatePill working={working || replyPending || sending || replySettling || modelBootstrapBlocked} attention={hasAttention} workingLabel={conversationStateLabel} startedAt={sending || modelBootstrapBlocked ? undefined : conversation.currentTurn?.startedAt} status={conversation.status} detail={conversation.error?.message || undefined} />
+  const statePill = <ConversationStatePill working={working || replyPending || sending || replySettling || modelBootstrapBlocked} attention={hasAttention} workingLabel={conversationStateLabel} startedAt={sending || modelBootstrapBlocked ? undefined : conversation.currentTurn?.startedAt} status={conversation.status} detail={conversation.error?.message || undefined} listeningLabel={conversation.backgroundWork ? t("sf.statusListening", { count: conversation.backgroundWork }) : undefined} />
 
   return (
     <div className="tdw-work-thread-conversation">
@@ -1288,7 +1292,7 @@ ${current}` : text) : current)
           </label>
         </div>
         {toolbarAccessory}
-        <ConversationStatePill working={working || replyPending || sending || replySettling || modelBootstrapBlocked} attention={hasAttention} workingLabel={conversationStateLabel} startedAt={sending || modelBootstrapBlocked ? undefined : conversation.currentTurn?.startedAt} status={conversation.status} detail={conversation.error?.message || undefined} />
+        <ConversationStatePill working={working || replyPending || sending || replySettling || modelBootstrapBlocked} attention={hasAttention} workingLabel={conversationStateLabel} startedAt={sending || modelBootstrapBlocked ? undefined : conversation.currentTurn?.startedAt} status={conversation.status} detail={conversation.error?.message || undefined} listeningLabel={conversation.backgroundWork ? t("sf.statusListening", { count: conversation.backgroundWork }) : undefined} />
       </div>
 
       {routeChanged ? (

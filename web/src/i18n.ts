@@ -547,6 +547,10 @@ export type TranslationKey =
   | 'sf.statusFresh'
   | 'sf.statusRetrying'
   | 'sf.statusWaiting'
+  | 'sf.statusListening'
+  | 'sf.statusQuiet'
+  | 'sf.noticeListening'
+  | 'sf.noticeQuiet'
   | 'sf.untitledSession'
   | 'sf.external'
   | 'sf.restrictedCount'
@@ -1348,6 +1352,10 @@ const translations: Record<LanguageCode, Partial<Record<TranslationKey, string>>
     'sf.statusFresh': 'Just finished',
     'sf.statusRetrying': 'Retrying',
     'sf.statusWaiting': 'Waiting',
+    'sf.statusListening': 'Listening · {count} in background',
+    'sf.statusQuiet': 'Working · quiet {minutes} min',
+    'sf.noticeListening': 'Listening for {count} background tasks. It will report back when they finish; you can keep writing.',
+    'sf.noticeQuiet': 'No updates from the agent for {minutes} min. A long command may still be running; if it seems stuck, press Stop.',
     'sf.untitledSession': 'Untitled {agent} Session',
     'sf.external': 'external',
     'sf.restrictedCount': '{count} restricted',
@@ -2149,6 +2157,10 @@ const translations: Record<LanguageCode, Partial<Record<TranslationKey, string>>
     'sf.statusFresh': 'Appena finita',
     'sf.statusRetrying': 'Nuovo tentativo',
     'sf.statusWaiting': 'In attesa',
+    'sf.statusListening': 'In ascolto · {count} in background',
+    'sf.statusQuiet': 'In corso · fermo da {minutes} min',
+    'sf.noticeListening': 'In ascolto di {count} attività in background. Riprenderà da solo quando finiscono; puoi continuare a scrivere.',
+    'sf.noticeQuiet': 'Nessun aggiornamento dall\'agente da {minutes} min. Un comando lungo potrebbe essere ancora in esecuzione; se sembra bloccato, premi Stop.',
     'sf.untitledSession': 'Sessione {agent} senza titolo',
     'sf.external': 'esterna',
     'sf.restrictedCount': '{count} limitazioni',
@@ -2950,6 +2962,10 @@ const translations: Record<LanguageCode, Partial<Record<TranslationKey, string>>
     'sf.statusFresh': '剛完成',
     'sf.statusRetrying': '重試中',
     'sf.statusWaiting': '等待中',
+    'sf.statusListening': '聆聽中 · {count} 個背景任務',
+    'sf.statusQuiet': '執行中 · {minutes} 分鐘無動靜',
+    'sf.noticeListening': '正在等待 {count} 個背景任務。完成後會自動回報；你可以繼續輸入。',
+    'sf.noticeQuiet': '代理已有 {minutes} 分鐘沒有更新。長時間指令可能仍在執行；若似乎卡住，請按停止。',
     'sf.untitledSession': '未命名的 {agent} 工作階段',
     'sf.external': '外部',
     'sf.restrictedCount': '{count} 項限制',
@@ -3751,6 +3767,10 @@ const translations: Record<LanguageCode, Partial<Record<TranslationKey, string>>
     'sf.statusFresh': '刚完成',
     'sf.statusRetrying': '重试中',
     'sf.statusWaiting': '等待中',
+    'sf.statusListening': '监听中 · {count} 个后台任务',
+    'sf.statusQuiet': '执行中 · {minutes} 分钟无动静',
+    'sf.noticeListening': '正在等待 {count} 个后台任务。完成后会自动回报；你可以继续输入。',
+    'sf.noticeQuiet': '代理已有 {minutes} 分钟没有更新。长时间命令可能仍在运行；若似乎卡住，请按停止。',
     'sf.untitledSession': '未命名的 {agent} 会话',
     'sf.external': '外部',
     'sf.restrictedCount': '{count} 项限制',
@@ -4552,6 +4572,10 @@ const translations: Record<LanguageCode, Partial<Record<TranslationKey, string>>
     'sf.statusFresh': 'Acabou agora',
     'sf.statusRetrying': 'Tentando novamente',
     'sf.statusWaiting': 'Aguardando',
+    'sf.statusListening': 'Ouvindo · {count} em segundo plano',
+    'sf.statusQuiet': 'Em andamento · parado há {minutes} min',
+    'sf.noticeListening': 'Aguardando {count} tarefas em segundo plano. Ele retomará sozinho quando terminarem; você pode continuar escrevendo.',
+    'sf.noticeQuiet': 'Sem atualizações do agente há {minutes} min. Um comando longo pode ainda estar em execução; se parecer travado, pressione Parar.',
     'sf.untitledSession': 'Sessão {agent} sem título',
     'sf.external': 'externa',
     'sf.restrictedCount': '{count} restritas',

@@ -31,7 +31,8 @@ const ACTIVE_STATUS = new Set([
   "in-progress",
   "retry",
   "retrying",
-  "waiting"
+  "waiting",
+  "listening"
 ])
 
 const ATTENTION_STATUS = new Set([

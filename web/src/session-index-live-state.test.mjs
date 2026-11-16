@@ -309,3 +309,11 @@ test("a foregrounded surface drops every transient status without retiring a ter
   )
   assert.equal(sessionIndexInvalidationRevision(), before + 1, "dropping resume statuses must invalidate the rail once")
 })
+
+test("listening and quiet status details survive live-event normalization", () => {
+  noteSessionIndexLiveEvent(base, taskDeskLiveEvent("session.status", { type: "session.status", properties: { sessionID: "ses_l", status: { type: "listening", background: 3, source: "claude-journal" } } }))
+  assert.equal(liveSessionIndexStatus(base, "ses_l")?.type, "listening")
+  assert.equal(liveSessionIndexStatus(base, "ses_l")?.background, 3)
+  noteSessionIndexLiveEvent(base, taskDeskLiveEvent("session.status", { type: "session.status", properties: { sessionID: "ses_q", status: { type: "busy", quietSince: 1700000000000 } } }))
+  assert.equal(liveSessionIndexStatus(base, "ses_q")?.quietSince, 1700000000000)
+})

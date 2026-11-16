@@ -14,6 +14,7 @@ import type { ConversationContinueInput, ConversationController } from "./conver
 import type { ConversationRuntime, ConversationTurn } from "./conversation-runtime"
 import type { MessageEnvelope, ModelSelection, ServerConfig } from "./types"
 import { messageText } from "./message-content"
+import { listeningBackgroundCount, statusDetailFields } from "./session-status-detail"
 
 // Keep the value stable so drafts/local UI identity survive the architecture migration.
 const NATIVE_CONVERSATION_ID_PREFIX = "native-session-v3:"
@@ -57,6 +58,8 @@ type NativeConversationEntry = {
   createdAt: number
   updatedAt: number
   statusType: string
+  statusBackground: number | null
+  statusQuietSince: number | null
   forcedStatus: "running" | "cancelled" | null
   // First terminal-looking OpenCode observation. Normally this is an idle status edge; when the
   // legacy status endpoint omits the Session it can instead be the newest assistant error envelope.
@@ -659,6 +662,8 @@ function conversationSnapshot(entry: NativeConversationEntry): ConversationRunti
     currentTurn: current,
     turns,
     error: entry.error,
+    ...(entry.statusBackground ? { backgroundWork: entry.statusBackground } : {}),
+    ...(entry.statusQuietSince ? { quietSince: entry.statusQuietSince } : {}),
     createdAt: iso(entry.createdAt),
     updatedAt: iso(entry.updatedAt),
     ...(status === "running" ? {} : { finishedAt: iso(entry.updatedAt) })
@@ -1014,7 +1019,14 @@ async function refreshStatus(entry: NativeConversationEntry): Promise<void> {
     }
 
     entry.statusType = next
+    const detail = statuses[entry.target.sessionID]
+    const background = next === "listening" ? listeningBackgroundCount(detail) : null
+    const quietSince = next === "busy" ? statusDetailFields(detail).quietSince ?? null : null
+    const detailChanged = background !== entry.statusBackground || quietSince !== entry.statusQuietSince
+    entry.statusBackground = background
+    entry.statusQuietSince = quietSince
     if (!nativeSessionIsWorking(next)) entry.forcedStatus = null
+    if (detailChanged) notify(entry)
   } catch {
     // Status is enrichment. The v3 transcript remains the authority when this lightweight read fails.
   }
@@ -1166,6 +1178,8 @@ export function registerNativeSessionV3Adapter(
       createdAt: now,
       updatedAt: now,
       statusType: target.status?.type || "idle",
+      statusBackground: target.status?.type === "listening" ? listeningBackgroundCount(target.status) : null,
+      statusQuietSince: statusDetailFields(target.status).quietSince ?? null,
       forcedStatus: null,
       openCodeIdleObservedAt: null,
       openCodeRecoveryWatchUntil: 0,
@@ -1186,6 +1200,10 @@ export function registerNativeSessionV3Adapter(
   } else {
     entry.target = target
     entry.statusType = target.status?.type || entry.statusType
+    if (target.status?.type) {
+      entry.statusBackground = target.status.type === "listening" ? listeningBackgroundCount(target.status) : null
+      entry.statusQuietSince = target.status.type === "busy" ? statusDetailFields(target.status).quietSince ?? null : null
+    }
     entry.currentModel = target.model ?? entry.currentModel
     if (!target.requiresExplicitClaim) entry.writerReady = true
   }

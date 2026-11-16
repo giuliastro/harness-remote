@@ -91,3 +91,35 @@ test("a Session the adapter lost keeps the prompt and gets its reply as a messag
     "user:first", "assistant:FINISHED", "user:next", "assistant:re: next"
   ])
 })
+
+test("an adapter that dies mid-turn leaves the turn failed, not quietly finished", async () => {
+  const acp = new ClaudeLikeAcp()
+  await acp.start()
+  // The turn hangs until the adapter exits; its journal holds the prompt and nothing after it.
+  let rejectPrompt
+  const request = acp.request.bind(acp)
+  acp.request = async (method, params) => {
+    if (method !== "session/prompt") return request(method, params)
+    if (!acp.open.has(params.sessionId)) throw new Error("Internal error: Session not found")
+    acp.journal.push({ role: "user", id: "u_hang", text: "go" })
+    return new Promise((resolve, reject) => { rejectPrompt = reject })
+  }
+  const service = new AcpService(acp, { recoverMissingSessionOnPrompt: true, replayAuthoritative: true })
+  await service.messages(SESSION.sessionId)
+  await service.prompt(SESSION.sessionId, "go")
+  await new Promise((resolve) => setImmediate(resolve))
+  assert.equal(service.status(SESSION.sessionId).type, "busy")
+
+  rejectPrompt(new Error("ACP adapter exited (1)"))
+  acp.exit()
+  await acp.start()
+  await new Promise((resolve) => setTimeout(resolve, 50))
+
+  // Reading the Session reloads it from the adapter's replay, which has no record of the failure.
+  const messages = await service.messages(SESSION.sessionId)
+  assert.equal(service.status(SESSION.sessionId).type, "idle")
+  assert.deepEqual(transcript(messages).slice(0, 3), ["user:first", "assistant:FINISHED", "user:go"])
+  const failed = messages.at(-1)
+  assert.equal(failed.info.role, "assistant")
+  assert.match(failed.info.error?.message ?? "", /stopped unexpectedly during this turn \(exit 1\)/)
+})

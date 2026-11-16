@@ -30,6 +30,9 @@ export type ConversationRuntime = {
   status: string
   /** Short-lived harness lifecycle detail, for example OpenCode's current retry reason. */
   activityDetail?: string | null
+  /** Native bridge status detail: `listening` background task count / `busy` quiet-since epoch ms. */
+  backgroundWork?: number | null
+  quietSince?: number | null
   directory: string
   currentTurn: ConversationTurn | null
   turns: ConversationTurn[]

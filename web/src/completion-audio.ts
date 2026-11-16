@@ -2,7 +2,7 @@ import { CapacitorHttp } from "@capacitor/core"
 import type { SessionStatus } from "./types"
 
 const COMPLETION_AUDIO_SUFFIX = "audio/staplebops-01.aac"
-const WORKING_STATES = new Set(["busy", "retry", "waiting"])
+const WORKING_STATES = new Set(["busy", "retry", "waiting", "listening"])
 const PROMPT_PATH = /\/session\/([^/?]+)\/(?:prompt_async|command)(?:\?|$)/
 const ABORT_PATH = /\/session\/([^/?]+)\/abort(?:\?|$)/
 

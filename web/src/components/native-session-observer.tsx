@@ -29,6 +29,7 @@ import {
 import type { AgentModelScope } from "../taskClient"
 import type { CommandInfo, MachineAgentHost, MessageEnvelope } from "../types"
 import { LoadingIcon } from "../Icons"
+import { useTranslator } from "../useTranslator"
 import { CrossMachineContinuePanel } from "./cross-machine-continue-panel"
 import { NativeSessionLineagePanel } from "./native-session-lineage-panel"
 import { NativeSessionOutcomePanel } from "./native-session-outcome-panel"
@@ -183,6 +184,7 @@ export function NativeSessionObserver({
   onConnectionIssue,
   surfaceViewRevision = 0
 }: Props) {
+  const t = useTranslator()
   const [conversation, setConversation] = useState<ConversationRuntime | null>(null)
   const [controller, setController] = useState<ConversationController | null>(null)
   const [transcriptRefreshToken, setTranscriptRefreshToken] = useState(0)
@@ -459,6 +461,18 @@ export function NativeSessionObserver({
       {presentedConversation.activityDetail ? (
         <div className="tdw-connection-notice" role="status" aria-live="polite">
           <strong>OpenCode is retrying.</strong> {presentedConversation.activityDetail}
+        </div>
+      ) : null}
+
+      {presentedConversation.backgroundWork ? (
+        <div className="tdw-connection-notice hr-listening-notice" role="status" aria-live="polite">
+          {t("sf.noticeListening", { count: presentedConversation.backgroundWork })}
+        </div>
+      ) : null}
+
+      {presentedConversation.quietSince && nativeSessionIsWorking(presentedConversation.status) ? (
+        <div className="tdw-connection-notice" role="alert">
+          {t("sf.noticeQuiet", { minutes: Math.max(1, Math.floor((Date.now() - presentedConversation.quietSince) / 60_000)) })}
         </div>
       ) : null}
 

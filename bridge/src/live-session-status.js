@@ -50,7 +50,7 @@ function statusType(status) {
  */
 export function overlayLiveStatus(bridgeStatus, evidence) {
   if (statusType(bridgeStatus) === "busy") return bridgeStatus
-  if (evidence && (evidence.type === "busy" || evidence.type === "attention")) return evidence
+  if (evidence && (evidence.type === "busy" || evidence.type === "attention" || evidence.type === "listening")) return evidence
   return bridgeStatus
 }
 
@@ -154,7 +154,7 @@ function createJournalTurnProbe({ scan, readState, staleMs, rescanIntervalMs = 3
     return locations.get(sessionID)
   }
 
-  return async function journalLiveStatus(sessionID) {
+  async function journalLiveStatus(sessionID) {
     if (!isSafeSessionFileName(sessionID)) return undefined
     const file = await locate(sessionID)
     if (!file) return undefined
@@ -175,6 +175,9 @@ function createJournalTurnProbe({ scan, readState, staleMs, rescanIntervalMs = 3
     }
     return isLiveWorking(cached.turnState, cached.lastActivityAt, at, staleMs) ? { type: "busy", source: "journal" } : undefined
   }
+  // The same index serves other readers of these journals (see createClaudeBackgroundWorkReader).
+  journalLiveStatus.locate = async (sessionID) => isSafeSessionFileName(sessionID) ? locate(sessionID) : undefined
+  return journalLiveStatus
 }
 
 /**
@@ -340,6 +343,10 @@ export async function readClaudeSessionRegistry(registryDir, { isAlive = process
     return undefined
   }
   const sessions = new Map()
+  // The working directory each live Session runs in. It names the Session's transcript folder, so a
+  // Session started a moment ago can be found before the next full index scan (see claudeJournalPath).
+  const cwds = new Map()
+  Object.defineProperty(sessions, "cwds", { value: cwds })
   await Promise.all(names.filter((name) => /^\d+\.json$/.test(name)).map(async (name) => {
     let entry
     try {
@@ -351,6 +358,7 @@ export async function readClaudeSessionRegistry(registryDir, { isAlive = process
     if (!isSafeSessionFileName(entry?.sessionId) || !isAlive(entry.pid)) return
     const status = entry.status === "busy" ? "busy" : "idle"
     if (sessions.get(entry.sessionId) !== "busy") sessions.set(entry.sessionId, status)
+    if (typeof entry.cwd === "string" && entry.cwd) cwds.set(entry.sessionId, entry.cwd)
   }))
   return sessions
 }
@@ -385,6 +393,143 @@ function createClaudeRegistryReader({
   }
 }
 
+/** Background work older than this is not waited on: Claude caps a background shell at two hours. */
+export const CLAUDE_BACKGROUND_WORK_MAX_AGE_MS = 6 * 60 * 60_000
+const CLAUDE_BACKGROUND_LOOKBACK_BYTES = 8 * 1024 * 1024
+const TASK_NOTIFICATION = /<task-notification>([\s\S]*?)<\/task-notification>/g
+const TASK_RUNNING_STATUSES = new Set(["running", "started", "in_progress", "pending"])
+
+function stringContent(content) {
+  if (typeof content === "string") return [content]
+  if (!Array.isArray(content)) return []
+  return content.flatMap((part) => typeof part?.text === "string" ? [part.text]
+    : typeof part?.content === "string" ? [part.content]
+      : [])
+}
+
+/** Tool-use ids whose background work has ended, from the task notifications in one record. */
+function finishedBackgroundWork(record) {
+  const texts = record?.type === "queue-operation"
+    ? [typeof record.content === "string" ? record.content : ""]
+    : record?.type === "user" ? stringContent(record.message?.content) : []
+  const finished = []
+  for (const text of texts) {
+    if (!text.includes("<task-notification>")) continue
+    for (const [, body] of text.matchAll(TASK_NOTIFICATION)) {
+      const toolUseID = /<tool-use-id>([^<]+)<\/tool-use-id>/.exec(body)?.[1]?.trim()
+      const status = /<status>([^<]+)<\/status>/.exec(body)?.[1]?.trim().toLowerCase()
+      if (toolUseID && !TASK_RUNNING_STATUSES.has(status)) finished.push(toolUseID)
+    }
+  }
+  return finished
+}
+
+/**
+ * Count the background work a Claude Code Session started and has not heard back from: tool calls
+ * made with `run_in_background` (shells, subagents) whose task notification has not arrived yet.
+ *
+ * Claude Code ends the turn that starts such work and wakes the Session with a new turn when the
+ * work finishes. In between, its process reports idle, so without this the Session read as finished
+ * while it was in fact waiting to report back. A call whose tool result was an error never started;
+ * a resume after a crash journals a notification for every orphaned shell, which closes it here too.
+ */
+export async function readClaudeBackgroundWork(file, {
+  now = Date.now(),
+  maxAgeMs = CLAUDE_BACKGROUND_WORK_MAX_AGE_MS,
+  lookbackBytes = CLAUDE_BACKGROUND_LOOKBACK_BYTES,
+  fileStat
+} = {}) {
+  const info = fileStat ?? await stat(file)
+  const handle = await open(file, "r")
+  const closed = new Set()
+  const pending = []
+  try {
+    const floor = Math.max(0, info.size - lookbackBytes)
+    for await (const { line, offset } of scanLinesBackward(handle, { from: info.size })) {
+      if (offset < floor) break
+      const text = line.toString("utf8")
+      // Cheap pre-filter: only these records can open or close background work.
+      if (!text.includes("run_in_background") && !text.includes("task-notification") && !text.includes("\"is_error\":true")) continue
+      let record
+      try {
+        record = JSON.parse(text.replace(/\r$/, ""))
+      } catch {
+        continue
+      }
+      if (record?.isSidechain === true) continue
+      for (const toolUseID of finishedBackgroundWork(record)) closed.add(toolUseID)
+      const content = Array.isArray(record?.message?.content) ? record.message.content : []
+      if (record?.type === "user") {
+        for (const part of content) {
+          if (part?.type === "tool_result" && part.is_error === true && typeof part.tool_use_id === "string") closed.add(part.tool_use_id)
+        }
+      }
+      if (record?.type === "assistant") {
+        const startedAt = Date.parse(record.timestamp ?? "")
+        if (Number.isFinite(startedAt) && now - startedAt > maxAgeMs) break
+        for (const part of content) {
+          if (part?.type === "tool_use" && part.input?.run_in_background === true && typeof part.id === "string" && !closed.has(part.id)) {
+            pending.push({ toolUseID: part.id, tool: part.name, startedAt: Number.isFinite(startedAt) ? startedAt : undefined })
+          }
+        }
+      }
+    }
+  } finally {
+    await handle.close()
+  }
+  return { mtimeMs: info.mtimeMs, size: info.size, pending }
+}
+
+/** Per-Session reader for readClaudeBackgroundWork that only rereads a journal after it changed. */
+export function createClaudeBackgroundWorkReader({ locate, now = () => Date.now(), maxEntries = 4096 } = {}) {
+  const results = new BoundedLru({ maxEntries })
+  return async function backgroundWork(sessionID, cwd) {
+    if (typeof locate !== "function" || !isSafeSessionFileName(sessionID)) return 0
+    const file = await locate(sessionID, cwd)
+    if (!file) return 0
+    let info
+    try {
+      info = await stat(file)
+    } catch {
+      results.delete(sessionID)
+      return 0
+    }
+    const at = now()
+    let cached = results.get(sessionID)
+    if (!cached || cached.file !== file || cached.mtimeMs !== info.mtimeMs || cached.size !== info.size) {
+      const parsed = await readClaudeBackgroundWork(file, { now: at, fileStat: info })
+      cached = { file, mtimeMs: parsed.mtimeMs, size: parsed.size, pending: parsed.pending }
+      results.set(sessionID, cached)
+    }
+    return cached.pending.filter((work) => !work.startedAt || at - work.startedAt <= CLAUDE_BACKGROUND_WORK_MAX_AGE_MS).length
+  }
+}
+
+/**
+ * Claude Code keeps a Session's transcript at `projects/<cwd with every non-alphanumeric character
+ * replaced by "-">/<id>.jsonl`. The full index scan is throttled, so a Session that started after
+ * the last scan was invisible for up to its interval: a turn that started background work read idle
+ * for those seconds, long enough to post a premature Ready. Try the direct path first, then the index.
+ */
+export function claudeJournalPath(projectsRoot, cwd, sessionID) {
+  if (typeof cwd !== "string" || !cwd || !isSafeSessionFileName(sessionID)) return undefined
+  return path.join(projectsRoot, cwd.replace(/[^A-Za-z0-9]/g, "-"), `${sessionID}.jsonl`)
+}
+
+function claudeJournalLocator(projectsRoot, transcript) {
+  return async (sessionID, cwd) => {
+    const direct = claudeJournalPath(projectsRoot, cwd, sessionID)
+    if (direct) {
+      try {
+        if ((await stat(direct)).isFile()) return direct
+      } catch {
+        // Not there (a long cwd is shortened differently); the index finds it.
+      }
+    }
+    return transcript.locate(sessionID)
+  }
+}
+
 export function createClaudeLiveStatusProbe({
   registryDir = defaultClaudeSessionRegistryDir(),
   registryTtlMs = 2_000,
@@ -394,11 +539,22 @@ export function createClaudeLiveStatusProbe({
 } = {}) {
   const transcript = createClaudeTranscriptStatusProbe({ ...options, now })
   const currentRegistry = createClaudeRegistryReader({ registryDir, registryTtlMs, isAlive, now })
+  const projectsRoot = options.projectsRoot ?? defaultClaudeProjectsRoot()
+  const backgroundWork = createClaudeBackgroundWorkReader({ locate: claudeJournalLocator(projectsRoot, transcript), now })
 
   return async function claudeLiveStatus(sessionID) {
     if (!isSafeSessionFileName(sessionID)) return undefined
     const sessions = await currentRegistry()
-    if (sessions) return sessions.get(sessionID) === "busy" ? { type: "busy", source: "claude-session-registry" } : undefined
+    if (sessions) {
+      const state = sessions.get(sessionID)
+      if (state === "busy") return { type: "busy", source: "claude-session-registry" }
+      // Idle but still running: the process that would report back is alive and waiting on work.
+      if (state === "idle") {
+        const background = await backgroundWork(sessionID, sessions.cwds?.get(sessionID))
+        if (background > 0) return { type: "listening", background, source: "claude-journal" }
+      }
+      return undefined
+    }
     return transcript(sessionID)
   }
 }
@@ -417,13 +573,20 @@ export function createClaudeSessionIdleGuard({
   registryDir = defaultClaudeSessionRegistryDir(),
   registryTtlMs = 2_000,
   isAlive,
-  now = () => Date.now()
+  now = () => Date.now(),
+  projectsRoot
 } = {}) {
   const currentRegistry = createClaudeRegistryReader({ registryDir, registryTtlMs, isAlive, now })
+  // Claude's registry reads idle while background work it started is still running, and closing the
+  // Session then kills that work. The journal says whether any is still due to report back.
+  const root = projectsRoot ?? defaultClaudeProjectsRoot()
+  const transcript = createClaudeTranscriptStatusProbe({ now, projectsRoot: root })
+  const backgroundWork = createClaudeBackgroundWorkReader({ locate: claudeJournalLocator(root, transcript), now })
   return async function claudeSessionIsIdle(sessionID) {
     if (!isSafeSessionFileName(sessionID)) return false
     const sessions = await currentRegistry()
-    return sessions?.get(sessionID) === "idle"
+    if (sessions?.get(sessionID) !== "idle") return false
+    return (await backgroundWork(sessionID, sessions.cwds?.get(sessionID)).catch(() => 1)) === 0
   }
 }
 

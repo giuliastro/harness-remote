@@ -32,7 +32,8 @@ final class SessionOutcomeParser {
         } else if ("session.status".equals(type)) {
             JSONObject status = properties == null ? null : properties.optJSONObject("status");
             String statusType = status == null ? "" : status.optString("type", "").trim().toLowerCase(java.util.Locale.US);
-            if ("busy".equals(statusType) || "retry".equals(statusType) || "waiting".equals(statusType)) {
+            if ("busy".equals(statusType) || "retry".equals(statusType) || "waiting".equals(statusType)
+                || "listening".equals(statusType)) {
                 kind = SessionOutcomeEvent.Kind.WORKING;
             } else if ("idle".equals(statusType)) {
                 kind = SessionOutcomeEvent.Kind.IDLE;
