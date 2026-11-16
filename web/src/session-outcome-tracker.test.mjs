@@ -43,3 +43,22 @@ test("scopes are independent and a removed scope is forgotten", () => {
   assert.equal(tracker.hasWork("m:claude"), false)
   assert.deepEqual(tracker.observe("m:claude", { a: { type: "idle" } }), [], "a forgotten scope starts again from a baseline")
 })
+
+test("busy to listening is not an outcome; listening to idle is Ready exactly once", () => {
+  const tracker = new SessionOutcomeTracker()
+  tracker.observe("m:claude", { a: { type: "idle" } })
+  tracker.observe("m:claude", { a: { type: "busy" } })
+  assert.deepEqual(tracker.observe("m:claude", { a: { type: "listening", background: 2 } }), [])
+  assert.equal(tracker.hasWork("m:claude"), true)
+  assert.deepEqual(tracker.observe("m:claude", { a: { type: "listening", background: 1 } }), [])
+  assert.deepEqual(tracker.observe("m:claude", { a: { type: "idle" } }), [{ kind: "ready", sessionID: "a" }])
+  assert.deepEqual(tracker.observe("m:claude", { a: { type: "idle" } }), [])
+})
+
+test("listening to busy to idle is one Ready", () => {
+  const tracker = new SessionOutcomeTracker()
+  tracker.observe("m:claude", { a: { type: "busy" } })
+  assert.deepEqual(tracker.observe("m:claude", { a: { type: "listening", background: 1 } }), [])
+  assert.deepEqual(tracker.observe("m:claude", { a: { type: "busy" } }), [])
+  assert.deepEqual(tracker.observe("m:claude", { a: { type: "idle" } }), [{ kind: "ready", sessionID: "a" }])
+})

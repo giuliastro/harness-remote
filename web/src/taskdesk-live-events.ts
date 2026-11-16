@@ -21,6 +21,8 @@ export type TaskDeskLiveEvent = {
   statusMessage?: string
   statusAttempt?: number
   statusNext?: number
+  statusBackground?: number
+  statusQuietSince?: number
   errorMessage?: string
 }
 
@@ -81,6 +83,8 @@ export function taskDeskLiveEvent(name: string | undefined, data: unknown): Task
   const statusMessage = text(status?.message)
   const statusAttempt = finiteNumber(status?.attempt)
   const statusNext = finiteNumber(status?.next)
+  const statusBackground = finiteNumber(status?.background)
+  const statusQuietSince = finiteNumber(status?.quietSince)
   const errorMessage = type === "session.error" ? lifecycleErrorMessage(properties?.error) : undefined
   return {
     type,
@@ -89,6 +93,8 @@ export function taskDeskLiveEvent(name: string | undefined, data: unknown): Task
     ...(statusMessage ? { statusMessage } : {}),
     ...(statusAttempt !== undefined ? { statusAttempt } : {}),
     ...(statusNext !== undefined ? { statusNext } : {}),
+    ...(statusBackground !== undefined ? { statusBackground } : {}),
+    ...(statusQuietSince !== undefined ? { statusQuietSince } : {}),
     ...(errorMessage ? { errorMessage } : {})
   }
 }

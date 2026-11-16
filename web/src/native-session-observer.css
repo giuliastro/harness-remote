@@ -62,6 +62,13 @@
   line-height: 1.4;
 }
 
+/* Waiting on background work is information, not a problem: blue, like the loading states. */
+.hr-native-session-observer .tdw-connection-notice.hr-listening-notice {
+  border-color: var(--td3-blue-border-soft, rgba(79, 124, 255, 0.24));
+  color: var(--td3-blue-text, #1c47bd);
+  background: var(--td3-blue-soft-2, rgba(79, 124, 255, 0.08));
+}
+
 .hr-native-lineage {
   flex: 0 0 auto;
   margin: 0 10px 8px;

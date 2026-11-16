@@ -9,7 +9,8 @@ assert.match(main, /installCompletionAudioGuard\(\)/, "completion guard must be 
 assert.match(source, /prompt_async\|command/, "prompt and command submissions must arm completion tracking")
 assert.match(source, /\/abort/, "abort must cancel an armed completion")
 assert.match(source, /\/session\/status/, "session status is the authoritative completion source")
-assert.match(source, /WORKING_STATES = new Set\(\["busy", "retry", "waiting"\]\)/)
+// A Session listening for background work it started has not finished: no completion sound yet.
+assert.match(source, /WORKING_STATES = new Set\(\["busy", "retry", "waiting", "listening"\]\)/)
 assert.match(source, /if \(!entry\.sawWorking && !entry\.sawAssistantActivity\) continue/, "idle before work starts must not play")
 assert.match(source, /noteAssistantActivity\(\)/, "the old first-fragment sound request must be suppressed")
 assert.match(source, /primePlayback\(\)/, "playback must be primed at user submission time for native WebView")

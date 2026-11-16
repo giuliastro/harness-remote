@@ -590,7 +590,7 @@ public final class BackgroundAttentionService extends Service {
 
         private static boolean isWorkingStatus(String status) {
             return "busy".equals(status) || "starting".equals(status)
-                || "retry".equals(status) || "working".equals(status);
+                || "retry".equals(status) || "working".equals(status) || "listening".equals(status);
         }
 
         private List<AgentInfo> loadAgents() throws Exception {

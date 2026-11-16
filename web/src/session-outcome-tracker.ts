@@ -10,7 +10,7 @@ export type SessionOutcome = { kind: "ready" | "failed"; sessionID: string }
 
 type SessionStatusSnapshot = Record<string, { type?: string } | string | undefined>
 
-const WORKING = new Set(["busy", "retry", "starting", "working", "running"])
+const WORKING = new Set(["busy", "retry", "starting", "working", "running", "listening"])
 const FAILED = new Set(["error", "failed"])
 
 export function sessionStatusType(value: SessionStatusSnapshot[string]): string {

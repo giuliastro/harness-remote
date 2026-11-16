@@ -1,4 +1,5 @@
 import type { ServerConfig, SessionStatus } from "./types.js"
+import { statusDetailFields } from "./session-status-detail.ts"
 
 /**
  * Session-index invalidations are intentionally coarser than transcript streaming. Lifecycle edges
@@ -37,6 +38,8 @@ type LiveEvent = {
   statusMessage?: string
   statusAttempt?: number
   statusNext?: number
+  statusBackground?: number
+  statusQuietSince?: number
   errorMessage?: string
 }
 
@@ -176,7 +179,8 @@ export function noteSessionIndexLiveEvent(
       type: event.status,
       ...(event.statusAttempt !== undefined ? { attempt: event.statusAttempt } : {}),
       ...(event.statusMessage ? { message: event.statusMessage } : {}),
-      ...(event.statusNext !== undefined ? { next: event.statusNext } : {})
+      ...(event.statusNext !== undefined ? { next: event.statusNext } : {}),
+      ...statusDetailFields({ background: event.statusBackground, quietSince: event.statusQuietSince })
     }
   }
 

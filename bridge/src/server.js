@@ -24,6 +24,26 @@ const MAX_MESSAGE_PAGE = 500
 export const CLAUDE_REPORTED_BUSY_STALE_MS = 360_000
 
 /**
+ * A turn that has produced nothing for this long gets `quietSince` on its status, so a client can
+ * say so and offer Stop instead of spinning silently. The prompt watchdog stretches to two hours
+ * while a tool call is open, and a request that hangs inside the harness was seen spinning for an
+ * hour and a half. Fifteen minutes is longer than Claude Code lets a foreground command run.
+ */
+export const QUIET_TURN_MS = 15 * 60_000
+
+/** Add `quietSince` to a busy status whose session/prompt has been silent for QUIET_TURN_MS. */
+export function withQuietSince(status, sessionID, pendingRequests, now = Date.now()) {
+  if (status?.type !== "busy") return status
+  let newestActivity = 0
+  for (const pending of Array.isArray(pendingRequests) ? pendingRequests : []) {
+    if (pending?.method !== "session/prompt" || pending.sessionID !== sessionID || !Number.isFinite(pending.idleMs)) continue
+    newestActivity = Math.max(newestActivity, now - Math.max(0, pending.idleMs))
+  }
+  if (!newestActivity || now - newestActivity < QUIET_TURN_MS) return status
+  return { ...status, quietSince: newestActivity }
+}
+
+/**
  * Correct only Claude's public presentation status. Internal AcpService busy state remains untouched
  * because it also protects queueing, transcript merge and cache semantics.
  *
@@ -39,7 +59,7 @@ export const CLAUDE_REPORTED_BUSY_STALE_MS = 360_000
  * never this bridge's to send. A live, corroborated bridge-owned turn still wins over it.
  */
 export function corroborateClaudeSessionStatus(status, sessionID, pendingRequests, _lastActivityAt, now = Date.now(), journalEvidence) {
-  const external = journalEvidence && (journalEvidence.type === "busy" || journalEvidence.type === "attention") ? journalEvidence : undefined
+  const external = journalEvidence && (journalEvidence.type === "busy" || journalEvidence.type === "attention" || journalEvidence.type === "listening") ? journalEvidence : undefined
   if (!status || status.type !== "busy") return external ?? status
   const prompts = (Array.isArray(pendingRequests) ? pendingRequests : []).filter(
     (pending) => pending?.method === "session/prompt" && pending.sessionID === sessionID
@@ -247,16 +267,16 @@ export function createBridgeServer({ config, acp, serviceOptions, machineRegistr
   })
   const publicSessionStatus = (sessionID, fallbackActivityAt = 0, evidence) => {
     const status = service.status(sessionID)
-    if (backend !== "claude") return overlayLiveStatus(status, evidence)
+    const pendingRequests = acp.diagnostics?.()?.pendingRequests ?? []
+    if (backend !== "claude") return withQuietSince(overlayLiveStatus(status, evidence), sessionID, pendingRequests)
     // A turn Claude started on its own has no session/prompt to corroborate it; it settles itself.
     if (service.hasAdoptedTurn(sessionID)) return overlayLiveStatus(status, evidence)
-    const pendingRequests = acp.diagnostics?.()?.pendingRequests ?? []
     const lastActivityAt = Math.max(liveSessionActivity.get(sessionID) ?? 0, Number(fallbackActivityAt) || 0)
     const corroborated = corroborateClaudeSessionStatus(status, sessionID, pendingRequests, lastActivityAt, Date.now(), evidence)
     // The transcript is part of the same presentation: a Session that is reported idle must not keep
     // its Activity sections on Working, which is what correcting the status alone left on screen.
     if (status?.type === "busy" && corroborated.type === "idle") service.settleReportedIdleActivity(sessionID)
-    return corroborated
+    return withQuietSince(corroborated, sessionID, pendingRequests)
   }
   // Bridge-owned busy always wins, so those Sessions need no external evidence. Claude is the
   // exception: its busy flag can be stale and corroboration may demote it, at which point the journal

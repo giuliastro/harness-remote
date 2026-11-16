@@ -198,6 +198,71 @@ function authoritativeReplay(previous, replayed) {
   })
 }
 
+/**
+ * The adapter's own exit text carries an exit code and the last lines of its stderr, which mean
+ * nothing to someone reading the transcript. Say what happened and what to do; keep the code.
+ */
+export function turnFailureMessage(error) {
+  const raw = typeof error?.message === "string" ? error.message : String(error ?? "")
+  const exited = /^ACP adapter exited \(([^)]*)\)/.exec(raw)
+  if (exited) {
+    return `The coding agent stopped unexpectedly during this turn (exit ${exited[1]}), so the turn was interrupted. Send a message to continue.`
+  }
+  return raw
+}
+
+/**
+ * A turn the bridge saw fail is recorded only here: when the adapter process dies mid-turn, the
+ * harness journal holds the prompt and whatever streamed before, never the failure. Its replay then
+ * read as a turn that simply ended, and the Session went quietly idle with no reply and no reason.
+ * Re-attach each bridge-recorded failure to its turn in the replay, unless the replay already
+ * reports an error for that turn.
+ */
+function carryTurnFailures(previous, replayed) {
+  const failures = []
+  let promptIdentity
+  let promptOccurrence = 0
+  const seenPrompts = new Map()
+  for (const message of previous) {
+    if (message?.info?.role === "user") {
+      promptIdentity = messageSignature(message)
+      promptOccurrence = (seenPrompts.get(promptIdentity) ?? 0) + 1
+      seenPrompts.set(promptIdentity, promptOccurrence)
+      continue
+    }
+    if (message?.info?.role === "assistant" && message.info.error?.name === "HarnessTurnError" && promptIdentity !== undefined) {
+      failures.push({ promptIdentity, promptOccurrence, error: message.info.error, prior: message })
+    }
+  }
+  if (!failures.length) return replayed
+  const result = [...replayed]
+  for (const failure of failures) {
+    let occurrence = 0
+    let promptIndex = -1
+    for (let index = 0; index < result.length; index += 1) {
+      if (result[index]?.info?.role !== "user" || messageSignature(result[index]) !== failure.promptIdentity) continue
+      occurrence += 1
+      if (occurrence === failure.promptOccurrence) {
+        promptIndex = index
+        break
+      }
+    }
+    if (promptIndex < 0) continue
+    let end = promptIndex + 1
+    while (end < result.length && result[end]?.info?.role !== "user") end += 1
+    const turn = result.slice(promptIndex + 1, end)
+    if (turn.some((message) => message?.info?.error?.message)) continue
+    const lastAssistant = turn.findLastIndex((message) => message?.info?.role === "assistant")
+    if (lastAssistant >= 0) {
+      const index = promptIndex + 1 + lastAssistant
+      result[index] = { ...result[index], info: { ...result[index].info, error: failure.error } }
+    } else {
+      result.splice(end, 0, { info: { ...failure.prior.info }, parts: [] })
+    }
+  }
+  return result
+}
+
 function isConsecutiveAssistantDuplicate(previous, next) {
   if (previous?.info?.role !== "assistant" || next?.info?.role !== "assistant") return false
   if (messageSignature(previous) !== messageSignature(next)) return false
@@ -1895,8 +1960,9 @@ export class AcpService {
       }
     }).catch((error) => {
       if (this.#turnGenerations.get(sessionID) === generation) {
-        this.#recordTurnFailure(sessionID, error.message)
-        this.#emit("session.error", sessionID, { message: error.message })
+        const message = turnFailureMessage(error)
+        this.#recordTurnFailure(sessionID, message)
+        this.#emit("session.error", sessionID, { message })
       }
     }).finally(() => {
       void this.#settleTurn(sessionID, generation)
@@ -2713,7 +2779,7 @@ export class AcpService {
       this.#rememberSessionConfiguration(sessionID, result)
       const replayedMessages = mergeFragmentedPiSnapshot(this.#messages.get(sessionID) ?? [])
       this.#messages.set(sessionID, chronologicalReplay(this.#replayAuthoritative
-        ? authoritativeReplay(previousMessages, replayedMessages)
+        ? carryTurnFailures(previousMessages, authoritativeReplay(previousMessages, replayedMessages))
         : replaceHistory ? replayedMessages : mergeReplay(previousMessages, replayedMessages)))
       // Replayed history is finished work by definition, and the adapter does not always close the
       // tool calls in it. Settling before the signature check keeps the restored (already settled)

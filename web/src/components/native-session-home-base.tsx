@@ -25,6 +25,7 @@ import { nativeSessionDisplayTitle } from "../native-session-title"
 import { countVisibleFinishedKeys, nextFinishedKeys, unseenKeysOutsideAttention, withoutFinishedKey, type SessionRailState } from "../native-session-unseen"
 import { useLanguage, useTranslator } from "../useTranslator"
 import type { Translator } from "../i18n"
+import { isListeningStatus, listeningBackgroundCount, quietMinutes } from "../session-status-detail"
 import type { WorkspaceMachine } from "../workspaceMachines"
 import { AgentIcon, ChatIcon, ChevronDownIcon, FolderIcon, LoadingIcon, PlusIcon, SearchIcon, ServerIcon } from "../Icons"
 import "../native-session-home.css"
@@ -160,17 +161,21 @@ function sessionWorking(record: NativeSessionRecord): boolean {
     || value === "working"
     || value === "waiting"
     || value === "retry"
+    || value === "listening"
     || value === "in_progress"
     || value === "in-progress"
 }
 
-function sessionPresentation(record: NativeSessionRecord, t: Translator): { state: SessionPresentationState; label: string } {
+export function sessionPresentation(record: NativeSessionRecord, t: Translator): { state: SessionPresentationState; label: string } {
   const value = record.status?.type?.trim().toLowerCase() || ""
   if (value.includes("error") || value.includes("fail") || value.includes("attention")) {
     return { state: "attention", label: t("sf.statusAttention") }
   }
   if (value === "retry") return { state: "working", label: t("sf.statusRetrying") }
   if (value === "waiting") return { state: "working", label: t("sf.statusWaiting") }
+  if (value === "listening") return { state: "working", label: t("sf.statusListening", { count: listeningBackgroundCount(record.status) }) }
+  const quiet = quietMinutes(record.status)
+  if (quiet !== null) return { state: "working", label: t("sf.statusQuiet", { minutes: quiet }) }
   if (sessionWorking(record)) return { state: "working", label: t("sf.statusWorking") }
   return { state: "ready", label: t("sf.statusReady") }
 }
@@ -854,7 +859,12 @@ export function NativeSessionHome({
 
   const presentationForItem = useCallback((item: RecordWithMachine) => {
     const liveState = liveStateForItem(item)
-    if (liveState) return { state: liveState, label: presentationLabel(liveState, t) }
+    // The open conversation only sees its own turn end, so it reports Ready while the agent is still
+    // listening for background work it started. The bridge's listening status is the fuller truth:
+    // keep the row on it, which also keeps the Session from being marked finished too early.
+    if (liveState && !(isListeningStatus(item.record.status) && (liveState === "ready" || liveState === "working"))) {
+      return { state: liveState, label: presentationLabel(liveState, t) }
+    }
     return sessionPresentation(item.record, t)
   }, [liveStateForItem, t])
 

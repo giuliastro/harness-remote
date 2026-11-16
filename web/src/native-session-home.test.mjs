@@ -1,7 +1,9 @@
 import assert from "node:assert/strict"
 import { readFileSync } from "node:fs"
 import { needsRailLifecycleStream } from "./components/native-session-home.tsx"
-import { appendCursorPage, firstMatchingOlderPage, reconcileStableSessionRecords, refreshCursorPage, sameCursorPageLineage, sessionTreeRows } from "./components/native-session-home-base.tsx"
+import { createTranslator } from "./i18n.ts"
+import { federatedSessionBucket } from "./native-session-federation.ts"
+import { sessionPresentation, appendCursorPage, firstMatchingOlderPage, reconcileStableSessionRecords, refreshCursorPage, sameCursorPageLineage, sessionTreeRows } from "./components/native-session-home-base.tsx"
 import { mergedAttentionSessionCount } from "./components/native-session-home-attention.tsx"
 import { canCreateNativeSession } from "./native-session-create.ts"
 import { classifyNativeSessionAttention, sessionNeedsAttention } from "./native-session-attention.ts"
@@ -370,5 +372,18 @@ assert.match(attentionSource, /classifyNativeSessionAttention/, "the detail surf
 assert.match(attentionSource, /Authorization required/, "permissions must be visibly distinct from generic input")
 assert.match(attentionSource, /blocked until you allow or deny/, "authorization UI must explain that the agent remains blocked")
 assert.match(attentionSource, /If you do nothing, this request remains blocked/, "authorization UI must state the consequence of no response")
+
+{
+  const en = createTranslator("en")
+  const it = createTranslator("it")
+  const listening = { status: { type: "listening", background: 2, source: "claude-journal" } }
+  assert.deepEqual(sessionPresentation(listening, en), { state: "working", label: "Listening · 2 in background" }, "a listening Session is active, never Ready")
+  assert.equal(sessionPresentation(listening, it).label, "In ascolto · 2 in background")
+  assert.equal(federatedSessionBucket(listening.status), "active", "listening counts as live for the Live filter and sorting")
+  const quiet = { status: { type: "busy", quietSince: Date.now() - 20 * 60_000 } }
+  assert.deepEqual(sessionPresentation(quiet, en), { state: "working", label: "Working · quiet 20 min" })
+  assert.equal(sessionPresentation(quiet, it).label, "In corso · fermo da 20 min")
+  assert.equal(sessionPresentation({ status: { type: "busy" } }, en).label, "Working", "a busy Session without quietSince keeps the plain label")
+}
 
 console.log("native Session Home tree, stable rail lifecycle, create parity, attention semantics and selection UX tests passed")
