@@ -57,6 +57,11 @@ assert.doesNotMatch(compact, /session-header:not\(:has\(\.hr-native-session-titl
 assert.match(compact, /\.hr-native-session-title\.editing \.hr-native-session-title-field \{[\s\S]{0,260}max-width: 100% !important;/, 'the inline rename field must stay inside the phone header')
 assert.match(compact, /\.hr-native-home \.hr-native-home-tools\.search-open \{[\s\S]{0,120}position: static !important;/, 'open search filters must sit above the results instead of covering them')
 assert.match(compact, /\.hr-native-search-backdrop \{[\s\S]{0,80}display: none;/, 'the search scrim must not swallow taps on results')
+{
+  const harnessLoadingList = /\.hr-native-machine-loading-copy ul \{([^}]*)\}/.exec(workbench)?.[1] ?? ''
+  assert.ok(harnessLoadingList, 'the harness loading card must keep its list rule')
+  assert.doesNotMatch(harnessLoadingList, /max-height|overflow(-y)?:\s*(auto|scroll)/, 'the harness loading card must show every waiting harness without scrollbars')
+}
 
 assert.ok(observer.includes('import { WorkThreadConversation } from "./work-thread-conversation"'), 'native Session detail must mount the mature v3 controller')
 assert.ok(observer.includes('<WorkThreadConversation'), 'native Session detail must render WorkThreadConversation directly')

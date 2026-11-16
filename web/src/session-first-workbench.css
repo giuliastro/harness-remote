@@ -598,13 +598,14 @@
   line-height: 1.3;
 }
 
+/* The list holds one row per installed harness, a handful at most, and goes away once they load.
+   Show every row: a scroll box here only drew small scrollbars around the waiting harnesses. */
 .hr-native-machine-loading-copy ul {
   display: grid;
   gap: 3px;
-  max-height: 140px;
   margin: 0;
   padding: 0;
-  overflow-y: auto;
+  overflow: visible;
   list-style: none;
 }
 
