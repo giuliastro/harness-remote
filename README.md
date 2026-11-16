@@ -127,6 +127,16 @@ See the [Quick start guide](docs/QUICK_START.md) for advanced options and troubl
 - **Local-first operation** — repositories, credentials, subscriptions and native Session persistence stay on your machines.
 - **Plugins** — local integrations with their own dashboards and settings. The built-in [Token Harness](https://github.com/giuliastro/token-harness) plugin brings allowance, local savings and automatic model routing into Harness Remote.
 
+## Notifications on every device
+
+Harness Remote tells you when a Session needs you, finishes or fails, without keeping it open.
+
+- **Android** keeps a connection to your paired machines while the app is in the background. Permission requests can be allowed or denied from the notification itself, and the ongoing notification shows the connection state with a **Stop** action.
+- **Desktop** stays in the system tray when you close its window, so the embedded daemon and notifications keep running.
+- **Web** can show browser notifications too. Each device keeps its own notification settings.
+
+Everything runs between your devices and your own machines: no push service or account is involved.
+
 ## DeepSeek Harness
 
 DeepSeek Harness is available as a native Session through its ACP adapter. Harness Remote can discover and reopen its existing Sessions, show its models and reasoning levels, and send a new prompt into a running turn. The integration also works in desktop, web and Android views, with its own icon in the Session list and chat.
