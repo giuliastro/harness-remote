@@ -1513,6 +1513,18 @@ function NativeSessionsWorkspace({
         style={railWidth === null ? undefined : { ["--hrsf-rail-width" as string]: `${railWidth}px` }}
       >
         <aside className="hr-native-workspace-list">
+          {(machinesLoading || (machines.length > 0 && startupPhase !== "ready")) ? (
+            <div className="hr-native-startup-mobile" role="status" aria-live="polite">
+              <LoadingIcon size={18} />
+              <div>
+                <strong>{startupPhase === "machines" ? t("sf.connectingMachines") : t("sf.loadingSessions")}</strong>
+                <span>{startupPhase === "machines" ? t("sf.connectingBody") : t("sf.loadingSessionsBody")}</span>
+                <small>{startupPhase === "machines"
+                  ? t("sf.configuredMachines", { count: machines.length })
+                  : t("sf.onlineCount", { count: onlineCount })}</small>
+              </div>
+            </div>
+          ) : null}
           <NativeSessionHome
             sources={runtimes}
             onOpen={openSession}

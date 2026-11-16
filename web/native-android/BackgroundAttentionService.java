@@ -72,9 +72,6 @@ public final class BackgroundAttentionService extends Service {
     private static final long SNAPSHOT_REFRESH_MS = 60_000;
     private static final long STATUS_POLL_MS = 4_000;
     private static final long WORK_WAKE_LOCK_MS = 10 * 60_000;
-    // A single stream drop (Wi-Fi handoff, daemon restart, read timeout) reconnects within seconds.
-    // Only a machine that stays unreachable this long deserves an alert.
-    private static final long UNREACHABLE_ALERT_DELAY_MS = 60_000;
 
     private final Object runtimeLock = new Object();
     private final Map<String, MachineRuntime> runtimes = new LinkedHashMap<>();
@@ -83,7 +80,6 @@ public final class BackgroundAttentionService extends Service {
     private ConnectivityManager.NetworkCallback networkCallback;
     private AttentionNotificationCenter attentionNotifications;
     private SessionOutcomeCenter sessionOutcomes;
-    private MachineAlertCenter machineAlerts;
     private PowerManager.WakeLock wakeLock;
     private final PermissionReplyTracker permissionReplies = new PermissionReplyTracker();
     private volatile boolean shuttingDown;
@@ -99,9 +95,12 @@ public final class BackgroundAttentionService extends Service {
         BackgroundAttentionStatus.reset();
         BackgroundAttentionStatus.running = true;
         BackgroundAttentionNotifications.ensureChannels(this);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            NotificationManager notifications = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
+            if (notifications != null) notifications.deleteNotificationChannel("harness_remote_machine_connection");
+        }
         attentionNotifications = new AttentionNotificationCenter(this);
         sessionOutcomes = new SessionOutcomeCenter(this, attentionNotifications);
-        machineAlerts = new MachineAlertCenter(this);
         PowerManager power = (PowerManager) getSystemService(POWER_SERVICE);
         if (power != null) {
             wakeLock = power.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "HarnessRemote:background");
@@ -328,7 +327,6 @@ public final class BackgroundAttentionService extends Service {
         if (manager != null) manager.cancel(BackgroundAttentionNotifications.SERVICE_NOTIFICATION_ID);
         if (attentionNotifications != null) attentionNotifications.cancelAll();
         if (sessionOutcomes != null) sessionOutcomes.cancelAll();
-        if (machineAlerts != null) machineAlerts.clearAll();
         if (wakeLock != null && wakeLock.isHeld()) wakeLock.release();
         permissionReplies.clear();
         BackgroundAttentionStatus.clearConnections();
@@ -428,15 +426,12 @@ public final class BackgroundAttentionService extends Service {
         final Map<String, AgentStream> streams = new HashMap<>();
         final Map<String, String> observedStatuses = new HashMap<>();
         final Set<String> inFlightStatusPolls = new HashSet<>();
-        final Runnable unreachableCheck = this::showUnreachableIfStillDown;
-        volatile boolean unreachablePending;
         final Object pauseLock = new Object();
         volatile Thread worker;
         volatile Thread statusWorker;
         volatile List<AgentInfo> activeAgents = new ArrayList<>();
         volatile boolean snapshotReachable;
         volatile int capableAgents;
-        volatile boolean everConnected;
         volatile String nativeMachineID;
         volatile String nativeMachineName;
 
@@ -466,9 +461,6 @@ public final class BackgroundAttentionService extends Service {
             Thread status = statusWorker;
             if (status != null) status.interrupt();
             BackgroundAttentionStatus.setMachineConnected(machine.id, false);
-            // A machine removed or re-paired while unreachable must not leave its alert behind.
-            MachineAlertCenter alerts = machineAlerts;
-            if (alerts != null) alerts.clear(machine.id);
         }
 
         void wake() {
@@ -698,29 +690,9 @@ public final class BackgroundAttentionService extends Service {
             boolean connected = !stopped.get()
                 && (active > 0 || (snapshotReachable && capableAgents == 0));
             BackgroundAttentionStatus.setMachineConnected(machine.id, connected);
-            MachineAlertCenter alerts = machineAlerts;
-            Handler handler = mainHandler;
-            if (connected) {
-                everConnected = true;
-                if (unreachablePending && handler != null) handler.removeCallbacks(unreachableCheck);
-                unreachablePending = false;
-                if (alerts != null) alerts.clear(machine.id);
-            } else if (everConnected && !stopped.get() && alerts != null && handler != null && !unreachablePending) {
-                // The stream cannot produce a session.error if the machine itself vanished from
-                // Wi-Fi/standby. Surface that loss once it persists, and cancel it when any stream
-                // reconnects. Routine reconnects stay silent.
-                unreachablePending = true;
-                handler.postDelayed(unreachableCheck, UNREACHABLE_ALERT_DELAY_MS);
-            }
+            // Connection loss remains visible in the app and the foreground service status.
+            // It must not produce an OS alert for every saved machine.
             updateNotificationSoon();
-        }
-
-        private void showUnreachableIfStillDown() {
-            unreachablePending = false;
-            if (stopped.get() || shuttingDown) return;
-            if (BackgroundAttentionStatus.isMachineConnected(machine.id)) return;
-            MachineAlertCenter alerts = machineAlerts;
-            if (alerts != null) alerts.show(machine.id, machine.name, machine.baseUrl);
         }
 
         private void pause(long milliseconds) {
