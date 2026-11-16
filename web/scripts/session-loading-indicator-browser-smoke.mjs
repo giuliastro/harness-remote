@@ -147,6 +147,21 @@ async function shoot(page, name) {
   await page.screenshot({ path: `${SCREENSHOTS}/${name}.png` })
 }
 
+// The card lists every waiting harness in full. No part of it may become a scroll box, which drew
+// small scrollbars around the harness rows on phone and desktop.
+async function assertNoScrollbars(card, label) {
+  const scrollable = await card.evaluate((root) => [root, ...root.querySelectorAll("*")]
+    .filter((element) => {
+      const style = getComputedStyle(element)
+      const scrollsY = /auto|scroll/.test(style.overflowY) && element.scrollHeight > element.clientHeight
+      const scrollsX = /auto|scroll/.test(style.overflowX) && element.scrollWidth > element.clientWidth
+      const alwaysBars = style.overflowY === "scroll" || style.overflowX === "scroll"
+      return scrollsY || scrollsX || alwaysBars || /auto/.test(style.overflowY + style.overflowX)
+    })
+    .map((element) => `${element.tagName.toLowerCase()}.${element.className}`))
+  assert.deepEqual(scrollable, [], `${label}: the harness loading card must not contain scroll boxes`)
+}
+
 async function run(browser, viewport, tag) {
   slowRequests = 0
   const context = await browser.newContext({ viewport, deviceScaleFactor: 1, locale: "en-US" })
@@ -165,6 +180,7 @@ async function run(browser, viewport, tag) {
   assert.match(await loadingRow.innerText(), /Harness connection/)
   assert.match(await loadingRow.innerText(), /DeepSeek Harness/)
   assert.match(await loadingRow.innerText(), /Starting…/)
+  await assertNoScrollbars(loadingRow, `${tag} loading`)
   await shoot(page, `${tag}-1-loading`)
 
   const retryRow = page.locator(".hr-native-machine-loading", { hasText: "DeepSeek Harness" }).first()
@@ -174,6 +190,7 @@ async function run(browser, viewport, tag) {
   const machineCount = page.locator(".hr-native-machine-metrics small").first()
   await waitFor(async () => (await machineCount.innerText()).trim() === "1", "the fast harness Session counted")
   assert.equal(/Starting…/.test(await retryRow.innerText()), false)
+  await assertNoScrollbars(retryRow, `${tag} retrying`)
   await shoot(page, `${tag}-2-retrying`)
 
   await waitFor(async () => (await machineCount.innerText()).trim() === "2", "the slow harness Session counted", 40_000)
