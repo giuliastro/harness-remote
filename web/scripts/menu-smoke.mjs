@@ -10,7 +10,9 @@
  * Runs anywhere Electron can reach a display. CI runs it on macOS, which is the platform that
  * actually installs this menu.
  *
- * Exit code 0 means the menu built and installed with the structure we asked for.
+ * It prints a pass line when the menu built and installed with the structure we asked for.
+ * scripts/run-menu-smoke.mjs reads that line, because Electron's own exit code is unreliable on
+ * Windows.
  */
 import { app, Menu } from "electron"
 import { buildApplicationMenu } from "../dist-electron/electron/app-menu.js"
