@@ -1,4 +1,5 @@
 import { Capacitor, CapacitorHttp } from "@capacitor/core"
+import { remoteMachineRequestUrl } from "./remoteMachine"
 import { desktopRequest, isDesktopPlatform } from "./desktopBridge"
 import { authHeader, baseUrl, hasCredentials, routingHeaders } from "./serverConfig"
 import type { ServerConfig } from "./types"
@@ -46,7 +47,8 @@ export const nativeSessionClaimTransport: NativeSessionClaimTransport = {
     if (Capacitor.isNativePlatform()) {
       let response
       try {
-        response = await CapacitorHttp.request({
+        response = config.remote ? await remoteMachineRequestUrl(config, url, { method: "POST", body: {}, readTimeout: 30_000 })
+          : await CapacitorHttp.request({
           url,
           method: "POST",
           headers,

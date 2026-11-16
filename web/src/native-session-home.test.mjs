@@ -1,10 +1,19 @@
 import assert from "node:assert/strict"
 import { readFileSync } from "node:fs"
 import { needsRailLifecycleStream } from "./components/native-session-home.tsx"
-import { appendCursorPage, firstMatchingOlderPage, reconcileStableSessionRecords, refreshCursorPage, sameCursorPageLineage, sessionTreeRows } from "./components/native-session-home-base.tsx"
+import { appendCursorPage, firstMatchingOlderPage, projectsByRecentUse, reconcileStableSessionRecords, refreshCursorPage, sameCursorPageLineage, sessionTreeRows } from "./components/native-session-home-base.tsx"
 import { mergedAttentionSessionCount } from "./components/native-session-home-attention.tsx"
 import { canCreateNativeSession } from "./native-session-create.ts"
 import { classifyNativeSessionAttention, sessionNeedsAttention } from "./native-session-attention.ts"
+
+const testRoot = "/home/test/.harnesstrim/pr672/sandbox/E1-remote-target"
+const projectCatalog = [
+  { id: "root", machineId: "machine-1", name: "E1-remote-target", path: testRoot, configured: true },
+  { id: "visible", machineId: "machine-1", name: "visible", path: `${testRoot}/visible` },
+  { id: "hidden", machineId: "machine-1", name: "hidden", path: `${testRoot}/.private/hidden` }
+]
+assert.deepEqual(projectsByRecentUse(projectCatalog, [], "machine-1", "codex").map((project) => project.id),
+  ["root", "visible"], "configured roots under hidden test state remain selectable, but hidden children do not")
 
 function item(id, parentID) {
   return {

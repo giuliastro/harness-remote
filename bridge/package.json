@@ -14,6 +14,7 @@
     "smoke:omp": "node scripts/omp-real-smoke.mjs",
     "soak:session": "node scripts/session-first-soak.mjs",
     "gate:real-harness": "node scripts/real-harness-release-gate.mjs",
+    "pretest": "npm install --ignore-scripts --no-audit --no-fund --no-package-lock",
     "test": "node --test",
     "smoke:copilot": "node scripts/copilot-real-smoke.mjs",
     "smoke:opencode2": "node scripts/opencode2-real-smoke.mjs",
@@ -23,6 +24,7 @@
     "node": ">=20"
   },
   "dependencies": {
-    "qrcode-terminal": "0.12.0"
+    "qrcode-terminal": "0.12.0",
+    "selfsigned": "5.5.0"
   }
 }

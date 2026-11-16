@@ -18,4 +18,6 @@ test("a saved machine snapshot is reused only for the same connection", () => {
   assert.equal(sameMachineConnection(connection(), connection({ username: "other" })), false)
   assert.equal(sameMachineConnection(connection(), connection({ password: "corrected-password" })), false)
   assert.equal(sameMachineConnection(connection(), connection({ agentId: "codex" })), false)
+  const remote = { machineID: "machine-123", dnsName: "machine.invalid", pin: "a".repeat(64) }
+  assert.equal(sameMachineConnection(connection({ remote }), connection({ remote: { ...remote, pin: "b".repeat(64) } })), false)
 })

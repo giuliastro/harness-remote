@@ -68,6 +68,20 @@ const status = {
 }
 
 {
+  const remote = { machineID: "machine-123",
+    dnsName: `m-${"a".repeat(32)}.${"b".repeat(32)}.machine.harness-remote.invalid`,
+    pin: "c".repeat(64) }
+  const [result] = backgroundAttentionMachines([
+    machine("remote", "https://192.168.1.20", 4497, { remote })
+  ])
+  assert.equal(result.username, "")
+  assert.equal(result.password, "")
+  assert.equal(result.remoteMachineID, remote.machineID)
+  assert.equal(result.remoteDnsName, remote.dnsName)
+  assert.equal(result.remotePin, remote.pin)
+}
+
+{
   // A daemon behind an HTTPS reverse proxy or Tailscale serve listens on the default port, which
   // `new URL` normalises away. It must still reach the background service.
   const result = backgroundAttentionMachines([

@@ -1,6 +1,7 @@
 import assert from "node:assert/strict"
 import { readFileSync } from "node:fs"
 import test from "node:test"
+import { remotePairingURI } from "../../bridge/src/remote-pairing.js"
 import {
   claimMachinePairing,
   PairingUnreachableError,
@@ -14,6 +15,12 @@ import {
 const future = () => Date.now() + 60_000
 const pairingURL = (endpoint = "http://192.168.1.20:4097", expiresAt = future()) =>
   `harnessremote://pair?endpoint=${encodeURIComponent(endpoint)}&token=${"a".repeat(43)}&expires=${expiresAt}`
+const remoteQR = (endpoint = "https://192.168.1.20:4497") => {
+  const params = new URLSearchParams({ endpoint, token: "a".repeat(43), expires: String(future()),
+    machine: "machine-123", dns: `m-${"b".repeat(32)}.${"c".repeat(32)}.machine.harness-remote.invalid`,
+    pin: "d".repeat(64), name: "Studio PC" })
+  return `harnessremote://remote-pair?${params}`
+}
 
 function grantBody(overrides = {}) {
   const uri = pairingURL()
@@ -55,6 +62,35 @@ test("Android in-app scanner accepts only Harness Remote pairing QR values", asy
     platform: "android",
     scan: async () => ({ value: "https://example.com/not-a-pairing-code" })
   }), /not a valid Harness Remote machine pairing code/i)
+})
+
+test("remote QR requires HTTPS and a pinned machine identity before claiming", async () => {
+  const activation = parseMachinePairingActivation(remoteQR())
+  assert.ok(activation?.remote)
+  assert.equal(parseMachinePairingActivation(remoteQR("http://192.168.1.20:4497")), null)
+  assert.equal(parseMachinePairingActivation(remoteQR().replace("pin=" + "d".repeat(64), "pin=bad")), null)
+  let call
+  const paired = await claimMachinePairing(activation, { native: true, remotePair: async (...args) => {
+    call = args
+    return { status: 200, data: { version: 1, machineID: "machine-123", deviceID: "e".repeat(43) }, headers: {} }
+  } })
+  assert.deepEqual(call, [activation.endpoint, activation.remote, activation.token, "Studio PC"])
+  assert.equal(paired.config.host, "https://192.168.1.20")
+  assert.equal(paired.config.password, "")
+  assert.deepEqual(paired.config.remote, { machineID: "machine-123", dnsName: activation.remote.dnsName, pin: activation.remote.pin })
+  await assert.rejects(() => claimMachinePairing(activation, { native: true, remotePair: async () => ({
+    status: 200, data: { version: 1, machineID: "different", deviceID: "e".repeat(43) }, headers: {}
+  }) }), /invalid remote pairing response/i)
+})
+
+test("Android parser accepts the exact remote QR emitted by the gateway", () => {
+  const grant = { token: "a".repeat(43), expiresAt: future() }
+  const uri = remotePairingURI({ endpoint: "https://192.168.1.20:4497", grant, machineID: "machine-123",
+    dnsName: `m-${"b".repeat(32)}.${"c".repeat(32)}.machine.harness-remote.invalid`,
+    pin: "d".repeat(64), name: "Studio PC" })
+  const activation = parseMachinePairingActivation(uri)
+  assert.equal(activation?.remote?.machineID, "machine-123")
+  assert.equal(activation?.endpoint, "https://192.168.1.20:4497")
 })
 
 test("native pairing claim exchanges the one-time token for the existing daemon credentials", async () => {

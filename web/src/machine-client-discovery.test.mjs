@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { discoverMachine, readMachinePairingGrantStatus, requestMachinePairingGrant } from './machineClient.ts'
+import { discoverMachine, listMachinePairedDevices, readMachinePairingGrantStatus, requestMachinePairingGrant, revokeMachinePairedDevice } from './machineClient.ts'
 import { MachineHttpError } from './machine-request-error.ts'
 
 // Behavioral replacement for the old source-text guards in machine-payload.test.mjs. Exercise the
@@ -178,6 +178,32 @@ try {
       /invalid pairing response/,
       'a malformed grant answer must not be treated as a usable QR'
     )
+  } finally {
+    globalThis.fetch = originalFetch
+  }
+}
+
+// Paired-device management shares the authenticated daemon transport. DELETE is scoped to the
+// encoded device ID and is only considered successful when the daemon confirms revocation.
+{
+  const calls = []
+  const config = { backend: 'opencode', host: 'paired-device-machine.invalid', port: 4097, username: 'harness', password: 'secret' }
+  try {
+    globalThis.fetch = async (input, init = {}) => {
+      calls.push({ url: String(input), init })
+      if (init.method === 'DELETE') return { status: 200, ok: true, json: async () => ({ revoked: true }) }
+      return { status: 200, ok: true, json: async () => ({ devices: [{ id: 'phone/one', name: 'Giulio’s phone', pairedAt: '2026-11-14T10:00:00Z', revokedAt: null }] }) }
+    }
+    assert.deepEqual(await listMachinePairedDevices(config), [
+      { id: 'phone/one', name: 'Giulio’s phone', pairedAt: '2026-11-14T10:00:00Z', revokedAt: null }
+    ])
+    await revokeMachinePairedDevice(config, 'phone/one')
+    assert.deepEqual(calls.map(({ url, init }) => [url, init.method, init.headers.Authorization]), [
+      ['http://paired-device-machine.invalid:4097/v1/remote/devices', undefined, `Basic ${Buffer.from('harness:secret').toString('base64')}`],
+      ['http://paired-device-machine.invalid:4097/v1/remote/devices/phone%2Fone', 'DELETE', `Basic ${Buffer.from('harness:secret').toString('base64')}`]
+    ])
+    globalThis.fetch = async () => ({ status: 404, ok: false, json: async () => ({}) })
+    await assert.rejects(() => listMachinePairedDevices(config), (error) => error instanceof MachineHttpError && error.status === 404)
   } finally {
     globalThis.fetch = originalFetch
   }

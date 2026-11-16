@@ -67,4 +67,13 @@ test("the pairing dialog opens as a modal on the named machine and starts by iss
   assert.match(markup, /Studio PC/)
 })
 
+test("remote profiles show device management without exposing the legacy HTTP pairing QR", () => {
+  const remoteMachine = { ...machine, config: { ...machine.config, remote: { machineID: "id", dnsName: "machine.invalid", pin: "a".repeat(64) } } }
+  const markup = renderToStaticMarkup(createElement(MachinePairingDialog, { machine: remoteMachine, onClose: () => undefined }))
+  assert.match(markup, /data-machine-paired-devices/)
+  assert.match(markup, /data-machine-remote-pairing-disabled/)
+  assert.doesNotMatch(markup, /data-machine-pairing-qr/)
+  assert.doesNotMatch(markup, /data-machine-pairing-regenerate/)
+})
+
 console.log("machine pairing dialog behavioral tests passed")

@@ -33,7 +33,8 @@ function normalizeMachine(value: unknown): WorkspaceMachine | null {
     host: config.host,
     port: config.port,
     username: config.username,
-    password: config.password
+    password: config.password,
+    ...(config.remote ? { remote: config.remote } : {})
   })
   if (!normalized) return null
 

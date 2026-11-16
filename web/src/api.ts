@@ -1,9 +1,10 @@
 import { Capacitor, CapacitorHttp } from "@capacitor/core"
 import { desktopRequest, isDesktopPlatform } from "./desktopBridge"
 import { normalizeNativeResponseData } from "./nativeResponse"
+import { remoteMachineRequest } from "./remoteMachine"
 import { MachineHttpError } from "./machine-request-error"
 import { streamURL } from "./opencode-events"
-import { authHeader, baseUrl, hasCredentials, isValidServerConfig, routingHeaders } from "./serverConfig"
+import { agentScopedPath, authHeader, baseUrl, hasCredentials, isValidServerConfig, routingHeaders } from "./serverConfig"
 import type { AttachmentPart } from "./attachments"
 import type {
   AgentOption,
@@ -184,7 +185,11 @@ async function requestWithHeaders<T>(config: ServerConfig, path: string, options
   if (Capacitor.isNativePlatform()) {
     let response
     try {
-      response = await CapacitorHttp.request({
+      response = config.remote ? await remoteMachineRequest(config, agentScopedPath(config, path), {
+        method,
+        body: options.body,
+        readTimeout: options.readTimeout
+      }) : await CapacitorHttp.request({
         url: target,
         method,
         headers,
@@ -290,6 +295,9 @@ function modelWireName(model?: ModelSelection) {
 
 export const api = {
   eventStream(config: ServerConfig) {
+    if (config.remote && Capacitor.getPlatform() !== "android") {
+      throw new Error("Pinned remote streams require the Android app")
+    }
     const headers: Record<string, string> = { ...routingHeaders(config) }
     if (hasCredentials(config)) headers.Authorization = authHeader(config)
     return { url: streamURL(baseUrl(config), "global"), headers }

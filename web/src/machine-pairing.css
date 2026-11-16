@@ -172,6 +172,73 @@
   overflow: auto;
 }
 
+.uw-machine-pairing-devices {
+  display: grid;
+  gap: 9px;
+  padding: 12px;
+  border: 1px solid var(--td3-border, var(--tdw-border));
+  border-radius: 12px;
+}
+
+.uw-machine-pairing-devices-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 13px;
+}
+
+.uw-machine-pairing-devices-note,
+.uw-machine-pairing-devices-error {
+  margin: 0;
+  color: var(--td3-text-3, inherit);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.uw-machine-pairing-devices-error {
+  color: var(--td3-danger, #b42318);
+}
+
+.uw-machine-pairing-device-list {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.uw-machine-pairing-device-list > li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-width: 0;
+  padding-top: 8px;
+  border-top: 1px solid var(--td3-border, var(--tdw-border));
+}
+
+.uw-machine-pairing-device-list > li > div {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.uw-machine-pairing-device-list strong {
+  overflow-wrap: anywhere;
+  font-size: 12.5px;
+}
+
+.uw-machine-pairing-device-list small,
+.uw-machine-pairing-device-revoked {
+  color: var(--td3-text-3, inherit);
+  font-size: 11px;
+}
+
+.uw-machine-pairing-device-list .uw-manager-button {
+  flex: none;
+}
+
 .uw-machine-pairing-status {
   margin: 0;
   padding: 18px 0;

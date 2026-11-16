@@ -1,4 +1,5 @@
 import { Capacitor, CapacitorHttp } from "@capacitor/core"
+import { remoteMachineRequestUrl } from "./remoteMachine"
 import { desktopRequestResult, isDesktopPlatform } from "./desktopBridge"
 import { normalizePluginSnapshot, type PluginInfo, type PluginSnapshot } from "./plugins"
 import { authHeader, hasCredentials, machineBaseUrl } from "./serverConfig"
@@ -29,7 +30,8 @@ export type PluginMutationResult = {
 }
 
 function key(config: ServerConfig): string {
-  return `${machineBaseUrl(config)}|${config.username || ""}`
+  const remote = config.remote ? `|${config.remote.machineID}|${config.remote.dnsName}|${config.remote.pin}` : ""
+  return `${machineBaseUrl(config)}|${config.username || ""}${remote}`
 }
 
 function headers(config: ServerConfig, json = false): Record<string, string> {
@@ -84,7 +86,11 @@ async function pluginRequest(
 
   const target = `${machineBaseUrl(config)}${path}`
   if (Capacitor.isNativePlatform()) {
-    const response = await CapacitorHttp.request({
+    const response = config.remote ? await remoteMachineRequestUrl(config, target, {
+      method,
+      body: options.body,
+      readTimeout: timeoutMs
+    }) : await CapacitorHttp.request({
       url: target,
       method,
       headers: headers(config, options.body !== undefined),

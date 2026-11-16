@@ -23,6 +23,10 @@ assert.equal(baseUrl(config('192.168.1.64')), 'http://192.168.1.64:4096')
 assert.equal(baseUrl(config('https://example.com')), 'https://example.com:4096')
 
 const daemon = { ...config('192.168.1.64', 4097), backend: 'codex', agentId: 'opencode' }
+const remote = { machineID: 'machine-123', dnsName: `m-${'a'.repeat(32)}.${'b'.repeat(32)}.machine.harness-remote.invalid`, pin: 'c'.repeat(64) }
+assert.equal(isValidServerConfig({ ...daemon, host: 'https://192.168.1.64', remote }), true)
+assert.equal(isValidServerConfig({ ...daemon, remote }), false, 'remote identity cannot use plain HTTP')
+assert.equal(isValidServerConfig({ ...daemon, host: 'https://192.168.1.64', remote: { ...remote, pin: 'bad' } }), false)
 assert.equal(machineBaseUrl(daemon), 'http://192.168.1.64:4097')
 assert.equal(baseUrl(daemon), 'http://192.168.1.64:4097/v1/agents/opencode')
 assert.equal(agentScopedPath(daemon, '/session'), '/v1/agents/opencode/session')

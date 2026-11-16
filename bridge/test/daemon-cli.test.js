@@ -54,6 +54,12 @@ test("daemon rejects invalid managed OpenCode ports", () => {
   assert.throws(() => parseDaemonOptions(["--opencode-port", "nope"], loopbackEnv), /integer between 1 and 65535/)
 })
 
+test("E1 HTTPS preview must be explicitly requested on a separate loopback port", () => {
+  assert.equal(parseDaemonOptions([], loopbackEnv).remoteLoopbackPort, undefined)
+  assert.equal(parseDaemonOptions(["--remote-loopback-port", "4497"], loopbackEnv).remoteLoopbackPort, 4497)
+  assert.throws(() => parseDaemonOptions(["--remote-loopback-port", "invalid"], loopbackEnv), /integer between 1 and 65535/)
+})
+
 test("daemon preflight rejects an occupied managed OpenCode port with an actionable error", async () => {
   await assert.rejects(ensureOpenCodePortAvailable({
     port: 4096,
