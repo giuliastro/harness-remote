@@ -117,9 +117,12 @@ app.whenReady().then(() => {
 function finish() {
   if (failures.length === 0) {
     console.log(`application menu smoke test passed on ${process.platform}`)
-    app.exit(0)
+    // On Windows, Electron can return 1 from app.exit(0) after the menu has
+    // passed every assertion. This short-lived smoke process has no window or
+    // background work to tear down, so exit with the assertion result directly.
+    process.exit(0)
     return
   }
   for (const failure of failures) console.error(`  ✗ ${failure}`)
-  app.exit(1)
+  process.exit(1)
 }
