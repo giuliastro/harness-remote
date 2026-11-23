@@ -5,7 +5,7 @@ Issue [#681](https://github.com/giuliastro/harness-remote/issues/681) adds the o
 ## Prerequisites
 
 1. Install Antigravity CLI using [Google's instructions](https://antigravity.google/docs/getting-started?tab=cli) and confirm `agy acp --help` works.
-2. Sign in through an interactive `agy` session or `agy acp --login` on the machine running the gateway. Harness Remote does not store Antigravity credentials.
+2. Run `scripts/harness-remote-issue-681-run-test.sh --login` to sign in inside the isolated test state. The launcher does not copy your daily Antigravity sessions or credentials.
 3. Choose a model explicitly for real testing. The project has no previously approved Antigravity test model.
 
 ## Real UI test

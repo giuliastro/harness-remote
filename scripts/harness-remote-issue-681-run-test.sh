@@ -16,8 +16,8 @@ CACHE="$NATIVE/cache"
 BIN="$TEST/bin"
 LOGS="$STATE/logs"
 MODE="${1:-}"
-[[ -z "$MODE" || "$MODE" == --check ]] || { echo "Uso: $0 [--check]" >&2; exit 2; }
-[[ $# -le 1 ]] || { echo "Uso: $0 [--check]" >&2; exit 2; }
+[[ -z "$MODE" || "$MODE" == --check || "$MODE" == --login ]] || { echo "Uso: $0 [--check|--login]" >&2; exit 2; }
+[[ $# -le 1 ]] || { echo "Uso: $0 [--check|--login]" >&2; exit 2; }
 
 for name in node npm git setsid flock cp mkdir rm tr ps sleep readlink id awk install chmod; do
   command -v "$name" >/dev/null 2>&1 || { echo "Comando mancante: $name" >&2; exit 1; }
@@ -25,12 +25,12 @@ done
 [[ -f "$ROOT/bridge/src/daemon-cli.js" && -f "$ROOT/web/electron/main.ts" ]] || {
   echo "Sorgente Harness Remote incompleta in $ROOT." >&2; exit 1;
 }
-[[ -x "$ROOT/web/node_modules/.bin/electron" ]] || {
+[[ "$MODE" == --login || -x "$ROOT/web/node_modules/.bin/electron" ]] || {
   echo "Dipendenze web/Electron mancanti in $ROOT/web/node_modules." >&2
   echo "Esegui npm ci --prefix '$ROOT/web' e rilancia questo script." >&2
   exit 1
 }
-if [[ "$MODE" != --check && -z "${DISPLAY:-}${WAYLAND_DISPLAY:-}" ]]; then
+if [[ -z "$MODE" && -z "${DISPLAY:-}${WAYLAND_DISPLAY:-}" ]]; then
   echo "Per la finestra desktop serve una sessione grafica (DISPLAY o WAYLAND_DISPLAY)." >&2
   echo "Usa --check per verificare l'avvio in un display virtuale senza login o modelli." >&2
   exit 1
@@ -39,6 +39,16 @@ fi
 mkdir -p "$SANDBOX" "$PROFILE" "$DATA" "$STATE_DIR" "$CACHE" "$STATE/tmp" "$BIN" "$LOGS"
 exec 9>"$STATE/run.lock"
 flock -n 9 || { echo "Il test issue 681 è già aperto." >&2; exit 1; }
+
+AGY_HOST_COMMAND="$(command -v agy || true)"
+if [[ -z "$AGY_HOST_COMMAND" && -x "$HOME/.local/bin/agy" ]]; then
+  AGY_HOST_COMMAND="$HOME/.local/bin/agy"
+fi
+if [[ "$MODE" == --login ]]; then
+  [[ -n "$AGY_HOST_COMMAND" ]] || { echo "agy non trovato; installa Antigravity CLI prima del login." >&2; exit 1; }
+  exec env HOME="$NATIVE" XDG_DATA_HOME="$DATA" XDG_STATE_HOME="$STATE_DIR" \
+    XDG_CACHE_HOME="$CACHE" XDG_CONFIG_HOME="$NATIVE/.config" "$AGY_HOST_COMMAND" acp --login
+fi
 
 # Preserve manual test artifacts across launches.
 if ! git -C "$SANDBOX" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
@@ -118,8 +128,8 @@ npm --prefix "$ROOT/web" run build:desktop >"$LOGS/build.log" 2>&1 || {
 
 # Expose the installed Antigravity CLI to the isolated process only when it is present. Its auth
 # remains untouched and is intentionally not copied into the test profile.
-if command -v agy >/dev/null 2>&1; then
-  ln -sfn "$(readlink -f "$(command -v agy)")" "$BIN/agy"
+if [[ -n "$AGY_HOST_COMMAND" ]]; then
+  ln -sfn "$(readlink -f "$AGY_HOST_COMMAND")" "$BIN/agy"
 fi
 
 cat >"$BOOTSTRAP" <<'JS'
@@ -269,6 +279,7 @@ Profilo Electron isolato: $PROFILE
 HOME/native/XDG isolati: $NATIVE, $DATA, $STATE_DIR, $CACHE
 Log: $LOG
 
+Login isolato, se richiesto: $ROOT/scripts/harness-remote-issue-681-run-test.sh --login
 Comando già eseguito: $ROOT/scripts/harness-remote-issue-681-run-test.sh
 La finestra Electron è aperta sul progetto sandbox. Il daemon integrato è stato verificato.
 
@@ -276,11 +287,11 @@ Checklist manuale (turni reali in attesa di autorizzazione del modello Antigravi
   1. Seleziona la macchina locale e verifica che il progetto Antigravity-ACP sia visibile.
   2. Apri la sezione harness e verifica che Google Antigravity compaia solo se il comando `agy`
      è installato e raggiungibile. Se manca, interrompi qui: non selezionare un harness sostitutivo.
-  3. Controlla che la configurazione ACP mostri il comando documentato `agy acp` e che il
-     profilo resti nel contesto della macchina locale. Non inviare prompt finché Giulio non approva
-     esplicitamente il modello da usare.
-  4. Controlla la gestione degli errori senza iniziare un turno: chiudi e riapri la vista,
-     verifica stato macchina/progetto e che non compaiano sessioni di altri profili.
+  3. Seleziona un modello Antigravity autorizzato e crea una Session nel progetto sandbox.
+     Invia un prompt e verifica la risposta; la scelta del modello è ancora in attesa di Giulio.
+  4. Riapri la Session, invia un secondo prompt, poi prova Stop durante un turno lungo e continua.
+  5. Riavvia lo script e verifica che la Session sia ritrovata, senza duplicati nella cronologia.
+  6. Prova anche i flussi degli altri harness installati con i modelli già autorizzati nel progetto.
 
 Chiudi la finestra o premi Ctrl+C per arrestare solo Electron e il daemon avviati da questo script.
 Il progetto sandbox e lo stato isolato restano sotto $TEST per la revisione.
