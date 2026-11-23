@@ -1,4 +1,5 @@
 import assert from "node:assert/strict"
+import path from "node:path"
 import test from "node:test"
 import { acpHarnessCapabilityContract } from "../src/harness-capability-contract.js"
 import { harnessProfile, resolveAcpLaunch } from "../src/harness-profiles.js"
@@ -17,9 +18,9 @@ test("Antigravity provider uses the documented native ACP command and discovery"
   assert.deepEqual(resolveAcpLaunch(provider), { command: "agy", args: ["acp"], source: "harness" })
 
   const detected = detectBackends({
-    pathValue: "/tools",
-    platform: "linux",
-    exists: (candidate) => candidate === "/tools/agy",
+    pathValue: path.join(path.parse(process.cwd()).root, "tools"),
+    platform: process.platform,
+    exists: (candidate) => path.basename(candidate).toLowerCase() === (process.platform === "win32" ? "agy.exe" : "agy"),
     access: () => {}
   })
   assert.deepEqual(detected, ["antigravity"])
