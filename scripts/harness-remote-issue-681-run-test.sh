@@ -25,11 +25,6 @@ done
 [[ -f "$ROOT/bridge/src/daemon-cli.js" && -f "$ROOT/web/electron/main.ts" ]] || {
   echo "Sorgente Harness Remote incompleta in $ROOT." >&2; exit 1;
 }
-[[ "$MODE" == --login || -x "$ROOT/web/node_modules/.bin/electron" ]] || {
-  echo "Dipendenze web/Electron mancanti in $ROOT/web/node_modules." >&2
-  echo "Esegui npm ci --prefix '$ROOT/web' e rilancia questo script." >&2
-  exit 1
-}
 if [[ -z "$MODE" && -z "${DISPLAY:-}${WAYLAND_DISPLAY:-}" ]]; then
   echo "Per la finestra desktop serve una sessione grafica (DISPLAY o WAYLAND_DISPLAY)." >&2
   echo "Usa --check per verificare l'avvio in un display virtuale senza login o modelli." >&2
@@ -48,6 +43,12 @@ if [[ "$MODE" == --login ]]; then
   [[ -n "$AGY_HOST_COMMAND" ]] || { echo "agy non trovato; installa Antigravity CLI prima del login." >&2; exit 1; }
   exec env HOME="$NATIVE" XDG_DATA_HOME="$DATA" XDG_STATE_HOME="$STATE_DIR" \
     XDG_CACHE_HOME="$CACHE" XDG_CONFIG_HOME="$NATIVE/.config" "$AGY_HOST_COMMAND" acp --login
+fi
+if [[ ! -x "$ROOT/web/node_modules/.bin/electron" ]]; then
+  echo "Preparo le dipendenze web/Electron isolate nel checkout…"
+  npm ci --prefix "$ROOT/web" --no-audit --no-fund >"$LOGS/dependencies.log" 2>&1 || {
+    cat "$LOGS/dependencies.log" >&2; exit 1;
+  }
 fi
 
 # Preserve manual test artifacts across launches.
