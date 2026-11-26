@@ -42,8 +42,10 @@ jobs:
         run: npm run build
         working-directory: web
 
+      # Keep the lockfile: without it npm re-resolves every dependency, and Vite 8.4 then refused
+      # to start a preview while an earlier smoke's preview was still running.
       - name: Install pinned Playwright runtime
-        run: npm install --no-save --package-lock=false playwright@1.55.0
+        run: npm install --no-save playwright@1.55.0
         working-directory: web
 
       - name: Install Chromium
