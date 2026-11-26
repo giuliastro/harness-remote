@@ -68,7 +68,7 @@ test("defaults the release gate to every supported harness", () => {
 test("covers OpenCode Legacy and every registered ACP provider", () => {
   assert.deepEqual(
     [...SUPPORTED_HARNESSES].sort(),
-    ["claude", "codex", "copilot", "deepseek", "mimo", "omp", "opencode", "opencode2", "pi"]
+    ["antigravity", "claude", "codex", "copilot", "deepseek", "mimo", "omp", "opencode", "opencode2", "pi"]
   )
   assert.deepEqual(parseHarnessList("copilot,opencode2,mimo"), ["copilot", "opencode2", "mimo"])
 })

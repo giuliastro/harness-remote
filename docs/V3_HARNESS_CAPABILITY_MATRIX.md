@@ -24,6 +24,7 @@ Harness Remote must not flatten harness-specific capabilities into a fake univer
 | Codex | ACP over stdio JSON-RPC | ACP Session updates | ACP Session updates | fresh prompt-less technical ACP Session `configOptions` | machine | `reasoning_effort` only when advertised | Codex |
 | Claude | ACP over stdio JSON-RPC | ACP Session updates | ACP Session updates | fresh prompt-less technical ACP Session `configOptions` | machine | runtime-advertised controls only; no fabricated reasoning levels | Claude |
 | DeepSeek Harness | ACP over stdio JSON-RPC | ACP Session updates | ACP Session updates | fresh prompt-less technical ACP Session `configOptions` | machine | `effort` only when advertised | DSH |
+| Google Antigravity CLI | ACP over stdio JSON-RPC | ACP Session updates | ACP Session updates | fresh prompt-less technical ACP Session `configOptions` | machine | runtime `thought_level` config option (validated live with agy 1.5.18) | Antigravity CLI |
 
 ## Model discovery scope
 

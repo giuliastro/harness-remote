@@ -131,7 +131,7 @@ export function lastNativeMessageModel(messages: MessageEnvelope[]): ModelSelect
   return null
 }
 
-const PAGE_MODEL_BACKENDS = new Set(["opencode2", "omp", "pi", "codex", "copilot", "mimo", "deepseek"])
+const PAGE_MODEL_BACKENDS = new Set(["opencode2", "omp", "pi", "codex", "copilot", "mimo", "deepseek", "antigravity"])
 
 /**
  * Recover the last model from native Session state without persisting a second Harness Remote model.

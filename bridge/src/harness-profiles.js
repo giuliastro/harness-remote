@@ -478,6 +478,46 @@ export const HARNESS_PROFILES = {
       sessionRename: true,
       sessionDelete: true
     }
+  }),
+  antigravity: defineAcpProvider({
+    id: "antigravity",
+    label: "Google Antigravity",
+    command: "agy",
+    detectCommands: ["agy"],
+    launchPriority: 90,
+    args: ["acp"],
+    // The CLI reads the user's cached sign-in. Calling authenticate during discovery could open
+    // an OAuth browser without a user action; `agy` or `agy acp --login` handles initial sign-in.
+    authenticate: false,
+    // Leave the bridge's default deny behavior in place for permission requests. Antigravity's
+    // ACP supports permission prompts, but its docs do not justify auto-approving them here.
+    lifecycleContract: COMMON_ACP_LIFECYCLE_CONTRACT,
+    // The CLI documents native list/load/resume/close. How a second writer's changes are observed
+    // is not specified. agy 1.5.18 advertises its Thinking picker as the `thought_level` config
+    // option (low/medium/high/xhigh, default high) in session/new configOptions.
+    modelVariantConfigIDs: ["thought_level"],
+    sessionContract: {
+      authority: "native-harness",
+      discovery: "native-list",
+      transcript: "session-load",
+      externalWriterObservation: "unverified-session-load",
+      continuation: "session-load",
+      writerOwnership: "adapter-defined",
+      stop: "owned-session-native-cancel"
+    },
+    capabilities: {
+      ...COMMON_CAPABILITIES,
+      models: true,
+      todos: false,
+      commands: true,
+      permissions: true,
+      questions: false,
+      actions: false,
+      // ACP documents automatic conversation titles, but not a native rename request.
+      sessionRename: false,
+      sessionDelete: true,
+      midTurnPrompt: "steer"
+    }
   })
 }
 
