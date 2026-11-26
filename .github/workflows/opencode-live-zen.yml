@@ -20,7 +20,8 @@ jobs:
   live-opencode:
     name: Real OpenCode + Zen browser gate
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
-    runs-on: ubuntu-latest
+    # Playwright 1.55 ships no Chromium for Ubuntu 26.04, which ubuntu-latest became on 2026-11-26.
+    runs-on: ubuntu-24.04
     timeout-minutes: 35
     steps:
       - name: Checkout
