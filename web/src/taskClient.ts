@@ -182,7 +182,7 @@ function modelScopeKey(scope: AgentModelScope): string {
   return "default"
 }
 
-const AGENT_BACKENDS = new Set<BackendKind>(["opencode", "opencode2", "omp", "pi", "claude", "codex", "copilot", "mimo", "deepseek"])
+const AGENT_BACKENDS = new Set<BackendKind>(["opencode", "opencode2", "omp", "pi", "claude", "codex", "copilot", "mimo", "deepseek", "antigravity"])
 
 /**
  * Model membership belongs to the selected harness, not to the machine profile that happened to

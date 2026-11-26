@@ -23,6 +23,7 @@ each harness.
 | [PI](https://pi.dev/) | supported | through the local ACP bridge and the [`@automatalabs/pi-acp`](https://www.npmjs.com/package/@automatalabs/pi-acp) adapter |
 | [Claude Code](https://code.claude.com/) | supported | through the local ACP bridge and the [`@agentclientprotocol/claude-agent-acp`](https://www.npmjs.com/package/@agentclientprotocol/claude-agent-acp) adapter |
 | [Codex CLI](https://github.com/openai/codex) | supported | through the local ACP bridge and the [`@agentclientprotocol/codex-acp`](https://www.npmjs.com/package/@agentclientprotocol/codex-acp) adapter |
+| [Google Antigravity CLI](https://antigravity.google/docs/cli/acp/) | integration validation in progress | native ACP through the `antigravity` bridge backend (`agy acp`) |
 
 What each harness actually provides, the assumptions the code makes about it, and what to re-check
 when one of them changes are recorded in [docs/DEPENDENCIES.md](docs/DEPENDENCIES.md).

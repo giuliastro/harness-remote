@@ -478,6 +478,46 @@ export const HARNESS_PROFILES = {
       sessionRename: true,
       sessionDelete: true
     }
+  }),
+  antigravity: defineAcpProvider({
+    id: "antigravity",
+    label: "Google Antigravity",
+    command: "agy",
+    detectCommands: ["agy"],
+    launchPriority: 90,
+    args: ["acp"],
+    // The CLI reads the user's cached sign-in. Calling authenticate during discovery could open
+    // an OAuth browser without a user action; `agy` or `agy acp --login` handles initial sign-in.
+    authenticate: false,
+    // Leave the bridge's default deny behavior in place for permission requests. Antigravity's
+    // ACP supports permission prompts, but its docs do not justify auto-approving them here.
+    lifecycleContract: COMMON_ACP_LIFECYCLE_CONTRACT,
+    // The CLI documents native list/load/resume/close. How a second writer's changes are observed
+    // is not specified. agy 1.5.18 advertises its Thinking picker as the `thought_level` config
+    // option (low/medium/high/xhigh, default high) in session/new configOptions.
+    modelVariantConfigIDs: ["thought_level"],
+    sessionContract: {
+      authority: "native-harness",
+      discovery: "native-list",
+      transcript: "session-load",
+      externalWriterObservation: "unverified-session-load",
+      continuation: "session-load",
+      writerOwnership: "adapter-defined",
+      stop: "owned-session-native-cancel"
+    },
+    capabilities: {
+      ...COMMON_CAPABILITIES,
+      models: true,
+      todos: false,
+      commands: true,
+      permissions: true,
+      questions: false,
+      actions: false,
+      // ACP documents automatic conversation titles, but not a native rename request.
+      sessionRename: false,
+      sessionDelete: true,
+      midTurnPrompt: "steer"
+    }
   })
 }
 
@@ -504,8 +544,15 @@ export function listAcpProviderProfiles() {
  * starts without a network round trip, and it sidesteps environments where `npx` cannot link a
  * binary - which is exactly what happens under proot on Android.
  */
-export function resolveAcpLaunch(profile, { find = findExecutable, readVersion } = {}) {
-  if (!profile.adapterCommand) return { command: profile.command, args: [...profile.args], source: "harness" }
+export function resolveAcpLaunch(profile, { find = findExecutable, readVersion, platform = process.platform } = {}) {
+  if (!profile.adapterCommand) {
+    // Detection finds a harness through PATHEXT, so on Windows it can be only an npm `.cmd` shim
+    // (MiMo in %APPDATA%\npm). spawn() without a shell cannot run a bare name that resolves to a
+    // shim and fails with ENOENT. Launch the exact file detection found; the ACP client already
+    // runs `.cmd`/`.bat` paths through cmd.exe.
+    const command = platform === "win32" ? find(profile.command) ?? profile.command : profile.command
+    return { command, args: [...profile.args], source: "harness" }
+  }
   const installed = profile.executableGeneration
     ? resolveOpenCodeCommand(profile.executableGeneration, { find, ...(readVersion ? { readVersion } : {}) })
     : find(profile.adapterCommand)

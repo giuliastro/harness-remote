@@ -3,9 +3,13 @@ import { homedir } from "node:os"
 import path from "node:path"
 import test from "node:test"
 import { parseConfig } from "../src/config.js"
+import { resolveAcpLaunch } from "../src/harness-profiles.js"
+
+// Resolve as on a machine with nothing installed, so the defaults do not depend on this host.
+const uninstalled = { resolveLaunch: (profile) => resolveAcpLaunch(profile, { find: () => null }) }
 
 test("defaults to a loopback-only unauthenticated listener", () => {
-  assert.deepEqual(parseConfig([], {}), {
+  assert.deepEqual(parseConfig([], {}, uninstalled), {
     backend: "omp",
     host: "127.0.0.1",
     port: 4097,
@@ -65,7 +69,7 @@ test("selects OpenCode 2 package fallback and MiMo native ACP defaults", () => {
   assert.equal(openCode2.acpCommand, process.platform === "win32" ? "npx.cmd" : "npx")
   assert.deepEqual(openCode2.acpArgs, ["--yes", "--package=@opencode/cli@2.0.28", "opencode2", "acp"])
 
-  const mimo = parseConfig(["--backend", "mimo"], {})
+  const mimo = parseConfig(["--backend", "mimo"], {}, uninstalled)
   assert.equal(mimo.backend, "mimo")
   assert.equal(mimo.acpCommand, "mimo")
   assert.deepEqual(mimo.acpArgs, ["acp"])

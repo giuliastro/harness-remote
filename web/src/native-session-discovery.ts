@@ -122,7 +122,7 @@ export type NativeSessionSurfaceTarget = {
 }
 
 function supportedBackend(value: string, fallback: BackendKind): BackendKind {
-  return value === "opencode" || value === "opencode2" || value === "omp" || value === "pi" || value === "claude" || value === "codex" || value === "copilot" || value === "mimo" || value === "deepseek"
+  return value === "opencode" || value === "opencode2" || value === "omp" || value === "pi" || value === "claude" || value === "codex" || value === "copilot" || value === "mimo" || value === "deepseek" || value === "antigravity"
     ? value
     : fallback
 }
@@ -245,6 +245,33 @@ export class NativeSessionDiscoveryTimeoutError extends Error {
     super(`Native Session discovery for ${agentID} timed out after ${timeoutMs}ms`)
     this.name = "NativeSessionDiscoveryTimeoutError"
   }
+}
+
+/**
+ * The daemon could not start the harness process at all: the executable is missing, not runnable,
+ * or its shell reported the command unknown. Retrying cannot fix that, unlike a cold adapter that
+ * is merely slow, so the rail shows the error instead of "Retrying…" for ever. Returns the message
+ * to show, or null for a failure that may still resolve by itself (timeouts included).
+ */
+export function nativeSessionLaunchFailure(error: unknown): string | null {
+  if (error instanceof NativeSessionDiscoveryTimeoutError) return null
+  const message = (error instanceof Error ? error.message : typeof error === "string" ? error : "").trim()
+  if (!message) return null
+  const launchFailed = /\bspawn\b.*\b(?:ENOENT|EACCES|EPERM|EINVAL|ENOEXEC)\b/i.test(message)
+    || /is not recognized as an internal or external command/i.test(message)
+    || /ACP adapter exited \((?:126|127|9009)\b/.test(message)
+  return launchFailed ? message : null
+}
+
+/**
+ * The message a failed harness read reported, or null for a timeout. A timeout only means the
+ * adapter is still starting; any other error that outlasts the quick retries is shown as is,
+ * because the shell's wording (localized by Windows) cannot be matched reliably.
+ */
+export function nativeSessionDiscoveryErrorMessage(error: unknown): string | null {
+  if (error instanceof NativeSessionDiscoveryTimeoutError) return null
+  const message = (error instanceof Error ? error.message : typeof error === "string" ? error : "").trim()
+  return message || null
 }
 
 async function withinNativeSessionDiscoveryBudget<T>(

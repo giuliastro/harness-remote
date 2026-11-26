@@ -4,6 +4,8 @@ import {
   discoverAgentNativeSessions,
   discoverMachineNativeSessions,
   NativeSessionDiscoveryTimeoutError,
+  nativeSessionDiscoveryErrorMessage,
+  nativeSessionLaunchFailure,
   nativeSessionConfig,
   nativeSessionDiscoverySignature,
   selectReadyNativeSessionSources,
@@ -371,3 +373,27 @@ const records = await discoverMachineNativeSessions(base, [
 assert.deepEqual(records.map((record) => record.key), ['codex:codex-session', 'pi:pi-session'])
 
 console.log('native session discovery tests passed')
+
+// A harness the daemon cannot launch shows its error in the rail instead of "Retrying…" for ever.
+// On Windows, MiMo found only as an npm `.cmd` shim answered every Session read with this 400.
+assert.equal(nativeSessionLaunchFailure(new Error('spawn mimo ENOENT')), 'spawn mimo ENOENT')
+assert.equal(nativeSessionLaunchFailure(new Error('spawn C:\tools\dsh.exe EACCES')), 'spawn C:\tools\dsh.exe EACCES')
+assert.equal(
+  nativeSessionLaunchFailure(new Error("ACP adapter exited (127): sh: 1: pi-acp: not found")),
+  "ACP adapter exited (127): sh: 1: pi-acp: not found"
+)
+assert.ok(nativeSessionLaunchFailure(new Error("'mimo' is not recognized as an internal or external command")))
+// A slow or temporarily failing adapter may still answer, so those keep retrying.
+assert.equal(nativeSessionLaunchFailure(new NativeSessionDiscoveryTimeoutError('pi', 8000)), null)
+assert.equal(nativeSessionLaunchFailure(new Error('ACP adapter startup timed out during initialize')), null)
+assert.equal(nativeSessionLaunchFailure(new Error('ACP adapter exited (1): model provider rejected the key')), null)
+assert.equal(nativeSessionLaunchFailure(new Error('ENOENT: no such file or directory, open session.json')), null)
+assert.equal(nativeSessionLaunchFailure(undefined), null)
+
+// Windows localizes cmd's "not recognized" text (Italian below) and a batch shim exits with 1, so
+// this is not a known launch failure; it is still kept, to show once the quick retries are spent.
+const localized = new Error('ACP adapter exited (1): "mimo-missing" non è riconosciuto come comando interno o esterno')
+assert.equal(nativeSessionLaunchFailure(localized), null)
+assert.equal(nativeSessionDiscoveryErrorMessage(localized), localized.message)
+assert.equal(nativeSessionDiscoveryErrorMessage(new NativeSessionDiscoveryTimeoutError('mimo', 8000)), null, 'a cold adapter is never reported as failed')
+assert.equal(nativeSessionDiscoveryErrorMessage(new Error('  ')), null)

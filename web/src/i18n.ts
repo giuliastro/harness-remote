@@ -291,6 +291,7 @@ export type TranslationKey =
   | 'detail.copilot'
   | 'detail.mimo'
   | 'detail.deepseek'
+  | 'detail.antigravity'
   | 'detail.projectDashboardLabel'
   | 'detail.projectLabel'
   | 'detail.vcsLabel'
@@ -398,6 +399,7 @@ export type TranslationKey =
   | 'connect.harness.copilot'
   | 'connect.harness.mimo'
   | 'connect.harness.deepseek'
+  | 'connect.harness.antigravity'
   | 'connect.addressHint'
   | 'connect.runOnHost'
   | 'connect.copyCommand'
@@ -742,6 +744,7 @@ export type TranslationKey =
   | 'sf.harnessConnectionTitle'
   | 'sf.harnessLoadingState'
   | 'sf.harnessRetryingState'
+  | 'sf.harnessFailedState'
   | 'sf.configuredMachines'
   | 'sf.machinesUnavailable'
   | 'sf.couldNotConnect'
@@ -1096,6 +1099,7 @@ const translations: Record<LanguageCode, Partial<Record<TranslationKey, string>>
     'detail.copilot': '🤖 GitHub Copilot CLI',
     'detail.mimo': '🤖 MiMo Code',
     'detail.deepseek': '🐋 DeepSeek Harness',
+    'detail.antigravity': '✦ Google Antigravity CLI',
     'detail.projectDashboardLabel': 'Project and VCS dashboard',
     'detail.projectLabel': 'Project',
     'detail.vcsLabel': 'VCS',
@@ -1270,6 +1274,7 @@ const translations: Record<LanguageCode, Partial<Record<TranslationKey, string>>
     'connect.harness.copilot': 'Connect to GitHub Copilot CLI through the ACP bridge.',
     'connect.harness.mimo': 'Connect to MiMo Code through the ACP bridge.',
     'connect.harness.deepseek': 'Connect to DeepSeek Harness through the ACP bridge.',
+    'connect.harness.antigravity': 'Connect to Google Antigravity CLI through the ACP bridge.',
     'connect.addressHint': 'Use the LAN address of the machine that runs the harness.',
     'connect.runOnHost': 'Run on the host machine',
     'connect.copyCommand': 'Copy command',
@@ -1547,6 +1552,7 @@ const translations: Record<LanguageCode, Partial<Record<TranslationKey, string>>
     'sf.harnessConnectionTitle': 'Harness connection',
     'sf.harnessLoadingState': 'Starting…',
     'sf.harnessRetryingState': 'Retrying…',
+    'sf.harnessFailedState': 'Could not start',
     'sf.configuredMachines': '{count} configured machines',
     'sf.machinesUnavailable': 'Machines unavailable',
     'sf.couldNotConnect': 'Harness Remote could not connect',
@@ -1901,6 +1907,7 @@ const translations: Record<LanguageCode, Partial<Record<TranslationKey, string>>
     'detail.copilot': '🤖 GitHub Copilot CLI',
     'detail.mimo': '🤖 MiMo Code',
     'detail.deepseek': '🐋 DeepSeek Harness',
+    'detail.antigravity': '✦ Google Antigravity CLI',
     'detail.projectDashboardLabel': 'Dashboard progetto e VCS',
     'detail.projectLabel': 'Progetto',
     'detail.vcsLabel': 'VCS',
@@ -2075,6 +2082,7 @@ const translations: Record<LanguageCode, Partial<Record<TranslationKey, string>>
     'connect.harness.copilot': 'Connessione a GitHub Copilot CLI tramite bridge ACP.',
     'connect.harness.mimo': 'Connessione a MiMo Code tramite bridge ACP.',
     'connect.harness.deepseek': 'Connessione a DeepSeek Harness tramite bridge ACP.',
+    'connect.harness.antigravity': 'Connessione a Google Antigravity CLI tramite bridge ACP.',
     'connect.addressHint': 'Usa l’indirizzo LAN del computer che esegue l’harness.',
     'connect.runOnHost': 'Esegui sul computer host',
     'connect.copyCommand': 'Copia comando',
@@ -2352,6 +2360,7 @@ const translations: Record<LanguageCode, Partial<Record<TranslationKey, string>>
     'sf.harnessConnectionTitle': 'Connessione harness',
     'sf.harnessLoadingState': 'Avvio…',
     'sf.harnessRetryingState': 'Nuovo tentativo…',
+    'sf.harnessFailedState': 'Avvio non riuscito',
     'sf.configuredMachines': '{count} macchine configurate',
     'sf.machinesUnavailable': 'Macchine non raggiungibili',
     'sf.couldNotConnect': 'Harness Remote non è riuscito a connettersi',
@@ -2706,6 +2715,7 @@ const translations: Record<LanguageCode, Partial<Record<TranslationKey, string>>
     'detail.copilot': '🤖 GitHub Copilot CLI',
     'detail.mimo': '🤖 MiMo Code',
     'detail.deepseek': '🐋 DeepSeek Harness',
+    'detail.antigravity': '✦ Google Antigravity CLI',
     'detail.projectDashboardLabel': '專案與 VCS 儀表板',
     'detail.projectLabel': '專案',
     'detail.vcsLabel': 'VCS',
@@ -2813,6 +2823,7 @@ const translations: Record<LanguageCode, Partial<Record<TranslationKey, string>>
     'connect.harness.copilot': '透過 ACP bridge 連線到 GitHub Copilot CLI。',
     'connect.harness.mimo': '透過 ACP bridge 連線到 MiMo Code。',
     'connect.harness.deepseek': '透過 ACP bridge 連線到 DeepSeek Harness。',
+    'connect.harness.antigravity': '透過 ACP bridge 連線到 Google Antigravity CLI。',
     'connect.addressHint': '使用執行 harness 的電腦之區域網路位址。',
     'connect.runOnHost': '在主機上執行',
     'connect.copyCommand': '複製命令',
@@ -3157,6 +3168,7 @@ const translations: Record<LanguageCode, Partial<Record<TranslationKey, string>>
     'sf.harnessConnectionTitle': 'Harness 連線',
     'sf.harnessLoadingState': '正在啟動…',
     'sf.harnessRetryingState': '正在重試…',
+    'sf.harnessFailedState': '無法啟動',
     'sf.configuredMachines': '已設定 {count} 部機器',
     'sf.machinesUnavailable': '機器無法使用',
     'sf.couldNotConnect': 'Harness Remote 無法連線',
@@ -3511,6 +3523,7 @@ const translations: Record<LanguageCode, Partial<Record<TranslationKey, string>>
     'detail.copilot': '🤖 GitHub Copilot CLI',
     'detail.mimo': '🤖 MiMo Code',
     'detail.deepseek': '🐋 DeepSeek Harness',
+    'detail.antigravity': '✦ Google Antigravity CLI',
     'detail.projectDashboardLabel': '项目与 VCS 仪表盘',
     'detail.projectLabel': '项目',
     'detail.vcsLabel': 'VCS',
@@ -3618,6 +3631,7 @@ const translations: Record<LanguageCode, Partial<Record<TranslationKey, string>>
     'connect.harness.copilot': '通过 ACP 桥接器连接到 GitHub Copilot CLI。',
     'connect.harness.mimo': '通过 ACP 桥接器连接到 MiMo Code。',
     'connect.harness.deepseek': '通过 ACP 桥接器连接到 DeepSeek Harness。',
+    'connect.harness.antigravity': '通过 ACP 桥接器连接到 Google Antigravity CLI。',
     'connect.addressHint': '请使用运行 harness 的电脑的局域网地址。',
     'connect.runOnHost': '在主机上运行',
     'connect.copyCommand': '复制命令',
@@ -3962,6 +3976,7 @@ const translations: Record<LanguageCode, Partial<Record<TranslationKey, string>>
     'sf.harnessConnectionTitle': 'Harness 连接',
     'sf.harnessLoadingState': '正在启动…',
     'sf.harnessRetryingState': '正在重试…',
+    'sf.harnessFailedState': '无法启动',
     'sf.configuredMachines': '已配置 {count} 台机器',
     'sf.machinesUnavailable': '机器不可用',
     'sf.couldNotConnect': 'Harness Remote 无法连接',
@@ -4316,6 +4331,7 @@ const translations: Record<LanguageCode, Partial<Record<TranslationKey, string>>
     'detail.copilot': '🤖 GitHub Copilot CLI',
     'detail.mimo': '🤖 MiMo Code',
     'detail.deepseek': '🐋 DeepSeek Harness',
+    'detail.antigravity': '✦ Google Antigravity CLI',
     'detail.projectDashboardLabel': 'Painel do projeto e do VCS',
     'detail.projectLabel': 'Projeto',
     'detail.vcsLabel': 'VCS',
@@ -4490,6 +4506,7 @@ const translations: Record<LanguageCode, Partial<Record<TranslationKey, string>>
     'connect.harness.copilot': 'Conecte ao GitHub Copilot CLI por meio da bridge ACP.',
     'connect.harness.mimo': 'Conecte ao MiMo Code por meio da bridge ACP.',
     'connect.harness.deepseek': 'Conecte ao DeepSeek Harness por meio da bridge ACP.',
+    'connect.harness.antigravity': 'Conecte ao Google Antigravity CLI por meio da bridge ACP.',
     'connect.addressHint': 'Use o endereço de LAN da máquina que executa o harness.',
     'connect.runOnHost': 'Execute na máquina host',
     'connect.copyCommand': 'Copiar comando',
@@ -4767,6 +4784,7 @@ const translations: Record<LanguageCode, Partial<Record<TranslationKey, string>>
     'sf.harnessConnectionTitle': 'Conexão dos harnesses',
     'sf.harnessLoadingState': 'Iniciando…',
     'sf.harnessRetryingState': 'Tentando novamente…',
+    'sf.harnessFailedState': 'Não foi possível iniciar',
     'sf.configuredMachines': '{count} máquinas configuradas',
     'sf.machinesUnavailable': 'Máquinas indisponíveis',
     'sf.couldNotConnect': 'O Harness Remote não conseguiu conectar',

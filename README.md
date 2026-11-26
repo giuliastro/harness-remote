@@ -6,7 +6,7 @@
 
 **A local-first control plane for native AI coding-agent sessions.**
 
-Run, observe, resume and continue work across **Codex CLI, Claude Code, GitHub Copilot CLI, OpenCode, DeepSeek Harness, MiMo Code, Oh My Pi and PI** from desktop, web or Android — while code, credentials and native Sessions stay on your own machines.
+Run, observe, resume and continue work across **Codex CLI, Claude Code, GitHub Copilot CLI, Google Antigravity CLI, OpenCode, DeepSeek Harness, MiMo Code, Oh My Pi and PI** from desktop, web or Android — while code, credentials and native Sessions stay on your own machines.
 
 [![GitHub stars](https://img.shields.io/github/stars/giuliastro/harness-remote?style=flat&logo=github)](https://github.com/giuliastro/harness-remote/stargazers)
 [![Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-555)](LICENSE)
@@ -186,6 +186,7 @@ That means you can start in a normal CLI, open Harness Remote later, find the sa
 | **Codex CLI** | `codex` | Official Codex ACP adapter |
 | **Claude Code** | `claude` | Official Claude Agent ACP adapter |
 | **GitHub Copilot CLI** | `copilot` | Native ACP (`copilot --acp`) |
+| **Google Antigravity CLI** | `antigravity` | Native ACP (`agy acp`) |
 | **OpenCode 2** | `opencode2` | Native ACP (`opencode acp`) |
 | **OpenCode Legacy (v1)** | `opencode` | HTTP + live event stream |
 | **DeepSeek Harness** | `deepseek` | DeepSeek Harness ACP adapter |
@@ -194,6 +195,8 @@ That means you can start in a normal CLI, open Harness Remote later, find the sa
 | **PI** | `pi` | PI ACP adapter |
 
 Install and sign in to the coding-agent CLIs you want to use; the gateway detects them on start. OpenCode 2 and OpenCode Legacy share the `opencode` command, and Harness Remote picks the integration that matches the installed version.
+
+For Antigravity, install `agy`, check `agy acp --help`, and sign in with `agy` or `agy acp --login` before starting the gateway. The integration uses the [official ACP server](https://antigravity.google/docs/ide/extensions/acp/) and the models advertised by the installed CLI. Live Antigravity validation is pending; see [the validation checklist](docs/ANTIGRAVITY_VALIDATION.md).
 
 Harness Remote surfaces capabilities advertised by the harness instead of inventing controls the harness does not support.
 
