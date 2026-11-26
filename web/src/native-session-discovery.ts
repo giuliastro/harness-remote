@@ -263,6 +263,17 @@ export function nativeSessionLaunchFailure(error: unknown): string | null {
   return launchFailed ? message : null
 }
 
+/**
+ * The message a failed harness read reported, or null for a timeout. A timeout only means the
+ * adapter is still starting; any other error that outlasts the quick retries is shown as is,
+ * because the shell's wording (localized by Windows) cannot be matched reliably.
+ */
+export function nativeSessionDiscoveryErrorMessage(error: unknown): string | null {
+  if (error instanceof NativeSessionDiscoveryTimeoutError) return null
+  const message = (error instanceof Error ? error.message : typeof error === "string" ? error : "").trim()
+  return message || null
+}
+
 async function withinNativeSessionDiscoveryBudget<T>(
   work: Promise<T>,
   agentID: string,

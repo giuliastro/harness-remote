@@ -342,7 +342,7 @@ assert.match(source, /if \(!discoveryReady\) \{[\s\S]*setLoading\(true\)[\s\S]*r
 assert.match(source, /discoverAgentNativeSessionPageSkippingEmpty\(machine\.config, agent\)/, "recurring discovery must stop at the first populated native Session page")
 assert.match(source, /result\.pages\.some\(\(entry\) => entry\.page === null && !entry\.launchFailure\)[\s\S]*3_000 \* discoveryRetry\.current\.attempt/, "a cold adapter that misses the discovery budget must be retried briefly instead of staying at zero until the periodic refresh")
 assert.match(source, /launchFailure: nativeSessionLaunchFailure\(error\)/, "a harness read must keep the reason it failed")
-assert.match(source, /else if \(launchFailure\) next\[scope\] = \{ state: "failed", error: launchFailure \}/, "a harness the daemon cannot launch must show its error instead of retrying for ever")
+assert.match(source, /const error = launchFailure \?\? \(retriesSpent \? errorMessage : null\)[\s\S]*else if \(error\) next\[scope\] = \{ state: "failed", error \}/, "a harness the daemon cannot launch, or that keeps failing after the quick retries, must show its error instead of retrying for ever")
 assert.match(source, /sf\.harnessFailedState[\s\S]*<code>\{load\.error\}<\/code>/, "the harness connection box must show the launch error")
 assert.match(source, /machine\.config\.username,[\s\S]*machine\.config\.password/, "a corrected machine credential must invalidate the Session index")
 assert.match(source, /onRefreshCompleteRef\.current\?\.\(refreshToken\)/, "a requested Session refresh must settle only after its index read completes")

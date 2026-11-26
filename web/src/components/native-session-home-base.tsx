@@ -4,6 +4,7 @@ import { listMachineProjects, type MachineProject } from "../machineClient"
 import { canCreateNativeSession, createNativeSessionTarget } from "../native-session-create"
 import {
   discoverAgentNativeSessionPageSkippingEmpty,
+  nativeSessionDiscoveryErrorMessage,
   nativeSessionLaunchFailure,
   nativeSessionDiscoverySignature,
   nativeSessionSurfaceTarget,
@@ -745,9 +746,9 @@ export function NativeSessionHome({
       const [pages, projects] = await Promise.all([
         Promise.all(snapshot.agents.map(async (agent) => {
           try {
-            return { agent, page: await discoverAgentNativeSessionPageSkippingEmpty(machine.config, agent), launchFailure: null }
+            return { agent, page: await discoverAgentNativeSessionPageSkippingEmpty(machine.config, agent), launchFailure: null, errorMessage: null }
           } catch (error) {
-            return { agent, page: null, launchFailure: nativeSessionLaunchFailure(error) }
+            return { agent, page: null, launchFailure: nativeSessionLaunchFailure(error), errorMessage: nativeSessionDiscoveryErrorMessage(error) }
           }
         })),
         listMachineProjects(machine.config).catch(() => [] as MachineProject[])
@@ -759,9 +760,12 @@ export function NativeSessionHome({
       // correctly. Retry only the failed pages a few times instead of leaving PI/DeepSeek at zero
       // until the next periodic refresh; a successful pass resets the backoff. A harness the daemon
       // cannot launch at all is not retried quickly: it shows its error, and the periodic refresh
-      // still notices once it is installed or fixed.
+      // still notices once it is installed or fixed. Any other error (not a timeout) that is still
+      // there once the quick retries are spent is shown too: the shell reports a missing command in
+      // the Windows display language, so its wording cannot be matched.
       const failed = results.some((result) => result.pages.some((entry) => entry.page === null && !entry.launchFailure))
-      if (failed && discoveryRetry.current.attempt < 3) {
+      const retriesSpent = discoveryRetry.current.attempt >= 3
+      if (failed && !retriesSpent) {
         discoveryRetry.current.attempt += 1
         retryTimer = window.setTimeout(() => setRevision((value) => value + 1), 3_000 * discoveryRetry.current.attempt)
       } else if (!failed) {
@@ -837,10 +841,11 @@ export function NativeSessionHome({
       setAgentLoad((current) => {
         const next = { ...current }
         for (const result of results) {
-          for (const { agent, page, launchFailure } of result.pages) {
+          for (const { agent, page, launchFailure, errorMessage } of result.pages) {
             const scope = pageScopeKey(result.machine.id, agent.id)
+            const error = launchFailure ?? (retriesSpent ? errorMessage : null)
             if (page) delete next[scope]
-            else if (launchFailure) next[scope] = { state: "failed", error: launchFailure }
+            else if (error) next[scope] = { state: "failed", error }
             else next[scope] = AGENT_RETRYING
           }
         }
