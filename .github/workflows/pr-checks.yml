@@ -81,8 +81,8 @@ jobs:
   browser-smoke:
     name: Chromium product smoke
     needs: tests
-    # Playwright 1.55.0 cannot install Chromium dependencies on ubuntu-26.04, now used by latest.
-    runs-on: ubuntu-22.04
+    # Playwright 1.55 ships no Chromium for Ubuntu 26.04, which ubuntu-latest became on 2026-11-26.
+    runs-on: ubuntu-24.04
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -102,8 +102,10 @@ jobs:
         run: npm run build
         working-directory: web
 
+      # Keep the lockfile: without it npm re-resolves every dependency, and Vite 8.4 then refused
+      # to start a preview while an earlier smoke's preview was still running.
       - name: Install pinned Playwright runtime
-        run: npm install --no-save --package-lock=false playwright@1.55.0
+        run: npm install --no-save playwright@1.55.0
         working-directory: web
 
       - name: Install Chromium

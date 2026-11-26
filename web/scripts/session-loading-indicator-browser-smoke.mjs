@@ -13,7 +13,8 @@ import { chromium } from "playwright"
  * Run with SCREENSHOTS=<dir> to capture each stage at phone and desktop width.
  */
 
-const PREVIEW_PORT = 4187
+// Not shared with any other smoke: the outcome smoke used 4187 earlier in the same CI job.
+const PREVIEW_PORT = 4188
 const DAEMON_PORT = 4433
 const APP_ORIGIN = `http://127.0.0.1:${PREVIEW_PORT}`
 const STORAGE_KEY = "harness-remote.workspace.machines.v1"
@@ -106,13 +107,20 @@ function startFakeDaemon() {
   })
 }
 
+let previewOutput = ""
+
 function startPreview() {
   const command = process.platform === "win32" ? "npm.cmd" : "npm"
-  return spawn(command, ["run", "preview", "--", "--host", "127.0.0.1", "--port", String(PREVIEW_PORT), "--strictPort"], {
+  const child = spawn(command, ["run", "preview", "--", "--host", "127.0.0.1", "--port", String(PREVIEW_PORT), "--strictPort"], {
     stdio: ["ignore", "pipe", "pipe"],
     shell: process.platform === "win32",
     detached: process.platform !== "win32"
   })
+  // Keep what the preview printed, so a start failure (a taken port, a build error) is visible.
+  const keep = (chunk) => { previewOutput = `${previewOutput}${chunk}`.slice(-4000) }
+  child.stdout.on("data", keep)
+  child.stderr.on("data", keep)
+  return child
 }
 
 async function ready(url) {
@@ -121,7 +129,8 @@ async function ready(url) {
     try { if ((await fetch(url)).ok) return } catch {}
     await new Promise((resolve) => setTimeout(resolve, 150))
   }
-  throw new Error(`Preview did not become ready: ${url}`)
+  throw new Error(`Preview did not become ready: ${url}
+${previewOutput.trim() || "(the preview printed nothing)"}`)
 }
 
 function stopPreview(child) {

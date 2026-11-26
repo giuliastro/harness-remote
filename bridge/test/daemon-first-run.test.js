@@ -76,11 +76,22 @@ test("an ACP adapter already on PATH is preferred over fetching one", async () =
   })
 
   // OMP speaks ACP itself, so there is no adapter to look for and nothing to prefer.
-  assert.deepEqual(resolveAcpLaunch(harnessProfile("omp"), { find: () => "/never/used" }), {
+  assert.deepEqual(resolveAcpLaunch(harnessProfile("omp"), { find: () => "/never/used", platform: "linux" }), {
     command: "omp",
     args: ["acp"],
     source: "harness"
   })
+
+  // On Windows a native harness can be only an npm `.cmd` shim. spawn() cannot run a bare name
+  // that resolves to one, so the launch uses the exact file detection found (MiMo: ENOENT).
+  const npmShim = "C:\\Users\\person\\AppData\\Roaming\\npm\\mimo.cmd"
+  assert.deepEqual(resolveAcpLaunch(harnessProfile("mimo"), { find: (name) => name === "mimo" ? npmShim : null, platform: "win32" }), {
+    command: npmShim,
+    args: ["acp"],
+    source: "harness"
+  })
+  assert.equal(resolveAcpLaunch(harnessProfile("mimo"), { find: () => null, platform: "win32" }).command, "mimo",
+    "an undetected harness keeps its bare command so the spawn error still names it")
 
   for (const backend of ["claude", "codex"]) {
     const profile = harnessProfile(backend)

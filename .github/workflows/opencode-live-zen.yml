@@ -20,7 +20,8 @@ jobs:
   live-opencode:
     name: Real OpenCode + Zen browser gate
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
-    runs-on: ubuntu-latest
+    # Playwright 1.55 ships no Chromium for Ubuntu 26.04, which ubuntu-latest became on 2026-11-26.
+    runs-on: ubuntu-24.04
     timeout-minutes: 35
     steps:
       - name: Checkout
@@ -41,8 +42,10 @@ jobs:
         run: npm run build
         working-directory: web
 
+      # Keep the lockfile: without it npm re-resolves every dependency, and Vite 8.4 then refused
+      # to start a preview while an earlier smoke's preview was still running.
       - name: Install pinned Playwright runtime
-        run: npm install --no-save --package-lock=false playwright@1.55.0
+        run: npm install --no-save playwright@1.55.0
         working-directory: web
 
       - name: Install Chromium

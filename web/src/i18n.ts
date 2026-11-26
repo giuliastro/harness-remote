@@ -744,6 +744,7 @@ export type TranslationKey =
   | 'sf.harnessConnectionTitle'
   | 'sf.harnessLoadingState'
   | 'sf.harnessRetryingState'
+  | 'sf.harnessFailedState'
   | 'sf.configuredMachines'
   | 'sf.machinesUnavailable'
   | 'sf.couldNotConnect'
@@ -1551,6 +1552,7 @@ const translations: Record<LanguageCode, Partial<Record<TranslationKey, string>>
     'sf.harnessConnectionTitle': 'Harness connection',
     'sf.harnessLoadingState': 'Starting…',
     'sf.harnessRetryingState': 'Retrying…',
+    'sf.harnessFailedState': 'Could not start',
     'sf.configuredMachines': '{count} configured machines',
     'sf.machinesUnavailable': 'Machines unavailable',
     'sf.couldNotConnect': 'Harness Remote could not connect',
@@ -2358,6 +2360,7 @@ const translations: Record<LanguageCode, Partial<Record<TranslationKey, string>>
     'sf.harnessConnectionTitle': 'Connessione harness',
     'sf.harnessLoadingState': 'Avvio…',
     'sf.harnessRetryingState': 'Nuovo tentativo…',
+    'sf.harnessFailedState': 'Avvio non riuscito',
     'sf.configuredMachines': '{count} macchine configurate',
     'sf.machinesUnavailable': 'Macchine non raggiungibili',
     'sf.couldNotConnect': 'Harness Remote non è riuscito a connettersi',
@@ -3165,6 +3168,7 @@ const translations: Record<LanguageCode, Partial<Record<TranslationKey, string>>
     'sf.harnessConnectionTitle': 'Harness 連線',
     'sf.harnessLoadingState': '正在啟動…',
     'sf.harnessRetryingState': '正在重試…',
+    'sf.harnessFailedState': '無法啟動',
     'sf.configuredMachines': '已設定 {count} 部機器',
     'sf.machinesUnavailable': '機器無法使用',
     'sf.couldNotConnect': 'Harness Remote 無法連線',
@@ -3972,6 +3976,7 @@ const translations: Record<LanguageCode, Partial<Record<TranslationKey, string>>
     'sf.harnessConnectionTitle': 'Harness 连接',
     'sf.harnessLoadingState': '正在启动…',
     'sf.harnessRetryingState': '正在重试…',
+    'sf.harnessFailedState': '无法启动',
     'sf.configuredMachines': '已配置 {count} 台机器',
     'sf.machinesUnavailable': '机器不可用',
     'sf.couldNotConnect': 'Harness Remote 无法连接',
@@ -4779,6 +4784,7 @@ const translations: Record<LanguageCode, Partial<Record<TranslationKey, string>>
     'sf.harnessConnectionTitle': 'Conexão dos harnesses',
     'sf.harnessLoadingState': 'Iniciando…',
     'sf.harnessRetryingState': 'Tentando novamente…',
+    'sf.harnessFailedState': 'Não foi possível iniciar',
     'sf.configuredMachines': '{count} máquinas configuradas',
     'sf.machinesUnavailable': 'Máquinas indisponíveis',
     'sf.couldNotConnect': 'O Harness Remote não conseguiu conectar',

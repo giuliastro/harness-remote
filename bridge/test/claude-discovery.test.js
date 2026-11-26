@@ -17,11 +17,23 @@ test("Claude discovery falls back to the official user-local install", () => {
   const expected = path.join(home, ".local", "bin", "claude")
   const options = {
     pathValue: "",
+    platform: "linux",
     homeDirectory: home,
     exists: (value) => value === expected,
     access() {}
   }
   assert.equal(findClaudeExecutable(options), expected)
+})
+
+test("Claude discovery falls back to claude.exe in the user-local install on Windows", () => {
+  const home = path.join("C:\\Users", "person")
+  const expected = path.join(home, ".local", "bin", "claude.exe")
+  assert.equal(findClaudeExecutable({
+    pathValue: "",
+    platform: "win32",
+    homeDirectory: home,
+    exists: (value) => value === expected
+  }), expected)
 })
 
 test("the Claude adapter receives CLAUDE_CODE_EXECUTABLE without overriding an explicit value", () => {
