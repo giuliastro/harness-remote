@@ -52,6 +52,7 @@ opencode
 opencode2
 omp
 pi
+agy
 ```
 
 You normally do not need to choose one manually.
