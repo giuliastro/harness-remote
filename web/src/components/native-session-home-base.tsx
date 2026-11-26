@@ -4,6 +4,7 @@ import { listMachineProjects, type MachineProject } from "../machineClient"
 import { canCreateNativeSession, createNativeSessionTarget } from "../native-session-create"
 import {
   discoverAgentNativeSessionPageSkippingEmpty,
+  nativeSessionLaunchFailure,
   nativeSessionDiscoverySignature,
   nativeSessionSurfaceTarget,
   selectReadyNativeSessionSources,
@@ -27,7 +28,7 @@ import { useLanguage, useTranslator } from "../useTranslator"
 import type { Translator } from "../i18n"
 import { isListeningStatus, listeningBackgroundCount, quietMinutes } from "../session-status-detail"
 import type { WorkspaceMachine } from "../workspaceMachines"
-import { AgentIcon, ChatIcon, ChevronDownIcon, FolderIcon, LoadingIcon, PlusIcon, SearchIcon, ServerIcon } from "../Icons"
+import { AgentIcon, AlertIcon, ChatIcon, ChevronDownIcon, FolderIcon, LoadingIcon, PlusIcon, SearchIcon, ServerIcon } from "../Icons"
 import "../native-session-home.css"
 import "../native-session-home-ux.css"
 import { harnessIconUrl } from "../harness-icons"
@@ -500,11 +501,22 @@ function nativeCreateAgents(snapshot: MachineSnapshot): MachineAgentHost[] {
   return snapshot.agents.filter((agent) => agent.transport === "acp" || agent.transport === "http")
 }
 
-type AgentLoadState = "loading" | "retrying"
+// "failed" means the daemon could not start the harness at all (for example `spawn mimo ENOENT`).
+type AgentLoadState =
+  | { state: "loading" | "retrying" }
+  | { state: "failed", error: string }
+
+const AGENT_LOADING: AgentLoadState = { state: "loading" }
+const AGENT_RETRYING: AgentLoadState = { state: "retrying" }
+
+function sameAgentLoadState(a: AgentLoadState | undefined, b: AgentLoadState | undefined): boolean {
+  if (!a || !b) return a === b
+  return a.state === b.state && (a.state !== "failed" || b.state !== "failed" || a.error === b.error)
+}
 
 function sameAgentLoad(a: Record<string, AgentLoadState>, b: Record<string, AgentLoadState>): boolean {
   const keys = Object.keys(a)
-  return keys.length === Object.keys(b).length && keys.every((key) => a[key] === b[key])
+  return keys.length === Object.keys(b).length && keys.every((key) => sameAgentLoadState(a[key], b[key]))
 }
 
 export function NativeSessionHome({
@@ -714,14 +726,16 @@ export function NativeSessionHome({
     setOlderSessionErrors({})
     const authoritativeRefresh = authoritativeRefreshToken !== authoritativeRefreshApplied.current
     // Only a harness with nothing on screen yet gets an indicator: a background refresh of rows the
-    // user already sees stays quiet. A harness that failed before keeps "retrying" until it answers.
+    // user already sees stays quiet. A harness that failed before keeps "retrying" (or its launch
+    // error) until it answers.
     setAgentLoad((current) => {
       const next: Record<string, AgentLoadState> = {}
       for (const { machine, snapshot } of readySources) {
         for (const agent of snapshot?.agents ?? []) {
           const scope = pageScopeKey(machine.id, agent.id)
-          if (current[scope] === "retrying") next[scope] = "retrying"
-          else if (!pageCache.current.has(scope)) next[scope] = "loading"
+          const previous = current[scope]
+          if (previous && previous.state !== "loading") next[scope] = previous
+          else if (!pageCache.current.has(scope)) next[scope] = AGENT_LOADING
         }
       }
       return sameAgentLoad(current, next) ? current : next
@@ -729,10 +743,13 @@ export function NativeSessionHome({
     void Promise.all(readySources.map(async ({ machine, snapshot }) => {
       if (!snapshot) return { machine, snapshot, projects: [] as MachineProject[], pages: [] }
       const [pages, projects] = await Promise.all([
-        Promise.all(snapshot.agents.map(async (agent) => ({
-          agent,
-          page: await discoverAgentNativeSessionPageSkippingEmpty(machine.config, agent).catch(() => null)
-        }))),
+        Promise.all(snapshot.agents.map(async (agent) => {
+          try {
+            return { agent, page: await discoverAgentNativeSessionPageSkippingEmpty(machine.config, agent), launchFailure: null }
+          } catch (error) {
+            return { agent, page: null, launchFailure: nativeSessionLaunchFailure(error) }
+          }
+        })),
         listMachineProjects(machine.config).catch(() => [] as MachineProject[])
       ])
       return { machine, snapshot, projects, pages }
@@ -740,8 +757,10 @@ export function NativeSessionHome({
       if (cancelled) return
       // A cold npx adapter can exceed the per-harness discovery budget even though it is starting
       // correctly. Retry only the failed pages a few times instead of leaving PI/DeepSeek at zero
-      // until the next periodic refresh; a successful pass resets the backoff.
-      const failed = results.some((result) => result.pages.some((entry) => entry.page === null))
+      // until the next periodic refresh; a successful pass resets the backoff. A harness the daemon
+      // cannot launch at all is not retried quickly: it shows its error, and the periodic refresh
+      // still notices once it is installed or fixed.
+      const failed = results.some((result) => result.pages.some((entry) => entry.page === null && !entry.launchFailure))
       if (failed && discoveryRetry.current.attempt < 3) {
         discoveryRetry.current.attempt += 1
         retryTimer = window.setTimeout(() => setRevision((value) => value + 1), 3_000 * discoveryRetry.current.attempt)
@@ -818,10 +837,11 @@ export function NativeSessionHome({
       setAgentLoad((current) => {
         const next = { ...current }
         for (const result of results) {
-          for (const { agent, page } of result.pages) {
+          for (const { agent, page, launchFailure } of result.pages) {
             const scope = pageScopeKey(result.machine.id, agent.id)
             if (page) delete next[scope]
-            else next[scope] = "retrying"
+            else if (launchFailure) next[scope] = { state: "failed", error: launchFailure }
+            else next[scope] = AGENT_RETRYING
           }
         }
         return sameAgentLoad(current, next) ? current : next
@@ -1730,6 +1750,7 @@ export function NativeSessionHome({
             const machineCollapsed = collapsedMachines.has(machine.id)
             const loadingOlder = loadingOlderMachines.has(machine.id)
             const olderSessionError = olderSessionErrors[machine.id]
+            const pendingAgentsFailed = pendingAgents.every(({ load }) => load.state === "failed")
             // Empty pages are skipped within a bounded discovery read. If that budget runs out,
             // a remaining cursor still means unscanned history: keep manual continuation reachable
             // even when no rows have been found yet. A fully scanned empty machine has no cursor.
@@ -1774,15 +1795,19 @@ export function NativeSessionHome({
                       </div>
                     ) : null}
                     {state === "online" && pendingAgents.length ? (
-                      <div className="hr-native-machine-loading" role="status" aria-live="polite">
-                        <LoadingIcon size={13} />
+                      // Spin only while some harness may still answer; launch errors alone are final.
+                      <div className={`hr-native-machine-loading${pendingAgentsFailed ? " failed" : ""}`} role="status" aria-live="polite">
+                        {pendingAgentsFailed ? <AlertIcon size={13} /> : <LoadingIcon size={13} />}
                         <div className="hr-native-machine-loading-copy">
                           <strong>{t("sf.harnessConnectionTitle")}</strong>
                           <ul>
                             {pendingAgents.map(({ label, load }) => (
-                              <li key={`${label}:${load}`}>
+                              <li key={`${label}:${load.state}`} className={load.state === "failed" ? "failed" : undefined}>
                                 <span>{label}</span>
-                                <small>{t(load === "retrying" ? "sf.harnessRetryingState" : "sf.harnessLoadingState")}</small>
+                                <small>{t(load.state === "failed"
+                                  ? "sf.harnessFailedState"
+                                  : load.state === "retrying" ? "sf.harnessRetryingState" : "sf.harnessLoadingState")}</small>
+                                {load.state === "failed" ? <code>{load.error}</code> : null}
                               </li>
                             ))}
                           </ul>

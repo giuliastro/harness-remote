@@ -55,6 +55,21 @@ test("Windows npm installs are discoverable from APPDATA and LOCALAPPDATA", () =
   assert.equal(environment.Path, `C:\\Windows\\System32;${npm};${node}`)
 })
 
+test("Windows lists MiMo's native bin before the npm shim directory", () => {
+  const home = path.join("C:\\Users", "person")
+  const appData = path.join(home, "AppData", "Roaming")
+  const mimo = path.join(home, ".mimocode", "bin")
+  const npm = path.join(appData, "npm")
+  const directories = userExecutableDirectories({
+    platform: "win32",
+    homeDirectory: home,
+    environment: { APPDATA: appData },
+    exists: (candidate) => candidate === mimo || candidate === npm
+  })
+  // npm leaves only `mimo.cmd`; the installer's `mimo.exe` must win when neither is on PATH.
+  assert.deepEqual(directories, [mimo, npm])
+})
+
 test("PATH merging tolerates empty values and duplicate separators", () => {
   assert.equal(mergeExecutablePath("/bin", ["/tools", "/bin"], ":"), "/bin:/tools")
   assert.equal(mergeExecutablePath("", ["/bin", "/bin"], ":"), "/bin")

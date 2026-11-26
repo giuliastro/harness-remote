@@ -630,6 +630,27 @@
   white-space: nowrap;
 }
 
+/* A harness the daemon could not launch: the row keeps its label and state, and the error the
+   daemon reported goes underneath so the person can see which command is missing. */
+.hr-native-machine-loading.failed {
+  border-color: var(--td3-red-border);
+  background: var(--td3-red-soft);
+}
+
+.hr-native-machine-loading.failed > svg,
+.hr-native-machine-loading-copy li.failed > small {
+  color: var(--td3-red-text);
+}
+
+.hr-native-machine-loading-copy li > code {
+  grid-column: 1 / -1;
+  min-width: 0;
+  color: var(--td3-text-2);
+  font-size: 10.5px;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
 .hr-native-machine-group .hr-native-project-group + .hr-native-project-group {
   margin-top: 12px;
 }

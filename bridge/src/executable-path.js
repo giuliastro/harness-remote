@@ -21,6 +21,9 @@ export function userExecutableDirectories({
 } = {}) {
   const directories = platform === "win32"
     ? [
+        // MiMo's installer puts the native `mimo.exe` here. An npm install leaves only a `mimo.cmd`
+        // shim in %APPDATA%\npm, so list the native directory first.
+        path.join(homeDirectory, ".mimocode", "bin"),
         environment.APPDATA ? path.join(environment.APPDATA, "npm") : "",
         environment.LOCALAPPDATA ? path.join(environment.LOCALAPPDATA, "Programs", "nodejs") : "",
         path.join(homeDirectory, "AppData", "Roaming", "npm")

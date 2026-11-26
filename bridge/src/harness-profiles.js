@@ -504,8 +504,15 @@ export function listAcpProviderProfiles() {
  * starts without a network round trip, and it sidesteps environments where `npx` cannot link a
  * binary - which is exactly what happens under proot on Android.
  */
-export function resolveAcpLaunch(profile, { find = findExecutable, readVersion } = {}) {
-  if (!profile.adapterCommand) return { command: profile.command, args: [...profile.args], source: "harness" }
+export function resolveAcpLaunch(profile, { find = findExecutable, readVersion, platform = process.platform } = {}) {
+  if (!profile.adapterCommand) {
+    // Detection finds a harness through PATHEXT, so on Windows it can be only an npm `.cmd` shim
+    // (MiMo in %APPDATA%\npm). spawn() without a shell cannot run a bare name that resolves to a
+    // shim and fails with ENOENT. Launch the exact file detection found; the ACP client already
+    // runs `.cmd`/`.bat` paths through cmd.exe.
+    const command = platform === "win32" ? find(profile.command) ?? profile.command : profile.command
+    return { command, args: [...profile.args], source: "harness" }
+  }
   const installed = profile.executableGeneration
     ? resolveOpenCodeCommand(profile.executableGeneration, { find, ...(readVersion ? { readVersion } : {}) })
     : find(profile.adapterCommand)
