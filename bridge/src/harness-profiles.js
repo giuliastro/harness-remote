@@ -493,8 +493,9 @@ export const HARNESS_PROFILES = {
     // ACP supports permission prompts, but its docs do not justify auto-approving them here.
     lifecycleContract: COMMON_ACP_LIFECYCLE_CONTRACT,
     // The CLI documents native list/load/resume/close. How a second writer's changes are observed
-    // is not specified, and the Thinking option's ACP config ID is not documented.
-    modelVariantConfigIDs: [],
+    // is not specified. agy 1.5.18 advertises its Thinking picker as the `thought_level` config
+    // option (low/medium/high/xhigh, default high) in session/new configOptions.
+    modelVariantConfigIDs: ["thought_level"],
     sessionContract: {
       authority: "native-harness",
       discovery: "native-list",

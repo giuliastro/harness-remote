@@ -26,7 +26,7 @@ test("Antigravity provider uses the documented native ACP command and discovery"
   assert.deepEqual(detected, ["antigravity"])
 })
 
-test("Antigravity declares only documented ACP features and conservative session semantics", () => {
+test("Antigravity declares only verified ACP features and conservative session semantics", () => {
   const provider = harnessProfile("antigravity")
   const contract = acpHarnessCapabilityContract(provider)
 
@@ -51,5 +51,5 @@ test("Antigravity declares only documented ACP features and conservative session
   assert.equal(contract.sessions.continuation, "session-load")
   assert.equal(contract.sessions.writerOwnership, "adapter-defined")
   assert.equal(contract.sessions.stop, "owned-session-native-cancel")
-  assert.deepEqual(contract.models.variantConfigIDs, [])
+  assert.deepEqual(contract.models.variantConfigIDs, ["thought_level"])
 })
