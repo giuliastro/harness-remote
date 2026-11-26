@@ -2,6 +2,7 @@ import { spawn } from "node:child_process"
 import { EventEmitter } from "node:events"
 import { stat } from "node:fs/promises"
 import { withoutGatewayCredentials } from "./child-environment.js"
+import { ConsoleOutputDecoder } from "./console-output-decoder.js"
 import { closeOwnedChildProcess, ownChildProcess } from "./managed-child-process.js"
 
 // An adapter launched through `npx` downloads itself on first use, which takes far longer
@@ -152,9 +153,10 @@ export class AcpClient extends EventEmitter {
     const windowsCommand = process.platform === "win32" && this.#spawn === spawn && /\.(cmd|bat)$/i.test(this.#command)
       ? process.env.ComSpec ?? "cmd.exe"
       : this.#command
-    const windowsArgs = windowsCommand === this.#command
-      ? this.#args
-      : ["/d", "/s", "/c", this.#command, ...this.#args]
+    const throughShell = windowsCommand !== this.#command
+    const windowsArgs = throughShell
+      ? ["/d", "/s", "/c", this.#command, ...this.#args]
+      : this.#args
     const child = this.#spawn(windowsCommand, windowsArgs, {
       stdio: ["pipe", "pipe", "pipe"],
       windowsHide: true,
@@ -168,16 +170,25 @@ export class AcpClient extends EventEmitter {
     this.#stderr = ""
     this.#stderrPartial = ""
     child.stdout.setEncoding("utf8")
-    child.stderr.setEncoding("utf8")
-    child.stdout.on("data", (chunk) => this.#consume(chunk))
-    child.stderr.on("data", (chunk) => {
+    const receiveStderr = (chunk) => {
+      if (!chunk) return
       this.#stderr = `${this.#stderr}${chunk}`.slice(-STDERR_KEPT_CHARS)
       // Emit whole lines. A chunk boundary falls wherever the pipe happens to flush, so a listener
       // that prefixes what it receives would otherwise print `[pi] sh: 1: [pi] pi-acp: not found`.
       const pending = `${this.#stderrPartial}${chunk}`.split(/\r?\n/)
       this.#stderrPartial = pending.pop() ?? ""
       for (const line of pending) this.emit("stderr", line)
-    })
+    }
+    // cmd.exe reports a missing command in the console OEM code page, not UTF-8, so its
+    // "non è riconosciuto" would reach the user as "non � riconosciuto".
+    const stderrDecoder = throughShell ? new ConsoleOutputDecoder() : undefined
+    if (stderrDecoder) {
+      child.stderr.on("data", (chunk) => receiveStderr(stderrDecoder.write(chunk)))
+    } else {
+      child.stderr.setEncoding("utf8")
+      child.stderr.on("data", receiveStderr)
+    }
+    child.stdout.on("data", (chunk) => this.#consume(chunk))
     // Writing to an adapter that has already exited (a CLI that is not installed exits at once)
     // fails with EPIPE on its stdin. The write callback rejects that request and the exit handler
     // reports the adapter; without a listener the stream error would crash the whole daemon.
@@ -185,6 +196,7 @@ export class AcpClient extends EventEmitter {
     child.on("error", (error) => this.#handleExit(error, child))
     child.on("exit", (code, signal) => {
       if (this.#child !== child) return
+      if (stderrDecoder) receiveStderr(stderrDecoder.end())
       if (this.#stderrPartial) {
         this.emit("stderr", this.#stderrPartial)
         this.#stderrPartial = ""
