@@ -24,6 +24,10 @@ export function userExecutableDirectories({
         // MiMo's installer puts the native `mimo.exe` here. An npm install leaves only a `mimo.cmd`
         // shim in %APPDATA%\npm, so list the native directory first.
         path.join(homeDirectory, ".mimocode", "bin"),
+        // The native Claude Code installer puts `claude.exe` here, as on Linux.
+        path.join(homeDirectory, ".local", "bin"),
+        // The OMP installer puts `omp.exe` in %LOCALAPPDATA%\omp.
+        environment.LOCALAPPDATA ? path.join(environment.LOCALAPPDATA, "omp") : "",
         environment.APPDATA ? path.join(environment.APPDATA, "npm") : "",
         environment.LOCALAPPDATA ? path.join(environment.LOCALAPPDATA, "Programs", "nodejs") : "",
         path.join(homeDirectory, "AppData", "Roaming", "npm")

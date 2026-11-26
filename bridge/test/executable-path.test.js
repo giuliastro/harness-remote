@@ -70,6 +70,21 @@ test("Windows lists MiMo's native bin before the npm shim directory", () => {
   assert.deepEqual(directories, [mimo, npm])
 })
 
+test("Windows recovers the native OMP and Claude Code install directories", () => {
+  const home = path.join("C:\\Users", "person")
+  const localAppData = path.join(home, "AppData", "Local")
+  const claude = path.join(home, ".local", "bin")
+  const omp = path.join(localAppData, "omp")
+  const directories = userExecutableDirectories({
+    platform: "win32",
+    homeDirectory: home,
+    environment: { LOCALAPPDATA: localAppData },
+    exists: (candidate) => candidate === claude || candidate === omp
+  })
+  // A service or GUI launch without these on PATH reported OMP and Claude Code as not installed.
+  assert.deepEqual(directories, [claude, omp])
+})
+
 test("PATH merging tolerates empty values and duplicate separators", () => {
   assert.equal(mergeExecutablePath("/bin", ["/tools", "/bin"], ":"), "/bin:/tools")
   assert.equal(mergeExecutablePath("", ["/bin", "/bin"], ":"), "/bin")

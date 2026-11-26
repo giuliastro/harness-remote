@@ -90,7 +90,9 @@ export function findClaudeExecutable(options = {}) {
   // A GUI launch can resolve a shell PATH without the private install directory used by the
   // official Claude Code installer.
   const home = options.homeDirectory ?? homedir()
-  const candidate = path.join(home, ".local", "bin", "claude")
+  // On Windows the installer writes `claude.exe`; the bare name exists only on Linux and macOS.
+  const name = (options.platform ?? process.platform) === "win32" ? "claude.exe" : "claude"
+  const candidate = path.join(home, ".local", "bin", name)
   return executable(candidate, options) ? candidate : null
 }
 
