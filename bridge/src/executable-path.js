@@ -28,6 +28,8 @@ export function userExecutableDirectories({
         path.join(homeDirectory, ".local", "bin"),
         // The OMP installer puts `omp.exe` in %LOCALAPPDATA%\omp.
         environment.LOCALAPPDATA ? path.join(environment.LOCALAPPDATA, "omp") : "",
+        // The Google Antigravity installer puts `agy.exe` in %LOCALAPPDATA%\agy\bin.
+        environment.LOCALAPPDATA ? path.join(environment.LOCALAPPDATA, "agy", "bin") : "",
         environment.APPDATA ? path.join(environment.APPDATA, "npm") : "",
         environment.LOCALAPPDATA ? path.join(environment.LOCALAPPDATA, "Programs", "nodejs") : "",
         path.join(homeDirectory, "AppData", "Roaming", "npm")
