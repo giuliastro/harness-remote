@@ -81,7 +81,8 @@ jobs:
   browser-smoke:
     name: Chromium product smoke
     needs: tests
-    runs-on: ubuntu-latest
+    # Playwright 1.55 ships no Chromium for Ubuntu 26.04, which ubuntu-latest became on 2026-11-26.
+    runs-on: ubuntu-24.04
     steps:
       - name: Checkout
         uses: actions/checkout@v7
