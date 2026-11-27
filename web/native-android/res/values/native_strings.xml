@@ -29,4 +29,11 @@
     <string name="hr_attention_boundary">Boundary: %1$s</string>
     <string name="hr_attention_allow_once">Allow once</string>
     <string name="hr_attention_deny">Deny</string>
+    <string name="hr_attention_review">Review request</string>
+    <string name="hr_attention_review_before_allow">Open the Session before allowing</string>
+    <string name="hr_attention_command">Command: %1$s</string>
+    <string name="hr_attention_command_missing">Exact command not supplied</string>
+    <string name="hr_attention_execution_directory">Execution directory: %1$s</string>
+    <string name="hr_attention_directory_missing">Execution directory not supplied</string>
+    <string name="hr_attention_detail_review">Open the Session to review full details</string>
 </resources>
