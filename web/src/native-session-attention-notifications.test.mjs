@@ -1,6 +1,7 @@
 import assert from "node:assert/strict"
 import {
   EMPTY_NATIVE_SESSION_ATTENTION_NOTIFICATION_STATE,
+  permissionExecutionContext,
   reconcileNativeSessionAttentionNotifications
 } from "./native-session-attention-notifications.ts"
 
@@ -162,5 +163,21 @@ result = reconcileNativeSessionAttentionNotifications(state, [
 assert.equal(result.notifications.length, 1)
 assert.equal(result.notifications[0].kind, "rejected")
 assert.equal(result.notifications[0].consequence, "This request was rejected and will not proceed automatically.")
+
+assert.deepEqual(permissionExecutionContext({ command: "echo one\n echo two ", cwd: "/tmp/actual" }), {
+  command: "echo one\n echo two ",
+  executionDirectory: "/tmp/actual"
+})
+assert.deepEqual(permissionExecutionContext({ description: "rm file", pattern: "rm *", command: ["rm", "file"] }), {})
+assert.deepEqual(permissionExecutionContext(undefined), {})
+const explicit = reconcileNativeSessionAttentionNotifications(
+  state,
+  [observation([item({
+    kind: "authorization", reason: "permission",
+    permissions: [{ ...permission("explicit"), metadata: { command: "npm test", cwd: "/workspace" } }]
+  })])]
+)
+assert.equal(explicit.notifications[0].command, "npm test")
+assert.equal(explicit.notifications[0].executionDirectory, "/workspace")
 
 console.log("native Session attention notification transition tests passed")
