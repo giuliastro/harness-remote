@@ -42,8 +42,10 @@
 
 .bui-approval .tdw-attention-heading span {
   display: inline-flex;
+  flex: none;
   align-items: center;
   gap: 6px;
+  white-space: nowrap;
 }
 
 .bui-approval-dot {
