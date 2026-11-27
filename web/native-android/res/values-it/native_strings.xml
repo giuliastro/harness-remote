@@ -29,4 +29,11 @@
     <string name="hr_attention_boundary">Ambito: %1$s</string>
     <string name="hr_attention_allow_once">Consenti una volta</string>
     <string name="hr_attention_deny">Nega</string>
+    <string name="hr_attention_review">Esamina richiesta</string>
+    <string name="hr_attention_review_before_allow">Apri la sessione prima di autorizzare</string>
+    <string name="hr_attention_command">Comando: %1$s</string>
+    <string name="hr_attention_command_missing">Comando esatto non fornito</string>
+    <string name="hr_attention_execution_directory">Directory di esecuzione: %1$s</string>
+    <string name="hr_attention_directory_missing">Directory di esecuzione non fornita</string>
+    <string name="hr_attention_detail_review">Apri la sessione per esaminare tutti i dettagli</string>
 </resources>
