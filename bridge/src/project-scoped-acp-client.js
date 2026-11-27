@@ -294,7 +294,7 @@ export class ProjectScopedAcpClient extends EventEmitter {
   }
 
   #forwardEvents(root, entry) {
-    for (const eventName of ["notification", "agent-request", "request", "stderr", "protocol-error", "permission"]) {
+    for (const eventName of ["notification", "agent-request", "permission-request", "request", "stderr", "protocol-error", "permission"]) {
       entry.client.on?.(eventName, (...args) => this.emit(eventName, ...args))
     }
     entry.client.on?.("exit", (...args) => {

@@ -475,6 +475,17 @@ export function createBridgeServer({ config, acp, serviceOptions, machineRegistr
         writeJSON(response, 200, { home: selected, state: "", config: "", worktree: selected, directory: selected })
         return
       }
+      if (request.method === "GET" && url.pathname === "/permission") {
+        writeJSON(response, 200, service.permissions(directory))
+        return
+      }
+      const permissionReply = /^\/permission\/(acp-[^/]+)\/reply$/.exec(url.pathname)
+      if (request.method === "POST" && permissionReply) {
+        const body = await readBody(request)
+        if (!["once", "always", "reject"].includes(body.reply)) throw new Error("Invalid permission reply")
+        writeJSON(response, 200, await service.replyPermission(permissionReply[1], body.reply, directory))
+        return
+      }
       if (request.method === "GET" && url.pathname === "/file") {
         const selected = await allowedDirectory(url.searchParams.get("path") ?? config.roots[0] ?? process.cwd(), config)
         const entries = await readdir(selected, { withFileTypes: true })

@@ -600,6 +600,7 @@ function commandInfoList(commands) {
 export class AcpService {
   #acp
   #sessions = new Map()
+  #permissions = new Map()
   // Bounds come from TranscriptCache: the 24MB weight budget governs, and the entry cap only stops
   // unbounded growth from many tiny transcripts. Pinning 8 here re-introduced the Session-first
   // thrash the default exists to avoid.
@@ -852,6 +853,7 @@ export class AcpService {
       : Math.max(1_000, Math.min(60_000, this.#idleUnloadMs || 30_000))
     if (this.#idleUnloadMs > 0 || this.#maxLoadedSessions > 0) this.#startLifecycleSweep()
     acp.on("notification", (notification) => this.#handleNotification(notification))
+    acp.on("permission-request", (request) => this.#recordPermissionRequest(request))
     acp.on("sessions-closed", (sessionIDs) => this.#forgetOpenSessions(sessionIDs))
     // An adapter that exits takes every Session it had open with it. Still counting them as loaded
     // sent the next prompt to a process that had never seen the Session, and the reload that its
@@ -864,7 +866,60 @@ export class AcpService {
       this.#loaded.delete(sessionID)
       this.#acpOpenSessions.delete(sessionID)
       this.#configOptions.delete(sessionID)
+      for (const [requestID, permission] of this.#permissions) {
+        if (permission.sessionID !== sessionID) continue
+        this.#permissions.delete(requestID)
+        this.#emit("permission.replied", sessionID)
+      }
     }
+  }
+
+  #recordPermissionRequest(request) {
+    const sessionID = request?.params?.sessionId
+    if (typeof sessionID !== "string" || !sessionID) return
+    const rawInput = request.params.toolCall?.rawInput
+    const input = rawInput && typeof rawInput === "object" && !Array.isArray(rawInput) ? rawInput : {}
+    const metadata = {}
+    for (const key of ["command", "cwd", "workdir", "workingDirectory"]) {
+      if (typeof input[key] === "string" && input[key].trim()) metadata[key] = input[key]
+    }
+    const options = Array.isArray(request.params.options) ? request.params.options : []
+    metadata.availableReplies = [
+      ...(options.some((option) => option?.kind === "allow_once" && ["string", "number"].includes(typeof option.optionId)) ? ["once"] : []),
+      ...(options.some((option) => option?.kind === "allow_always" && ["string", "number"].includes(typeof option.optionId)) ? ["always"] : []),
+      "reject"
+    ]
+    const toolCall = request.params.toolCall
+    const directory = this.#sessions.get(sessionID)?.cwd
+    const id = `acp-${randomUUID()}`
+    this.#permissions.set(id, {
+      id,
+      sessionID,
+      directory,
+      rpcID: request.id,
+      permission: typeof toolCall?.title === "string" && toolCall.title.trim() ? toolCall.title : "Tool permission requested",
+      patterns: [],
+      metadata,
+      always: [],
+      ...(typeof toolCall?.toolCallId === "string" ? { tool: { messageID: "", callID: toolCall.toolCallId } } : {})
+    })
+    this.#emit("permission.asked", sessionID)
+  }
+
+  permissions(directory) {
+    return [...this.#permissions.values()]
+      .filter((permission) => !directory || !permission.directory || sameListedDirectory(permission.directory, directory))
+      .map(({ rpcID, directory: _directory, ...permission }) => permission)
+  }
+
+  async replyPermission(requestID, reply, directory) {
+    const permission = this.#permissions.get(requestID)
+    if (!permission || (directory && permission.directory && !sameListedDirectory(permission.directory, directory))) return false
+    if (!permission.metadata.availableReplies.includes(reply)) throw new Error(`Permission reply ${reply} is not offered by the harness`)
+    await this.#acp.replyPermission(permission.sessionID, permission.rpcID, reply)
+    this.#permissions.delete(requestID)
+    this.#emit("permission.replied", permission.sessionID)
+    return true
   }
 
   /** Stop the idle/LRU sweep. The adapter close path owns the native Sessions themselves. */

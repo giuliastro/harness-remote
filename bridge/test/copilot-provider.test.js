@@ -11,7 +11,7 @@ test("Copilot provider uses the native ACP stdio server without changing establi
   assert.deepEqual(provider.args, ["--acp", "--stdio"])
   assert.deepEqual(provider.detectCommands, ["copilot"])
   assert.equal(provider.launchPriority, 50)
-  assert.equal(provider.permissionMode, "allow")
+  assert.equal(provider.permissionMode, "prompt")
 })
 
 test("Copilot provider advertises only the ACP capabilities currently justified by the server", () => {

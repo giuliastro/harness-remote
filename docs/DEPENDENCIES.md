@@ -117,7 +117,7 @@ incomplete or changes the adapter contract. The bridge uses the tested version d
 |---|---|
 | Launched over stdio as an `npx`-installable `bin` | the `--acp-command` / `--acp-arg` defaults in the profile |
 | Offers a non-`env_var` auth method (`pi-stored-credentials`) | the bridge would fall back to an API key from an unset environment variable and fail at inference |
-| Asks `session/request_permission` before each tool call, offering an `allow_once` option | tool calls stop happening, silently — the failure mode is "reports success, changes nothing" |
+| Asks `session/request_permission` before each tool call, offering an `allow_once` option | the bridge must surface the request and wait for the user's choice; otherwise the tool call remains blocked |
 | Streams chunks with **no** `messageId` | replies would split into one message per token, or aggregate wrongly |
 | Emits no `agent_plan` | the todo panel stays empty |
 
@@ -200,7 +200,7 @@ read from a spec:**
 | `reasoning_effort` and `mode` config options are advertised but not exposed | they stay invisible in the app; no crash, just unused surface |
 | `plan` / `plan_update` notifications carry entries addressed as `{content, status, priority}` | todo updates stop rendering |
 | `available_commands_update` exposes slash commands | the app's custom `/commands` picker goes empty |
-| ACP permissions requests are auto-answered with `allow` (`permissionMode: "allow"`) | if the adapter asks and no answer were sent, tool calls would hang; granting is the deliberate policy |
+| ACP `session/request_permission` waits for a user choice (`permissionMode: "prompt"`) | if the adapter asks and no user answer is sent, the tool call remains blocked; the bridge must never grant permission itself |
 | Adapter 1.13.1 checks the cached account on operations; explicitly calling `authenticate` at discovery can refresh tokens and open browser login | Codex disables that startup RPC to reuse the native account. Missing authentication must still fail visibly on operations; `chat-gpt` remains the declared method |
 
 **One writer per thread.** Codex takes a writer lock for as long as a client keeps a thread open —

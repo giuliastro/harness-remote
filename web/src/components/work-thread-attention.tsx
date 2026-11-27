@@ -224,6 +224,9 @@ export function WorkThreadAttention({ config, directory, questions, permissions,
 
       {permissions.map((request) => {
         const execution = permissionExecutionContext(request.metadata)
+        const offeredReplies = Array.isArray(request.metadata?.availableReplies)
+          ? request.metadata.availableReplies.filter((value): value is string => typeof value === "string")
+          : null
         return (
         <div className="tdw-attention-card" key={request.id}>
           <strong>Authorization required</strong>
@@ -245,8 +248,8 @@ export function WorkThreadAttention({ config, directory, questions, permissions,
           <p>If you do nothing, this request remains blocked.</p>
           <div className="tdw-attention-actions">
             <button type="button" className="tdw-button secondary bui-approval-deny" disabled={submitting === request.id} onClick={() => void respondPermission(request, "reject")}>Deny</button>
-            <button type="button" className="tdw-button secondary" disabled={submitting === request.id} onClick={() => void respondPermission(request, "once")}>Allow once</button>
-            <button type="button" className="tdw-button primary" disabled={submitting === request.id} onClick={() => void respondPermission(request, "always")}>Always allow</button>
+            {(!offeredReplies || offeredReplies.includes("once")) ? <button type="button" className="tdw-button secondary" disabled={submitting === request.id} onClick={() => void respondPermission(request, "once")}>Allow once</button> : null}
+            {(!offeredReplies || offeredReplies.includes("always")) ? <button type="button" className="tdw-button primary" disabled={submitting === request.id} onClick={() => void respondPermission(request, "always")}>Always allow</button> : null}
           </div>
         </div>
         )

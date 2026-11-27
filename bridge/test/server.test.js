@@ -410,6 +410,55 @@ async function waitForIdle(baseURL, sessionID) {
   throw new Error("the session never returned to idle")
 }
 
+test("ACP permission stays pending until an authenticated user reply reaches the native adapter", async () => {
+  const acp = new FakeAcp()
+  const replies = []
+  acp.replyPermission = (id, reply) => { replies.push({ id, reply }); return true }
+  const bridge = await startServer({ acp })
+  try {
+    acp.emit("permission-request", {
+      id: 42,
+      params: {
+        sessionId: "session-1",
+        toolCall: { toolCallId: "tool-1", title: "Run shell", rawInput: { command: "pwd", cwd: "/workspace" } },
+        options: [
+          { optionId: "once", kind: "allow_once" },
+          { optionId: "reject", kind: "reject_once" }
+        ]
+      }
+    })
+    const pending = await readJSON(bridge.baseURL, "/permission")
+    assert.equal(pending.length, 1)
+    assert.match(pending[0].id, /^acp-/)
+    assert.equal(pending[0].sessionID, "session-1")
+    assert.deepEqual(pending[0].metadata, {
+      command: "pwd", cwd: "/workspace", availableReplies: ["once", "reject"]
+    })
+    assert.deepEqual(replies, [], "the bridge must not grant before the user replies")
+
+    const unauthenticated = await fetch(`${bridge.baseURL}/permission/${pending[0].id}/reply`, {
+      method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ reply: "once" })
+    })
+    assert.equal(unauthenticated.status, 401)
+    assert.deepEqual(replies, [])
+
+    const unsupported = await fetch(`${bridge.baseURL}/permission/${pending[0].id}/reply`, {
+      method: "POST", headers: jsonHeaders(), body: JSON.stringify({ reply: "always" })
+    })
+    assert.equal(unsupported.status, 400)
+    assert.deepEqual(replies, [])
+    assert.equal(await readJSON(bridge.baseURL, `/permission/${pending[0].id}/reply`, {
+      method: "POST", headers: jsonHeaders(), body: JSON.stringify({ reply: "once" })
+    }), true)
+    assert.deepEqual(replies, [{ id: 42, reply: "once" }])
+    assert.deepEqual(await readJSON(bridge.baseURL, "/permission"), [])
+    assert.equal(await readJSON(bridge.baseURL, `/permission/${pending[0].id}/reply`, {
+      method: "POST", headers: jsonHeaders(), body: JSON.stringify({ reply: "once" })
+    }), false)
+    assert.deepEqual(replies, [{ id: 42, reply: "once" }])
+  } finally { await bridge.close() }
+})
+
 test("queues a prompt sent while the agent is still working", async () => {
   const acp = new HeldTurnOmpAcp()
   const bridge = await startServer({ acp })

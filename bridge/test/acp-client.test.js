@@ -7,6 +7,14 @@ import path from "node:path"
 import { AcpClient } from "../src/acp-client.js"
 import { harnessProfile } from "../src/harness-profiles.js"
 
+test("every bundled ACP harness exposes user permission decisions", () => {
+  for (const id of ["omp", "pi", "claude", "copilot", "opencode2", "mimo", "codex", "deepseek"]) {
+    const profile = harnessProfile(id)
+    assert.equal(profile.permissionMode, "prompt", id)
+    assert.equal(profile.capabilities.permissions, true, id)
+  }
+})
+
 test("a missing native project directory reports the path instead of a misleading executable ENOENT", async () => {
   const root = await mkdtemp(path.join(tmpdir(), "harness-acp-missing-project-"))
   try {
@@ -318,34 +326,71 @@ function permissionAskingChild() {
   })
 }
 
-test("grants tool permission once, so a tool call is not silently blocked", async () => {
-  // Verified against PI's ACP adapter: it asks before every tool call, and answering with an
-  // error meant it reported success while touching no file. allow_once is preferred over
-  // allow_always so the grant covers this call rather than persisting in the harness.
+test("holds permission requests until an explicit reply and maps once, always, and reject", async () => {
   const child = permissionAskingChild()
   const client = new AcpClient({ permissionMode: "allow", spawnProcess: () => child })
-  const granted = []
-  client.on("permission", (event) => granted.push(event.optionId))
+  const requests = []
+  client.on("permission-request", (request) => requests.push(request))
   await client.start()
 
   assert.deepEqual(await client.request("session/prompt", {}), { stopReason: "end_turn" })
-  const reply = child.writes.find((message) => message.id === 99)
-  assert.ok(reply, "a permission request must be answered")
-  assert.equal(reply.error, undefined, "answering with an error blocks the tool call")
-  assert.deepEqual(reply.result.outcome, { outcome: "selected", optionId: "once" })
-  assert.deepEqual(granted, ["once"])
-  client.close()
+  assert.deepEqual(requests, [{
+    id: 99,
+    params: {
+      sessionId: "session-1",
+      options: [
+        { optionId: "reject", kind: "reject_once", name: "Reject" },
+        { optionId: "always", kind: "allow_always", name: "Always allow" },
+        { optionId: "once", kind: "allow_once", name: "Allow once" }
+      ]
+    }
+  }])
+  assert.equal(child.writes.some((message) => message.id === 99), false, "no permission response is sent automatically")
+  assert.equal(client.replyPermission(99, "once"), true)
+  assert.deepEqual(child.writes.find((message) => message.id === 99).result.outcome, { outcome: "selected", optionId: "once" })
+  assert.throws(() => client.replyPermission(99, "always"), /no longer pending/, "each request can be answered once")
+
+  const nextChild = permissionAskingChild()
+  await client.close()
+  const second = new AcpClient({ spawnProcess: () => nextChild })
+  await second.start()
+  await second.request("session/prompt", {})
+  second.replyPermission(99, "always")
+  assert.deepEqual(nextChild.writes.find((message) => message.id === 99).result.outcome, { outcome: "selected", optionId: "always" })
+
+  const rejectChild = permissionAskingChild()
+  await second.close()
+  const third = new AcpClient({ spawnProcess: () => rejectChild })
+  await third.start()
+  await third.request("session/prompt", {})
+  third.replyPermission(99, "reject")
+  assert.deepEqual(rejectChild.writes.find((message) => message.id === 99).result.outcome, { outcome: "selected", optionId: "reject" })
+  await third.close()
 })
 
-test("cancels a permission request unless the harness profile allows tools", async () => {
-  const child = permissionAskingChild()
+test("a prompt remains alive while its ACP permission waits for a user decision", async () => {
+  let promptID
+  const child = new FakeChild((current, request) => {
+    respondToHandshake(current, request)
+    if (request.method === "session/prompt") {
+      promptID = request.id
+      current.respond({ jsonrpc: "2.0", id: 77, method: "session/request_permission", params: {
+        sessionId: "session-1", options: [{ optionId: "yes", kind: "allow_once" }]
+      } })
+    }
+    if (request.id === 77 && request.result) {
+      current.respond({ jsonrpc: "2.0", id: promptID, result: { stopReason: "end_turn" } })
+    }
+  })
   const client = new AcpClient({ spawnProcess: () => child })
   await client.start()
-
-  assert.deepEqual(await client.request("session/prompt", {}), { stopReason: "end_turn" })
-  const reply = child.writes.find((message) => message.id === 99)
-  assert.deepEqual(reply.result.outcome, { outcome: "cancelled" }, "granting must be opt-in per harness")
-  client.close()
+  try {
+    const prompt = client.request("session/prompt", { sessionId: "session-1" }, 15)
+    await new Promise((resolve) => setTimeout(resolve, 40))
+    assert.equal(child.writes.some((message) => message.id === 77), false)
+    assert.equal(client.replyPermission(77, "once"), true)
+    assert.deepEqual(await prompt, { stopReason: "end_turn" })
+  } finally { await client.close() }
 })
 
 test("still declines agent-initiated requests it does not implement", async () => {
@@ -369,7 +414,7 @@ test("still declines agent-initiated requests it does not implement", async () =
   client.close()
 })
 
-test("answers a permission request even when its options are malformed or an observer throws", async () => {
+test("rejects malformed or unavailable permission replies and keeps requests pending", async () => {
   const child = new FakeChild((current, request) => {
     respondToHandshake(current, request)
     if (request.method !== "session/prompt") return
@@ -379,13 +424,64 @@ test("answers a permission request even when its options are malformed or an obs
   const client = new AcpClient({ permissionMode: "allow", spawnProcess: () => child })
   const protocolErrors = []
   client.on("protocol-error", (error) => protocolErrors.push(error.message))
-  client.on("agent-request", () => { throw new Error("observer failed") })
-  client.on("permission", () => { throw new Error("observer failed") })
   await client.start()
   try {
     assert.deepEqual(await client.request("session/prompt", {}), { stopReason: "end_turn" })
+    assert.equal(child.writes.some((message) => message.id === 97), false)
+    assert.throws(() => client.replyPermission(97, "sometimes"), /must be once, always, or reject/)
+    assert.throws(() => client.replyPermission(97, "always"), /does not offer always/)
+    assert.equal(client.replyPermission(97, "once"), true)
+    assert.throws(() => client.replyPermission(97, "once"), /no longer pending/)
     assert.deepEqual(child.writes.find((message) => message.id === 97)?.result.outcome, { outcome: "selected", optionId: "once" })
-    assert.equal(protocolErrors.length, 1)
+    assert.equal(protocolErrors.length, 0)
+  } finally { await client.close() }
+})
+
+test("clears pending permission requests on close and process exit", async () => {
+  const children = []
+  const client = new AcpClient({ spawnProcess: () => {
+    const child = permissionAskingChild()
+    children.push(child)
+    return child
+  } })
+  await client.start()
+  await client.request("session/prompt", {})
+  await client.close()
+  assert.throws(() => client.replyPermission(99, "once"), /no longer pending/)
+
+  const exiting = new AcpClient({ spawnProcess: () => {
+    const child = permissionAskingChild()
+    children.push(child)
+    return child
+  } })
+  await exiting.start()
+  await exiting.request("session/prompt", {})
+  children[1].emit("exit", 1, null)
+  assert.throws(() => exiting.replyPermission(99, "once"), /no longer pending/)
+})
+
+test("reports malformed and duplicate permission request ids without replacing the pending request", async () => {
+  const child = new FakeChild((current, request) => {
+    respondToHandshake(current, request)
+    if (request.method !== "session/prompt") return
+    const permission = { jsonrpc: "2.0", id: 96, method: "session/request_permission", params: { options: [{ optionId: "once", kind: "allow_once" }] } }
+    current.respond({ ...permission, id: null })
+    current.respond(permission)
+    current.respond({ ...permission, params: { options: [{ optionId: "other", kind: "allow_once" }] } })
+    current.respond({ jsonrpc: "2.0", id: request.id, result: { stopReason: "end_turn" } })
+  })
+  const client = new AcpClient({ spawnProcess: () => child })
+  const requests = []
+  const errors = []
+  client.on("permission-request", (event) => requests.push(event))
+  client.on("protocol-error", (error) => errors.push(error.message))
+  await client.start()
+  try {
+    await client.request("session/prompt", {})
+    assert.equal(requests.length, 1)
+    assert.equal(errors.length, 2)
+    assert.equal(client.replyPermission(96, "once"), true)
+    assert.deepEqual(child.writes.find((message) => message.id === 96).result.outcome, { outcome: "selected", optionId: "once" })
   } finally { await client.close() }
 })
 

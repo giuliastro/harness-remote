@@ -35,6 +35,7 @@ export class AcpPromptEchoFilter extends EventEmitter {
       if (!this.#isPromptEcho(notification)) this.emit("notification", notification)
     })
     acp.on?.("request", (request) => this.emit("request", request))
+    acp.on?.("permission-request", (request) => this.emit("permission-request", request))
     acp.on?.("exit", (...args) => this.emit("exit", ...args))
     acp.on?.("stderr", (...args) => this.emit("stderr", ...args))
     acp.on?.("sessions-closed", (sessionIDs) => {
@@ -55,6 +56,12 @@ export class AcpPromptEchoFilter extends EventEmitter {
   listSessionPage(...args) { return this.#acp.listSessionPage(...args) }
   listSessions(...args) { return this.#acp.listSessions(...args) }
   notify(...args) { return this.#acp.notify(...args) }
+  replyPermission(sessionID, requestID, reply) {
+    if (typeof this.#acp.withSession === "function") {
+      return this.#acp.withSession(sessionID, undefined, (client) => client.replyPermission(requestID, reply))
+    }
+    return this.#acp.replyPermission(requestID, reply)
+  }
   diagnostics(...args) { return this.#acp.diagnostics?.(...args) }
   close(...args) { return this.#acp.close?.(...args) }
 
