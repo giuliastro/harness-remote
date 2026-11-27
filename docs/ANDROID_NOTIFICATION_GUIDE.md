@@ -42,7 +42,7 @@ API 34 and API 35 nightly and on manual dispatch. It covers:
 - foreground service and persistent notification;
 - destroyed activity and forced deep Doze;
 - permission/question delivery, dedupe and exact Session deep link;
-- permission Allow-once/Deny actions and exactly-once reply guard;
+- permission Review/Deny actions and exactly-once denial reply guard;
 - Ready/Failed outcome notifications and visible-Session suppression;
 - Stop action.
 
@@ -96,8 +96,12 @@ recorded separately; it cannot be inferred from an emulator run. The earlier Red
 (Android 16 / HyperOS) checks verified notification permission, foreground survival and deep links,
 but not a full timed battery soak.
 
+## Permission review
+
+Permission notifications show the machine and harness first and include explicit command and execution directory metadata when available. Tap Review request to open the exact Session before approving; Deny remains available directly. System notifications may visually truncate content, so they do not expose a direct Allow action. Permission scope patterns are not the exact command, and a Session directory is not necessarily the execution directory. Long or multiline details are reviewed in the app rather than truncated in the notification.
+
 ## Limits
 
 DSH's ACP bridge auto-allows tool permissions, so a normal DSH run does not produce a pending
-permission notification or Allow/Deny action. OpenCode/legacy, or a harness that advertises and holds
+permission notification or Review/Deny action. OpenCode/legacy, or a harness that advertises and holds
 permissions, is required for that path.
