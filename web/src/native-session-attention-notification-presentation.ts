@@ -13,11 +13,34 @@ function title(event: NativeSessionAttentionNotificationEvent): string {
 }
 
 function compact(parts: Array<string | undefined>): string {
-  return parts
-    .map((part) => part?.trim())
-    .filter((part): part is string => Boolean(part))
-    .join("\n")
-    .slice(0, 1000)
+  const lines: string[] = []
+  let length = 0
+  let hinted = false
+  for (const part of parts) {
+    const value = part?.trim()
+    if (!value) continue
+    const nextLength = length + (lines.length ? 1 : 0) + value.length
+    if (nextLength > 1000) {
+      const hint = "Open the Session to review full details"
+      if (!hinted && length + (lines.length ? 1 : 0) + hint.length <= 1000) {
+        length += (lines.length ? 1 : 0) + hint.length
+        lines.push(hint)
+        hinted = true
+      }
+      continue
+    }
+    lines.push(value)
+    length = nextLength
+  }
+  return lines.join("\n")
+}
+
+function reviewableExecutionDetail(value: string | undefined, label: string, maximum: number): string {
+  if (value === undefined) return `${label} not supplied by the harness`
+  if (value.length > maximum || value !== value.trim() || /[\x00-\x1f\x7f]/.test(value)) {
+    return `${label}: open the Session to review full details`
+  }
+  return `${label}: ${value}`
 }
 
 function taskIdentity(
@@ -46,8 +69,8 @@ export function desktopAttentionNotification(
     ? compact([
         ...identity,
         event.requestedAction,
-        event.command === undefined ? "Exact command not supplied by the harness" : event.command.length > 300 ? "Command too long for notification; open the Session to review" : `Command: ${event.command}`,
-        event.executionDirectory === undefined ? "Execution directory not supplied" : event.executionDirectory.length > 200 ? "Execution directory: open the Session to review" : `Execution directory: ${event.executionDirectory}`,
+        event.command === undefined ? "Exact command not supplied by the harness" : reviewableExecutionDetail(event.command, "Command", 300),
+        reviewableExecutionDetail(event.executionDirectory, "Execution directory", 200),
         event.explanation,
         event.boundary ? `Boundary: ${event.boundary}` : undefined,
         event.consequence

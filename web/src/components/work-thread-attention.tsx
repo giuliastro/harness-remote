@@ -55,6 +55,7 @@ export function WorkThreadAttention({ config, directory, questions, permissions,
   const [custom, setCustom] = useState<CustomMap>({})
   const [submitting, setSubmitting] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [machineIdentity, setMachineIdentity] = useState<{ name: string; id: string } | null>(null)
   const attention = classifyNativeSessionAttention({ questions, permissions })
   const authorizationRequired = attention.kind === "authorization"
 
@@ -63,6 +64,19 @@ export function WorkThreadAttention({ config, directory, questions, permissions,
     setCustom({})
     setError(null)
   }, [questions.map((request) => request.id).join("|"), permissions.map((request) => request.id).join("|")])
+
+  useEffect(() => {
+    let active = true
+    setMachineIdentity(null)
+    if (permissions.length) {
+      void discoverMachine(config, { allowCachedOnTransportFailure: true })
+        .then((snapshot) => {
+          if (active && snapshot) setMachineIdentity({ name: snapshot.machine.name, id: snapshot.machine.id })
+        })
+        .catch(() => undefined)
+    }
+    return () => { active = false }
+  }, [config.host, config.port, config.backend, config.agentId, permissions.length])
 
   if (questions.length === 0 && permissions.length === 0) return null
 
@@ -213,9 +227,10 @@ export function WorkThreadAttention({ config, directory, questions, permissions,
         return (
         <div className="tdw-attention-card" key={request.id}>
           <strong>Authorization required</strong>
+          <p>Machine: {machineIdentity?.name || "Name unavailable"} · {config.agentId || config.backend}</p>
+          <p>Gateway: <code>{config.host}:{config.port}</code></p>
+          {machineIdentity?.id || approvalIdentity?.machineID ? <p>Machine ID: <code>{machineIdentity?.id || approvalIdentity?.machineID}</code></p> : null}
           <p>{request.permission}</p>
-          <p>Gateway: <code>{config.host}:{config.port}</code> · {config.agentId || config.backend}</p>
-          {approvalIdentity?.machineID ? <p>Machine ID: <code>{approvalIdentity.machineID}</code></p> : null}
           <p>Session directory: <code>{directory}</code></p>
           <p>Execution directory: {execution.executionDirectory ? <code>{execution.executionDirectory}</code> : "Not supplied by the harness"}</p>
           {execution.command !== undefined ? (

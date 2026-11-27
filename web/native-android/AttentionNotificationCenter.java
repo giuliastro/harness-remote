@@ -213,7 +213,7 @@ final class AttentionNotificationCenter {
         // Keep the notification bounded without presenting a truncated command as exact.
         if (value.length() > maximum || !value.equals(value.trim())
             || value.chars().anyMatch(c -> c < 0x20 || c == 0x7f)) {
-            return context.getString(R.string.hr_attention_detail_review);
+            return context.getString(label, context.getString(R.string.hr_attention_detail_review));
         }
         return context.getString(label, value);
     }
@@ -224,11 +224,12 @@ final class AttentionNotificationCenter {
             if (part == null) continue;
             String value = part.trim();
             if (value.isEmpty()) continue;
+            int nextLength = body.length() + (body.length() > 0 ? 1 : 0) + value.length();
+            if (nextLength > MAX_BODY) continue;
             if (body.length() > 0) body.append('\n');
             body.append(value);
-            if (body.length() >= MAX_BODY) break;
         }
-        return body.length() > MAX_BODY ? body.substring(0, MAX_BODY) : body.toString();
+        return body.toString();
     }
 
     private void ensureChannel() {
