@@ -63,12 +63,16 @@ final class AttentionEventParser {
 
         String action = null;
         String explanation = null;
+        String command = null;
+        String executionDirectory = null;
         String boundary = null;
         String question = null;
         if (transition == AttentionRequest.Transition.ASKED) {
             if (kind == AttentionRequest.Kind.PERMISSION) {
                 action = firstText(properties, "permission", "title", "name");
                 JSONObject metadata = properties.optJSONObject("metadata");
+                command = exactText(metadata, "command");
+                executionDirectory = exactText(metadata, "cwd", "workdir", "workingDirectory");
                 explanation = firstText(metadata, "reason", "description", "message");
                 if (explanation == null) explanation = firstText(properties, "reason", "description", "message");
                 boundary = boundary(properties);
@@ -96,6 +100,8 @@ final class AttentionEventParser {
             requestID,
             action,
             explanation,
+            command,
+            executionDirectory,
             boundary,
             question,
             fallbackKey
@@ -137,6 +143,16 @@ final class AttentionEventParser {
         for (String name : names) {
             String value = cleanText(object.optString(name, ""), MAX_TEXT);
             if (value != null) return value;
+        }
+        return null;
+    }
+
+    // Do not coerce arrays/objects to strings or normalize command whitespace.
+    private static String exactText(JSONObject object, String... names) {
+        if (object == null) return null;
+        for (String name : names) {
+            Object value = object.opt(name);
+            if (value instanceof String && !((String) value).trim().isEmpty()) return (String) value;
         }
         return null;
     }
