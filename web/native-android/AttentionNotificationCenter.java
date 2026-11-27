@@ -141,13 +141,13 @@ final class AttentionNotificationCenter {
         if (request.kind == AttentionRequest.Kind.PERMISSION
             && request.requestID != null
             && !request.requestID.isEmpty()) {
-            builder.addAction(permissionAction(
-                request,
-                notificationID,
-                "once",
-                R.string.hr_attention_allow_once,
-                android.R.drawable.ic_menu_edit
-            ));
+            // Compact system notifications can hide execution details. Require an explicit
+            // Session review before allowing a permission; Deny remains available immediately.
+            builder.addAction(new Notification.Action.Builder(
+                Icon.createWithResource(context, android.R.drawable.ic_menu_view),
+                context.getString(R.string.hr_attention_review),
+                contentIntent
+            ).build());
             builder.addAction(permissionAction(
                 request,
                 notificationID,
@@ -191,11 +191,14 @@ final class AttentionNotificationCenter {
         String identity = request.machineName + " · " + request.agentLabel;
         if (request.kind == AttentionRequest.Kind.PERMISSION) {
             return compactBody(
+                identity,
+                context.getString(R.string.hr_attention_review_before_allow),
                 request.action != null ? request.action : context.getString(R.string.hr_attention_permission_fallback),
+                executionDetail(request.command, 300, R.string.hr_attention_command, R.string.hr_attention_command_missing),
+                executionDetail(request.executionDirectory, 200, R.string.hr_attention_execution_directory, R.string.hr_attention_directory_missing),
                 request.explanation,
                 request.boundary != null ? context.getString(R.string.hr_attention_boundary, request.boundary) : null,
-                context.getString(R.string.hr_attention_permission_consequence),
-                identity
+                context.getString(R.string.hr_attention_permission_consequence)
             );
         }
         return compactBody(
@@ -203,6 +206,16 @@ final class AttentionNotificationCenter {
             context.getString(R.string.hr_attention_question_consequence),
             identity
         );
+    }
+
+    private String executionDetail(String value, int maximum, int label, int missing) {
+        if (value == null) return context.getString(missing);
+        // Keep the notification bounded without presenting a truncated command as exact.
+        if (value.length() > maximum || !value.equals(value.trim())
+            || value.chars().anyMatch(c -> c < 0x20 || c == 0x7f)) {
+            return context.getString(R.string.hr_attention_detail_review);
+        }
+        return context.getString(label, value);
     }
 
     private static String compactBody(String... parts) {
