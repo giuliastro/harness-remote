@@ -101,3 +101,13 @@ test("Attention Inbox enriches only emitted notifications with bounded native me
   assert.match(source, /openAttentionSession\(target, activation\.sessionID\)/)
   assert.doesNotMatch(source, /loadMessagePage|loadMessages|loadTranscript/)
 })
+
+ test("approval identity comes first and explicit command is distinct from scope", () => {
+  const notification = desktopAttentionNotification(event({ command: "npm test", executionDirectory: "/workspace" }))
+  assert.ok(notification.body.startsWith("Workstation · Codex"))
+  assert.match(notification.body, /Command: npm test/)
+  assert.match(notification.body, /Execution directory: \/workspace/)
+  assert.match(notification.body, /Boundary:/)
+  assert.match(desktopAttentionNotification(event()).body, /Exact command not supplied/)
+  assert.match(desktopAttentionNotification(event({ command: "x".repeat(301) })).body, /Command too long/)
+})
