@@ -417,7 +417,7 @@ public class BackgroundAttentionServiceTest {
     }
 
     @Test
-    public void repliesToPermissionExactlyOnceFromNotificationActions() throws Exception {
+    public void requiresReviewBeforeAllowingAndDeniesExactlyOnceFromNotificationActions() throws Exception {
         startService();
         waitFor("machine connected", () -> BackgroundAttentionStatus.isMachineConnected(FakeMachineServer.MACHINE_ID), 15_000);
         String permissionTitle = context.getString(R.string.hr_attention_permission_title);
@@ -430,14 +430,15 @@ public class BackgroundAttentionServiceTest {
 
         Notification.Action allow = notificationAction(notification, context.getString(R.string.hr_attention_allow_once));
         Notification.Action deny = notificationAction(notification, context.getString(R.string.hr_attention_deny));
-        assertNotNull(allow);
+        assertNull("notification must not allow without Session review", allow);
+        assertNotNull(notificationAction(notification, context.getString(R.string.hr_attention_review)));
         assertNotNull(deny);
 
-        allow.actionIntent.send();
-        assertEquals("{\"reply\":\"once\"}", server.permissionReplies.poll(5, TimeUnit.SECONDS));
-        waitFor("permission notification cleared after allow", () -> attentionNotificationCount(permissionTitle) == 0, 5_000);
+        deny.actionIntent.send();
+        assertEquals("{\"reply\":\"reject\"}", server.permissionReplies.poll(5, TimeUnit.SECONDS));
+        waitFor("permission notification cleared after deny", () -> attentionNotificationCount(permissionTitle) == 0, 5_000);
 
-        allow.actionIntent.send();
+        deny.actionIntent.send();
         assertNull("a repeated action must not reply twice", server.permissionReplies.poll(500, TimeUnit.MILLISECONDS));
 
         server.sendEvent(permissionAsked("perm-deny"));
