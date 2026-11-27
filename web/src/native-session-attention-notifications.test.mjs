@@ -169,6 +169,10 @@ assert.deepEqual(permissionExecutionContext({ command: "echo one\n echo two ", c
   executionDirectory: "/tmp/actual"
 })
 assert.deepEqual(permissionExecutionContext({ description: "rm file", pattern: "rm *", command: ["rm", "file"] }), {})
+assert.deepEqual(permissionExecutionContext({ path: "/tmp/notes.txt", toolKind: "edit" }), {
+  targetPath: "/tmp/notes.txt",
+  toolKind: "edit"
+})
 assert.deepEqual(permissionExecutionContext(undefined), {})
 const explicit = reconcileNativeSessionAttentionNotifications(
   state,

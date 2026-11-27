@@ -27,6 +27,8 @@ export type NativeSessionAttentionNotificationEvent = {
   requestedAction?: string
   command?: string
   executionDirectory?: string
+  targetPath?: string
+  toolKind?: string
   explanation?: string
   boundary?: string
   consequence: string
@@ -80,10 +82,12 @@ function metadataText(metadata: Record<string, unknown>, keys: readonly string[]
   return undefined
 }
 
-/** Explicit native request metadata only; permission patterns are not commands. */
+/** Explicit native request metadata only; permission patterns are not commands or file paths. */
 export function permissionExecutionContext(metadata: Record<string, unknown> | undefined): {
   command?: string
   executionDirectory?: string
+  targetPath?: string
+  toolKind?: string
 } {
   const exact = (keys: string[]) => {
     for (const key of keys) {
@@ -94,9 +98,13 @@ export function permissionExecutionContext(metadata: Record<string, unknown> | u
   }
   const command = exact(["command"])
   const executionDirectory = exact(["cwd", "workdir", "workingDirectory"])
+  const targetPath = exact(["path", "filePath", "file_path", "filename"])
+  const toolKind = exact(["toolKind"])
   return {
     ...(command !== undefined ? { command } : {}),
-    ...(executionDirectory !== undefined ? { executionDirectory } : {})
+    ...(executionDirectory !== undefined ? { executionDirectory } : {}),
+    ...(targetPath !== undefined ? { targetPath } : {}),
+    ...(toolKind !== undefined ? { toolKind } : {})
   }
 }
 

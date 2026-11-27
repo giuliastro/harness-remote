@@ -109,6 +109,8 @@ test("approval identity comes first and explicit command is distinct from scope"
   assert.match(notification.body, /Execution directory: \/workspace/)
   assert.match(notification.body, /Boundary:/)
   assert.match(desktopAttentionNotification(event()).body, /Exact command not supplied/)
+  assert.match(desktopAttentionNotification(event({ targetPath: "/workspace/notes.txt", toolKind: "edit" })).body, /Target file: \/workspace\/notes.txt/)
+  assert.doesNotMatch(desktopAttentionNotification(event({ targetPath: "/workspace/notes.txt" })).body, /Exact command not supplied/)
   assert.match(desktopAttentionNotification(event({ command: "x".repeat(301) })).body, /Command: open the Session to review full details/)
   assert.match(desktopAttentionNotification(event({ command: "echo one\necho two" })).body, /Command: open the Session to review full details/)
   assert.doesNotMatch(desktopAttentionNotification(event({ command: "echo one\necho two" })).body, /echo one/)

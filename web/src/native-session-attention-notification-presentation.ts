@@ -69,7 +69,11 @@ export function desktopAttentionNotification(
     ? compact([
         ...identity,
         event.requestedAction,
-        event.command === undefined ? "Exact command not supplied by the harness" : reviewableExecutionDetail(event.command, "Command", 300),
+        event.command !== undefined
+          ? reviewableExecutionDetail(event.command, "Command", 300)
+          : event.targetPath !== undefined
+            ? reviewableExecutionDetail(event.targetPath, "Target file", 300)
+            : "Exact command not supplied by the harness",
         reviewableExecutionDetail(event.executionDirectory, "Execution directory", 200),
         event.explanation,
         event.boundary ? `Boundary: ${event.boundary}` : undefined,

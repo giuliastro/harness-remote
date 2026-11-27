@@ -556,6 +556,43 @@ test("ACP permissions stay scoped to the Session directory", async () => {
   } finally { service.dispose() }
 })
 
+test("an edit permission keeps its explicit file path and tool kind, never the file content", async () => {
+  const acp = new FakeAcp()
+  const service = new AcpService(new AcpPromptEchoFilter(acp), {})
+  try {
+    service.rememberListedSessions([{
+      sessionId: "session-1", cwd: "/workspace", title: "Test", updatedAt: "2026-07-22T00:00:00.000Z"
+    }])
+    acp.emit("permission-request", {
+      id: 45,
+      params: {
+        sessionId: "session-1",
+        toolCall: {
+          toolCallId: "tool-2",
+          name: "write",
+          title: "notes.txt",
+          kind: "edit",
+          locations: [{ path: "/workspace/notes.txt" }],
+          rawInput: { path: "/workspace/notes.txt", content: "do not expose this" }
+        },
+        options: [
+          { optionId: "once", kind: "allow_once" },
+          { optionId: "reject", kind: "reject_once" }
+        ]
+      }
+    })
+    const pending = service.permissions("/workspace")
+    assert.equal(pending.length, 1)
+    assert.deepEqual(pending[0].metadata, {
+      toolKind: "edit",
+      toolName: "write",
+      path: "/workspace/notes.txt",
+      availableReplies: ["once", "reject"]
+    })
+    assert.equal(JSON.stringify(pending).includes("do not expose this"), false, "file content must never enter the approval payload")
+  } finally { service.dispose() }
+})
+
 test("queues a prompt sent while the agent is still working", async () => {
   const acp = new HeldTurnOmpAcp()
   const bridge = await startServer({ acp })

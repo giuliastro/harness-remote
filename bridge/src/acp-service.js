@@ -890,19 +890,30 @@ export class AcpService {
   #recordPermissionRequest(request) {
     const sessionID = request?.params?.sessionId
     if (typeof sessionID !== "string" || !sessionID) return
-    const rawInput = request.params.toolCall?.rawInput
+    const toolCall = request.params.toolCall
+    const rawInput = toolCall?.rawInput
     const input = rawInput && typeof rawInput === "object" && !Array.isArray(rawInput) ? rawInput : {}
     const metadata = {}
     for (const key of ["command", "cwd", "workdir", "workingDirectory"]) {
       if (typeof input[key] === "string" && input[key].trim()) metadata[key] = input[key]
     }
+    // An edit permission has no shell command. Preserve only the explicit native tool kind and
+    // target path so the approval card can say "file" instead of claiming a command is missing.
+    if (typeof toolCall?.kind === "string" && toolCall.kind.trim()) metadata.toolKind = toolCall.kind.trim()
+    if (typeof toolCall?.name === "string" && toolCall.name.trim()) metadata.toolName = toolCall.name.trim()
+    const explicitPath = ["path", "filePath", "file_path", "filename"]
+      .find((key) => typeof input[key] === "string" && input[key].trim())
+    const locationPath = Array.isArray(toolCall?.locations)
+      ? toolCall.locations.find((location) => typeof location?.path === "string" && location.path.trim())?.path
+      : undefined
+    if (explicitPath) metadata.path = input[explicitPath]
+    else if (locationPath) metadata.path = locationPath
     const options = Array.isArray(request.params.options) ? request.params.options : []
     metadata.availableReplies = [
       ...(options.some((option) => option?.kind === "allow_once" && ["string", "number"].includes(typeof option.optionId)) ? ["once"] : []),
       ...(options.some((option) => option?.kind === "allow_always" && ["string", "number"].includes(typeof option.optionId)) ? ["always"] : []),
       "reject"
     ]
-    const toolCall = request.params.toolCall
     const directory = this.#sessions.get(sessionID)?.cwd
     const id = `acp-${randomUUID()}`
     this.#permissions.set(id, {
