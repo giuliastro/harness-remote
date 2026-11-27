@@ -600,6 +600,7 @@ function commandInfoList(commands) {
 export class AcpService {
   #acp
   #sessions = new Map()
+  #permissions = new Map()
   // Bounds come from TranscriptCache: the 24MB weight budget governs, and the entry cap only stops
   // unbounded growth from many tiny transcripts. Pinning 8 here re-introduced the Session-first
   // thrash the default exists to avoid.
@@ -852,6 +853,7 @@ export class AcpService {
       : Math.max(1_000, Math.min(60_000, this.#idleUnloadMs || 30_000))
     if (this.#idleUnloadMs > 0 || this.#maxLoadedSessions > 0) this.#startLifecycleSweep()
     acp.on("notification", (notification) => this.#handleNotification(notification))
+    acp.on("permission-request", (request) => this.#recordPermissionRequest(request))
     acp.on("sessions-closed", (sessionIDs) => this.#forgetOpenSessions(sessionIDs))
     // An adapter that exits takes every Session it had open with it. Still counting them as loaded
     // sent the next prompt to a process that had never seen the Session, and the reload that its
@@ -864,7 +866,84 @@ export class AcpService {
       this.#loaded.delete(sessionID)
       this.#acpOpenSessions.delete(sessionID)
       this.#configOptions.delete(sessionID)
+      this.#clearPermissions(sessionID)
     }
+  }
+
+  /** A closed or stopped Session cannot leave an actionable approval behind. */
+  #clearPermissions(sessionID, { cancel = false } = {}) {
+    let cleared = 0
+    for (const [requestID, permission] of this.#permissions) {
+      if (permission.sessionID !== sessionID) continue
+      this.#permissions.delete(requestID)
+      cleared += 1
+      this.#emit("permission.replied", sessionID)
+    }
+    if (!cleared || !cancel) return
+    try {
+      // Stop while the native adapter is waiting: cancel the request so the agent is not left
+      // blocked on an approval the user can no longer see or act on.
+      void Promise.resolve(this.#acp.cancelPermissions?.(sessionID)).catch(() => undefined)
+    } catch {}
+  }
+
+  #recordPermissionRequest(request) {
+    const sessionID = request?.params?.sessionId
+    if (typeof sessionID !== "string" || !sessionID) return
+    const toolCall = request.params.toolCall
+    const rawInput = toolCall?.rawInput
+    const input = rawInput && typeof rawInput === "object" && !Array.isArray(rawInput) ? rawInput : {}
+    const metadata = {}
+    for (const key of ["command", "cwd", "workdir", "workingDirectory"]) {
+      if (typeof input[key] === "string" && input[key].trim()) metadata[key] = input[key]
+    }
+    // An edit permission has no shell command. Preserve only the explicit native tool kind and
+    // target path so the approval card can say "file" instead of claiming a command is missing.
+    if (typeof toolCall?.kind === "string" && toolCall.kind.trim()) metadata.toolKind = toolCall.kind.trim()
+    if (typeof toolCall?.name === "string" && toolCall.name.trim()) metadata.toolName = toolCall.name.trim()
+    const explicitPath = ["path", "filePath", "file_path", "filename"]
+      .find((key) => typeof input[key] === "string" && input[key].trim())
+    const locationPath = Array.isArray(toolCall?.locations)
+      ? toolCall.locations.find((location) => typeof location?.path === "string" && location.path.trim())?.path
+      : undefined
+    if (explicitPath) metadata.path = input[explicitPath]
+    else if (locationPath) metadata.path = locationPath
+    const options = Array.isArray(request.params.options) ? request.params.options : []
+    metadata.availableReplies = [
+      ...(options.some((option) => option?.kind === "allow_once" && ["string", "number"].includes(typeof option.optionId)) ? ["once"] : []),
+      ...(options.some((option) => option?.kind === "allow_always" && ["string", "number"].includes(typeof option.optionId)) ? ["always"] : []),
+      "reject"
+    ]
+    const directory = this.#sessions.get(sessionID)?.cwd
+    const id = `acp-${randomUUID()}`
+    this.#permissions.set(id, {
+      id,
+      sessionID,
+      directory,
+      rpcID: request.id,
+      permission: typeof toolCall?.title === "string" && toolCall.title.trim() ? toolCall.title : "Tool permission requested",
+      patterns: [],
+      metadata,
+      always: [],
+      ...(typeof toolCall?.toolCallId === "string" ? { tool: { messageID: "", callID: toolCall.toolCallId } } : {})
+    })
+    this.#emit("permission.asked", sessionID)
+  }
+
+  permissions(directory) {
+    return [...this.#permissions.values()]
+      .filter((permission) => !directory || !permission.directory || sameDirectory(permission.directory, directory))
+      .map(({ rpcID, directory: _directory, ...permission }) => permission)
+  }
+
+  async replyPermission(requestID, reply, directory) {
+    const permission = this.#permissions.get(requestID)
+    if (!permission || (directory && permission.directory && !sameDirectory(permission.directory, directory))) return false
+    if (!permission.metadata.availableReplies.includes(reply)) throw new Error(`Permission reply ${reply} is not offered by the harness`)
+    await this.#acp.replyPermission(permission.sessionID, permission.rpcID, reply)
+    this.#permissions.delete(requestID)
+    this.#emit("permission.replied", permission.sessionID)
+    return true
   }
 
   /** Stop the idle/LRU sweep. The adapter close path owns the native Sessions themselves. */
@@ -2327,6 +2406,7 @@ export class AcpService {
       this.#messages.set(sessionID, messages)
       if (markLatestTurnInterrupted(messages, sessionID)) this.#emit("message.updated", sessionID)
     }
+    this.#clearPermissions(sessionID, { cancel: true })
     this.#acp.notify("session/cancel", { sessionId: sessionID })
     this.#emit("session.updated", sessionID)
     this.#persistSnapshot(sessionID)

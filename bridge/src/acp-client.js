@@ -31,7 +31,6 @@ export class AcpClient extends EventEmitter {
   #command
   #args
   #spawn
-  #permissionMode
   #preferredAuthMethod
   #authenticate
   #environment
@@ -40,6 +39,8 @@ export class AcpClient extends EventEmitter {
   #buffer = ""
   #nextID = 1
   #pending = new Map()
+  #pendingPermissions = new Map()
+  #processGeneration = 0
   #starting
   #closingPromise
   #agentInfo
@@ -48,11 +49,10 @@ export class AcpClient extends EventEmitter {
   #stderr = ""
   #stderrPartial = ""
 
-  constructor({ command = "omp", args = ["acp"], permissionMode = "deny", preferredAuthMethod, authenticate = true, environment = {}, cwd, spawnProcess = spawn } = {}) {
+  constructor({ command = "omp", args = ["acp"], permissionMode: _permissionMode, preferredAuthMethod, authenticate = true, environment = {}, cwd, spawnProcess = spawn } = {}) {
     super()
     this.#command = command
     this.#args = args
-    this.#permissionMode = permissionMode
     this.#preferredAuthMethod = preferredAuthMethod
     this.#authenticate = authenticate !== false
     this.#environment = environment && typeof environment === "object" ? { ...environment } : {}
@@ -165,6 +165,7 @@ export class AcpClient extends EventEmitter {
     })
     ownChildProcess(child)
     this.#child = child
+    this.#processGeneration += 1
     // Each attempt reports its own stderr. Carrying the buffer across restarts made every exit
     // message repeat the previous ones, so a single "pi-acp: not found" arrived three times over.
     this.#stderr = ""
@@ -188,7 +189,7 @@ export class AcpClient extends EventEmitter {
       child.stderr.setEncoding("utf8")
       child.stderr.on("data", receiveStderr)
     }
-    child.stdout.on("data", (chunk) => this.#consume(chunk))
+    child.stdout.on("data", (chunk) => this.#consume(chunk, child))
     // Writing to an adapter that has already exited (a CLI that is not installed exits at once)
     // fails with EPIPE on its stdin. The write callback rejects that request and the exit handler
     // reports the adapter; without a listener the stream error would crash the whole daemon.
@@ -263,6 +264,7 @@ export class AcpClient extends EventEmitter {
         timeoutMs,
         watchdogMs: timeoutMs,
         toolCalls: new Set(),
+        permissionRequests: new Set(),
         resetTimeout: undefined
       }
       const expire = () => {
@@ -272,6 +274,7 @@ export class AcpClient extends EventEmitter {
       pending.resetTimeout = () => {
         pending.lastActivityAt = Date.now()
         clearTimeout(pending.timer)
+        if (pending.permissionRequests.size) return
         pending.watchdogMs = pending.toolCalls.size ? Math.max(timeoutMs, ACTIVE_TOOL_TIMEOUT_MS) : timeoutMs
         pending.timer = setTimeout(expire, pending.watchdogMs)
       }
@@ -310,6 +313,7 @@ export class AcpClient extends EventEmitter {
   close() {
     const child = this.#child
     this.#child = undefined
+    this.#pendingPermissions.clear()
     this.#rejectPending(new Error("ACP adapter closed"))
     this.#starting = undefined
     if (!child) return this.#closingPromise || Promise.resolve()
@@ -321,7 +325,8 @@ export class AcpClient extends EventEmitter {
     return closing
   }
 
-  #consume(chunk) {
+  #consume(chunk, child) {
+    if (this.#child !== child) return
     this.#buffer += chunk
     let boundary = this.#buffer.indexOf("\n")
     while (boundary !== -1) {
@@ -357,12 +362,15 @@ export class AcpClient extends EventEmitter {
     if (typeof message.params?.sessionId === "string") this.#touchSessionActivity(message.params.sessionId, message.params.update)
 
     // A JSON-RPC message carrying both an id and a method is an agent-initiated
-    // request. An unanswered request would stall the agent until the prompt
-    // timeout, so always reply.
+    // request. Permission requests stay pending until the user chooses explicitly.
     if (message.id !== undefined && message.method) {
-      if (message.method === "session/request_permission") this.#respondPermission(message.id, message.params)
-      else this.#respondUnsupported(message.id, message.method)
-      // Observers run after the reply so a throwing listener cannot leave the agent waiting.
+      if (message.method === "session/request_permission") {
+        if (this.#holdPermissionRequest(message.id, message.params)) {
+          this.emit("permission-request", { id: message.id, params: message.params })
+        }
+      } else {
+        this.#respondUnsupported(message.id, message.method)
+      }
       this.emit("agent-request", message)
       return
     }
@@ -390,26 +398,67 @@ export class AcpClient extends EventEmitter {
     }
   }
 
-  /**
-   * A tool call stalls without an answer, and answering with an error silently stops the agent
-   * from doing any work. PI reported success while touching no file. Granting matches OMP,
-   * whose agent approves its own tool calls and never asks, and there is no way to prompt the
-   * user mid-turn on a phone. `allow_once` is preferred over `allow_always` so the grant covers
-   * this call rather than writing a lasting permission into the harness's own state.
-   */
-  #respondPermission(id, params) {
-    if (!this.#child?.stdin.writable) return
-    const options = Array.isArray(params?.options) ? params.options : []
-    const allowed = this.#permissionMode === "allow"
-      ? options.find((option) => option?.kind === "allow_once")
-        ?? options.find((option) => option?.kind === "allow_always")
-        ?? options.find((option) => typeof option?.kind === "string" && option.kind.startsWith("allow"))
-      : undefined
-    const outcome = allowed?.optionId
-      ? { outcome: "selected", optionId: allowed.optionId }
-      : { outcome: "cancelled" }
-    this.#child.stdin.write(`${JSON.stringify({ jsonrpc: "2.0", id, result: { outcome } })}\n`)
-    this.emit("permission", { optionId: allowed?.optionId })
+  #holdPermissionRequest(id, params) {
+    if (!this.#child || !this.#child.stdin?.writable) return false
+    if ((typeof id !== "string" && typeof id !== "number") || this.#pendingPermissions.has(id)) {
+      this.emit("protocol-error", new Error("ACP adapter emitted an invalid or duplicate permission request id"))
+      return false
+    }
+    this.#pendingPermissions.set(id, {
+      child: this.#child,
+      generation: this.#processGeneration,
+      sessionID: params?.sessionId,
+      options: Array.isArray(params?.options) ? params.options : []
+    })
+    this.#setPermissionWaiting(params?.sessionId, id, true)
+    return true
+  }
+
+  #setPermissionWaiting(sessionID, id, waiting) {
+    if (typeof sessionID !== "string") return
+    for (const pending of this.#pending.values()) {
+      if (pending.method !== "session/prompt" || pending.sessionID !== sessionID) continue
+      if (waiting) pending.permissionRequests.add(id)
+      else pending.permissionRequests.delete(id)
+      pending.resetTimeout?.()
+    }
+  }
+
+  /** Cancel every pending permission request owned by a stopped Session. */
+  cancelPermissions(sessionID) {
+    if (typeof sessionID !== "string") return
+    for (const [id, pending] of this.#pendingPermissions) {
+      if (pending.sessionID !== sessionID) continue
+      // Remove before writing so a late UI reply cannot race the cancellation.
+      this.#pendingPermissions.delete(id)
+      this.#setPermissionWaiting(sessionID, id, false)
+      if (pending.child === this.#child && pending.generation === this.#processGeneration && pending.child.stdin?.writable) {
+        pending.child.stdin.write(`${JSON.stringify({ jsonrpc: "2.0", id, result: { outcome: "cancelled" } })}\n`)
+      }
+    }
+  }
+
+  /** Resolve a pending permission request with an explicit user choice. */
+  replyPermission(id, reply) {
+    const pending = this.#pendingPermissions.get(id)
+    if (!pending) throw new Error("ACP permission request is no longer pending")
+    if (pending.child !== this.#child || pending.generation !== this.#processGeneration || !pending.child.stdin?.writable) {
+      this.#pendingPermissions.delete(id)
+      throw new Error("ACP permission request belongs to an inactive adapter process")
+    }
+    const kinds = { once: ["allow_once"], always: ["allow_always"], reject: ["reject_once", "reject_always"] }
+    const allowedKinds = kinds[reply]
+    if (!allowedKinds) throw new Error("Permission reply must be once, always, or reject")
+    const option = pending.options.find((candidate) => allowedKinds.includes(candidate?.kind)
+      && (typeof candidate.optionId === "string" || typeof candidate.optionId === "number"))
+    if (!option && reply !== "reject") throw new Error(`ACP permission request does not offer ${reply}`)
+
+    // Remove before writing so duplicate replies cannot ever reach the adapter.
+    this.#pendingPermissions.delete(id)
+    this.#setPermissionWaiting(pending.sessionID, id, false)
+    const outcome = option ? { outcome: "selected", optionId: option.optionId } : { outcome: "cancelled" }
+    pending.child.stdin.write(`${JSON.stringify({ jsonrpc: "2.0", id, result: { outcome } })}\n`)
+    return true
   }
 
   #respondUnsupported(id, method) {
@@ -431,6 +480,7 @@ export class AcpClient extends EventEmitter {
   #handleExit(error, child) {
     if (!child || this.#child !== child) return
     this.#child = undefined
+    this.#pendingPermissions.clear()
     this.#rejectPending(error)
     this.emit("exit", error)
   }

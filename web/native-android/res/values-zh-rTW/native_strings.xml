@@ -27,4 +27,11 @@
     <string name="hr_attention_boundary">範圍：%1$s</string>
     <string name="hr_attention_allow_once">允許一次</string>
     <string name="hr_attention_deny">拒絕</string>
+    <string name="hr_attention_review">查看請求</string>
+    <string name="hr_attention_review_before_allow">允許前請開啟工作階段</string>
+    <string name="hr_attention_command">命令：%1$s</string>
+    <string name="hr_attention_command_missing">未提供確切命令</string>
+    <string name="hr_attention_execution_directory">執行目錄：%1$s</string>
+    <string name="hr_attention_directory_missing">未提供執行目錄</string>
+    <string name="hr_attention_detail_review">開啟工作階段查看完整詳細資料</string>
 </resources>

@@ -117,7 +117,7 @@ incomplete or changes the adapter contract. The bridge uses the tested version d
 |---|---|
 | Launched over stdio as an `npx`-installable `bin` | the `--acp-command` / `--acp-arg` defaults in the profile |
 | Offers a non-`env_var` auth method (`pi-stored-credentials`) | the bridge would fall back to an API key from an unset environment variable and fail at inference |
-| Asks `session/request_permission` before each tool call, offering an `allow_once` option | tool calls stop happening, silently — the failure mode is "reports success, changes nothing" |
+| Asks `session/request_permission` before each tool call, offering an `allow_once` option | the bridge must surface the request and wait for the user's choice; otherwise the tool call remains blocked |
 | Streams chunks with **no** `messageId` | replies would split into one message per token, or aggregate wrongly |
 | Emits no `agent_plan` | the todo panel stays empty |
 
@@ -151,7 +151,7 @@ party entirely.
 | `session/list`, `session/load`, `session/prompt` and `session/cancel` expose the session surface used by the generic bridge | session browsing, history replay, prompting or cancellation stops working |
 | The `model` config option uses bare ids such as `sonnet` and `opus[1m]` | the model picker can no longer map the adapter's values back to the bridge |
 | Plan/todo updates arrive through the ACP notifications already handled by `AcpService` | the Claude Code todo panel stops updating |
-| Tool permission requests accept the bridge's automatic `allow` response | tool calls can hang or be refused; the bridge deliberately runs Claude unattended |
+| Tool permission requests are surfaced and wait for the user's explicit allow/deny, using the option kinds the adapter offers | an unanswered request blocks the tool call; the bridge must never grant it automatically |
 | The adapter does not advertise image prompt support | the app hides attachments and refuses image parts for this backend |
 
 **Session scope and security.** Claude Code sessions are enumerated by the adapter independently of
@@ -200,7 +200,7 @@ read from a spec:**
 | `reasoning_effort` and `mode` config options are advertised but not exposed | they stay invisible in the app; no crash, just unused surface |
 | `plan` / `plan_update` notifications carry entries addressed as `{content, status, priority}` | todo updates stop rendering |
 | `available_commands_update` exposes slash commands | the app's custom `/commands` picker goes empty |
-| ACP permissions requests are auto-answered with `allow` (`permissionMode: "allow"`) | if the adapter asks and no answer were sent, tool calls would hang; granting is the deliberate policy |
+| ACP `session/request_permission` waits for a user choice (`permissionMode: "prompt"`) | if the adapter asks and no user answer is sent, the tool call remains blocked; the bridge must never grant permission itself |
 | Adapter 1.13.1 checks the cached account on operations; explicitly calling `authenticate` at discovery can refresh tokens and open browser login | Codex disables that startup RPC to reuse the native account. Missing authentication must still fail visibly on operations; `chat-gpt` remains the declared method |
 
 **One writer per thread.** Codex takes a writer lock for as long as a client keeps a thread open —
@@ -247,7 +247,7 @@ rollout record shape, and any new `sessionUpdate` / notification shape.
 | Reasoning is a separate `effort` select (`off`, `low`, `high`, `max`) | the reasoning control disappears; the model still works |
 | `session/resume` exists but is not used, because without a journal loader it would skip the only transcript source | do not enable `journalPageWhileOwned: false` for this profile without adding a history loader |
 | `_session/steering` injects into a running turn and answers `{outcome:"promptRequired",reason:"noRunningTurn"}` when the turn already ended | the profile declares `midTurnPrompt: "steer"`; the bridge queues or starts the already-recorded prompt on that outcome |
-| Tool permissions accept the bridge's automatic `allow` response | tool calls can hang or be refused; the bridge deliberately runs DSH unattended |
+| Tool permissions are surfaced and wait for the user's explicit allow/deny, using the option kinds the adapter offers | an unanswered request blocks the tool call; the bridge must never grant it automatically |
 
 **Watch:** the pinned adapter version, the bundled DSH version, the model value separator, the
 `effort` option id, and the steering response shape.

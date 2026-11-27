@@ -84,6 +84,9 @@ test("the approval card stays actionable with a thumb", () => {
   // A tap that had registered looked like a tap that had not: the selected state was a background
   // tint alone, which is the same feedback hover already gives.
   assert.match(attention, /className="bui-approval-check"/)
+  assert.match(attention, /className="bui-approval-top"/)
+  assert.match(attention, /className="bui-approval-details"/)
+  assert.match(cssRules, /\.bui-approval-command \{[\s\S]*?max-height:/, "a long command must not push the decisions off-screen")
   assert.match(cssRules, /\.bui-approval \.tdw-attention-options button\.selected \{/)
 
   // The global `button` rule in styles.css makes every button a flex box centred on both axes with

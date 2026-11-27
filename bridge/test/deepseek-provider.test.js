@@ -15,7 +15,7 @@ test("DeepSeek Harness uses the pinned ACP adapter and the native ACP surface", 
   assert.deepEqual(provider.detectCommands, ["dsh", "dsh-acp"])
   assert.equal(provider.launchPriority, 80)
   assert.equal(provider.environment.NO_BROWSER, "1")
-  assert.equal(provider.permissionMode, "allow")
+  assert.equal(provider.permissionMode, "prompt")
 
   assert.equal(provider.replayAuthoritative, true)
   assert.equal(provider.replayUserChunksAreMessages, true)

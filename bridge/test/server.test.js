@@ -6,6 +6,7 @@ import { tmpdir } from "node:os"
 import path from "node:path"
 import test from "node:test"
 import { createBridgeServer } from "../src/server.js"
+import { AcpPromptEchoFilter } from "../src/acp-prompt-echo-filter.js"
 import { AcpService, chronologicalReplay, isHarnessInjectedText, isInterruptionMarker, markLatestTurnInterrupted } from "../src/acp-service.js"
 
 class FakeAcp extends EventEmitter {
@@ -409,6 +410,188 @@ async function waitForIdle(baseURL, sessionID) {
   }
   throw new Error("the session never returned to idle")
 }
+
+test("ACP permission stays pending until an authenticated user reply reaches the native adapter", async () => {
+  const acp = new FakeAcp()
+  const replies = []
+  acp.replyPermission = (id, reply) => { replies.push({ id, reply }); return true }
+  const bridge = await startServer({ acp })
+  try {
+    acp.emit("permission-request", {
+      id: 42,
+      params: {
+        sessionId: "session-1",
+        toolCall: { toolCallId: "tool-1", title: "Run shell", rawInput: { command: "pwd", cwd: "/workspace" } },
+        options: [
+          { optionId: "once", kind: "allow_once" },
+          { optionId: "reject", kind: "reject_once" }
+        ]
+      }
+    })
+    const pending = await readJSON(bridge.baseURL, "/permission")
+    assert.equal(pending.length, 1)
+    assert.match(pending[0].id, /^acp-/)
+    assert.equal(pending[0].sessionID, "session-1")
+    assert.deepEqual(pending[0].metadata, {
+      command: "pwd", cwd: "/workspace", availableReplies: ["once", "reject"]
+    })
+    assert.deepEqual(replies, [], "the bridge must not grant before the user replies")
+
+    const unauthenticated = await fetch(`${bridge.baseURL}/permission/${pending[0].id}/reply`, {
+      method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ reply: "once" })
+    })
+    assert.equal(unauthenticated.status, 401)
+    assert.deepEqual(replies, [])
+
+    const unsupported = await fetch(`${bridge.baseURL}/permission/${pending[0].id}/reply`, {
+      method: "POST", headers: jsonHeaders(), body: JSON.stringify({ reply: "always" })
+    })
+    assert.equal(unsupported.status, 400)
+    assert.deepEqual(replies, [])
+    assert.equal(await readJSON(bridge.baseURL, `/permission/${pending[0].id}/reply`, {
+      method: "POST", headers: jsonHeaders(), body: JSON.stringify({ reply: "once" })
+    }), true)
+    assert.deepEqual(replies, [{ id: 42, reply: "once" }])
+    assert.deepEqual(await readJSON(bridge.baseURL, "/permission"), [])
+    assert.equal(await readJSON(bridge.baseURL, `/permission/${pending[0].id}/reply`, {
+      method: "POST", headers: jsonHeaders(), body: JSON.stringify({ reply: "once" })
+    }), false)
+    assert.deepEqual(replies, [{ id: 42, reply: "once" }])
+  } finally { await bridge.close() }
+})
+
+test("filters pending ACP permissions by the Session directory", async () => {
+  class DirectoryAcp extends FakeAcp {
+    async request(method) {
+      if (method === "session/new") return { sessionId: "session-1", configOptions: [] }
+      return super.request(method)
+    }
+  }
+  const acp = new DirectoryAcp()
+  const replies = []
+  const cancellations = []
+  acp.replyPermission = (id, reply) => { replies.push({ id, reply }); return true }
+  acp.cancelPermissions = (sessionID) => { cancellations.push(sessionID); return true }
+  const bridge = await startServer({ acp })
+  try {
+    const created = await readJSON(bridge.baseURL, "/session", {
+      method: "POST", headers: jsonHeaders(), body: "{}"
+    })
+    acp.emit("permission-request", {
+      id: 43,
+      params: {
+        sessionId: created.id,
+        toolCall: { title: "Run shell", rawInput: { command: "pwd" } },
+        options: [{ optionId: "once", kind: "allow_once" }]
+      }
+    })
+    const inSession = `/permission?directory=${encodeURIComponent(process.cwd())}`
+    const elsewhere = `/permission?directory=${encodeURIComponent(path.join(process.cwd(), "elsewhere"))}`
+    assert.equal((await readJSON(bridge.baseURL, inSession)).length, 1)
+    assert.deepEqual(await readJSON(bridge.baseURL, elsewhere), [], "a pending permission must not leak into another directory")
+    const pending = (await readJSON(bridge.baseURL, inSession))[0]
+    assert.equal(await readJSON(bridge.baseURL, `/permission/${pending.id}/reply?directory=${encodeURIComponent(path.join(process.cwd(), "elsewhere"))}`, {
+      method: "POST", headers: jsonHeaders(), body: JSON.stringify({ reply: "once" })
+    }), false)
+    assert.deepEqual(replies, [])
+    assert.equal(await readJSON(bridge.baseURL, `/permission/${pending.id}/reply?directory=${encodeURIComponent(process.cwd())}`, {
+      method: "POST", headers: jsonHeaders(), body: JSON.stringify({ reply: "once" })
+    }), true)
+    assert.deepEqual(replies, [{ id: 43, reply: "once" }])
+
+    acp.emit("permission-request", {
+      id: 44,
+      params: {
+        sessionId: created.id,
+        toolCall: { title: "Run shell", rawInput: { command: "pwd" } },
+        options: [{ optionId: "once", kind: "allow_once" }, { optionId: "reject", kind: "reject_once" }]
+      }
+    })
+    assert.equal((await readJSON(bridge.baseURL, inSession)).length, 1)
+    await readJSON(bridge.baseURL, `/session/${created.id}/abort`, { method: "POST", headers: jsonHeaders(), body: "{}" })
+    assert.deepEqual(await readJSON(bridge.baseURL, inSession), [], "Stop must clear a pending approval")
+    assert.deepEqual(replies, [{ id: 43, reply: "once" }])
+    assert.deepEqual(cancellations, [created.id], "Stop must cancel the native permission request")
+  } finally { await bridge.close() }
+})
+
+test("ACP permissions stay scoped to the Session directory", async () => {
+  const acp = new FakeAcp()
+  const replies = []
+  const cancellations = []
+  acp.replyPermission = (id, reply) => { replies.push({ id, reply }); return true }
+  acp.cancelPermissions = (sessionID) => { cancellations.push(sessionID); return true }
+  const service = new AcpService(new AcpPromptEchoFilter(acp), {})
+  try {
+    service.rememberListedSessions([{
+      sessionId: "session-1", cwd: "/workspace", title: "Test", updatedAt: "2026-07-22T00:00:00.000Z"
+    }])
+    acp.emit("permission-request", {
+      id: 43,
+      params: {
+        sessionId: "session-1",
+        toolCall: { title: "Run shell", rawInput: { command: "pwd", cwd: "/workspace" } },
+        options: [{ optionId: "once", kind: "allow_once" }]
+      }
+    })
+    const pending = service.permissions("/workspace")
+    assert.equal(pending.length, 1)
+    assert.deepEqual(service.permissions("/other"), [])
+    assert.equal(await service.replyPermission(pending[0].id, "once", "/other"), false)
+    assert.deepEqual(replies, [])
+    assert.equal(await service.replyPermission(pending[0].id, "once", "/workspace"), true)
+    assert.deepEqual(replies, [{ id: 43, reply: "once" }])
+
+    acp.emit("permission-request", {
+      id: 44,
+      params: {
+        sessionId: "session-1",
+        toolCall: { title: "Run shell", rawInput: { command: "pwd" } },
+        options: [{ optionId: "once", kind: "allow_once" }, { optionId: "reject", kind: "reject_once" }]
+      }
+    })
+    service.abort("session-1")
+    assert.deepEqual(service.permissions("/workspace"), [], "Stop must drop an approval the user can no longer act on")
+    assert.deepEqual(cancellations, ["session-1"])
+  } finally { service.dispose() }
+})
+
+test("an edit permission keeps its explicit file path and tool kind, never the file content", async () => {
+  const acp = new FakeAcp()
+  const service = new AcpService(new AcpPromptEchoFilter(acp), {})
+  try {
+    service.rememberListedSessions([{
+      sessionId: "session-1", cwd: "/workspace", title: "Test", updatedAt: "2026-07-22T00:00:00.000Z"
+    }])
+    acp.emit("permission-request", {
+      id: 45,
+      params: {
+        sessionId: "session-1",
+        toolCall: {
+          toolCallId: "tool-2",
+          name: "write",
+          title: "notes.txt",
+          kind: "edit",
+          locations: [{ path: "/workspace/notes.txt" }],
+          rawInput: { path: "/workspace/notes.txt", content: "do not expose this" }
+        },
+        options: [
+          { optionId: "once", kind: "allow_once" },
+          { optionId: "reject", kind: "reject_once" }
+        ]
+      }
+    })
+    const pending = service.permissions("/workspace")
+    assert.equal(pending.length, 1)
+    assert.deepEqual(pending[0].metadata, {
+      toolKind: "edit",
+      toolName: "write",
+      path: "/workspace/notes.txt",
+      availableReplies: ["once", "reject"]
+    })
+    assert.equal(JSON.stringify(pending).includes("do not expose this"), false, "file content must never enter the approval payload")
+  } finally { service.dispose() }
+})
 
 test("queues a prompt sent while the agent is still working", async () => {
   const acp = new HeldTurnOmpAcp()

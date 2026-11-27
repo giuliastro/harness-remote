@@ -14,7 +14,7 @@ test("Antigravity provider uses the documented native ACP command and discovery"
   assert.deepEqual(provider.detectCommands, ["agy"])
   assert.equal(provider.launchPriority, 90)
   assert.equal(provider.authenticate, false)
-  assert.equal(provider.permissionMode, undefined)
+  assert.equal(provider.permissionMode, "prompt")
   assert.deepEqual(resolveAcpLaunch(provider, { find: () => null }), { command: "agy", args: ["acp"], source: "harness" })
 
   const detected = detectBackends({

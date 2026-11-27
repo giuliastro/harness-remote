@@ -35,7 +35,7 @@ const COMMON_CAPABILITIES = {
   diff: false,
   filesystemBrowser: true,
   questions: false,
-  permissions: false,
+  permissions: true,
   sessionRename: true,
   sessionDelete: true,
   // What a prompt decoded while the harness is still working does. `steer` posts it into the live
@@ -53,7 +53,7 @@ export const HARNESS_PROFILES = {
     detectCommands: ["omp"],
     launchPriority: 30,
     args: ["acp"],
-    permissionMode: "allow",
+    permissionMode: "prompt",
     historyLoader: createOmpHistoryLoader(),
     // OMP's journal is the only place a message has a stable identity. Its ACP stream mints a new
     // `messageId` for every live message and mints new ones again on every `session/load` replay,
@@ -110,7 +110,7 @@ export const HARNESS_PROFILES = {
     launchPriority: 40,
     args: ["--yes", "--package=@automatalabs/pi-acp@0.5.0", "pi-acp"],
     adapterCommand: "pi-acp",
-    permissionMode: "allow",
+    permissionMode: "prompt",
     historyLoader: createPiHistoryLoader(),
     preserveListedTimestamps: true,
     // PI journals are authoritative for transcript and title metadata. session/load is a live-session
@@ -166,7 +166,7 @@ export const HARNESS_PROFILES = {
     // The embedded Agent SDK cannot always find its optional native Claude binary. Point it at the
     // user's installed CLI, which is what the adapter is meant to drive.
     environment: claudeAdapterEnvironment(),
-    permissionMode: "allow",
+    permissionMode: "prompt",
     preserveListedTimestamps: true,
     reloadOnHistoryRefresh: false,
     // session/load replays the complete native transcript, split per Anthropic API message, while
@@ -228,7 +228,7 @@ export const HARNESS_PROFILES = {
     detectCommands: ["copilot"],
     launchPriority: 50,
     args: ["--acp", "--stdio", ...(process.env.HARNESS_REMOTE_COPILOT_MODEL ? ["--model", process.env.HARNESS_REMOTE_COPILOT_MODEL] : [])],
-    permissionMode: "allow",
+    permissionMode: "prompt",
     lifecycleContract: COMMON_ACP_LIFECYCLE_CONTRACT,
     modelVariantConfigIDs: [],
     sessionContract: {
@@ -273,7 +273,7 @@ export const HARNESS_PROFILES = {
     // removed project. ACP replay remains authoritative when loading writer configuration.
     replayAuthoritative: true,
     allowPackageFallback: true,
-    permissionMode: "allow",
+    permissionMode: "prompt",
     lifecycleContract: COMMON_ACP_LIFECYCLE_CONTRACT,
     modelVariantConfigIDs: ["effort"],
     modelVariantDefaultValues: ["default"],
@@ -304,7 +304,7 @@ export const HARNESS_PROFILES = {
     detectCommands: ["mimo"],
     launchPriority: 70,
     args: ["acp"],
-    permissionMode: "allow",
+    permissionMode: "prompt",
     // Current MiMo ACP advertises `opencode-login` but its authenticate RPC throws
     // "Authentication not implemented". It relies on credentials configured in the CLI itself.
     authenticate: false,
@@ -366,7 +366,7 @@ export const HARNESS_PROFILES = {
     // explicitly and invoke its published binary instead of relying on npx package-spec inference.
     args: ["--yes", "--package=@agentclientprotocol/codex-acp@1.13.1", "codex-acp"],
     adapterCommand: "codex-acp",
-    permissionMode: "allow",
+    permissionMode: "prompt",
     // The adapter checks the existing account before each operation. Calling authenticate
     // during discovery forces token refresh and can open a browser login on app startup.
     // Reuse the native account; a missing login should surface as an auth error instead.
@@ -432,7 +432,7 @@ export const HARNESS_PROFILES = {
     // On the first npx launch the adapter also unpacks its bundled runtime. Give that cold start
     // time to finish before the ACP handshake is treated as failed.
     packageStartupTimeoutMs: 240_000,
-    permissionMode: "allow",
+    permissionMode: "prompt",
     historyLoader: createDeepseekHistoryLoader(),
     // The DSH journal is the authoritative transcript even when a `dsh web` process owns the
     // Session. Reading it avoids session/load's single-writer rejection while the app is watching.
@@ -489,8 +489,8 @@ export const HARNESS_PROFILES = {
     // The CLI reads the user's cached sign-in. Calling authenticate during discovery could open
     // an OAuth browser without a user action; `agy` or `agy acp --login` handles initial sign-in.
     authenticate: false,
-    // Leave the bridge's default deny behavior in place for permission requests. Antigravity's
-    // ACP supports permission prompts, but its docs do not justify auto-approving them here.
+    // ACP permission requests remain pending until the user answers in the app.
+    permissionMode: "prompt",
     lifecycleContract: COMMON_ACP_LIFECYCLE_CONTRACT,
     // The CLI documents native list/load/resume/close. How a second writer's changes are observed
     // is not specified. agy 1.5.18 advertises its Thinking picker as the `thought_level` config

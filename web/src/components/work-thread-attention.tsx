@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react"
 import { api } from "../api"
 import { discoverMachine, recordApprovalDecision, type ApprovalDecisionIdentity } from "../machineClient"
+import { permissionExecutionContext } from "../native-session-attention-notifications"
 import { classifyNativeSessionAttention } from "../native-session-attention"
 import type { PermissionRequest, QuestionRequest, ServerConfig } from "../types"
 
@@ -30,6 +31,40 @@ function permissionExplanation(request: PermissionRequest): string | undefined {
   return undefined
 }
 
+const HARNESS_LABELS: Record<string, string> = {
+  opencode: "OpenCode",
+  opencode2: "OpenCode 2",
+  omp: "Oh My Pi",
+  pi: "PI",
+  claude: "Claude Code",
+  codex: "Codex",
+  copilot: "GitHub Copilot",
+  mimo: "MiMo Code",
+  deepseek: "DeepSeek",
+  antigravity: "Google Antigravity"
+}
+
+function harnessName(config: ServerConfig): string {
+  const id = config.agentId || config.backend
+  return HARNESS_LABELS[id] || id
+}
+
+function baseName(value: string): string {
+  const parts = value.split(/[\\/]/).filter(Boolean)
+  return parts[parts.length - 1] || value
+}
+
+function samePath(left: string, right: string): boolean {
+  return left.replace(/[\\/]+$/, "") === right.replace(/[\\/]+$/, "")
+}
+
+function permissionKind(command: string | undefined, targetPath: string | undefined, toolKind: string | undefined): string {
+  if (toolKind === "edit" || toolKind === "write" || toolKind === "patch") return "File edit"
+  if (command !== undefined) return "Command"
+  if (targetPath !== undefined) return "File"
+  return "Request"
+}
+
 /**
  * A native permission/question reply is acknowledged before OpenCode necessarily makes the resumed
  * turn's final transcript durable. Event delivery normally closes that gap, but OpenCode must not
@@ -54,6 +89,7 @@ export function WorkThreadAttention({ config, directory, questions, permissions,
   const [custom, setCustom] = useState<CustomMap>({})
   const [submitting, setSubmitting] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [machineIdentity, setMachineIdentity] = useState<{ name: string; id: string } | null>(null)
   const attention = classifyNativeSessionAttention({ questions, permissions })
   const authorizationRequired = attention.kind === "authorization"
 
@@ -62,6 +98,19 @@ export function WorkThreadAttention({ config, directory, questions, permissions,
     setCustom({})
     setError(null)
   }, [questions.map((request) => request.id).join("|"), permissions.map((request) => request.id).join("|")])
+
+  useEffect(() => {
+    let active = true
+    setMachineIdentity(null)
+    if (permissions.length) {
+      void discoverMachine(config, { allowCachedOnTransportFailure: true })
+        .then((snapshot) => {
+          if (active && snapshot) setMachineIdentity({ name: snapshot.machine.name, id: snapshot.machine.id })
+        })
+        .catch(() => undefined)
+    }
+    return () => { active = false }
+  }, [config.host, config.port, config.backend, config.agentId, permissions.length])
 
   if (questions.length === 0 && permissions.length === 0) return null
 
@@ -207,23 +256,76 @@ export function WorkThreadAttention({ config, directory, questions, permissions,
         </div>
       ))}
 
-      {permissions.map((request) => (
-        <div className="tdw-attention-card" key={request.id}>
-          <strong>Authorization required</strong>
-          <p>{request.permission}</p>
-          {request.patterns?.length ? (
-            <div className="bui-approval-scopes" aria-label="Requested scope">
-              {request.patterns.map((pattern) => <code key={pattern}>{pattern}</code>)}
-            </div>
+      {permissions.map((request) => {
+        const execution = permissionExecutionContext(request.metadata)
+        const offeredReplies = Array.isArray(request.metadata?.availableReplies)
+          ? request.metadata.availableReplies.filter((value): value is string => typeof value === "string")
+          : null
+        const title = request.permission?.trim() || "Permission requested"
+        const command = execution.command
+        const targetPath = execution.targetPath
+        const redundantTitle = (command !== undefined && title === command.trim())
+          || (targetPath !== undefined && (title === targetPath || title === baseName(targetPath)))
+        const explanation = permissionExplanation(request)
+        const machineName = machineIdentity?.name || "Machine name unavailable"
+        const machineID = machineIdentity?.id || approvalIdentity?.machineID
+        const kind = permissionKind(command, targetPath, execution.toolKind)
+        return (
+        <div className="tdw-attention-card bui-approval-card" key={request.id}>
+          <div className="bui-approval-top">
+            <span className="bui-approval-kind">{kind}</span>
+            <span className="bui-approval-machine">{machineName} · {harnessName(config)}</span>
+          </div>
+          {redundantTitle ? null : <p className="bui-approval-title">{title}</p>}
+          {command !== undefined ? (
+            <pre className="bui-approval-command" tabIndex={0} title={command}>{command}</pre>
           ) : null}
-          <p>If you do nothing, this request remains blocked.</p>
+          {targetPath !== undefined ? (
+            <p className="bui-approval-target">
+              <span>Target file</span>
+              <code title={targetPath}>{targetPath}</code>
+            </p>
+          ) : null}
+          {command === undefined && targetPath === undefined
+            ? <p className="bui-approval-missing">{kind === "File edit" ? "Target file not supplied by the harness." : "Exact command not supplied by the harness."}</p>
+            : null}
+          <div className="bui-approval-paths">
+            {directory
+              ? <span title={directory}>Session <code>{directory}</code></span>
+              : <span>Session directory unavailable</span>}
+            {execution.executionDirectory !== undefined && !samePath(execution.executionDirectory, directory)
+              ? <span title={execution.executionDirectory}>Runs in <code>{execution.executionDirectory}</code></span>
+              : null}
+          </div>
           <div className="tdw-attention-actions">
             <button type="button" className="tdw-button secondary bui-approval-deny" disabled={submitting === request.id} onClick={() => void respondPermission(request, "reject")}>Deny</button>
-            <button type="button" className="tdw-button secondary" disabled={submitting === request.id} onClick={() => void respondPermission(request, "once")}>Allow once</button>
-            <button type="button" className="tdw-button primary" disabled={submitting === request.id} onClick={() => void respondPermission(request, "always")}>Always allow</button>
+            {(!offeredReplies || offeredReplies.includes("once")) ? <button type="button" className="tdw-button secondary" disabled={submitting === request.id} onClick={() => void respondPermission(request, "once")}>Allow once</button> : null}
+            {(!offeredReplies || offeredReplies.includes("always")) ? <button type="button" className="tdw-button primary" disabled={submitting === request.id} onClick={() => void respondPermission(request, "always")}>Always allow</button> : null}
           </div>
+          <details className="bui-approval-details">
+            <summary>More details</summary>
+            <dl>
+              <dt>Machine</dt><dd>{machineName}</dd>
+              {machineID ? <><dt>Machine ID</dt><dd><code>{machineID}</code></dd></> : null}
+              <dt>Harness</dt><dd>{harnessName(config)}</dd>
+              <dt>Gateway</dt><dd><code>{config.host}:{config.port}</code></dd>
+              <dt>Session directory</dt><dd>{directory ? <code>{directory}</code> : "Not available"}</dd>
+              <dt>Execution directory</dt><dd>{execution.executionDirectory !== undefined ? <code>{execution.executionDirectory}</code> : "Not supplied by the harness"}</dd>
+              {execution.toolKind !== undefined || request.metadata?.toolName !== undefined ? (
+                <><dt>Tool</dt><dd>{typeof request.metadata?.toolName === "string" ? request.metadata.toolName : execution.toolKind}</dd></>
+              ) : null}
+              {explanation ? <><dt>Reason</dt><dd>{explanation}</dd></> : null}
+            </dl>
+            {request.patterns?.length ? (
+              <div className="bui-approval-scopes" aria-label="Requested scope">
+                {request.patterns.map((pattern) => <code key={pattern}>{pattern}</code>)}
+              </div>
+            ) : null}
+            <p>If you do nothing, this request remains blocked.</p>
+          </details>
         </div>
-      ))}
+        )
+      })}
 
       {error ? <div className="tdw-inline-error" role="alert">{error}</div> : null}
     </section>

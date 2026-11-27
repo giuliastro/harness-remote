@@ -42,8 +42,10 @@
 
 .bui-approval .tdw-attention-heading span {
   display: inline-flex;
+  flex: none;
   align-items: center;
   gap: 6px;
+  white-space: nowrap;
 }
 
 .bui-approval-dot {
@@ -801,4 +803,165 @@
    but space. Two pixels, not three: it sits on that row rather than above it. */
 .tdw-work-thread-conversation .uw-message-agent .uw-message-actions {
   top: -2px;
+}
+
+/* ------------------------------------------------------- approval card compact */
+
+/* The decision, the command and the buttons must fit before the fold. Machine details and full
+   paths stay available under "More details" instead of pushing the decision off-screen. */
+.bui-approval .tdw-attention-card.bui-approval-card {
+  display: grid;
+  gap: 8px;
+  padding: 12px 14px;
+}
+
+.bui-approval-top {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  min-width: 0;
+}
+
+.bui-approval-kind {
+  flex: none;
+  color: var(--td3-attention-text);
+  font-size: 10px;
+  font-weight: 850;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+
+.bui-approval-machine {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--td3-text-2);
+  font-size: 12px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.bui-approval .bui-approval-title {
+  margin: 0;
+  color: var(--td3-text);
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.35;
+}
+
+.bui-approval-command {
+  max-height: 5.4em;
+  margin: 0;
+  padding: 8px 10px;
+  overflow: auto;
+  border: 1px solid var(--td3-border-soft);
+  border-radius: 8px;
+  color: var(--td3-text);
+  background: var(--td3-control);
+  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-size: 11.5px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.bui-approval .bui-approval-target {
+  display: grid;
+  gap: 1px;
+  min-width: 0;
+  margin: 0;
+}
+
+.bui-approval-target span {
+  color: var(--td3-muted);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+}
+
+.bui-approval-target code {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--td3-text);
+  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.bui-approval-paths {
+  display: grid;
+  gap: 1px;
+  min-width: 0;
+  font-size: 10.5px;
+  color: var(--td3-muted);
+}
+
+.bui-approval-paths span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.bui-approval-paths code {
+  display: inline;
+  color: var(--td3-text-2);
+  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-size: inherit;
+}
+
+.bui-approval .bui-approval-missing {
+  margin: 0;
+  color: var(--td3-muted);
+  font-size: 11.5px;
+}
+
+.bui-approval .tdw-attention-actions {
+  margin-top: 1px;
+}
+
+.bui-approval-details {
+  padding-top: 6px;
+  border-top: 1px solid var(--td3-border-soft);
+}
+
+.bui-approval-details summary {
+  cursor: pointer;
+  color: var(--td3-muted);
+  font-size: 10.5px;
+  font-weight: 750;
+}
+
+.bui-approval-details dl {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 4px 10px;
+  margin: 7px 0 0;
+}
+
+.bui-approval-details dt {
+  color: var(--td3-muted);
+  font-size: 10.5px;
+}
+
+.bui-approval-details dd {
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+  font-size: 10.5px;
+}
+
+.bui-approval-details dd code {
+  display: inline;
+  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-size: inherit;
+}
+
+.bui-approval .bui-approval-details p {
+  margin: 7px 0 0;
+  color: var(--td3-muted);
+  font-size: 10.5px;
 }

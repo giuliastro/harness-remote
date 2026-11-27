@@ -27,4 +27,11 @@
     <string name="hr_attention_boundary">范围：%1$s</string>
     <string name="hr_attention_allow_once">允许一次</string>
     <string name="hr_attention_deny">拒绝</string>
+    <string name="hr_attention_review">查看请求</string>
+    <string name="hr_attention_review_before_allow">允许前请打开会话</string>
+    <string name="hr_attention_command">命令：%1$s</string>
+    <string name="hr_attention_command_missing">未提供确切命令</string>
+    <string name="hr_attention_execution_directory">执行目录：%1$s</string>
+    <string name="hr_attention_directory_missing">未提供执行目录</string>
+    <string name="hr_attention_detail_review">打开会话查看完整详情</string>
 </resources>

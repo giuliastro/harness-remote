@@ -25,6 +25,10 @@ export type NativeSessionAttentionNotificationEvent = {
   reason: NativeSessionAttentionIndexItem["attention"]["reason"]
   requestIDs: string[]
   requestedAction?: string
+  command?: string
+  executionDirectory?: string
+  targetPath?: string
+  toolKind?: string
   explanation?: string
   boundary?: string
   consequence: string
@@ -78,6 +82,32 @@ function metadataText(metadata: Record<string, unknown>, keys: readonly string[]
   return undefined
 }
 
+/** Explicit native request metadata only; permission patterns are not commands or file paths. */
+export function permissionExecutionContext(metadata: Record<string, unknown> | undefined): {
+  command?: string
+  executionDirectory?: string
+  targetPath?: string
+  toolKind?: string
+} {
+  const exact = (keys: string[]) => {
+    for (const key of keys) {
+      const value = metadata?.[key]
+      if (typeof value === "string" && value.trim()) return value
+    }
+    return undefined
+  }
+  const command = exact(["command"])
+  const executionDirectory = exact(["cwd", "workdir", "workingDirectory"])
+  const targetPath = exact(["path", "filePath", "file_path", "filename"])
+  const toolKind = exact(["toolKind"])
+  return {
+    ...(command !== undefined ? { command } : {}),
+    ...(executionDirectory !== undefined ? { executionDirectory } : {}),
+    ...(targetPath !== undefined ? { targetPath } : {}),
+    ...(toolKind !== undefined ? { toolKind } : {})
+  }
+}
+
 function notificationEvent(
   observation: NativeSessionAttentionNotificationObservation,
   item: NativeSessionAttentionIndexItem & {
@@ -100,6 +130,7 @@ function notificationEvent(
       reason: item.attention.reason,
       requestIDs: requestIDs(item),
       requestedAction: permission?.permission || "Permission requested",
+      ...permissionExecutionContext(permission?.metadata),
       explanation: permission ? metadataText(permission.metadata, ["reason", "description", "message"]) : undefined,
       boundary: permission?.patterns?.length ? permission.patterns.join(", ") : undefined,
       consequence: "The Session remains blocked until you allow or deny this request."
