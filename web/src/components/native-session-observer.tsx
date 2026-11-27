@@ -189,6 +189,9 @@ export function NativeSessionObserver({
   const [controller, setController] = useState<ConversationController | null>(null)
   const [transcriptRefreshToken, setTranscriptRefreshToken] = useState(0)
   const [attachmentsSupported, setAttachmentsSupported] = useState(false)
+  // Like attachments, read from this harness's /v1/capabilities: the mode picker needs the bridge's
+  // /session/:id/mode route, which an older daemon does not have.
+  const [sessionModesSupported, setSessionModesSupported] = useState(false)
   const [commands, setCommands] = useState<CommandInfo[]>([])
   const durableLifecycleRef = useRef<{ targetKey: string; status: string } | null>(null)
   const [attention, setAttention] = useState(false)
@@ -294,11 +297,13 @@ export function NativeSessionObserver({
     if (!interactionEnabled) return
     let disposed = false
     setAttachmentsSupported(false)
+    setSessionModesSupported(false)
     setCommands([])
     void api.capabilities(target.config)
       .then(async (capabilities) => {
         if (disposed) return
         setAttachmentsSupported(capabilities.attachments === true)
+        setSessionModesSupported(capabilities.sessionModes === true)
         if (target.commandsSupported === true || capabilities.commands === true) {
           try {
             const available = await api.listCommands(target.config, target.sessionID)
@@ -311,6 +316,7 @@ export function NativeSessionObserver({
       .catch(() => {
         if (!disposed) {
           setAttachmentsSupported(false)
+          setSessionModesSupported(false)
           setCommands([])
         }
       })
@@ -330,9 +336,10 @@ export function NativeSessionObserver({
       abort: target.canStop,
       models: target.modelsSupported,
       attachments: attachmentsSupported,
-      commands: commands.length > 0
+      commands: commands.length > 0,
+      sessionModes: sessionModesSupported
     }
-  }), [target.agentID, target.agentLabel, target.backend, target.transport, target.canStop, target.modelsSupported, attachmentsSupported, commands.length])
+  }), [target.agentID, target.agentLabel, target.backend, target.transport, target.canStop, target.modelsSupported, attachmentsSupported, sessionModesSupported, commands.length])
 
   const routableRoutes = useMemo<NativeSessionRouteMachine[]>(() => routes.flatMap((machine) => {
     const available = machine.agents.filter((candidate) => canCreateNativeSession(candidate))

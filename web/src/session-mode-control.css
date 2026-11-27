@@ -1,0 +1,207 @@
+/* Harness session modes (Claude Code Manual/Accept edits/Plan/Auto/Bypass, Codex approval presets,
+   OpenCode build/plan). Toolbar: the current mode with a popover. Phone composer card: the same list
+   inline. A mode that removes every approval is tinted so it is never on by accident unnoticed. */
+
+.tdw-mode-control {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  flex: none;
+}
+
+.tdw-mode-control-label {
+  color: var(--td3-muted);
+  font-size: 10px;
+  font-weight: 750;
+}
+
+.tdw-mode-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 180px;
+  min-height: 30px;
+  padding: 0 8px;
+  border: 1px solid var(--td3-border);
+  border-radius: 8px;
+  color: var(--td3-text-2);
+  background: var(--td3-control);
+  font: inherit;
+  font-size: 10.5px;
+  cursor: pointer;
+}
+
+.tdw-mode-trigger > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tdw-mode-trigger:hover:not(:disabled) { background: var(--td3-control-hover); }
+.tdw-mode-trigger:focus-visible { outline: 0; border-color: var(--td3-focus); box-shadow: 0 0 0 2px var(--td3-blue-soft); }
+.tdw-mode-trigger:disabled { cursor: default; opacity: .6; }
+
+.tdw-mode-control.unrestricted .tdw-mode-trigger {
+  border-color: var(--td3-yellow);
+  color: var(--td3-yellow-text);
+  background: var(--td3-yellow-soft);
+}
+
+.tdw-mode-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: default;
+}
+
+.tdw-mode-popover {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 1001;
+  width: min(320px, calc(100vw - 24px));
+  max-height: min(420px, calc(100vh - 120px));
+  overflow-y: auto;
+  padding: 6px;
+  border: 1px solid var(--td3-border-strong);
+  border-radius: 12px;
+  background: var(--td3-panel);
+  box-shadow: var(--td3-shadow-panel, 0 12px 40px rgba(0, 0, 0, .35));
+}
+
+.tdw-mode-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.tdw-mode-list .tdw-mode-option {
+  display: flex;
+  align-items: flex-start;
+  /* The app's base button rule centres and never wraps; a mode's description has to wrap. */
+  justify-content: flex-start;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  gap: 10px;
+  width: 100%;
+  min-height: 44px;
+  padding: 8px 10px;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  color: var(--td3-text);
+  background: transparent;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.tdw-mode-option:hover:not(:disabled) { background: var(--td3-control-hover); }
+.tdw-mode-option:focus-visible { outline: 0; border-color: var(--td3-focus); }
+.tdw-mode-option:disabled { cursor: default; opacity: .6; }
+.tdw-mode-option.selected { background: var(--td3-blue-soft); }
+
+.tdw-mode-option-radio {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  margin-top: 2px;
+  border: 1.5px solid var(--td3-muted);
+  border-radius: 50%;
+}
+
+.tdw-mode-option.selected .tdw-mode-option-radio {
+  border-color: var(--td3-blue);
+  box-shadow: inset 0 0 0 3px var(--td3-panel), inset 0 0 0 8px var(--td3-blue);
+}
+
+.tdw-mode-option-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.tdw-mode-option-text strong {
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.tdw-mode-option-text small {
+  color: var(--td3-muted);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.tdw-mode-option.unrestricted .tdw-mode-option-text strong { color: var(--td3-yellow-text); }
+.tdw-mode-option.unrestricted.selected { background: var(--td3-yellow-soft); }
+.tdw-mode-option.unrestricted.selected .tdw-mode-option-radio {
+  border-color: var(--td3-yellow);
+  box-shadow: inset 0 0 0 3px var(--td3-panel), inset 0 0 0 8px var(--td3-yellow);
+}
+
+.tdw-mode-option.confirming {
+  border-color: var(--td3-yellow);
+  background: var(--td3-yellow-soft);
+}
+
+.tdw-mode-option-text .tdw-mode-option-warning {
+  color: var(--td3-yellow-text);
+  font-weight: 600;
+}
+
+.tdw-mode-note,
+.tdw-mode-error {
+  margin: 0;
+  padding: 8px 10px;
+  color: var(--td3-muted);
+  font-size: 12px;
+}
+
+.tdw-mode-error { color: var(--td3-red-text); }
+
+/* Phone composer card (compact skin): the list sits under the effort slider. */
+.tdw-effort-card-modes {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-top: 10px;
+  border-top: 1px solid var(--td3-border);
+}
+
+.tdw-effort-card-modes > strong {
+  color: var(--td3-muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+/* Phones hide every <small> in the composer footer (it is hint text there), and the card lives in
+   that footer. The mode descriptions, and above all the confirmation before turning approvals off,
+   must stay visible. */
+/* One class more than mobile-composer.css's own rule, which loads later and would otherwise tie. */
+:root[data-skin] .uw-composer-footer .tdw-effort-card-modes .tdw-mode-list .tdw-mode-option small {
+  display: block !important;
+  font-size: 12px !important;
+}
+
+.tdw-effort-card-modes .tdw-mode-list {
+  max-height: 40vh;
+  overflow-y: auto;
+}
+
+/* The composer pill shows a dot while a no-approval mode is on, since the card is closed most of the time. */
+.tdw-controls-trigger.mode-unrestricted { position: relative; }
+.tdw-controls-trigger.mode-unrestricted::after {
+  content: "";
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--td3-yellow);
+}

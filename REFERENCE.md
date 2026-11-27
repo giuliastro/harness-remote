@@ -495,8 +495,13 @@ Fable, Opus with 1M context, Haiku — each with the version it stands for, so
 "Sonnet" reads as `Sonnet 5 · Efficient for routine tasks`. Agent selection, server
 slash commands, and VCS/diff are not currently exposed through this bridge.
 
-The adapter also advertises a permission `mode` and an `effort` level, which the app
-does not use yet.
+**Permission modes come from Claude Code itself.** The adapter advertises Manual,
+Accept edits, Plan, Auto and Bypass permissions, and the app shows exactly those under
+**Mode** (toolbar on desktop, the model card above the composer on a phone). Choosing one
+switches the open Session immediately, including for the next tool call of a running turn.
+Bypass permissions needs a second selection to confirm, and stays tinted while it is on. If
+Claude Code reopens an idle Session in its default mode, the bridge puts the chosen mode back.
+See [Session modes](#session-modes).
 
 **Idle Sessions release their Claude process.** A loaded Claude Code Session keeps a
 native `claude` process and its MCP servers alive. The bridge closes a Session after
@@ -667,12 +672,45 @@ Against an OpenCode server, spoken directly: `/global/health`, `/global/event`, 
 For OMP, PI, Claude Code, and Codex CLI the bridge implements a deliberate subset of those paths,
 plus its own `/v1/health` and `/v1/capabilities`. OMP also exposes generic session action discovery
 and invocation through `/session/:id/action` and `/session/:id/action/:name` when a known host
-extension is loaded. Capabilities tell the app which APIs are supported so it hides the rest rather
+extension is loaded. Every ACP harness also answers `GET /session/:id/mode` and
+`POST /session/:id/mode` (see [Session modes](#session-modes)). Capabilities tell the app which APIs are supported so it hides the rest rather
 than calling something that 404s. [CONTRIBUTING.md](CONTRIBUTING.md) lists exactly what the bridge
 does and does not answer.
 
 What each harness actually provides behind those paths, and what to re-check when one of them
 changes, is in [docs/DEPENDENCIES.md](docs/DEPENDENCIES.md).
+
+### Session modes
+
+A tool permission request offers what the harness offers: Allow once, Always allow, or Deny.
+"Always allow" is scoped by the harness, usually to that kind of tool or command, so it does
+not stop the next, different request. To ask less often, switch the Session's **mode**: the
+harness's own setting for how much it does without asking.
+
+The modes are never invented by Harness Remote. The bridge reads them from the harness over
+ACP (the `configOptions` entry with `category: "mode"`, or the older `modes` field) and shows
+their own names and descriptions. As advertised today:
+
+| Harness | Modes |
+| --- | --- |
+| Claude Code | Manual (default), Accept edits, Plan, Auto, Bypass permissions |
+| Codex | Ask for approval, Approve for me (default), Full access |
+| OpenCode 2 | build (default), plan |
+| Oh My Pi | Default, Plan |
+| PI | none |
+
+- `GET /session/:id/mode` answers `{ loaded, currentModeId, modes: [{ id, name, description, unrestricted }] }`
+  without opening the Session; `loaded: false` means the bridge has not opened it yet.
+  `?load=1` opens it, which is what the app does when you open the picker.
+- `POST /session/:id/mode` with `{ "modeId": "…" }` switches through `session/set_config_option`
+  (or `session/set_mode` for an adapter with only the older field). A mode the Session does not
+  offer is refused.
+- `unrestricted` marks a mode that removes approvals altogether (Claude Code's Bypass
+  permissions, Codex's Full access). The app asks for a second selection before switching into one
+  and tints the control while it is on.
+- A harness reopens an unloaded Session in its default mode. The bridge remembers the mode chosen
+  through Harness Remote and applies it again after the reopen. When the harness changes mode
+  by itself (Claude Code leaving Plan), that new mode is the one remembered.
 
 ## Contributing
 

@@ -30,6 +30,24 @@ export type HarnessCapabilities = {
   /** What happens to a prompt sent while a reply is already streaming: "steer" forwards it into the
    * live turn (the agent reads it immediately), "queue" holds it behind the running turn. */
   midTurnPrompt?: "steer" | "queue"
+  /** The harness's own ACP session modes can be listed and switched at /session/:id/mode. */
+  sessionModes?: boolean
+}
+
+/** One mode exactly as the harness advertised it (Claude Code "Accept edits", Codex "Full access"…). */
+export type SessionMode = {
+  id: string
+  name: string
+  description?: string
+  /** The mode removes the harness's approval prompts altogether; switching into it asks first. */
+  unrestricted?: boolean
+}
+
+/** `loaded: false` means the bridge has not opened the Session yet, so its modes are not known. */
+export type SessionModeState = {
+  loaded: boolean
+  currentModeId?: string
+  modes: SessionMode[]
 }
 
 export type HarnessCapabilityContract = {

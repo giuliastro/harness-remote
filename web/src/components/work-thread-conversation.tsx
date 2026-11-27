@@ -34,6 +34,7 @@ import { ModelPicker, modelOptionKey } from "./model-picker"
 import { TaskDeskConversation } from "./taskdesk-conversation"
 import { TaskDeskMessageContent } from "./taskdesk-message-content"
 import { WorkThreadAttention } from "./work-thread-attention"
+import { SessionModeList, SessionModeMenu, useSessionModes } from "./session-mode-control"
 import { harnessIconUrl } from "../harness-icons"
 import { useTranslator } from "../useTranslator"
 
@@ -447,6 +448,17 @@ export function WorkThreadConversation({
     targetAgentID,
     currentAgentID
   )
+  // The mode belongs to the Session that is open now. A pending switch to another harness would
+  // start a new Session there, so the current Session's mode is not offered meanwhile.
+  const modeTargetConfig = currentTarget?.config
+  const modeTarget = useMemo(() => (
+    currentTarget && modeTargetConfig && currentAgent?.capabilities?.sessionModes === true && !routeChanged
+      ? { config: modeTargetConfig, agentID: currentTarget.agentID, sessionID: currentTarget.sessionID, directory: currentTarget.directory }
+      : undefined
+  ), [currentTarget?.agentID, currentTarget?.sessionID, currentTarget?.directory, modeTargetConfig, currentAgent?.capabilities?.sessionModes, routeChanged])
+  const sessionModes = useSessionModes(modeTarget)
+  const refreshSessionModesRef = useRef(sessionModes.refresh)
+  refreshSessionModesRef.current = sessionModes.refresh
   const routeAgentLabel = agentLabel(destinationAgents, targetAgentID)
   const routingSignature = routing
     ? routing.machines.map((machine) => `${machine.machineID}:${machine.agents.map((agent) => `${agent.id}:${agent.backend}`).join(",")}`).join("|")
@@ -813,6 +825,9 @@ export function WorkThreadConversation({
     // response that is already persisted in /session/:id/message.
     const tailRefresh = refreshCurrentTail(prior)
     const attentionRefresh = refreshAttention(prior)
+    // A harness can change its own mode mid-turn (Claude Code leaves Plan once the plan is accepted).
+    // The read never opens the Session, so it is as cheap as the attention read beside it.
+    void refreshSessionModesRef.current()
     try {
       const next = await controller.refreshConversation(baseConfig, prior.id)
       if (runtimeSignature(next) !== runtimeSignature(prior) || next.title !== prior.title) {
@@ -1291,6 +1306,7 @@ ${current}` : text) : current)
             {modelError ? <small className="tdw-field-note" title={modelError}>Model catalog unavailable. Sending is paused until a model can be verified.</small> : null}
           </label>
         </div>
+        {modeTarget ? <SessionModeMenu modes={sessionModes} disabled={!interactionEnabled} /> : null}
         {toolbarAccessory}
         <ConversationStatePill working={working || replyPending || sending || replySettling || modelBootstrapBlocked} attention={hasAttention} workingLabel={conversationStateLabel} startedAt={sending || modelBootstrapBlocked ? undefined : conversation.currentTurn?.startedAt} status={conversation.status} detail={conversation.error?.message || undefined} listeningLabel={conversation.backgroundWork ? t("sf.statusListening", { count: conversation.backgroundWork }) : undefined} />
       </div>
@@ -1343,7 +1359,18 @@ ${current}` : text) : current)
         composerAccessory={(
           <div className="tdw-effort-anchor" ref={effortAnchorRef}>
             <span className="tdw-composer-status">{statePill}</span>
-            <button type="button" className="uw-button tdw-controls-trigger" aria-haspopup="dialog" aria-expanded={controlsOpen} onClick={() => setControlsOpen((open) => !open)}>
+            <button
+              type="button"
+              className={`uw-button tdw-controls-trigger${modeTarget && sessionModes.current?.unrestricted ? " mode-unrestricted" : ""}`}
+              aria-haspopup="dialog"
+              aria-expanded={controlsOpen}
+              title={modeTarget && sessionModes.current ? `${t("mode.label")}: ${sessionModes.current.name}` : undefined}
+              onClick={() => {
+                const next = !controlsOpen
+                setControlsOpen(next)
+                if (next && modeTarget) void sessionModes.open()
+              }}
+            >
               <span>{effortOptions.length > 1 ? effortLabel : selectedModelName}</span>
               <ChevronDownIcon size={13} />
             </button>
@@ -1428,6 +1455,12 @@ ${current}` : text) : current)
                   ) : (
                     <p className="tdw-effort-card-note">{t("card.noEffort")}</p>
                   )}
+                  {modeTarget && !(sessionModes.state?.loaded && sessionModes.state.modes.length === 0) ? (
+                    <section className="tdw-effort-card-modes" aria-label={t("mode.title")}>
+                      <strong>{t("mode.title")}</strong>
+                      <SessionModeList modes={sessionModes} disabled={!interactionEnabled} />
+                    </section>
+                  ) : null}
                 </div>
               </>
             ) : null}
