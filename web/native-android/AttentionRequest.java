@@ -23,6 +23,8 @@ final class AttentionRequest {
     final String requestID;
     final String action;
     final String explanation;
+    final String command;
+    final String executionDirectory;
     final String boundary;
     final String question;
     final String fallbackKey;
@@ -39,6 +41,8 @@ final class AttentionRequest {
         String requestID,
         String action,
         String explanation,
+        String command,
+        String executionDirectory,
         String boundary,
         String question,
         String fallbackKey
@@ -54,6 +58,8 @@ final class AttentionRequest {
         this.requestID = requestID;
         this.action = action;
         this.explanation = explanation;
+        this.command = command;
+        this.executionDirectory = executionDirectory;
         this.boundary = boundary;
         this.question = question;
         this.fallbackKey = fallbackKey;
