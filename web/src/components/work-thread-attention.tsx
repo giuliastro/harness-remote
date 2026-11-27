@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react"
 import { api } from "../api"
 import { discoverMachine, recordApprovalDecision, type ApprovalDecisionIdentity } from "../machineClient"
+import { permissionExecutionContext } from "../native-session-attention-notifications"
 import { classifyNativeSessionAttention } from "../native-session-attention"
 import type { PermissionRequest, QuestionRequest, ServerConfig } from "../types"
 
@@ -207,10 +208,20 @@ export function WorkThreadAttention({ config, directory, questions, permissions,
         </div>
       ))}
 
-      {permissions.map((request) => (
+      {permissions.map((request) => {
+        const execution = permissionExecutionContext(request.metadata)
+        return (
         <div className="tdw-attention-card" key={request.id}>
           <strong>Authorization required</strong>
           <p>{request.permission}</p>
+          <p>Gateway: <code>{config.host}:{config.port}</code> · {config.agentId || config.backend}</p>
+          {approvalIdentity?.machineID ? <p>Machine ID: <code>{approvalIdentity.machineID}</code></p> : null}
+          <p>Session directory: <code>{directory}</code></p>
+          <p>Execution directory: {execution.executionDirectory ? <code>{execution.executionDirectory}</code> : "Not supplied by the harness"}</p>
+          {execution.command !== undefined ? (
+            <div><strong>Exact command</strong><pre style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>{execution.command}</pre></div>
+          ) : <p>Exact command not supplied by the harness.</p>}
+          {permissionExplanation(request) ? <p>{permissionExplanation(request)}</p> : null}
           {request.patterns?.length ? (
             <div className="bui-approval-scopes" aria-label="Requested scope">
               {request.patterns.map((pattern) => <code key={pattern}>{pattern}</code>)}
@@ -223,7 +234,8 @@ export function WorkThreadAttention({ config, directory, questions, permissions,
             <button type="button" className="tdw-button primary" disabled={submitting === request.id} onClick={() => void respondPermission(request, "always")}>Always allow</button>
           </div>
         </div>
-      ))}
+        )
+      })}
 
       {error ? <div className="tdw-inline-error" role="alert">{error}</div> : null}
     </section>
