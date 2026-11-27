@@ -151,7 +151,7 @@ party entirely.
 | `session/list`, `session/load`, `session/prompt` and `session/cancel` expose the session surface used by the generic bridge | session browsing, history replay, prompting or cancellation stops working |
 | The `model` config option uses bare ids such as `sonnet` and `opus[1m]` | the model picker can no longer map the adapter's values back to the bridge |
 | Plan/todo updates arrive through the ACP notifications already handled by `AcpService` | the Claude Code todo panel stops updating |
-| Tool permission requests accept the bridge's automatic `allow` response | tool calls can hang or be refused; the bridge deliberately runs Claude unattended |
+| Tool permission requests are surfaced and wait for the user's explicit allow/deny, using the option kinds the adapter offers | an unanswered request blocks the tool call; the bridge must never grant it automatically |
 | The adapter does not advertise image prompt support | the app hides attachments and refuses image parts for this backend |
 
 **Session scope and security.** Claude Code sessions are enumerated by the adapter independently of
@@ -247,7 +247,7 @@ rollout record shape, and any new `sessionUpdate` / notification shape.
 | Reasoning is a separate `effort` select (`off`, `low`, `high`, `max`) | the reasoning control disappears; the model still works |
 | `session/resume` exists but is not used, because without a journal loader it would skip the only transcript source | do not enable `journalPageWhileOwned: false` for this profile without adding a history loader |
 | `_session/steering` injects into a running turn and answers `{outcome:"promptRequired",reason:"noRunningTurn"}` when the turn already ended | the profile declares `midTurnPrompt: "steer"`; the bridge queues or starts the already-recorded prompt on that outcome |
-| Tool permissions accept the bridge's automatic `allow` response | tool calls can hang or be refused; the bridge deliberately runs DSH unattended |
+| Tool permissions are surfaced and wait for the user's explicit allow/deny, using the option kinds the adapter offers | an unanswered request blocks the tool call; the bridge must never grant it automatically |
 
 **Watch:** the pinned adapter version, the bundled DSH version, the model value separator, the
 `effort` option id, and the steering response shape.

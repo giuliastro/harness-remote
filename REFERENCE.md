@@ -382,7 +382,7 @@ npx --yes ./bridge --port 4097 --username omp --password "…" --root "$HOME/Sof
 
 ACP adapters write all their diagnostics to stderr, because stdout carries the protocol. The bridge, the daemon and the launcher forward to the terminal only the lines that look like failures (`error`, `TypeError`, `failed`, `fatal`, `ENOENT`, …), always prefixed with the harness id, e.g. `[claude]`. Adapter traces such as Claude's `[session/replay]` timings, and its `Unexpected case:` lines for SDK events it does not recognise yet, stay hidden: the adapter skips those events and the session continues. Exit reasons and startup failures are always reported.
 
-Pass `--verbose` or set `HARNESS_REMOTE_VERBOSE=1` to forward the full stderr stream of every harness, including managed OpenCode. On the standalone bridge it also logs each granted tool permission and each handled agent request.
+Pass `--verbose` or set `HARNESS_REMOTE_VERBOSE=1` to forward the full stderr stream of every harness, including managed OpenCode. On the standalone bridge it also logs each resolved tool permission and each handled agent request.
 
 #### Live synchronization scope
 
@@ -442,11 +442,11 @@ The nickname and hidden-session records live under the bridge state directory:
 clearing or moving it restores PI's native title and listing. ACP does not define
 physical session deletion, so deleted sessions remain in PI's own history.
 
-Unlike OMP, PI's adapter asks before each tool call. **The bridge grants those requests
-automatically**, choosing the broadest allow option the adapter offers, because there is no way
-to prompt you on the phone mid-turn and a refusal silently prevents PI from doing any work at
-all. The practical effect matches OMP, which approves its own tool calls without asking: an
-agent reached through this bridge edits files unattended.
+Unlike OMP, PI's adapter asks before each tool call. **The bridge holds each request until you
+allow or deny it in Harness Remote**, and sends back only the option the adapter actually offers
+(Allow once, Always allow, or Deny). While a request is pending the turn stays alive without
+timing out, so the agent cannot act before you decide. Stopping the turn cancels the pending
+request instead of leaving it actionable.
 
 The bridge's `--root` restriction applies to directory browsing and new-session
 selection; it is not a sandbox for PI. The adapter still runs with the full
@@ -520,10 +520,11 @@ user has ever worked in. Anyone holding the bridge credentials can list and read
 every past conversation. The `--root` option only governs directory browsing and
 new-session cwd, not which sessions are visible.
 
-Like PI, the Claude Code adapter asks before each tool call. **The bridge grants
-those requests automatically** — there is no way to prompt on the phone mid-turn
-and a refusal would silently prevent the agent from working. An agent reached
-through this bridge edits files unattended.
+Like PI, the Claude Code adapter asks before each tool call. **The bridge holds
+those requests until you allow or deny them in Harness Remote**; it never grants
+one automatically. The approval card shows the machine, harness, and Session
+directory, plus the exact command and execution directory when the adapter
+supplies them.
 
 The adapter still runs with the full filesystem privileges of the account that
 launched it. Do not expose the bridge directly to the Internet; use a trusted
@@ -600,10 +601,11 @@ because Codex only reports the available models as part of the load it is refusi
 visibility is not restricted by `--root`: the bridge enumerates every Codex
 session on the machine.
 
-**The bridge grants tool permissions automatically.** Codex can still ask for
-permission in its CLI mode; through ACP the bridge answers `allow` for every
-request, so an agent reached through this bridge edits files unattended — same
-policy and same caveats as the Claude Code backend.
+**The bridge waits for your decision on tool permissions.** Codex can still ask
+for permission in its CLI mode; through ACP the request appears in Harness
+Remote until you allow or deny it. Nothing is granted automatically, and the
+same caveats as the Claude Code backend apply to what the agent can reach once
+you approve an action.
 
 ## Run Locally (Web)
 
