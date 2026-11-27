@@ -424,6 +424,20 @@ export class AcpClient extends EventEmitter {
     }
   }
 
+  /** Cancel every pending permission request owned by a stopped Session. */
+  cancelPermissions(sessionID) {
+    if (typeof sessionID !== "string") return
+    for (const [id, pending] of this.#pendingPermissions) {
+      if (pending.sessionID !== sessionID) continue
+      // Remove before writing so a late UI reply cannot race the cancellation.
+      this.#pendingPermissions.delete(id)
+      this.#setPermissionWaiting(sessionID, id, false)
+      if (pending.child === this.#child && pending.generation === this.#processGeneration && pending.child.stdin?.writable) {
+        pending.child.stdin.write(`${JSON.stringify({ jsonrpc: "2.0", id, result: { outcome: "cancelled" } })}\n`)
+      }
+    }
+  }
+
   /** Resolve a pending permission request with an explicit user choice. */
   replyPermission(id, reply) {
     const pending = this.#pendingPermissions.get(id)

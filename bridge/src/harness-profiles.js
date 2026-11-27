@@ -490,6 +490,7 @@ export const HARNESS_PROFILES = {
     // an OAuth browser without a user action; `agy` or `agy acp --login` handles initial sign-in.
     authenticate: false,
     // ACP permission requests remain pending until the user answers in the app.
+    permissionMode: "prompt",
     lifecycleContract: COMMON_ACP_LIFECYCLE_CONTRACT,
     // The CLI documents native list/load/resume/close. How a second writer's changes are observed
     // is not specified. agy 1.5.18 advertises its Thinking picker as the `thought_level` config

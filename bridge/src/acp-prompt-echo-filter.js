@@ -62,6 +62,12 @@ export class AcpPromptEchoFilter extends EventEmitter {
     }
     return this.#acp.replyPermission(requestID, reply)
   }
+  cancelPermissions(sessionID) {
+    if (typeof this.#acp.withSession === "function") {
+      return this.#acp.withSession(sessionID, undefined, (client) => client.cancelPermissions?.(sessionID))
+    }
+    return this.#acp.cancelPermissions?.(sessionID)
+  }
   diagnostics(...args) { return this.#acp.diagnostics?.(...args) }
   close(...args) { return this.#acp.close?.(...args) }
 

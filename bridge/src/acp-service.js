@@ -866,12 +866,25 @@ export class AcpService {
       this.#loaded.delete(sessionID)
       this.#acpOpenSessions.delete(sessionID)
       this.#configOptions.delete(sessionID)
-      for (const [requestID, permission] of this.#permissions) {
-        if (permission.sessionID !== sessionID) continue
-        this.#permissions.delete(requestID)
-        this.#emit("permission.replied", sessionID)
-      }
+      this.#clearPermissions(sessionID)
     }
+  }
+
+  /** A closed or stopped Session cannot leave an actionable approval behind. */
+  #clearPermissions(sessionID, { cancel = false } = {}) {
+    let cleared = 0
+    for (const [requestID, permission] of this.#permissions) {
+      if (permission.sessionID !== sessionID) continue
+      this.#permissions.delete(requestID)
+      cleared += 1
+      this.#emit("permission.replied", sessionID)
+    }
+    if (!cleared || !cancel) return
+    try {
+      // Stop while the native adapter is waiting: cancel the request so the agent is not left
+      // blocked on an approval the user can no longer see or act on.
+      void Promise.resolve(this.#acp.cancelPermissions?.(sessionID)).catch(() => undefined)
+    } catch {}
   }
 
   #recordPermissionRequest(request) {
@@ -908,13 +921,13 @@ export class AcpService {
 
   permissions(directory) {
     return [...this.#permissions.values()]
-      .filter((permission) => !directory || !permission.directory || sameListedDirectory(permission.directory, directory))
+      .filter((permission) => !directory || !permission.directory || sameDirectory(permission.directory, directory))
       .map(({ rpcID, directory: _directory, ...permission }) => permission)
   }
 
   async replyPermission(requestID, reply, directory) {
     const permission = this.#permissions.get(requestID)
-    if (!permission || (directory && permission.directory && !sameListedDirectory(permission.directory, directory))) return false
+    if (!permission || (directory && permission.directory && !sameDirectory(permission.directory, directory))) return false
     if (!permission.metadata.availableReplies.includes(reply)) throw new Error(`Permission reply ${reply} is not offered by the harness`)
     await this.#acp.replyPermission(permission.sessionID, permission.rpcID, reply)
     this.#permissions.delete(requestID)
@@ -2382,6 +2395,7 @@ export class AcpService {
       this.#messages.set(sessionID, messages)
       if (markLatestTurnInterrupted(messages, sessionID)) this.#emit("message.updated", sessionID)
     }
+    this.#clearPermissions(sessionID, { cancel: true })
     this.#acp.notify("session/cancel", { sessionId: sessionID })
     this.#emit("session.updated", sessionID)
     this.#persistSnapshot(sessionID)

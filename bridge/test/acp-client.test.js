@@ -8,7 +8,7 @@ import { AcpClient } from "../src/acp-client.js"
 import { harnessProfile } from "../src/harness-profiles.js"
 
 test("every bundled ACP harness exposes user permission decisions", () => {
-  for (const id of ["omp", "pi", "claude", "copilot", "opencode2", "mimo", "codex", "deepseek"]) {
+  for (const id of ["omp", "pi", "claude", "copilot", "opencode2", "mimo", "codex", "deepseek", "antigravity"]) {
     const profile = harnessProfile(id)
     assert.equal(profile.permissionMode, "prompt", id)
     assert.equal(profile.capabilities.permissions, true, id)
@@ -366,6 +366,18 @@ test("holds permission requests until an explicit reply and maps once, always, a
   third.replyPermission(99, "reject")
   assert.deepEqual(rejectChild.writes.find((message) => message.id === 99).result.outcome, { outcome: "selected", optionId: "reject" })
   await third.close()
+})
+
+test("cancels a pending permission when its Session stops", async () => {
+  const child = permissionAskingChild()
+  const client = new AcpClient({ spawnProcess: () => child })
+  await client.start()
+  try {
+    await client.request("session/prompt", {})
+    client.cancelPermissions("session-1")
+    assert.deepEqual(child.writes.find((message) => message.id === 99).result, { outcome: "cancelled" })
+    assert.throws(() => client.replyPermission(99, "once"), /no longer pending/)
+  } finally { await client.close() }
 })
 
 test("a prompt remains alive while its ACP permission waits for a user decision", async () => {
