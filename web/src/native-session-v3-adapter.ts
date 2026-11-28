@@ -705,8 +705,10 @@ function captureUserTurns(entry: NativeConversationEntry, page: MessagePage, bef
   let changed = false
   for (const message of page.messages) {
     if (message.info.role !== "user" || !message.info.id) continue
-    // A queued prompt is not a turn yet; reconcileQueuedPrompts hands it over once it starts.
-    if (message.info.queued === true) continue
+    // A queued prompt is not a turn yet; reconcileQueuedPrompts hands it over once it starts. That
+    // includes the read on which its flag has just cleared: claimed here as well, the one prompt
+    // became two turns, the first closed by the reply and the second left "working" below it.
+    if (message.info.queued === true || entry.queuedPrompts.has(message.info.id)) continue
     const prompt = visiblePrompt(message)
     if (!prompt) continue
     const id = `${conversationID(entry.target)}:native-user:${message.info.id}`
@@ -900,6 +902,8 @@ function reconcileQueuedPrompts(entry: NativeConversationEntry, page: MessagePag
     const scope = conversationID(entry.target)
     const id = queued.clientRequestId ? `${scope}:request:${queued.clientRequestId}` : `${scope}:native-user:${messageID}`
     if (entry.turns.has(id)) continue
+    // Another path already made this native row a turn; a second one would draw the prompt twice.
+    if (message && [...entry.turns.values()].some((turn) => turn.nativeMessageID === messageID || turn.id === `${scope}:native-user:${messageID}`)) continue
     // Later than every turn already known, in queue order: the newest turn is the current one.
     const created = Math.max(Date.now(), ...[...entry.turns.values()].map((turn) => turn.created + 1)) + started
     entry.turns.set(id, { id, prompt: queued.prompt, created, model: queued.model, ...(message ? { nativeMessageID: messageID } : {}) })
