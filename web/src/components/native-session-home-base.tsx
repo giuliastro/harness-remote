@@ -846,7 +846,10 @@ export function NativeSessionHome({
             const error = launchFailure ?? (retriesSpent ? errorMessage : null)
             if (page) delete next[scope]
             else if (error) next[scope] = { state: "failed", error }
-            else next[scope] = AGENT_RETRYING
+            // A timeout only means the adapter is still starting (a cold npx adapter routinely
+            // misses the first budget), so it keeps reading "Starting…". "Retrying…" is kept for a
+            // real error that the quick retries may still clear.
+            else next[scope] = errorMessage ? AGENT_RETRYING : AGENT_LOADING
           }
         }
         return sameAgentLoad(current, next) ? current : next
