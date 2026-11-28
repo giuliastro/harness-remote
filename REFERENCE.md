@@ -323,8 +323,8 @@ Expected response:
 OMP sessions expose their configured model when ACP provides it, and model changes apply to subsequent prompts. Server slash commands are available: OMP advertises them over ACP, the bridge serves them at `/command`, and the app lists them under **Help → Commands**, with a separate tab for the `skill:` ones. Agent selection and VCS/diff remain unavailable.
 
 A prompt sent while the agent is still working is never refused; what happens to it depends on the harness's
-`midTurnPrompt` capability. Codex (`steer`) takes it into the running turn straight away, and it appears in the
-conversation with Codex's reply below it. Every other harness (`queue`) holds it until the current turn ends:
+`midTurnPrompt` capability. Claude Code, Codex and DeepSeek Harness (`steer`) take it into the running turn
+straight away, and it appears in the conversation with the harness's reply below it. Every other harness (`queue`) holds it until the current turn ends:
 the app shows it as a **Queued** row above the composer, and it moves into the conversation when the daemon
 starts it. The daemon marks a waiting prompt `queued` in the transcript and reports what it did with each
 prompt (`started`, `queued` or `steered`), so the app never guesses, and the same state survives switching

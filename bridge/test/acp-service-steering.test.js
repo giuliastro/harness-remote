@@ -200,7 +200,7 @@ test("harness profiles declare the steering harnesses", () => {
     codex: harnessProfile("codex"),
     deepseek: harnessProfile("deepseek")
   }).filter(([, profile]) => profile.capabilities.midTurnPrompt === "steer").map(([id]) => id)
-  assert.deepEqual(steering, ["codex", "deepseek"])
+  assert.deepEqual(steering, ["claude", "codex", "deepseek"])
 })
 
 /** A fake adapter that also streams session/update notifications, for transcript-order checks. */
