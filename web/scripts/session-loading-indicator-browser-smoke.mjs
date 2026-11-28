@@ -193,12 +193,13 @@ async function run(browser, viewport, tag) {
   await shoot(page, `${tag}-1-loading`)
 
   const retryRow = page.locator(".hr-native-machine-loading", { hasText: "DeepSeek Harness" }).first()
-  await waitFor(async () => /Retrying…/.test(await retryRow.innerText()), "the slow harness retry state")
   // The fast harness is on screen while the slow one is still being retried. The same card stays
-  // in place; its harness rows update instead of a second coloured panel replacing it.
+  // in place; its harness rows update instead of a second coloured panel replacing it. A harness that
+  // is still being started - first read or quick retries - keeps reading "Starting…", never "Retrying…".
   const machineCount = page.locator(".hr-native-machine-metrics small").first()
   await waitFor(async () => (await machineCount.innerText()).trim() === "1", "the fast harness Session counted")
-  assert.equal(/Starting…/.test(await retryRow.innerText()), false)
+  assert.match(await retryRow.innerText(), /Starting…/)
+  assert.equal(/Retrying…/.test(await retryRow.innerText()), false)
   await assertNoScrollbars(retryRow, `${tag} retrying`)
   await shoot(page, `${tag}-2-retrying`)
 

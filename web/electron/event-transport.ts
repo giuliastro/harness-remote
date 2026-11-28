@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto"
 import type { WebContents } from "electron"
 import { baseUrl, routingHeaders } from "../src/serverConfig.js"
 import { parseSSEFrame, type ParsedOpenCodeEvent } from "../src/sse-parser.js"
+import { BACKEND_KINDS } from "../src/types.js"
 import { ProfileRegistry, type ProfileRegistryChange } from "./profile-registry.js"
 import type {
   DesktopEvent,
@@ -18,7 +19,7 @@ const MAX_RECONNECT_MS = 30_000
 const STALL_TIMEOUT_MS = 30_000
 const MAX_DIRECTORY_LENGTH = 4096
 const MAX_AGENT_ID_LENGTH = 128
-const EVENT_BACKENDS = new Set<DesktopProfile["backend"]>(["opencode", "opencode2", "omp", "pi", "claude", "codex", "copilot", "mimo", "deepseek"])
+const EVENT_BACKENDS = new Set<DesktopProfile["backend"]>(BACKEND_KINDS)
 
 type ChannelNames = typeof IPC_CHANNELS
 

@@ -846,7 +846,10 @@ export function NativeSessionHome({
             const error = launchFailure ?? (retriesSpent ? errorMessage : null)
             if (page) delete next[scope]
             else if (error) next[scope] = { state: "failed", error }
-            else next[scope] = AGENT_RETRYING
+            // A timeout only means the adapter is still starting (a cold npx adapter routinely
+            // misses the first budget), so it keeps reading "Starting…". "Retrying…" is kept for a
+            // real error that the quick retries may still clear.
+            else next[scope] = errorMessage ? AGENT_RETRYING : AGENT_LOADING
           }
         }
         return sameAgentLoad(current, next) ? current : next
@@ -1809,9 +1812,10 @@ export function NativeSessionHome({
                             {pendingAgents.map(({ label, load }) => (
                               <li key={`${label}:${load.state}`} className={load.state === "failed" ? "failed" : undefined}>
                                 <span>{label}</span>
-                                <small>{t(load.state === "failed"
-                                  ? "sf.harnessFailedState"
-                                  : load.state === "retrying" ? "sf.harnessRetryingState" : "sf.harnessLoadingState")}</small>
+                                {/* While Harness Remote is still trying to start a harness - first read or quick
+                                    retries - it reads "Starting…"; only a harness that could not be started
+                                    shows its error. "Retrying…" next to every cold harness read as a failure. */}
+                                <small>{t(load.state === "failed" ? "sf.harnessFailedState" : "sf.harnessLoadingState")}</small>
                                 {load.state === "failed" ? <code>{load.error}</code> : null}
                               </li>
                             ))}
