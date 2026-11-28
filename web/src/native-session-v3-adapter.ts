@@ -608,7 +608,43 @@ function conversationStatus(entry: NativeConversationEntry): string {
   return nativeSessionIsWorking(entry.statusType) ? "running" : "completed"
 }
 
+/** The native user row a turn stands for, whichever path recorded it. */
+function nativeUserIdentity(turn: NativeTurnRecord, scope: string): string | undefined {
+  if (turn.nativeMessageID) return turn.nativeMessageID
+  const prefix = `${scope}:native-user:`
+  return turn.id.startsWith(prefix) ? turn.id.slice(prefix.length) : undefined
+}
+
+/**
+ * One native user row is one turn. Several independent paths turn rows into turns - the request this
+ * view sent, the tail-row discovery, the queue hand-over, the pending-prompt recovery - and each was
+ * fixed in its own way, one duplicate at a time, whenever two of them claimed the same row. This is
+ * the single rule they all end in: two turns that stand for the same native row are one turn. It keeps
+ * the request identity (the transport-failure recovery and the draft restore look the turn up by it)
+ * at the position of whichever record came first, so no turn moves when its copy disappears.
+ */
+function collapseTurnsSharingNativeRow(entry: NativeConversationEntry): void {
+  const scope = conversationID(entry.target)
+  const byNativeRow = new Map<string, NativeTurnRecord>()
+  for (const turn of [...entry.turns.values()]) {
+    const nativeID = nativeUserIdentity(turn, scope)
+    if (!nativeID) continue
+    const first = byNativeRow.get(nativeID)
+    if (!first) {
+      byNativeRow.set(nativeID, turn)
+      continue
+    }
+    const keep = first.id.includes(":request:") || !turn.id.includes(":request:") ? first : turn
+    const drop = keep === first ? turn : first
+    keep.created = first.created
+    keep.nativeMessageID = nativeID
+    entry.turns.delete(drop.id)
+    byNativeRow.set(nativeID, keep)
+  }
+}
+
 function sortedTurns(entry: NativeConversationEntry): ConversationTurn[] {
+  collapseTurnsSharingNativeRow(entry)
   const status = conversationStatus(entry)
   const ordered = [...entry.turns.values()].sort((left, right) => left.created - right.created || left.id.localeCompare(right.id))
   if (ordered.length === 0) {

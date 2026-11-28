@@ -7,7 +7,7 @@ import path from "node:path"
 import test from "node:test"
 import { createBridgeServer } from "../src/server.js"
 import { AcpPromptEchoFilter } from "../src/acp-prompt-echo-filter.js"
-import { AcpService, chronologicalReplay, isHarnessInjectedText, isInterruptionMarker, markLatestTurnInterrupted } from "../src/acp-service.js"
+import { AcpService, chronologicalReplay, isHarnessInjectedText, isInterruptionMarker, isSyntheticAssistantText, markLatestTurnInterrupted } from "../src/acp-service.js"
 
 class FakeAcp extends EventEmitter {
   agentInfo = { version: "17.0.7" }
@@ -1871,6 +1871,27 @@ test("hides harness-injected blocks from the transcript without hiding a message
   )
   assert.equal(isHarnessInjectedText("deploy the <task-notification> tag docs"), false)
   assert.equal(isHarnessInjectedText("ordinary prompt"), false)
+})
+
+// Claude Code delivers a subagent's report and a message from another session as user-role journal
+// entries (isMeta, origin.kind "peer"), and its compaction summary the same way. session/load replays
+// them as user_message_chunk without that metadata, so each appeared as a turn the person never wrote.
+test("hides Claude Code peer messages, hand-backs and compaction summaries, but not a prompt quoting one", () => {
+  const handback = "Another Claude session sent a message:\n<agent-message from=\"a795bd6e785f73951\">\n[Subagent hand-back] The report follows:\n  ## 1. History\n  | a | b |\n</agent-message>"
+  const crossSession = "Another Claude session sent a message:\n<cross-session-message from=\"local_7595\" from-name=\"Fix MiMo detected\">\nPR #682's test will fail once #683 is merged.\n</cross-session-message>"
+  assert.equal(isHarnessInjectedText(handback), true)
+  assert.equal(isHarnessInjectedText(crossSession), true)
+  assert.equal(isHarnessInjectedText(`${crossSession}\n<system-reminder>x</system-reminder>`), true)
+  assert.equal(
+    isHarnessInjectedText("This session is being continued from a previous conversation that ran out of context. The summary below covers the earlier portion of the conversation.\n\nSummary: ..."),
+    true
+  )
+  assert.equal(isHarnessInjectedText(`why did this show up? ${handback}`), false)
+  assert.equal(isHarnessInjectedText(`${handback}\nwhat does this mean?`), false)
+  assert.equal(isHarnessInjectedText("Another Claude session sent a message: hi"), false)
+  assert.equal(isHarnessInjectedText("summarise: This session is being continued from a previous conversation that ran out of context."), false)
+  assert.equal(isSyntheticAssistantText("No response requested."), true)
+  assert.equal(isSyntheticAssistantText("No response requested. Here is why"), false)
 })
 
 // Claude Code records a cancelled turn as a user-role marker, which read as text the user typed.

@@ -277,9 +277,10 @@ function isConsecutiveAssistantDuplicate(previous, next) {
 }
 
 function healPoisonedSnapshot(messages) {
-  if (!Array.isArray(messages) || messages.length < 2) return messages
+  if (!Array.isArray(messages) || !messages.length) return messages
   const healed = []
   for (const message of messages) {
+    if (isHarnessInjectedMessage(message)) continue
     const previous = healed.at(-1)
     if (previous && isConsecutiveAssistantDuplicate(previous, message)) continue
     healed.push(message)
@@ -512,10 +513,41 @@ function mergeTodos(previous, replayed) {
  * Matched only when the chunk is *entirely* one or more such blocks, so a message where someone
  * quotes one while asking about it stays visible — which is exactly how this was reported.
  */
-const HARNESS_INJECTED_BLOCK = /^(?:\s*<(task-notification|system-reminder)>[\s\S]*?<\/\1>\s*)+$/
+const HARNESS_INJECTED_BLOCK = /^(?:\s*(?:Another Claude session sent a message:\s*)?<(task-notification|system-reminder|cross-session-message|agent-message)(?:\s[^>]*)?>[\s\S]*?<\/\1>\s*)+$/
+/**
+ * Claude Code keeps the summary that replaces a compacted conversation as a user-role message too.
+ * It is context for the model, written by the harness, so it is not a turn of the person either.
+ */
+const COMPACTION_SUMMARY = /^\s*This session is being continued from a previous conversation that ran out of context\./
 
 export function isHarnessInjectedText(text) {
-  return HARNESS_INJECTED_BLOCK.test(text)
+  return typeof text === "string" && (HARNESS_INJECTED_BLOCK.test(text) || COMPACTION_SUMMARY.test(text))
+}
+
+/**
+ * When a Claude Code session resumes after its process ended mid-tool-call, Claude Code journals a
+ * synthetic assistant reply with this exact text (model `<synthetic>`). Nobody wrote it, and it
+ * answers nothing; shown, it reads as the agent declining to reply.
+ */
+const SYNTHETIC_NO_RESPONSE = /^\s*No response requested\.\s*$/
+
+export function isSyntheticAssistantText(text) {
+  return typeof text === "string" && SYNTHETIC_NO_RESPONSE.test(text)
+}
+
+function onlyTextOf(message) {
+  const parts = Array.isArray(message?.parts) ? message.parts : []
+  if (!parts.length || parts.some((part) => part?.type !== "text")) return undefined
+  return parts.map((part) => part.text ?? "").join("")
+}
+
+/** A stored message that only carries harness bookkeeping, from a snapshot written before it was filtered. */
+function isHarnessInjectedMessage(message) {
+  const text = onlyTextOf(message)
+  if (text === undefined) return false
+  if (message?.info?.role === "user") return isHarnessInjectedText(text)
+  if (message?.info?.role === "assistant") return isSyntheticAssistantText(text) && !message?.info?.error
+  return false
 }
 
 /**
@@ -3306,6 +3338,7 @@ export class AcpService {
     if (role === "assistant" && !replaying && !this.#active.has(sessionId) && !this.#promptedSessions.has(sessionId)) return
     if (role === "user" && !replaying && this.#isAcknowledgedPromptChunk(sessionId, update.content.text)) return
     if (role === "user" && !image && isHarnessInjectedText(update.content.text)) return
+    if (role === "assistant" && !thought && !image && isSyntheticAssistantText(update.content.text)) return
     if (role === "user" && !image && isInterruptionMarker(update.content.text)) {
       const messages = this.#messages.get(sessionId) ?? []
       this.#messages.set(sessionId, messages)
