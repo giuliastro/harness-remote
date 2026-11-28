@@ -244,6 +244,18 @@ test('Copilot and MiMo desktop profiles retain independent identities and exact 
   }
 })
 
+test('every harness the renderer knows is a valid desktop profile and request route', async () => {
+  const { BACKEND_KINDS } = await import('../dist-electron/src/types.js')
+  assert.ok(BACKEND_KINDS.includes('antigravity'))
+  for (const backend of BACKEND_KINDS) {
+    const scoped = { ...localProfile, id: `test-${backend}`, backend, agentId: backend }
+    assert.deepEqual(validateDesktopProfile(scoped), scoped)
+    const routed = await executeDesktopRequest(localProfile, { path: '/echo/session', route: { backend, agentId: backend } })
+    assert.equal(routed.ok, true, `${backend}: ${routed.error?.message}`)
+    assert.deepEqual(routed.response.data, { url: `/v1/agents/${backend}/echo/session`, backend })
+  }
+})
+
 test('HTTP errors expose status without matching prose', async () => {
   const missing = await executeDesktopRequest(localProfile, { path: '/missing' })
   assert.equal(missing.error.code, 'http')

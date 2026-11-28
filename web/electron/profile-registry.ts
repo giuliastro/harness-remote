@@ -1,10 +1,10 @@
 import { mkdir, open, readFile, rename, rm } from "node:fs/promises"
 import { dirname } from "node:path"
 import { baseUrl } from "../src/serverConfig.js"
-import type { BackendKind } from "../src/types.js"
+import { BACKEND_KINDS, type BackendKind } from "../src/types.js"
 import type { DesktopProfile } from "./ipc-contract.js"
 
-const BACKENDS: readonly BackendKind[] = ["opencode", "opencode2", "omp", "pi", "claude", "codex", "copilot", "mimo", "deepseek"]
+const BACKENDS: readonly BackendKind[] = BACKEND_KINDS
 const MAX_PROFILE_COUNT = 100
 const MAX_PROFILE_ID_LENGTH = 128
 const MAX_HOST_LENGTH = 2048

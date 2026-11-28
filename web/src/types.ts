@@ -1,4 +1,6 @@
-export type BackendKind = "opencode" | "opencode2" | "omp" | "pi" | "claude" | "codex" | "copilot" | "mimo" | "deepseek" | "antigravity"
+export const BACKEND_KINDS = ["opencode", "opencode2", "omp", "pi", "claude", "codex", "copilot", "mimo", "deepseek", "antigravity"] as const
+
+export type BackendKind = (typeof BACKEND_KINDS)[number]
 
 export type ServerConfig = {
   backend: BackendKind
