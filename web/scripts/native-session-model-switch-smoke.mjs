@@ -438,6 +438,14 @@ async function assertCatalog(page, expectedIDs, forbiddenIDs, label) {
   return listbox
 }
 
+/** The desktop toolbar picks the harness from its own menu (the native select is for phones only). */
+async function chooseHarness(page, label) {
+  await page.locator(".tdw-session-bar .tdw-harness-trigger").click()
+  const option = page.getByRole("option", { name: label, exact: true })
+  await option.waitFor({ state: "visible", timeout: 15_000 })
+  await option.click()
+}
+
 async function chooseModel(page, modelID, variant) {
   const listbox = page.getByRole("listbox", { name: "Models" })
   if (!(await listbox.isVisible())) await page.locator(".tdw-model-trigger").click()
@@ -603,14 +611,15 @@ try {
   // used to inherit flex:1 while also declaring a 760px grid, so on a wide Session pane the unused
   // first track pushed Model noticeably to the right even though the Harness select itself stopped at
   // 220px. Lock the visible control-to-control gap, not just a CSS token, so cascade regressions fail.
-  // On a wide pane each label sits inline before its control, so the Model group starts at its label.
-  const routingHarnessBox = await routedControls.locator("label").filter({ hasText: /^Harness/ }).locator("select").boundingBox()
+  // Each of Harness and Model is one field of the toolbar (the wrapper itself takes no box), so the
+  // group is measured from the start of the Harness field to the end of the Model field.
+  const routingHarnessBox = await routedControls.locator("label").filter({ hasText: /^Harness/ }).boundingBox()
   const routingModelBox = await routedControls.locator("label.tdw-model-control").boundingBox()
-  const routingGroupBox = await routedControls.boundingBox()
-  assert.ok(routingHarnessBox && routingModelBox && routingGroupBox, "routing controls must have measurable desktop geometry")
+  assert.ok(routingHarnessBox && routingModelBox, "routing controls must have measurable desktop geometry")
   const harnessToModelGap = routingModelBox.x - (routingHarnessBox.x + routingHarnessBox.width)
   assert.ok(harnessToModelGap >= 0 && harnessToModelGap <= 16, `Harness and Model drifted apart by ${harnessToModelGap}px`)
-  assert.ok(routingGroupBox.width <= 600, `routing control group expanded to ${routingGroupBox.width}px`)
+  const routingGroupWidth = routingModelBox.x + routingModelBox.width - routingHarnessBox.x
+  assert.ok(routingGroupWidth <= 600, `routing control group expanded to ${routingGroupWidth}px`)
 
   // Attachments stay on their current Session. Switching harness must keep the attachment visible,
   // hide the add-image action and block Send until the user explicitly removes it.
@@ -623,9 +632,8 @@ try {
   })
   await page.getByRole("button", { name: "Remove handoff.png" }).waitFor({ state: "visible", timeout: 15_000 })
 
-  const harnessSelect = routedControls.locator("label").filter({ hasText: /^Harness/ }).locator("select")
   rejectNextHandoff = true
-  await harnessSelect.selectOption("omp")
+  await chooseHarness(page, "OMP")
   assert.equal(await page.getByRole("button", { name: "Attach image" }).count(), 0, "target harness must not accept new attachments during handoff")
   const attachmentBlockedComposer = page.getByRole("textbox", { name: "Message PI" })
   await attachmentBlockedComposer.fill("BLOCKED-BY-ATTACHMENT")
@@ -701,9 +709,7 @@ try {
   // --- target created, first target prompt refused: retry must reuse that exact target --------------
   await backToSessions(page)
   await openSession(page, TITLE_B, markers.get(SESSION_B))
-  const retryControls = page.locator(".tdw-agent-control.routed")
-  const retryHarness = retryControls.locator("label").filter({ hasText: /^Harness/ }).locator("select")
-  await retryHarness.selectOption("omp")
+  await chooseHarness(page, "OMP")
   await assertCatalog(page, ["omp-fast", "omp-deep"], ["pi-coding", "pi-reasoning"], "B routed to OMP")
   await chooseModel(page, "omp-deep")
 

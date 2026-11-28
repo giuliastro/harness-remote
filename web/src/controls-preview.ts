@@ -18,6 +18,7 @@ import "./native-session-home.css"
 import "./native-session-home-ux.css"
 import "./native-session-attention-inbox.css"
 import "./model-picker.css"
+import "./session-mode-control.css"
 import "./taskdesk-conversation.css"
 import "./taskdesk-history-loader.css"
 import "./native-session-observer.css"
@@ -46,6 +47,7 @@ import "./mobile-compact-chat.css"
 import "./compact-final-touch.css"
 import "./mobile-composer.css"
 import "./plugin-center.css"
+import "./session-toolbar.css"
 
 /** Same list, same order as `main.tsx` - `beautiful-ui-controls.test.mjs` asserts the two match, so
  *  a sheet added to the app cannot silently go missing from its own preview. */

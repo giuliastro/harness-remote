@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto"
 import { mkdir, readFile, rename, stat, unlink, writeFile } from "node:fs/promises"
 import { homedir } from "node:os"
 import path from "node:path"
+import { modeConfigOption, sessionModeState } from "./acp-session-modes.js"
 import { selectableAcpModelValue, modelConfigOptionFromSessionResponse, modelValueIsExcluded, normalizedAcpModelCandidates, splitAcpModelValue, splitInlineAcpModelVariant } from "./agent-model-catalog.js"
 import { partWeight, TranscriptCache, transcriptWeight } from "./transcript-cache.js"
 import { stripAmbientContext } from "./ambient-context.js"
@@ -616,6 +617,7 @@ export class AcpService {
       this.#restoredSnapshots.delete(sessionID)
       this.#todos.delete(sessionID)
       this.#configOptions.delete(sessionID)
+      this.#legacyModes.delete(sessionID)
       this.#commandCatalogs.delete(sessionID)
       for (const resolve of this.#commandCatalogWaiters.get(sessionID) ?? []) resolve()
       this.#commandCatalogWaiters.delete(sessionID)
@@ -638,6 +640,13 @@ export class AcpService {
   })
   #todos = new Map()
   #configOptions = new Map()
+  // ACP's older `modes` field, kept only for an adapter that advertises modes without a `mode`
+  // config option. Every adapter probed today sends both, and the config option wins.
+  #legacyModes = new Map()
+  // The mode the user picked here. A harness reopens an unloaded Session in its own default mode, so
+  // this is what is put back after an idle unload; it follows the harness when the harness itself
+  // switches (Claude Code leaving Plan), and it outlives unloads but not the Session.
+  #modeChoices = new Map()
   #modelSwitchMethods = new Map()
   #commandCatalogs = new Map()
   #commandCatalogWaiters = new Map()
@@ -866,6 +875,7 @@ export class AcpService {
       this.#loaded.delete(sessionID)
       this.#acpOpenSessions.delete(sessionID)
       this.#configOptions.delete(sessionID)
+      this.#legacyModes.delete(sessionID)
       this.#clearPermissions(sessionID)
     }
   }
@@ -1257,6 +1267,7 @@ export class AcpService {
       this.#ownedSessions.delete(sessionID)
       this.#adoptedSessions.delete(sessionID)
       this.#configOptions.delete(sessionID)
+      this.#legacyModes.delete(sessionID)
       this.#commandCatalogs.delete(sessionID)
       this.#actionStates.delete(sessionID)
       this.#authoritativeActionStates.delete(sessionID)
@@ -1416,6 +1427,8 @@ export class AcpService {
     this.#titles.delete(sessionID)
     await this.#persistTitleIndex()
     this.#configOptions.delete(sessionID)
+    this.#legacyModes.delete(sessionID)
+    this.#modeChoices.delete(sessionID)
     this.#commandCatalogs.delete(sessionID)
     for (const resolve of this.#commandCatalogWaiters.get(sessionID) ?? []) resolve()
     this.#commandCatalogWaiters.delete(sessionID)
@@ -1628,6 +1641,93 @@ export class AcpService {
       return result.models.map((model) => ({ ...model, value: model.modelID, name: model.modelName, currentValue: selected?.modelID === model.modelID }))
     }
     return normalizedAcpModelCandidates(option, this.#excludedModelValuePrefixes, this.#inlineModelVariantValues, this.#modelProviderOrder)
+  }
+
+  /**
+   * The Session's modes exactly as the harness advertised them, with the one it is in now.
+   *
+   * Reading is free by default: a Session this process has not opened yet reports `loaded: false`
+   * rather than being opened just because the app drew its composer, since opening must stay
+   * read-only. `load: true` is the app's explicit "the user opened the mode picker", and pays for
+   * the same open a model switch or a rename already pays for.
+   */
+  async modes(sessionID, { load = false } = {}) {
+    // The app reads this on every reconcile tick, so the plain read only looks at what is already in
+    // memory; validating the Session would re-list the harness's Sessions on some profiles.
+    if (load) {
+      await this.#requireSession(sessionID)
+      await this.#withNativeSession(sessionID, () => this.#loadForConfigOptions(sessionID))
+    }
+    const loaded = this.#configOptions.has(sessionID) || this.#legacyModes.has(sessionID)
+    const state = sessionModeState(this.#configOptions.get(sessionID), this.#legacyModes.get(sessionID))
+    return { loaded, ...(state ? { currentModeId: state.currentModeId, modes: state.modes } : { modes: [] }) }
+  }
+
+  /**
+   * Switch the Session to one of the modes its harness advertised. The harness applies it to the next
+   * tool call, including one in the running turn, so this is deliberately not queued behind a prompt.
+   */
+  async setMode(sessionID, modeID) {
+    if (typeof modeID !== "string" || !modeID) throw new Error("A mode id is required")
+    await this.#requireSession(sessionID)
+    await this.#withNativeSession(sessionID, async () => {
+      await this.#loadForConfigOptions(sessionID)
+      await this.#applyMode(sessionID, modeID)
+    })
+    this.#modeChoices.set(sessionID, modeID)
+    this.#emit("session.updated", sessionID)
+    return this.modes(sessionID)
+  }
+
+  async #applyMode(sessionID, modeID) {
+    const state = sessionModeState(this.#configOptions.get(sessionID), this.#legacyModes.get(sessionID))
+    if (!state) throw new Error("This harness does not offer session modes")
+    if (!state.modes.some((mode) => mode.id === modeID)) {
+      throw new Error(`Harness mode is not available: ${modeID} (this Session offers ${state.modes.map((mode) => mode.id).join(", ")})`)
+    }
+    if (state.currentModeId === modeID) return
+    if (state.configId) {
+      const changed = await this.#acp.request("session/set_config_option", { sessionId: sessionID, configId: state.configId, value: modeID })
+      if (Array.isArray(changed?.configOptions)) this.#rememberConfigOptions(sessionID, changed.configOptions)
+      const option = modeConfigOption(this.#configOptions.get(sessionID))
+      if (option) option.currentValue = modeID
+    } else {
+      await this.#acp.request("session/set_mode", { sessionId: sessionID, modeId: modeID })
+    }
+    const legacy = this.#legacyModes.get(sessionID)
+    if (legacy) legacy.currentModeId = modeID
+  }
+
+  /**
+   * A mode the harness switched to by itself - Claude Code leaving Plan once the plan is accepted -
+   * becomes the one to restore after an unload. A mode reported while the Session is still being
+   * opened is the harness's default for a reopened Session, not a choice, so it is ignored.
+   */
+  #followHarnessMode(sessionID) {
+    if (!this.#modeChoices.has(sessionID) || !this.#loaded.has(sessionID) || this.#replaying.has(sessionID)) return
+    const current = sessionModeState(this.#configOptions.get(sessionID), this.#legacyModes.get(sessionID))?.currentModeId
+    if (current) this.#modeChoices.set(sessionID, current)
+  }
+
+  /**
+   * Put back the mode the user picked after the harness reopened this Session in its own default.
+   * Without it, an idle Claude Code Session unloaded after half an hour silently went back to asking
+   * for every edit. A mode the harness no longer offers is dropped rather than retried forever.
+   */
+  async #restoreModeChoice(sessionID) {
+    const choice = this.#modeChoices.get(sessionID)
+    if (!choice) return
+    const state = sessionModeState(this.#configOptions.get(sessionID), this.#legacyModes.get(sessionID))
+    if (!state || state.currentModeId === choice) return
+    if (!state.modes.some((mode) => mode.id === choice)) {
+      this.#modeChoices.delete(sessionID)
+      return
+    }
+    try {
+      await this.#applyMode(sessionID, choice)
+    } catch {
+      // The Session is open and usable in the harness's default mode; the app shows that mode.
+    }
   }
 
   async actions(sessionID) {
@@ -2857,7 +2957,8 @@ export class AcpService {
         await new Promise((resolve) => setTimeout(resolve, this.#replaySettleMs))
       }
       this.#rememberSessionConfiguration(sessionID, result)
-      const replayedMessages = mergeFragmentedPiSnapshot(this.#messages.get(sessionID) ?? [])
+      await this.#restoreModeChoice(sessionID)
+      const replayedMessages =mergeFragmentedPiSnapshot(this.#messages.get(sessionID) ?? [])
       this.#messages.set(sessionID, chronologicalReplay(this.#replayAuthoritative
         ? carryTurnFailures(previousMessages, authoritativeReplay(previousMessages, replayedMessages))
         : replaceHistory ? replayedMessages : mergeReplay(previousMessages, replayedMessages)))
@@ -2927,6 +3028,7 @@ export class AcpService {
     )
     this.#acpOpenSessions.add(sessionID)
     this.#rememberSessionConfiguration(sessionID, result)
+    await this.#restoreModeChoice(sessionID)
     this.#loaded.add(sessionID)
     this.#persistSnapshot(sessionID)
     this.#enforceLoadedSessionLimit(sessionID)
@@ -2950,6 +3052,7 @@ export class AcpService {
   }
 
   #rememberSessionConfiguration(sessionID, result) {
+    if (Array.isArray(result?.modes?.availableModes)) this.#legacyModes.set(sessionID, structuredClone(result.modes))
     if (Array.isArray(result?.configOptions) || result?.models) {
       this.#rememberConfigOptions(sessionID, modelConfigOptionFromSessionResponse(result))
       this.#modelSwitchMethods.set(sessionID, Array.isArray(result?.models?.availableModels)
@@ -3061,6 +3164,15 @@ export class AcpService {
     if (update.sessionUpdate === "config_option_update" && Array.isArray(update.configOptions)) {
       if (modelReply) modelReply.configurationUpdated = true
       this.#rememberConfigOptions(sessionId, update.configOptions)
+      this.#followHarnessMode(sessionId)
+      return
+    }
+    if (update.sessionUpdate === "current_mode_update" && typeof update.currentModeId === "string") {
+      const legacy = this.#legacyModes.get(sessionId)
+      if (legacy) legacy.currentModeId = update.currentModeId
+      const option = modeConfigOption(this.#configOptions.get(sessionId))
+      if (option) option.currentValue = update.currentModeId
+      this.#followHarnessMode(sessionId)
       return
     }
     if (modelReply && ["agent_message_chunk", "user_message_chunk", "agent_thought_chunk"].includes(update.sessionUpdate)) {

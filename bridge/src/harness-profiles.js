@@ -38,6 +38,10 @@ const COMMON_CAPABILITIES = {
   permissions: true,
   sessionRename: true,
   sessionDelete: true,
+  // GET/POST /session/:id/mode list and switch the modes the harness itself advertises over ACP
+  // (Claude Code's Manual/Accept edits/Plan/Auto/Bypass, Codex's approval presets, OpenCode's
+  // build/plan). A harness that advertises none answers with an empty list.
+  sessionModes: true,
   // What a prompt decoded while the harness is still working does. `steer` posts it into the live
   // turn, where the official adapter documents that behavior; `queue` holds it until that turn
   // completes, which is what every other ACP harness does. The UI presentation of one Send falls out
@@ -142,7 +146,10 @@ export const HARNESS_PROFILES = {
       commands: true,
       actions: false,
       sessionRename: true,
-      sessionDelete: true
+      sessionDelete: true,
+      // pi-acp advertises no session modes, and reopening a Session over ACP only to look for them
+      // can crash its replay ("replayEntry is not a function") on Sessions the journal reads fine.
+      sessionModes: false
     }
   }),
   claude: defineAcpProvider({

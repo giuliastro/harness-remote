@@ -24,6 +24,7 @@ import type {
   PermissionRequest,
   ServerConfig,
   Session,
+  SessionModeState,
   SessionStatus,
   TodoItem,
   VcsStatus
@@ -416,6 +417,18 @@ export const api = {
 
   deleteSession(config: ServerConfig, id: string, directory?: string) {
     return request<boolean>(config, withDirectory(`/session/${id}`, directory), { method: "DELETE" })
+  },
+
+  /**
+   * The Session's harness modes. Without `open` this never opens the Session on the bridge, so it is
+   * cheap enough for every refresh; `open` is for the user opening the mode picker.
+   */
+  loadSessionModes(config: ServerConfig, id: string, directory?: string, open = false) {
+    return request<SessionModeState>(config, withDirectory(`/session/${id}/mode${open ? "?load=1" : ""}`, directory))
+  },
+
+  setSessionMode(config: ServerConfig, id: string, modeId: string, directory?: string) {
+    return request<SessionModeState>(config, withDirectory(`/session/${id}/mode`, directory), { method: "POST", body: { modeId } })
   },
 
   /** Withdraw one prompt the daemon still holds behind the running turn; the turn keeps running. */

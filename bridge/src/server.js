@@ -506,7 +506,7 @@ export function createBridgeServer({ config, acp, serviceOptions, machineRegistr
         return
       }
 
-      const sessionMatch = /^\/session\/([^/]+)(?:\/(message|prompt_async|abort|todo|diff|action|command|queue)(?:\/([^/]+))?)?$/.exec(url.pathname)
+      const sessionMatch = /^\/session\/([^/]+)(?:\/(message|prompt_async|abort|todo|diff|action|command|queue|mode)(?:\/([^/]+))?)?$/.exec(url.pathname)
       if (sessionMatch) {
         const [, sessionID, operation, actionID] = sessionMatch
         if (request.method === "PATCH" && !operation) {
@@ -543,6 +543,22 @@ export function createBridgeServer({ config, acp, serviceOptions, machineRegistr
             return
           }
           writeJSON(response, 200, await service.messages(sessionID, url.searchParams.get("refresh") === "1"))
+          return
+        }
+        // A harness declared without session modes answers from its profile: opening its Session
+        // over ACP only to find none costs a reload and, for PI, can crash the adapter's replay.
+        const sessionModesSupported = profile.capabilities?.sessionModes !== false
+        if (request.method === "GET" && operation === "mode" && !actionID) {
+          writeJSON(response, 200, sessionModesSupported
+            ? await service.modes(sessionID, { load: url.searchParams.get("load") === "1" })
+            : { loaded: true, modes: [] })
+          return
+        }
+        if (request.method === "POST" && operation === "mode" && !actionID) {
+          if (!sessionModesSupported) throw new Error("This harness does not offer session modes")
+          const body = await readBody(request)
+          if (typeof body.modeId !== "string" || !body.modeId) throw new Error("A mode id is required")
+          writeJSON(response, 200, await service.setMode(sessionID, body.modeId))
           return
         }
         if (request.method === "GET" && operation === "todo") {

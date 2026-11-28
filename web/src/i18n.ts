@@ -166,6 +166,14 @@ export type TranslationKey =
   | 'card.locked'
   | 'card.title'
   | 'card.harness'
+  | 'card.model'
+  | 'mode.label'
+  | 'mode.title'
+  | 'mode.unknown'
+  | 'mode.loading'
+  | 'mode.none'
+  | 'mode.confirmUnrestricted'
+  | 'mode.failed'
   | 'card.searchModels'
   | 'action.dismiss'
   | 'sf.recentGroupHint'
@@ -995,6 +1003,14 @@ const translations: Record<LanguageCode, Partial<Record<TranslationKey, string>>
     'card.locked': '{agent} is working — model and effort can change when it finishes.',
     'card.title': 'Model and effort',
     'card.harness': 'Harness',
+    'card.model': 'Model',
+    'mode.label': 'Mode',
+    'mode.title': 'Permission mode',
+    'mode.unknown': 'Choose mode',
+    'mode.loading': 'Loading the harness modes…',
+    'mode.none': 'This harness does not offer modes.',
+    'mode.confirmUnrestricted': '{mode} skips every approval. Select it again to confirm.',
+    'mode.failed': 'The mode could not be changed: {error}',
     'card.searchModels': 'Search models',
     'action.dismiss': 'Dismiss',
     'sf.recentGroupHint': 'Last used, across Projects',
@@ -1803,6 +1819,14 @@ const translations: Record<LanguageCode, Partial<Record<TranslationKey, string>>
     'card.locked': '{agent} sta lavorando — modello e impegno si possono cambiare quando finisce.',
     'card.title': 'Modello e impegno',
     'card.harness': 'Harness',
+    'card.model': 'Modello',
+    'mode.label': 'Modalità',
+    'mode.title': 'Modalità dei permessi',
+    'mode.unknown': 'Scegli modalità',
+    'mode.loading': 'Caricamento delle modalità dell\'harness…',
+    'mode.none': 'Questo harness non offre modalità.',
+    'mode.confirmUnrestricted': '{mode} salta ogni approvazione. Selezionala di nuovo per confermare.',
+    'mode.failed': 'Impossibile cambiare modalità: {error}',
     'card.searchModels': 'Cerca modelli',
     'action.dismiss': 'Chiudi',
     'sf.recentGroupHint': 'Usate di recente, da tutti i Progetti',
@@ -2611,6 +2635,14 @@ const translations: Record<LanguageCode, Partial<Record<TranslationKey, string>>
     'card.locked': '{agent} 正在工作，完成後才能變更模型與推理強度。',
     'card.title': '模型與推理強度',
     'card.harness': 'Harness',
+    'card.model': '模型',
+    'mode.label': '模式',
+    'mode.title': '權限模式',
+    'mode.unknown': '選擇模式',
+    'mode.loading': '正在載入 harness 模式…',
+    'mode.none': '這個 harness 沒有提供模式。',
+    'mode.confirmUnrestricted': '{mode} 會略過所有核准。再選一次以確認。',
+    'mode.failed': '無法變更模式：{error}',
     'card.searchModels': '搜尋模型',
     'action.dismiss': '關閉',
     'sf.recentGroupHint': '所有專案中最近使用',
@@ -3419,6 +3451,14 @@ const translations: Record<LanguageCode, Partial<Record<TranslationKey, string>>
     'card.locked': '{agent} 正在工作，完成后才能更改模型和推理强度。',
     'card.title': '模型与推理强度',
     'card.harness': 'Harness',
+    'card.model': '模型',
+    'mode.label': '模式',
+    'mode.title': '权限模式',
+    'mode.unknown': '选择模式',
+    'mode.loading': '正在加载 harness 模式…',
+    'mode.none': '此 harness 不提供模式。',
+    'mode.confirmUnrestricted': '{mode} 会跳过所有批准。再选一次以确认。',
+    'mode.failed': '无法更改模式：{error}',
     'card.searchModels': '搜索模型',
     'action.dismiss': '关闭',
     'sf.recentGroupHint': '所有项目中最近使用',
@@ -4227,6 +4267,14 @@ const translations: Record<LanguageCode, Partial<Record<TranslationKey, string>>
     'card.locked': '{agent} está trabalhando — modelo e esforço podem mudar quando terminar.',
     'card.title': 'Modelo e esforço',
     'card.harness': 'Harness',
+    'card.model': 'Modelo',
+    'mode.label': 'Modo',
+    'mode.title': 'Modo de permissões',
+    'mode.unknown': 'Escolher modo',
+    'mode.loading': 'Carregando os modos do harness…',
+    'mode.none': 'Este harness não oferece modos.',
+    'mode.confirmUnrestricted': '{mode} ignora todas as aprovações. Selecione de novo para confirmar.',
+    'mode.failed': 'Não foi possível mudar o modo: {error}',
     'card.searchModels': 'Buscar modelos',
     'action.dismiss': 'Dispensar',
     'sf.recentGroupHint': 'Usadas por último, de todos os Projetos',

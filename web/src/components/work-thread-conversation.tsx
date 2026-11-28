@@ -1,6 +1,7 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react"
 import { api } from "../api"
-import { ChevronDownIcon, RefreshIcon } from "../Icons"
+import { ChevronDownIcon, RefreshIcon, ShieldIcon, SparkIcon } from "../Icons"
+import { HarnessMenu } from "./harness-menu"
 import type { AttachmentPart } from "../attachments"
 import { createCoalescedTailRefresh, TAIL_REFRESH_STALL_MS } from "../coalesced-tail-refresh"
 import type { ConversationController } from "../conversation-controller"
@@ -34,6 +35,7 @@ import { ModelPicker, modelOptionKey } from "./model-picker"
 import { TaskDeskConversation } from "./taskdesk-conversation"
 import { TaskDeskMessageContent } from "./taskdesk-message-content"
 import { WorkThreadAttention } from "./work-thread-attention"
+import { SessionModeList, SessionModeMenu, useSessionModes } from "./session-mode-control"
 import { harnessIconUrl } from "../harness-icons"
 import { useTranslator } from "../useTranslator"
 
@@ -285,7 +287,8 @@ export function ConversationStatePill({
     : working
       ? `${workingLabel}${elapsed >= 2 ? ` · ${elapsed}s` : ""}`
       : listening ? listeningLabel : outcome?.text || "Ready"
-  return <span className={`tdw-conversation-state ${state}`} title={outcome && detail ? detail : undefined}><i aria-hidden="true" /><span>{text}</span></span>
+  // The toolbar may shorten a long state with an ellipsis, so the tooltip always carries the full text.
+  return <span className={`tdw-conversation-state ${state}`} title={outcome && detail ? detail : text}><i aria-hidden="true" /><span>{text}</span></span>
 }
 
 const WorkThreadBubble = memo(function WorkThreadBubble({
@@ -447,6 +450,17 @@ export function WorkThreadConversation({
     targetAgentID,
     currentAgentID
   )
+  // The mode belongs to the Session that is open now. A pending switch to another harness would
+  // start a new Session there, so the current Session's mode is not offered meanwhile.
+  const modeTargetConfig = currentTarget?.config
+  const modeTarget = useMemo(() => (
+    currentTarget && modeTargetConfig && currentAgent?.capabilities?.sessionModes === true && !routeChanged
+      ? { config: modeTargetConfig, agentID: currentTarget.agentID, sessionID: currentTarget.sessionID, directory: currentTarget.directory }
+      : undefined
+  ), [currentTarget?.agentID, currentTarget?.sessionID, currentTarget?.directory, modeTargetConfig, currentAgent?.capabilities?.sessionModes, routeChanged])
+  const sessionModes = useSessionModes(modeTarget)
+  const refreshSessionModesRef = useRef(sessionModes.refresh)
+  refreshSessionModesRef.current = sessionModes.refresh
   const routeAgentLabel = agentLabel(destinationAgents, targetAgentID)
   const routingSignature = routing
     ? routing.machines.map((machine) => `${machine.machineID}:${machine.agents.map((agent) => `${agent.id}:${agent.backend}`).join(",")}`).join("|")
@@ -813,6 +827,9 @@ export function WorkThreadConversation({
     // response that is already persisted in /session/:id/message.
     const tailRefresh = refreshCurrentTail(prior)
     const attentionRefresh = refreshAttention(prior)
+    // A harness can change its own mode mid-turn (Claude Code leaves Plan once the plan is accepted).
+    // The read never opens the Session, so it is as cheap as the attention read beside it.
+    void refreshSessionModesRef.current()
     try {
       const next = await controller.refreshConversation(baseConfig, prior.id)
       if (runtimeSignature(next) !== runtimeSignature(prior) || next.title !== prior.title) {
@@ -1262,28 +1279,45 @@ ${current}` : text) : current)
     || effortOptions[0]?.modelName
     || (currentModelForPicker?.modelID && currentModelForPicker.modelID !== "default" ? currentModelForPicker.modelID : "Harness default")
   const modelControlsDisabled = !interactionEnabled || working || replyPending || sending || modelsLoading || !targetAgentID
+  const harnessChoiceDisabled = !interactionEnabled || working || replyPending || sending || modelBootstrapBlocked || destinationAgents.length === 0
+  const selectTargetAgent = (agentID: string) => {
+    modelGeneration.current += 1
+    modelSelectionTouchedRef.current = false
+    routeSelectionTouchedRef.current = agentID !== currentAgentID
+    setModels([])
+    setModelError(null)
+    setTargetModelKey("")
+    setTargetAgentID(agentID)
+  }
   const statePill = <ConversationStatePill working={working || replyPending || sending || replySettling || modelBootstrapBlocked} attention={hasAttention} workingLabel={conversationStateLabel} startedAt={sending || modelBootstrapBlocked ? undefined : conversation.currentTurn?.startedAt} status={conversation.status} detail={conversation.error?.message || undefined} listeningLabel={conversation.backgroundWork ? t("sf.statusListening", { count: conversation.backgroundWork }) : undefined} />
 
   return (
     <div className="tdw-work-thread-conversation">
-      <div className="tdw-conversation-toolbar">
+      <div className="tdw-conversation-toolbar tdw-session-bar">
         <div className={`tdw-agent-control${routing ? " routed" : ""}`}>
-          <label>
-            <span>{routing ? "Harness" : "Continue with"}</span>
-            <select value={targetAgentID} disabled={!interactionEnabled || working || replyPending || sending || modelBootstrapBlocked || destinationAgents.length === 0} onChange={(event) => {
-              modelGeneration.current += 1
-              modelSelectionTouchedRef.current = false
-              routeSelectionTouchedRef.current = event.target.value !== currentAgentID
-              setModels([])
-              setModelError(null)
-              setTargetModelKey("")
-              setTargetAgentID(event.target.value)
-            }}>
+          <label title={`${routing ? t("card.harness") : "Continue with"}: ${agentLabel(destinationAgents, targetAgentID)}`}>
+            {harnessIconUrl(destinationAgent?.backend)
+              ? <img className="tdw-bar-field-icon" src={harnessIconUrl(destinationAgent?.backend)} alt="" />
+              : null}
+            <span>{routing ? t("card.harness") : "Continue with"}</span>
+            {/* Desktop draws the chosen harness as text and opens its own menu (styled like Mode and
+                Model) from a transparent button over the whole field; phones keep the native select. */}
+            <b className="tdw-bar-value" aria-hidden="true">{agentLabel(destinationAgents, targetAgentID)}</b>
+            <i className="tdw-bar-chevron" aria-hidden="true"><ChevronDownIcon size={12} /></i>
+            <HarnessMenu
+              agents={destinationAgents}
+              value={targetAgentID}
+              label={routing ? t("card.harness") : "Continue with"}
+              disabled={harnessChoiceDisabled}
+              onChange={selectTargetAgent}
+            />
+            <select value={targetAgentID} disabled={harnessChoiceDisabled} onChange={(event) => selectTargetAgent(event.target.value)}>
               {destinationAgents.map((agent) => <option value={agent.id} key={agent.id}>{agent.label}</option>)}
             </select>
           </label>
-          <label className="tdw-model-control">
-            <span>Model</span>
+          <label className={`tdw-model-control${modelError ? " unavailable" : ""}`} title={modelError ? `Model catalog unavailable. Sending is paused until a model can be verified. ${modelError}` : undefined}>
+            <SparkIcon size={13} className="tdw-bar-field-icon" />
+            <span>{t("card.model")}</span>
             <ModelPicker compact models={models} value={targetModelKey} currentModel={currentModelForPicker} onChange={(value) => {
               modelSelectionTouchedRef.current = true
               setTargetModelKey(value)
@@ -1291,6 +1325,7 @@ ${current}` : text) : current)
             {modelError ? <small className="tdw-field-note" title={modelError}>Model catalog unavailable. Sending is paused until a model can be verified.</small> : null}
           </label>
         </div>
+        {modeTarget ? <SessionModeMenu modes={sessionModes} disabled={!interactionEnabled} /> : null}
         {toolbarAccessory}
         <ConversationStatePill working={working || replyPending || sending || replySettling || modelBootstrapBlocked} attention={hasAttention} workingLabel={conversationStateLabel} startedAt={sending || modelBootstrapBlocked ? undefined : conversation.currentTurn?.startedAt} status={conversation.status} detail={conversation.error?.message || undefined} listeningLabel={conversation.backgroundWork ? t("sf.statusListening", { count: conversation.backgroundWork }) : undefined} />
       </div>
@@ -1343,8 +1378,30 @@ ${current}` : text) : current)
         composerAccessory={(
           <div className="tdw-effort-anchor" ref={effortAnchorRef}>
             <span className="tdw-composer-status">{statePill}</span>
-            <button type="button" className="uw-button tdw-controls-trigger" aria-haspopup="dialog" aria-expanded={controlsOpen} onClick={() => setControlsOpen((open) => !open)}>
-              <span>{effortOptions.length > 1 ? effortLabel : selectedModelName}</span>
+            <button
+              type="button"
+              className={`uw-button tdw-controls-trigger${modeTarget && sessionModes.current?.unrestricted ? " mode-unrestricted" : ""}`}
+              aria-haspopup="dialog"
+              aria-expanded={controlsOpen}
+              title={`${t("card.model")}: ${effortOptions.length > 1 ? `${selectedModelName} · ${effortLabel}` : selectedModelName}${modeTarget && sessionModes.current ? ` · ${t("mode.label")}: ${sessionModes.current.name}` : ""}`}
+              onClick={() => {
+                const next = !controlsOpen
+                setControlsOpen(next)
+                if (next && modeTarget) void sessionModes.open()
+              }}
+            >
+              {/* Two labelled parts, so the reasoning level ("Default", "High") is never read as the
+                  permission mode: a spark for the model or its effort, a shield for the mode. */}
+              <span className="tdw-controls-part tdw-controls-model">
+                <SparkIcon size={12} className="tdw-controls-part-icon" />
+                <span>{effortOptions.length > 1 ? effortLabel : selectedModelName}</span>
+              </span>
+              {modeTarget && sessionModes.current ? (
+                <span className="tdw-controls-part tdw-controls-mode">
+                  <ShieldIcon size={12} className="tdw-controls-part-icon" />
+                  <span>{sessionModes.current.name}</span>
+                </span>
+              ) : null}
               <ChevronDownIcon size={13} />
             </button>
             {controlsOpen ? (
@@ -1428,6 +1485,12 @@ ${current}` : text) : current)
                   ) : (
                     <p className="tdw-effort-card-note">{t("card.noEffort")}</p>
                   )}
+                  {modeTarget && !(sessionModes.state?.loaded && sessionModes.state.modes.length === 0) ? (
+                    <section className="tdw-effort-card-modes" aria-label={t("mode.title")}>
+                      <strong>{t("mode.title")}</strong>
+                      <SessionModeList modes={sessionModes} disabled={!interactionEnabled} />
+                    </section>
+                  ) : null}
                 </div>
               </>
             ) : null}
