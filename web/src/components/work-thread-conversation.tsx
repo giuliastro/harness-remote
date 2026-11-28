@@ -1,6 +1,7 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react"
 import { api } from "../api"
 import { ChevronDownIcon, RefreshIcon, ShieldIcon, SparkIcon } from "../Icons"
+import { HarnessMenu } from "./harness-menu"
 import type { AttachmentPart } from "../attachments"
 import { createCoalescedTailRefresh, TAIL_REFRESH_STALL_MS } from "../coalesced-tail-refresh"
 import type { ConversationController } from "../conversation-controller"
@@ -1278,6 +1279,16 @@ ${current}` : text) : current)
     || effortOptions[0]?.modelName
     || (currentModelForPicker?.modelID && currentModelForPicker.modelID !== "default" ? currentModelForPicker.modelID : "Harness default")
   const modelControlsDisabled = !interactionEnabled || working || replyPending || sending || modelsLoading || !targetAgentID
+  const harnessChoiceDisabled = !interactionEnabled || working || replyPending || sending || modelBootstrapBlocked || destinationAgents.length === 0
+  const selectTargetAgent = (agentID: string) => {
+    modelGeneration.current += 1
+    modelSelectionTouchedRef.current = false
+    routeSelectionTouchedRef.current = agentID !== currentAgentID
+    setModels([])
+    setModelError(null)
+    setTargetModelKey("")
+    setTargetAgentID(agentID)
+  }
   const statePill = <ConversationStatePill working={working || replyPending || sending || replySettling || modelBootstrapBlocked} attention={hasAttention} workingLabel={conversationStateLabel} startedAt={sending || modelBootstrapBlocked ? undefined : conversation.currentTurn?.startedAt} status={conversation.status} detail={conversation.error?.message || undefined} listeningLabel={conversation.backgroundWork ? t("sf.statusListening", { count: conversation.backgroundWork }) : undefined} />
 
   return (
@@ -1289,19 +1300,18 @@ ${current}` : text) : current)
               ? <img className="tdw-bar-field-icon" src={harnessIconUrl(destinationAgent?.backend)} alt="" />
               : null}
             <span>{routing ? t("card.harness") : "Continue with"}</span>
-            {/* Desktop draws the chosen harness as text and lays the native select invisibly over
-                the whole field, so it measures like the other fields and opens from anywhere. */}
+            {/* Desktop draws the chosen harness as text and opens its own menu (styled like Mode and
+                Model) from a transparent button over the whole field; phones keep the native select. */}
             <b className="tdw-bar-value" aria-hidden="true">{agentLabel(destinationAgents, targetAgentID)}</b>
             <i className="tdw-bar-chevron" aria-hidden="true"><ChevronDownIcon size={12} /></i>
-            <select value={targetAgentID} disabled={!interactionEnabled || working || replyPending || sending || modelBootstrapBlocked || destinationAgents.length === 0} onChange={(event) => {
-              modelGeneration.current += 1
-              modelSelectionTouchedRef.current = false
-              routeSelectionTouchedRef.current = event.target.value !== currentAgentID
-              setModels([])
-              setModelError(null)
-              setTargetModelKey("")
-              setTargetAgentID(event.target.value)
-            }}>
+            <HarnessMenu
+              agents={destinationAgents}
+              value={targetAgentID}
+              label={routing ? t("card.harness") : "Continue with"}
+              disabled={harnessChoiceDisabled}
+              onChange={selectTargetAgent}
+            />
+            <select value={targetAgentID} disabled={harnessChoiceDisabled} onChange={(event) => selectTargetAgent(event.target.value)}>
               {destinationAgents.map((agent) => <option value={agent.id} key={agent.id}>{agent.label}</option>)}
             </select>
           </label>
@@ -1373,15 +1383,25 @@ ${current}` : text) : current)
               className={`uw-button tdw-controls-trigger${modeTarget && sessionModes.current?.unrestricted ? " mode-unrestricted" : ""}`}
               aria-haspopup="dialog"
               aria-expanded={controlsOpen}
-              title={modeTarget && sessionModes.current ? `${t("mode.label")}: ${sessionModes.current.name}` : undefined}
+              title={`${t("card.model")}: ${effortOptions.length > 1 ? `${selectedModelName} · ${effortLabel}` : selectedModelName}${modeTarget && sessionModes.current ? ` · ${t("mode.label")}: ${sessionModes.current.name}` : ""}`}
               onClick={() => {
                 const next = !controlsOpen
                 setControlsOpen(next)
                 if (next && modeTarget) void sessionModes.open()
               }}
             >
-              {modeTarget && sessionModes.current?.unrestricted ? <ShieldIcon size={13} className="tdw-controls-mode-icon" /> : null}
-              <span>{effortOptions.length > 1 ? effortLabel : selectedModelName}</span>
+              {/* Two labelled parts, so the reasoning level ("Default", "High") is never read as the
+                  permission mode: a spark for the model or its effort, a shield for the mode. */}
+              <span className="tdw-controls-part tdw-controls-model">
+                <SparkIcon size={12} className="tdw-controls-part-icon" />
+                <span>{effortOptions.length > 1 ? effortLabel : selectedModelName}</span>
+              </span>
+              {modeTarget && sessionModes.current ? (
+                <span className="tdw-controls-part tdw-controls-mode">
+                  <ShieldIcon size={12} className="tdw-controls-part-icon" />
+                  <span>{sessionModes.current.name}</span>
+                </span>
+              ) : null}
               <ChevronDownIcon size={13} />
             </button>
             {controlsOpen ? (

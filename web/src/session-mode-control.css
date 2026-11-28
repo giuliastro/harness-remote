@@ -201,7 +201,6 @@
   background: var(--td3-yellow-soft);
 }
 
-.tdw-controls-trigger .tdw-controls-mode-icon {
-  flex: none;
+.tdw-controls-trigger.mode-unrestricted .tdw-controls-mode .tdw-controls-part-icon {
   color: var(--td3-yellow-text, #e3b341);
 }

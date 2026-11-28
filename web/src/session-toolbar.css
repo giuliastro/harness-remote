@@ -8,7 +8,8 @@
 /* Phones keep the native select (or the composer card), so the drawn value is desktop-only. */
 .tdw-session-bar .tdw-bar-value,
 .tdw-session-bar .tdw-bar-chevron,
-.tdw-session-bar .tdw-agent-control .tdw-bar-field-icon {
+.tdw-session-bar .tdw-agent-control .tdw-bar-field-icon,
+.tdw-session-bar .tdw-harness-trigger {
   display: none;
 }
 
@@ -90,9 +91,9 @@
 
   /* ---- Harness ---------------------------------------------------------------------------- */
 
-  /* The chosen harness is drawn as text (a select sizes itself from its options at regular weight,
-     so its own text was clipped), and the native select covers the whole field invisibly: it still
-     opens the system menu from anywhere in the field and keeps keyboard and screen-reader access. */
+  /* The chosen harness is drawn as text, and a transparent button over the whole field opens the
+     harness menu (HarnessMenu), built from the Mode menu's panel so the three menus match. The native
+     select stays in the markup for phones only. */
   /* Fields take their natural width (each value has its own cap). Their shrink weight (1) is tiny next
      to the status pill's, so they only give way, with an ellipsis, once the pill is at its minimum. */
   :root .tdw-session-bar.tdw-session-bar.tdw-session-bar .tdw-agent-control > label {
@@ -129,27 +130,87 @@
   }
 
   :root .tdw-session-bar.tdw-session-bar.tdw-session-bar .tdw-agent-control > label > select {
+    display: none;
+  }
+
+  :root .tdw-session-bar.tdw-session-bar.tdw-session-bar .tdw-harness-trigger {
     position: absolute;
-    inset: 0;
+    inset: -1px;
     z-index: 1;
-    width: 100%;
-    max-width: none;
-    height: 100%;
+    display: block;
+    width: auto;
+    height: auto;
     min-height: 0;
     margin: 0;
     padding: 0;
     border: 0;
-    opacity: 0;
+    border-radius: var(--bar-field-radius);
+    background: transparent;
+    box-shadow: none;
     cursor: pointer;
   }
 
-  :root .tdw-session-bar.tdw-session-bar.tdw-session-bar .tdw-agent-control > label:has(> select:disabled) {
-    cursor: default;
+  :root .tdw-session-bar.tdw-session-bar.tdw-session-bar .tdw-harness-trigger:focus-visible {
+    outline: 0;
+  }
+
+  :root .tdw-session-bar.tdw-session-bar.tdw-session-bar .tdw-agent-control > label:has(> .tdw-harness-trigger:disabled) {
     opacity: .6;
   }
 
-  :root .tdw-session-bar.tdw-session-bar.tdw-session-bar .tdw-agent-control > label:has(> select:disabled) > select {
+  :root .tdw-session-bar.tdw-session-bar.tdw-session-bar .tdw-harness-trigger:disabled {
     cursor: default;
+  }
+
+  /* The harness menu opens from the field's left edge (the Mode menu opens from its right). */
+  :root .tdw-session-bar.tdw-session-bar.tdw-session-bar .tdw-harness-popover {
+    right: auto;
+    left: -1px;
+    width: min(280px, calc(100vw - 24px));
+  }
+
+  :root .tdw-session-bar.tdw-session-bar.tdw-session-bar .tdw-harness-option {
+    align-items: center;
+    min-height: 40px;
+  }
+
+  :root .tdw-session-bar.tdw-session-bar.tdw-session-bar .tdw-harness-option-icon {
+    display: grid;
+    flex: none;
+    place-items: center;
+    width: 22px;
+    height: 22px;
+    border-radius: 6px;
+    color: var(--td3-muted);
+    background: var(--td3-control);
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+  }
+
+  :root .tdw-session-bar.tdw-session-bar.tdw-session-bar .tdw-harness-option-icon img {
+    width: 16px;
+    height: 16px;
+    object-fit: contain;
+  }
+
+  :root .tdw-session-bar.tdw-session-bar.tdw-session-bar .tdw-harness-option .tdw-mode-option-text {
+    flex: 1 1 auto;
+  }
+
+  /* A check marks the chosen harness, drawn so no extra icon is needed. */
+  :root .tdw-session-bar.tdw-session-bar.tdw-session-bar .tdw-harness-option-check {
+    flex: none;
+    width: 10px;
+    height: 6px;
+    margin: 0 4px 3px 0;
+    border-bottom: 2px solid transparent;
+    border-left: 2px solid transparent;
+    transform: rotate(-45deg);
+  }
+
+  :root .tdw-session-bar.tdw-session-bar.tdw-session-bar .tdw-harness-option.selected .tdw-harness-option-check {
+    border-color: var(--td3-blue);
   }
 
   /* ---- Model ------------------------------------------------------------------------------ */
@@ -365,11 +426,28 @@
   }
 }
 
-/* Phones (compact skin): the toolbar is hidden and its job moves under the composer, where the live
-   state and the model/mode button sit side by side. They now share one height and one type size,
-   matching the 36px attach and send buttons (the existing phone rules use !important). */
+/* Phones (compact skin): the toolbar is hidden and its job moves under the composer. The row is
+   ordered: the live state on the left, then attach, settings and send grouped on the right, all 36px
+   tall and 8px apart. Before, the state and the send button both took an automatic margin, so the
+   free space split in two and attach and settings floated in the middle. The existing phone rules
+   use !important, so these do too. */
 @media (max-width: 780px) {
-  :root[data-skin="compact"] .tdw-work-thread-conversation .tdw-composer-status .tdw-conversation-state {
+  :root[data-skin="compact"] .tdw-work-thread-conversation.tdw-work-thread-conversation .uw-composer-footer.uw-composer-footer > div {
+    flex-wrap: nowrap !important;
+    justify-content: flex-end !important;
+    gap: 8px !important;
+  }
+
+  :root[data-skin="compact"] .tdw-work-thread-conversation.tdw-work-thread-conversation .uw-composer-footer.uw-composer-footer .tdw-composer-status {
+    order: 0 !important;
+    flex: 0 1 auto !important;
+    /* Never narrower than a short state such as "Ready"; a long sentence shortens (tooltip has it). */
+    min-width: 76px !important;
+    max-width: 40% !important;
+    margin-right: auto !important;
+  }
+
+  :root[data-skin="compact"] .tdw-work-thread-conversation.tdw-work-thread-conversation .tdw-composer-status.tdw-composer-status .tdw-conversation-state {
     box-sizing: border-box;
     align-items: center;
     gap: 7px;
@@ -380,7 +458,108 @@
     line-height: 1 !important;
   }
 
-  :root[data-skin="compact"] .tdw-work-thread-conversation .uw-composer-footer .uw-button.tdw-controls-trigger {
+  /* Attach and settings are the same quiet outlined buttons; send stays the one filled button. */
+  :root[data-skin="compact"] .tdw-work-thread-conversation.tdw-work-thread-conversation .uw-composer-footer.uw-composer-footer > div > .uw-button:not(.uw-button-primary):not(.uw-button-danger) {
+    order: 1 !important;
+    flex: none !important;
+    margin: 0 !important;
+    border: 1px solid var(--td3-border) !important;
+    background: var(--td3-control) !important;
+    color: var(--td3-text-2) !important;
+  }
+
+  :root[data-skin="compact"] .tdw-work-thread-conversation.tdw-work-thread-conversation .uw-composer-footer.uw-composer-footer .uw-button.tdw-controls-trigger {
+    order: 2 !important;
+    flex: 0 1 auto !important;
+    gap: 8px !important;
+    min-width: 0 !important;
+    max-width: 210px !important;
+    margin: 0 !important;
+    padding: 0 10px 0 12px !important;
+    border: 1px solid var(--td3-border) !important;
+    border-radius: 10px !important;
+    color: var(--td3-text) !important;
+    background: var(--td3-control) !important;
     font-weight: 600 !important;
+  }
+
+  :root[data-skin="compact"] .tdw-work-thread-conversation.tdw-work-thread-conversation .uw-composer-footer.uw-composer-footer .uw-button.tdw-controls-trigger.mode-unrestricted {
+    border-color: var(--td3-yellow, #e3b341) !important;
+    background: var(--td3-yellow-soft) !important;
+  }
+
+  :root[data-skin="compact"] .tdw-work-thread-conversation.tdw-work-thread-conversation .uw-composer-footer.uw-composer-footer :is(.uw-button-primary, .uw-button-danger) {
+    order: 3 !important;
+    flex: none !important;
+    margin: 0 !important;
+  }
+
+  /* Inside the settings button: model/effort and mode as two labelled parts. */
+  :root[data-skin="compact"] .tdw-work-thread-conversation.tdw-work-thread-conversation .uw-composer-footer.uw-composer-footer .tdw-controls-trigger > .tdw-controls-part {
+    display: inline-flex !important;
+    align-items: center;
+    gap: 5px;
+    min-width: 0;
+    overflow: hidden;
+    line-height: 1.2 !important;
+  }
+
+  /* Effort ids arrive lowercase ("high"); mode names come already cased from the harness. */
+  :root[data-skin="compact"] .tdw-work-thread-conversation.tdw-work-thread-conversation .uw-composer-footer.uw-composer-footer .tdw-controls-trigger > .tdw-controls-model {
+    /* The mode keeps its room first: the effort part shortens before it. */
+    flex: 0 3 auto;
+    text-transform: capitalize !important;
+  }
+
+  :root[data-skin="compact"] .tdw-work-thread-conversation.tdw-work-thread-conversation .uw-composer-footer.uw-composer-footer .tdw-controls-trigger > .tdw-controls-mode {
+    flex: 0 1 auto;
+    padding-left: 8px;
+    border-left: 1px solid var(--td3-border);
+    text-transform: none !important;
+  }
+
+  :root[data-skin="compact"] .tdw-work-thread-conversation.tdw-work-thread-conversation .uw-composer-footer.uw-composer-footer .tdw-controls-part > span {
+    display: block;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  :root[data-skin="compact"] .tdw-work-thread-conversation.tdw-work-thread-conversation .uw-composer-footer.uw-composer-footer .tdw-controls-part-icon {
+    flex: none;
+    color: var(--td3-muted);
+  }
+
+  :root[data-skin="compact"] .tdw-work-thread-conversation.tdw-work-thread-conversation .uw-composer-footer.uw-composer-footer .tdw-controls-trigger.mode-unrestricted .tdw-controls-mode {
+    border-left-color: color-mix(in srgb, var(--td3-yellow, #e3b341) 45%, transparent);
+    color: var(--td3-yellow-text, #e3b341);
+  }
+
+  :root[data-skin="compact"] .tdw-work-thread-conversation.tdw-work-thread-conversation .uw-composer-footer.uw-composer-footer .tdw-controls-trigger > svg {
+    flex: none;
+    color: var(--td3-muted);
+  }
+}
+
+/* Phone widths: the chevron goes (the button already reads as one), and below 380px the spark too.
+   The shield always stays, because it is what says "mode". */
+@media (max-width: 420px) {
+  :root[data-skin="compact"] .tdw-work-thread-conversation.tdw-work-thread-conversation .uw-composer-footer.uw-composer-footer .tdw-controls-trigger > svg {
+    display: none !important;
+  }
+
+  :root[data-skin="compact"] .tdw-work-thread-conversation.tdw-work-thread-conversation .uw-composer-footer.uw-composer-footer .uw-button.tdw-controls-trigger {
+    padding: 0 12px !important;
+  }
+}
+
+@media (max-width: 380px) {
+  :root[data-skin="compact"] .tdw-work-thread-conversation.tdw-work-thread-conversation .uw-composer-footer.uw-composer-footer .tdw-controls-model .tdw-controls-part-icon {
+    display: none !important;
+  }
+
+  :root[data-skin="compact"] .tdw-work-thread-conversation.tdw-work-thread-conversation .uw-composer-footer.uw-composer-footer .uw-button.tdw-controls-trigger {
+    padding: 0 10px !important;
   }
 }
