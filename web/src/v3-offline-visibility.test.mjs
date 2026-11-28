@@ -56,8 +56,10 @@ test("one unreachable machine does not hold up an already-answered one", () => {
 })
 
 test("an offline stream cannot cancel its own discovery probe forever", () => {
-  assert.match(workspace, /const hasReachableMachine = runtimes\.some/)
-  assert.match(workspace, /reconnecting: reconnectingCount > 0 \|\| \(hasReachableMachine && reconnectingStreamCount > 0\)/)
+  // Per machine: an offline machine's stream never counts, even beside a reachable one (behaviour in
+  // machine-live-refresh.test.mjs).
+  assert.match(workspace, /const reconnectingStreamCount = recoveringStreamCount\(/)
+  assert.match(workspace, /reconnecting: reconnectingCount > 0 \|\| reconnectingStreamCount > 0/)
 })
 
 test("the attention surface is announced and its options report their state", () => {

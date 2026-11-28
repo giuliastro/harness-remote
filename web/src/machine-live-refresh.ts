@@ -25,6 +25,35 @@ export function isStreamReconnecting(status: string | { type: string } | undefin
   return type === "reconnecting" || type === "connection-error" || type === "closed"
 }
 
+/**
+ * Streams that are recovering on a machine that is itself online. An offline saved endpoint's stream
+ * reconnects forever, so counting it (as long as any other machine was reachable) kept the 1.5s
+ * cadence on for good beside one offline machine.
+ */
+export function recoveringStreamCount(
+  streamIDs: readonly string[],
+  reconnecting: Readonly<Record<string, boolean>>,
+  runtimes: readonly { machine: { id: string }; state: string; snapshot?: unknown }[]
+): number {
+  return streamIDs.filter((id) => reconnecting[id]
+    && runtimes.some((runtime) => runtime.machine.id === id && runtime.state === "online" && Boolean(runtime.snapshot))).length
+}
+
+/**
+ * Whether a Session index read that finished should land. A newer read starting does not make an
+ * older one wrong: dropping every superseded read meant that a refresh cadence faster than the
+ * slowest harness never applied anything. A read is dropped only when a newer one already landed,
+ * or when it was superseded and the machines or harnesses it read have since changed.
+ */
+export function discoveryPassLands(pass: {
+  number: number
+  identity: string
+  superseded: boolean
+}, state: { lastApplied: number; currentIdentity: string }): boolean {
+  if (pass.number < state.lastApplied) return false
+  return !pass.superseded || pass.identity === state.currentIdentity
+}
+
 export function machinePollIntervalMs({
   reconnecting,
   machineCount,

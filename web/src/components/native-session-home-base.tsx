@@ -33,6 +33,7 @@ import { AgentIcon, AlertIcon, ChatIcon, ChevronDownIcon, FolderIcon, LoadingIco
 import "../native-session-home.css"
 import "../native-session-home-ux.css"
 import { harnessIconUrl } from "../harness-icons"
+import { discoveryPassLands } from "../machine-live-refresh"
 import { activeSkin, APP_PREFERENCES_CHANGED_EVENT, loadHideRules, loadRecentsEnabled, titleMatchesHideRules } from "../appPreferences"
 
 type Source = {
@@ -639,6 +640,14 @@ export function NativeSessionHome({
   deletedKeysRef.current = deletedKeys
   const authoritativeRefreshApplied = useRef(authoritativeRefreshToken)
   const discoveryRetry = useRef<{ signature: string | null; attempt: number }>({ signature: null, attempt: 0 })
+  // Every refresh, lifecycle edge and poll restarts the read below. A read of the same machines and
+  // harnesses that a newer one superseded is still a correct answer, and dropping it meant a cadence
+  // faster than the slowest harness (a machine poll every 1.5s against an 8s read) applied nothing,
+  // ever: those harnesses stayed on "Starting…" for good. Passes are numbered; one is dropped only
+  // when the machines changed or a newer pass already landed.
+  const discoveryPassStarted = useRef(0)
+  const discoveryPassApplied = useRef(0)
+  const currentDiscoveryIdentity = useRef("")
   const onRefreshCompleteRef = useRef(onRefreshComplete)
   onRefreshCompleteRef.current = onRefreshComplete
   const [presentationOverrides, setPresentationOverrides] = useState<Record<string, SessionPresentationState>>({})
@@ -672,6 +681,7 @@ export function NativeSessionHome({
       machine.config.agentId || ""
     ].join(":")
   ).join("|")
+  currentDiscoveryIdentity.current = `${endpointSignature}\u0001${discoverySignature}`
   const loaded = discoveryReady && loadedSignature === endpointSignature
   // Whether the read for the current snapshot has landed. Only used where showing stale emptiness
   // would be wrong (e.g. "No Sessions on this machine" for a machine that just came back).
@@ -722,6 +732,14 @@ export function NativeSessionHome({
     }
     let cancelled = false
     let retryTimer: number | undefined
+    const pass = ++discoveryPassStarted.current
+    const passIdentity = `${endpointSignature}\u0001${discoverySignature}`
+    // Superseded is not stale: see discoveryPassStarted.
+    const outdated = () => !discoveryPassLands(
+      { number: pass, identity: passIdentity, superseded: cancelled },
+      { lastApplied: discoveryPassApplied.current, currentIdentity: currentDiscoveryIdentity.current }
+    )
+    const latest = () => pass === discoveryPassStarted.current
     setLoading(true)
     setDiscoveryError(null)
     setOlderSessionErrors({})
@@ -755,7 +773,8 @@ export function NativeSessionHome({
       ])
       return { machine, snapshot, projects, pages }
     })).then((results) => {
-      if (cancelled) return
+      if (outdated()) return
+      discoveryPassApplied.current = pass
       // A cold npx adapter can exceed the per-harness discovery budget even though it is starting
       // correctly. Retry only the failed pages a few times instead of leaving PI/DeepSeek at zero
       // until the next periodic refresh; a successful pass resets the backoff. A harness the daemon
@@ -765,7 +784,7 @@ export function NativeSessionHome({
       // the Windows display language, so its wording cannot be matched.
       const failed = results.some((result) => result.pages.some((entry) => entry.page === null && !entry.launchFailure))
       const retriesSpent = discoveryRetry.current.attempt >= 3
-      if (failed && !retriesSpent) {
+      if (failed && !retriesSpent && !cancelled) {
         discoveryRetry.current.attempt += 1
         retryTimer = window.setTimeout(() => setRevision((value) => value + 1), 3_000 * discoveryRetry.current.attempt)
       } else if (!failed) {
@@ -857,16 +876,16 @@ export function NativeSessionHome({
       setLoadedSignature(endpointSignature)
       setCurrentSignature(discoverySignature)
     }).catch((reason) => {
-      if (!cancelled) {
+      if (!outdated() && latest()) {
         setLoadedSignature(endpointSignature)
         setCurrentSignature(discoverySignature)
         setDiscoveryError(reason instanceof Error ? reason.message : String(reason))
       }
     }).finally(() => {
-      if (!cancelled) {
-        setLoading(false)
-        onRefreshCompleteRef.current?.(refreshToken)
-      }
+      // Only the newest pass ends the spinner; any pass whose rows landed completes its own refresh
+      // request (the workspace ignores a token older than the one it is waiting for).
+      if (latest()) setLoading(false)
+      if (latest() || discoveryPassApplied.current === pass) onRefreshCompleteRef.current?.(refreshToken)
     })
     return () => { cancelled = true; if (retryTimer) window.clearTimeout(retryTimer) }
   }, [revision, refreshToken, authoritativeRefreshToken, lifecycleRevision, discoveryReady, discoverySignature, endpointSignature, deletedKeys])

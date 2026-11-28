@@ -43,7 +43,8 @@ import {
   isStreamReconnecting,
   machinePollIntervalMs,
   MACHINE_LIVE_REFRESH_BURST_MS,
-  MACHINE_RECONNECT_POLL_MS
+  MACHINE_RECONNECT_POLL_MS,
+  recoveringStreamCount
 } from "../machine-live-refresh"
 import { discoverMachine, listMachineProjects, machineAgentStateLabel } from "../machineClient"
 import {
@@ -1163,17 +1164,19 @@ function NativeSessionsWorkspace({
     }
   }, [streamTargets])
 
-  const reconnectingStreamCount = streamTargets.filter(({ id }) => reconnectingStreams[id]).length
   // A stream for an unreachable machine reconnects on its own schedule. Polling it every 1.5s can
   // repeatedly cancel the browser's 12s machine probe before it settles, leaving Refresh visibly
   // active forever. Reserve the fast cadence for a machine that was actually online and is now
-  // recovering; an offline saved endpoint remains on the normal safety-net cadence.
-  const hasReachableMachine = runtimes.some((runtime) => runtime.state === "online" && Boolean(runtime.snapshot))
+  // recovering; an offline saved endpoint remains on the normal safety-net cadence. The check is per
+  // machine: one reachable machine beside an offline one used to keep the 1.5s cadence on for good,
+  // and every tick restarted the Session index read, so harnesses that answer in a few seconds
+  // never left "Starting…".
+  const reconnectingStreamCount = recoveringStreamCount(streamTargets.map(({ id }) => id), reconnectingStreams, runtimes)
 
   useEffect(() => {
     if (!loaded) return
     const interval = machinePollIntervalMs({
-      reconnecting: reconnectingCount > 0 || (hasReachableMachine && reconnectingStreamCount > 0),
+      reconnecting: reconnectingCount > 0 || reconnectingStreamCount > 0,
       machineCount: streamTargets.length,
       connectedStreamCount: streamTargets.filter(({ id }) => liveMachines[id]).length,
       unsettledAgents: runtimes.some((runtime) => runtime.state === "online"
@@ -1201,7 +1204,7 @@ function NativeSessionsWorkspace({
       window.clearInterval(timer)
       document.removeEventListener("visibilitychange", onVisibility)
     }
-  }, [loaded, reconnectingCount, reconnectingStreamCount, hasReachableMachine, streamTargets, liveMachines, runtimes])
+  }, [loaded, reconnectingCount, reconnectingStreamCount, streamTargets, liveMachines, runtimes])
 
   const onlineCount = runtimes.filter((runtime) => runtime.state === "online").length
   const offlineCount = runtimes.filter((runtime) => runtime.state === "offline").length
