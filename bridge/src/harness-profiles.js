@@ -146,7 +146,10 @@ export const HARNESS_PROFILES = {
       commands: true,
       actions: false,
       sessionRename: true,
-      sessionDelete: true
+      sessionDelete: true,
+      // pi-acp advertises no session modes, and reopening a Session over ACP only to look for them
+      // can crash its replay ("replayEntry is not a function") on Sessions the journal reads fine.
+      sessionModes: false
     }
   }),
   claude: defineAcpProvider({

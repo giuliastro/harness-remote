@@ -545,11 +545,17 @@ export function createBridgeServer({ config, acp, serviceOptions, machineRegistr
           writeJSON(response, 200, await service.messages(sessionID, url.searchParams.get("refresh") === "1"))
           return
         }
+        // A harness declared without session modes answers from its profile: opening its Session
+        // over ACP only to find none costs a reload and, for PI, can crash the adapter's replay.
+        const sessionModesSupported = profile.capabilities?.sessionModes !== false
         if (request.method === "GET" && operation === "mode" && !actionID) {
-          writeJSON(response, 200, await service.modes(sessionID, { load: url.searchParams.get("load") === "1" }))
+          writeJSON(response, 200, sessionModesSupported
+            ? await service.modes(sessionID, { load: url.searchParams.get("load") === "1" })
+            : { loaded: true, modes: [] })
           return
         }
         if (request.method === "POST" && operation === "mode" && !actionID) {
+          if (!sessionModesSupported) throw new Error("This harness does not offer session modes")
           const body = await readBody(request)
           if (typeof body.modeId !== "string" || !body.modeId) throw new Error("A mode id is required")
           writeJSON(response, 200, await service.setMode(sessionID, body.modeId))

@@ -697,11 +697,13 @@ their own names and descriptions. As advertised today:
 | Codex | Ask for approval, Approve for me (default), Full access |
 | OpenCode 2 | build (default), plan |
 | Oh My Pi | Default, Plan |
-| PI | none |
+| PI | none (the Mode control is hidden) |
 
 - `GET /session/:id/mode` answers `{ loaded, currentModeId, modes: [{ id, name, description, unrestricted }] }`
   without opening the Session; `loaded: false` means the bridge has not opened it yet.
   `?load=1` opens it, which is what the app does when you open the picker.
+- A harness whose profile sets `sessionModes: false` (PI) answers `{ loaded: true, modes: [] }` and
+  refuses a switch without reopening the Session; the app hides the Mode control for it.
 - `POST /session/:id/mode` with `{ "modeId": "…" }` switches through `session/set_config_option`
   (or `session/set_mode` for an adapter with only the older field). A mode the Session does not
   offer is refused.
