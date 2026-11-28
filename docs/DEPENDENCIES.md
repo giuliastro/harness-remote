@@ -153,6 +153,7 @@ party entirely.
 | Plan/todo updates arrive through the ACP notifications already handled by `AcpService` | the Claude Code todo panel stops updating |
 | Tool permission requests are surfaced and wait for the user's explicit allow/deny, using the option kinds the adapter offers | an unanswered request blocks the tool call; the bridge must never grant it automatically |
 | The adapter does not advertise image prompt support | the app hides attachments and refuses image parts for this backend |
+| `_session/steering` injects a prompt into the running turn (`{outcome:"injected"}`) and, once that turn already ended, starts it as a new turn (`{outcome:"startedNewTurn"}`) | the profile declares `midTurnPrompt: "steer"`; without the method the bridge falls back to queueing the already-recorded prompt |
 
 **Session scope and security.** Claude Code sessions are enumerated by the adapter independently of
 the bridge's `--root` directories. The bridge can therefore expose sessions from repositories outside
@@ -171,7 +172,7 @@ text, thinking, tool use or tool result block), and a tool result arrives whole 
 `tool_call_update`, so a long transcript is thousands of notifications into one cached Session.
 
 **Watch:** the pinned adapter version, bare model ids, ACP session update and permission-request
-shapes, and whether session visibility or image capability changes. The app intentionally does not
+shapes, the steering response shape, and whether session visibility or image capability changes. The app intentionally does not
 expose agent selection, server slash commands or VCS/diff for this backend.
 
 ### Codex — ACP over stdio, via the official adapter

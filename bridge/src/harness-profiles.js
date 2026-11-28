@@ -218,7 +218,11 @@ export const HARNESS_PROFILES = {
       commands: false,
       actions: false,
       sessionRename: true,
-      sessionDelete: true
+      sessionDelete: true,
+      // Typing into Claude Code while it works hands the message to the running turn, and the adapter
+      // exposes exactly that as `_session/steering` (answering `injected`, or `startedNewTurn` once
+      // the turn already ended). Queueing it here held the message back until the reply was over.
+      midTurnPrompt: "steer"
     }
   }),
   copilot: defineAcpProvider({

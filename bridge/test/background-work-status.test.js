@@ -97,6 +97,51 @@ test("a still-running notification does not close background work, and old work 
   })
 })
 
+test("a resume's orphan summary (task ids only) and a successful TaskStop close background work", async () => {
+  await withTemp(async (root) => {
+    const orphanSummary = "<task-notification>\n<task-id>btoolu_a</task-id>\n<task-id>__orphan_summary__:shell</task-id>\n<status>stopped</status>\n<summary>2 background shell command tasks didn't finish</summary>\n</task-notification>"
+    const file = await writeJournal(root, [
+      journal.start("toolu_a"), journal.started("toolu_a"),
+      journal.start("toolu_b"),
+      // The task id comes from the structured result here, not the text.
+      { type: "user", timestamp: at(-59_000), toolUseResult: { backgroundTaskId: "task-b" }, message: { role: "user", content: [{ tool_use_id: "toolu_b", type: "tool_result", content: "started" }] } },
+      journal.start("toolu_c"), journal.started("toolu_c"),
+      journal.start("toolu_d"), journal.started("toolu_d"),
+      journal.reply(),
+      { type: "user", timestamp: at(-20_000), message: { role: "user", content: [{ tool_use_id: "toolu_stop", type: "tool_result", content: "{\"message\":\"Successfully stopped task: task-b (npx vite)\"}" }] } },
+      { type: "user", timestamp: at(-15_000), message: { role: "user", content: [{ tool_use_id: "toolu_stop2", type: "tool_result", is_error: true, content: "Successfully stopped task: btoolu_c" }] } },
+      { type: "queue-operation", operation: "enqueue", timestamp: at(-10_000), content: orphanSummary },
+      { type: "user", timestamp: at(-10_000), message: { role: "user", content: orphanSummary } }
+    ])
+    const { pending } = await readClaudeBackgroundWork(file, { now: NOW })
+    // a: orphan summary; b: TaskStop; c: the stop failed, so still out; d: never reported.
+    assert.deepEqual(pending.map((work) => work.toolUseID).sort(), ["toolu_c", "toolu_d"])
+  })
+})
+
+test("background work started before the current Claude process is not waited on", async () => {
+  await withTemp(async (root) => {
+    const projectsRoot = path.join(root, "projects")
+    const registryDir = path.join(root, "sessions")
+    await writeJournal(projectsRoot, [
+      journal.start("toolu_old", { offsetMs: -3_600_000 }), journal.started("toolu_old"),
+      journal.start("toolu_new"), journal.started("toolu_new"), journal.reply()
+    ])
+    // The process was restarted 30 minutes ago: only work it started itself can report back.
+    await writeRegistry(registryDir, 403, { sessionId: SESSION, status: "idle", startedAt: NOW - 1_800_000 })
+    const probe = createClaudeLiveStatusProbe({ projectsRoot, registryDir, isAlive: () => true, now: () => NOW })
+    assert.deepEqual(await probe(SESSION), { type: "listening", background: 1, source: "claude-journal" })
+    const idle = createClaudeSessionIdleGuard({ projectsRoot, registryDir, isAlive: () => true, now: () => NOW })
+    assert.equal(await idle(SESSION), false)
+
+    await writeRegistry(registryDir, 403, { sessionId: SESSION, status: "idle", startedAt: NOW - 1_000 })
+    const restarted = createClaudeLiveStatusProbe({ projectsRoot, registryDir, isAlive: () => true, now: () => NOW })
+    assert.equal(await restarted(SESSION), undefined)
+    const idleAgain = createClaudeSessionIdleGuard({ projectsRoot, registryDir, isAlive: () => true, now: () => NOW })
+    assert.equal(await idleAgain(SESSION), true)
+  })
+})
+
 test("an idle Claude process with background work out reads as listening, not finished", async () => {
   await withTemp(async (root) => {
     const projectsRoot = path.join(root, "projects")

@@ -133,6 +133,53 @@ test('a queued prompt stays out of the turns until the transcript shows it start
   }
 })
 
+test('prompts queued from this view become one turn each when they start, never two', async () => {
+  storage.clear()
+  const sessionID = 'queued-session-3'
+  let page = { messages: [], hasMore: false }
+  api.loadMessagePage = async () => page
+  api.listStatuses = async () => ({ [sessionID]: { type: 'busy' } })
+  respondWith([
+    { status: 'accepted', clientRequestId: 'request-1', result: { disposition: 'started', messageID: 'bridge-1' } },
+    { status: 'accepted', clientRequestId: 'request-2', result: { disposition: 'queued', messageID: 'bridge-2' } },
+    { status: 'accepted', clientRequestId: 'request-3', result: { disposition: 'queued', messageID: 'bridge-3' } }
+  ])
+
+  const registration = registerNativeSessionV3Adapter(target(sessionID), () => {})
+  try {
+    await registration.controller.loadMessagePage(CONFIG, sessionID, DIRECTORY)
+    await registration.controller.continueConversation(CONFIG, registration.conversation.id, { prompt: 'first', model: MODEL })
+    await registration.controller.continueConversation(CONFIG, registration.conversation.id, { prompt: 'second', model: MODEL })
+    await registration.controller.continueConversation(CONFIG, registration.conversation.id, { prompt: 'third', model: MODEL })
+
+    page = { messages: [
+      user(sessionID, 'bridge-1', 'first'), assistant(sessionID, 'reply-1', 'counting'),
+      user(sessionID, 'bridge-2', 'second', true), user(sessionID, 'bridge-3', 'third', true)
+    ], hasMore: false }
+    await registration.controller.loadMessagePage(CONFIG, sessionID, DIRECTORY, undefined, 200, true)
+
+    // The daemon started the second prompt: its row lost the queued flag on this read. Both the
+    // tail-row discovery and the queue hand-over see it, and only one of them may make it a turn.
+    page = { messages: [
+      user(sessionID, 'bridge-1', 'first'), assistant(sessionID, 'reply-1', 'done'),
+      user(sessionID, 'bridge-2', 'second'), assistant(sessionID, 'reply-2', 'SECOND-OK'),
+      user(sessionID, 'bridge-3', 'third', true)
+    ], hasMore: false }
+    await registration.controller.loadMessagePage(CONFIG, sessionID, DIRECTORY, undefined, 200, true)
+    let conversation = await registration.controller.refreshConversation(CONFIG, registration.conversation.id)
+    assert.deepEqual(conversation.turns.map((turn) => turn.prompt), ['first', 'second'])
+
+    page = { messages: [...page.messages.slice(0, -1), user(sessionID, 'bridge-3', 'third'), assistant(sessionID, 'reply-3', 'THIRD-OK')], hasMore: false }
+    await registration.controller.loadMessagePage(CONFIG, sessionID, DIRECTORY, undefined, 200, true)
+    conversation = await registration.controller.refreshConversation(CONFIG, registration.conversation.id)
+    assert.deepEqual(conversation.turns.map((turn) => turn.prompt), ['first', 'second', 'third'])
+    assert.equal(conversation.currentTurn.prompt, 'third')
+  } finally {
+    registration.dispose()
+    restore()
+  }
+})
+
 test('a queued row this client never sent is adopted, and a Stop discards waiting prompts', async () => {
   storage.clear()
   const sessionID = 'queued-session-2'
