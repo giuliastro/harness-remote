@@ -347,6 +347,10 @@ export async function readClaudeSessionRegistry(registryDir, { isAlive = process
   // Session started a moment ago can be found before the next full index scan (see claudeJournalPath).
   const cwds = new Map()
   Object.defineProperty(sessions, "cwds", { value: cwds })
+  // When the earliest live process holding each Session started. Background work belongs to the
+  // process that started it and dies with it, so work journaled before this can never report back.
+  const startedAt = new Map()
+  Object.defineProperty(sessions, "startedAt", { value: startedAt })
   await Promise.all(names.filter((name) => /^\d+\.json$/.test(name)).map(async (name) => {
     let entry
     try {
@@ -359,6 +363,10 @@ export async function readClaudeSessionRegistry(registryDir, { isAlive = process
     const status = entry.status === "busy" ? "busy" : "idle"
     if (sessions.get(entry.sessionId) !== "busy") sessions.set(entry.sessionId, status)
     if (typeof entry.cwd === "string" && entry.cwd) cwds.set(entry.sessionId, entry.cwd)
+    if (Number.isFinite(entry.startedAt)) {
+      const earliest = startedAt.get(entry.sessionId)
+      if (earliest === undefined || entry.startedAt < earliest) startedAt.set(entry.sessionId, entry.startedAt)
+    }
   }))
   return sessions
 }
@@ -407,7 +415,14 @@ function stringContent(content) {
       : [])
 }
 
-/** Tool-use ids whose background work has ended, from the task notifications in one record. */
+const TASK_STOPPED = /Successfully stopped task:\s*([A-Za-z0-9_-]+)/
+const BACKGROUND_TASK_ID = /running in background with ID:\s*([A-Za-z0-9_-]+)/
+
+/**
+ * Ids of background work that has ended, from one record: the tool-use id or the task id named in a
+ * task notification (a resume's orphan summary names only task ids), and the task a successful
+ * TaskStop stopped, which journals no notification at all.
+ */
 function finishedBackgroundWork(record) {
   const texts = record?.type === "queue-operation"
     ? [typeof record.content === "string" ? record.content : ""]
@@ -416,12 +431,37 @@ function finishedBackgroundWork(record) {
   for (const text of texts) {
     if (!text.includes("<task-notification>")) continue
     for (const [, body] of text.matchAll(TASK_NOTIFICATION)) {
-      const toolUseID = /<tool-use-id>([^<]+)<\/tool-use-id>/.exec(body)?.[1]?.trim()
       const status = /<status>([^<]+)<\/status>/.exec(body)?.[1]?.trim().toLowerCase()
-      if (toolUseID && !TASK_RUNNING_STATUSES.has(status)) finished.push(toolUseID)
+      if (TASK_RUNNING_STATUSES.has(status)) continue
+      const toolUseID = /<tool-use-id>([^<]+)<\/tool-use-id>/.exec(body)?.[1]?.trim()
+      if (toolUseID) finished.push(toolUseID)
+      for (const [, taskID] of body.matchAll(/<task-id>([^<]+)<\/task-id>/g)) finished.push(taskID.trim())
+    }
+  }
+  if (record?.type === "user" && Array.isArray(record.message?.content)) {
+    for (const part of record.message.content) {
+      if (part?.type !== "tool_result" || part.is_error === true) continue
+      for (const text of stringContent(part.content)) {
+        const stopped = TASK_STOPPED.exec(text)?.[1]
+        if (stopped) finished.push(stopped)
+      }
     }
   }
   return finished
+}
+
+/** The background task id each tool call in one record was given, as [tool-use id, task id]. */
+function backgroundTaskIDs(record) {
+  if (record?.type !== "user" || !Array.isArray(record.message?.content)) return []
+  const ids = []
+  for (const part of record.message.content) {
+    if (part?.type !== "tool_result" || typeof part.tool_use_id !== "string") continue
+    const fromResult = typeof record.toolUseResult?.backgroundTaskId === "string" ? record.toolUseResult.backgroundTaskId : undefined
+    const fromText = stringContent(part.content).map((text) => BACKGROUND_TASK_ID.exec(text)?.[1]).find(Boolean)
+    const taskID = fromResult ?? fromText
+    if (taskID) ids.push([part.tool_use_id, taskID])
+  }
+  return ids
 }
 
 /**
@@ -437,11 +477,13 @@ export async function readClaudeBackgroundWork(file, {
   now = Date.now(),
   maxAgeMs = CLAUDE_BACKGROUND_WORK_MAX_AGE_MS,
   lookbackBytes = CLAUDE_BACKGROUND_LOOKBACK_BYTES,
-  fileStat
+  fileStat,
+  since
 } = {}) {
   const info = fileStat ?? await stat(file)
   const handle = await open(file, "r")
   const closed = new Set()
+  const taskIDs = new Map()
   const pending = []
   try {
     const floor = Math.max(0, info.size - lookbackBytes)
@@ -449,7 +491,8 @@ export async function readClaudeBackgroundWork(file, {
       if (offset < floor) break
       const text = line.toString("utf8")
       // Cheap pre-filter: only these records can open or close background work.
-      if (!text.includes("run_in_background") && !text.includes("task-notification") && !text.includes("\"is_error\":true")) continue
+      if (!text.includes("run_in_background") && !text.includes("task-notification") && !text.includes("\"is_error\":true")
+        && !text.includes("running in background with ID") && !text.includes("backgroundTaskId") && !text.includes("Successfully stopped task")) continue
       let record
       try {
         record = JSON.parse(text.replace(/\r$/, ""))
@@ -457,7 +500,8 @@ export async function readClaudeBackgroundWork(file, {
         continue
       }
       if (record?.isSidechain === true) continue
-      for (const toolUseID of finishedBackgroundWork(record)) closed.add(toolUseID)
+      for (const id of finishedBackgroundWork(record)) closed.add(id)
+      for (const [toolUseID, taskID] of backgroundTaskIDs(record)) taskIDs.set(toolUseID, taskID)
       const content = Array.isArray(record?.message?.content) ? record.message.content : []
       if (record?.type === "user") {
         for (const part of content) {
@@ -467,8 +511,11 @@ export async function readClaudeBackgroundWork(file, {
       if (record?.type === "assistant") {
         const startedAt = Date.parse(record.timestamp ?? "")
         if (Number.isFinite(startedAt) && now - startedAt > maxAgeMs) break
+        // Started by an earlier Claude process: that process and its background work are gone.
+        if (Number.isFinite(since) && Number.isFinite(startedAt) && startedAt < since) break
         for (const part of content) {
-          if (part?.type === "tool_use" && part.input?.run_in_background === true && typeof part.id === "string" && !closed.has(part.id)) {
+          if (part?.type === "tool_use" && part.input?.run_in_background === true && typeof part.id === "string"
+            && !closed.has(part.id) && !closed.has(taskIDs.get(part.id))) {
             pending.push({ toolUseID: part.id, tool: part.name, startedAt: Number.isFinite(startedAt) ? startedAt : undefined })
           }
         }
@@ -483,7 +530,7 @@ export async function readClaudeBackgroundWork(file, {
 /** Per-Session reader for readClaudeBackgroundWork that only rereads a journal after it changed. */
 export function createClaudeBackgroundWorkReader({ locate, now = () => Date.now(), maxEntries = 4096 } = {}) {
   const results = new BoundedLru({ maxEntries })
-  return async function backgroundWork(sessionID, cwd) {
+  return async function backgroundWork(sessionID, cwd, since) {
     if (typeof locate !== "function" || !isSafeSessionFileName(sessionID)) return 0
     const file = await locate(sessionID, cwd)
     if (!file) return 0
@@ -496,9 +543,9 @@ export function createClaudeBackgroundWorkReader({ locate, now = () => Date.now(
     }
     const at = now()
     let cached = results.get(sessionID)
-    if (!cached || cached.file !== file || cached.mtimeMs !== info.mtimeMs || cached.size !== info.size) {
-      const parsed = await readClaudeBackgroundWork(file, { now: at, fileStat: info })
-      cached = { file, mtimeMs: parsed.mtimeMs, size: parsed.size, pending: parsed.pending }
+    if (!cached || cached.file !== file || cached.mtimeMs !== info.mtimeMs || cached.size !== info.size || cached.since !== since) {
+      const parsed = await readClaudeBackgroundWork(file, { now: at, fileStat: info, since })
+      cached = { file, since, mtimeMs: parsed.mtimeMs, size: parsed.size, pending: parsed.pending }
       results.set(sessionID, cached)
     }
     return cached.pending.filter((work) => !work.startedAt || at - work.startedAt <= CLAUDE_BACKGROUND_WORK_MAX_AGE_MS).length
@@ -550,7 +597,7 @@ export function createClaudeLiveStatusProbe({
       if (state === "busy") return { type: "busy", source: "claude-session-registry" }
       // Idle but still running: the process that would report back is alive and waiting on work.
       if (state === "idle") {
-        const background = await backgroundWork(sessionID, sessions.cwds?.get(sessionID))
+        const background = await backgroundWork(sessionID, sessions.cwds?.get(sessionID), sessions.startedAt?.get(sessionID))
         if (background > 0) return { type: "listening", background, source: "claude-journal" }
       }
       return undefined
@@ -586,7 +633,7 @@ export function createClaudeSessionIdleGuard({
     if (!isSafeSessionFileName(sessionID)) return false
     const sessions = await currentRegistry()
     if (sessions?.get(sessionID) !== "idle") return false
-    return (await backgroundWork(sessionID, sessions.cwds?.get(sessionID)).catch(() => 1)) === 0
+    return (await backgroundWork(sessionID, sessions.cwds?.get(sessionID), sessions.startedAt?.get(sessionID)).catch(() => 1)) === 0
   }
 }
 
