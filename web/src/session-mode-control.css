@@ -193,15 +193,15 @@
   overflow-y: auto;
 }
 
-/* The composer pill shows a dot while a no-approval mode is on, since the card is closed most of the time. */
-.tdw-controls-trigger.mode-unrestricted { position: relative; }
-.tdw-controls-trigger.mode-unrestricted::after {
-  content: "";
-  position: absolute;
-  top: 4px;
-  right: 4px;
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: var(--td3-yellow);
+/* While a no-approval mode is on, the composer's model button is tinted and carries the same shield as
+   the desktop Mode field, since the card that names the mode is closed most of the time. */
+:root .tdw-controls-trigger.mode-unrestricted.mode-unrestricted {
+  border-color: var(--td3-yellow, #e3b341);
+  color: var(--td3-yellow-text, #e3b341);
+  background: var(--td3-yellow-soft);
+}
+
+.tdw-controls-trigger .tdw-controls-mode-icon {
+  flex: none;
+  color: var(--td3-yellow-text, #e3b341);
 }

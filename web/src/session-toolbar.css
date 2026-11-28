@@ -1,0 +1,386 @@
+/* Session toolbar (desktop): Harness, Model, Mode, the outcome toggle and the live state.
+   Each control is one field of the same shape - a 32px box with a quiet label and a value - so the
+   row reads as a single strip instead of five differently sized widgets. Older rules for these
+   elements live in several stylesheets (some phone rules use !important); this file loads last and
+   uses a repeated class for weight, and only applies above the phone breakpoint, where the toolbar
+   is shown. Phones use the composer card and are styled further down. */
+
+/* Phones keep the native select (or the composer card), so the drawn value is desktop-only. */
+.tdw-session-bar .tdw-bar-value,
+.tdw-session-bar .tdw-bar-chevron,
+.tdw-session-bar .tdw-agent-control .tdw-bar-field-icon {
+  display: none;
+}
+
+@media (min-width: 781px) {
+  :root .tdw-work-thread-conversation > .tdw-session-bar.tdw-session-bar {
+    --bar-field-height: 32px;
+    --bar-field-radius: 8px;
+    --bar-label-size: 11px;
+    --bar-value-size: 12.5px;
+    display: flex;
+    /* One line: values shorten with an ellipsis before anything moves to a second row. */
+    flex-wrap: nowrap;
+    align-items: center;
+    gap: 8px;
+    min-height: 48px;
+    padding: 8px 14px;
+  }
+
+  /* The Harness/Model wrapper takes no part in the layout: both fields are items of the row itself,
+     so the row decides who gives way (the status sentence first, then the field values). As a
+     nested flex box Chromium shrank the pair before the status and clipped their values. */
+  :root .tdw-session-bar.tdw-session-bar.tdw-session-bar .tdw-agent-control,
+  :root .tdw-session-bar.tdw-session-bar.tdw-session-bar .tdw-agent-control.routed {
+    display: contents;
+  }
+
+  /* ---- the shared field shape ---------------------------------------------------------- */
+
+  :root .tdw-session-bar.tdw-session-bar.tdw-session-bar .tdw-agent-control > label,
+  :root .tdw-session-bar.tdw-session-bar.tdw-session-bar .tdw-mode-trigger,
+  :root .tdw-session-bar.tdw-session-bar.tdw-session-bar .hr-native-outcome.compact {
+    box-sizing: border-box;
+    display: inline-flex;
+    flex-direction: row;
+    align-items: center;
+    gap: 8px;
+    height: var(--bar-field-height);
+    min-height: var(--bar-field-height);
+    min-width: 0;
+    margin: 0;
+    padding: 0 4px 0 10px;
+    border: 1px solid var(--td3-border);
+    border-radius: var(--bar-field-radius);
+    color: var(--td3-text);
+    background: var(--td3-control);
+    box-shadow: none;
+    transition: border-color .15s ease, background-color .15s ease;
+  }
+
+  :root .tdw-session-bar.tdw-session-bar.tdw-session-bar .tdw-agent-control > label:hover,
+  :root .tdw-session-bar.tdw-session-bar.tdw-session-bar .tdw-mode-trigger:hover:not(:disabled),
+  :root .tdw-session-bar.tdw-session-bar.tdw-session-bar .hr-native-outcome.compact:hover {
+    border-color: var(--td3-border-strong);
+    background: var(--td3-control-hover);
+  }
+
+  :root .tdw-session-bar.tdw-session-bar.tdw-session-bar .tdw-agent-control > label:focus-within,
+  :root .tdw-session-bar.tdw-session-bar.tdw-session-bar .tdw-mode-trigger:focus-visible,
+  :root .tdw-session-bar.tdw-session-bar.tdw-session-bar .hr-native-outcome.compact:focus-within {
+    outline: 0;
+    border-color: var(--td3-focus);
+    box-shadow: 0 0 0 2px var(--td3-blue-soft);
+  }
+
+  /* Labels: one size, one weight, one colour. */
+  :root .tdw-session-bar.tdw-session-bar.tdw-session-bar .tdw-agent-control > label > span,
+  :root .tdw-session-bar.tdw-session-bar.tdw-session-bar .tdw-mode-control-label {
+    display: inline;
+    flex: none;
+    margin: 0;
+    color: var(--td3-muted);
+    font-size: var(--bar-label-size);
+    font-weight: 600;
+    line-height: 1;
+    letter-spacing: .01em;
+    text-transform: none;
+    white-space: nowrap;
+  }
+
+  /* ---- Harness ---------------------------------------------------------------------------- */
+
+  /* The chosen harness is drawn as text (a select sizes itself from its options at regular weight,
+     so its own text was clipped), and the native select covers the whole field invisibly: it still
+     opens the system menu from anywhere in the field and keeps keyboard and screen-reader access. */
+  /* Fields take their natural width (each value has its own cap). Their shrink weight (1) is tiny next
+     to the status pill's, so they only give way, with an ellipsis, once the pill is at its minimum. */
+  :root .tdw-session-bar.tdw-session-bar.tdw-session-bar .tdw-agent-control > label {
+    flex: 0 1 auto;
+    width: auto;
+    min-width: 84px;
+  }
+
+  :root .tdw-session-bar.tdw-session-bar.tdw-session-bar .tdw-agent-control > label:first-child {
+    position: relative;
+    padding-right: 8px;
+    cursor: pointer;
+  }
+
+  :root .tdw-session-bar.tdw-session-bar.tdw-session-bar .tdw-agent-control > label > .tdw-bar-value {
+    display: block;
+    flex: 0 1 auto;
+    min-width: 0;
+    max-width: 190px;
+    overflow: hidden;
+    color: var(--td3-text);
+    font-size: var(--bar-value-size);
+    font-weight: 550;
+    line-height: 1.2;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  :root .tdw-session-bar.tdw-session-bar.tdw-session-bar .tdw-agent-control > label > .tdw-bar-chevron {
+    display: inline-flex;
+    flex: none;
+    color: var(--td3-muted);
+    font-style: normal;
+  }
+
+  :root .tdw-session-bar.tdw-session-bar.tdw-session-bar .tdw-agent-control > label > select {
+    position: absolute;
+    inset: 0;
+    z-index: 1;
+    width: 100%;
+    max-width: none;
+    height: 100%;
+    min-height: 0;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    opacity: 0;
+    cursor: pointer;
+  }
+
+  :root .tdw-session-bar.tdw-session-bar.tdw-session-bar .tdw-agent-control > label:has(> select:disabled) {
+    cursor: default;
+    opacity: .6;
+  }
+
+  :root .tdw-session-bar.tdw-session-bar.tdw-session-bar .tdw-agent-control > label:has(> select:disabled) > select {
+    cursor: default;
+  }
+
+  /* ---- Model ------------------------------------------------------------------------------ */
+
+  :root .tdw-session-bar.tdw-session-bar.tdw-session-bar .tdw-model-control .tdw-model-picker.compact {
+    flex: 0 1 auto;
+    width: auto;
+    min-width: 0;
+    max-width: 300px;
+  }
+
+  :root .tdw-session-bar.tdw-session-bar.tdw-session-bar .tdw-model-control .tdw-model-trigger {
+    width: 100%;
+    min-width: 0;
+    max-width: 300px;
+    height: calc(var(--bar-field-height) - 2px);
+    min-height: 0;
+    gap: 6px;
+    padding: 0 4px 0 0;
+    border: 0;
+    border-radius: 0;
+    color: var(--td3-text);
+    background: transparent;
+    box-shadow: none;
+  }
+
+  /* Name and provider/effort on one line, so the field keeps the row's height. */
+  :root .tdw-session-bar.tdw-session-bar.tdw-session-bar .tdw-model-control .tdw-model-trigger-copy {
+    flex-direction: row;
+    align-items: baseline;
+    gap: 6px;
+    min-width: 0;
+  }
+
+  :root .tdw-session-bar.tdw-session-bar.tdw-session-bar .tdw-model-control .tdw-model-trigger-copy strong {
+    flex: 0 1 auto;
+    min-width: 0;
+    font-size: var(--bar-value-size);
+    font-weight: 550;
+    line-height: 1.2;
+  }
+
+  :root .tdw-session-bar.tdw-session-bar.tdw-session-bar .tdw-model-control .tdw-model-trigger-copy small {
+    flex: 0 2 auto;
+    min-width: 0;
+    color: var(--td3-muted);
+    font-size: var(--bar-label-size);
+    line-height: 1.2;
+  }
+
+  /* One description is enough in the row: the provider (and effort). The "unavailable in catalog"
+     line is said by the dashed border and the live state, and stays in the picker itself. */
+  :root .tdw-session-bar.tdw-session-bar.tdw-session-bar .tdw-model-control .tdw-model-trigger-copy small ~ small {
+    display: none;
+  }
+
+  :root .tdw-session-bar.tdw-session-bar.tdw-session-bar .tdw-model-control .tdw-model-chevron {
+    color: var(--td3-muted);
+  }
+
+  /* An unavailable catalog marks the field; the live state already says sending is paused, and
+     the full reason is on the field's tooltip, so the paragraph no longer squeezes into the row. */
+  :root .tdw-session-bar.tdw-session-bar.tdw-session-bar .tdw-model-control.unavailable {
+    border-style: dashed;
+    border-color: var(--td3-yellow, #e3b341);
+  }
+
+  :root .tdw-session-bar.tdw-session-bar.tdw-session-bar .tdw-model-control > .tdw-field-note {
+    display: none;
+  }
+
+  /* ---- Mode ------------------------------------------------------------------------------- */
+
+  /* The permission mode never shortens: whether approvals are off must always be readable. */
+  :root .tdw-session-bar.tdw-session-bar.tdw-session-bar .tdw-mode-control {
+    display: flex;
+    flex: none;
+    gap: 0;
+  }
+
+  :root .tdw-session-bar.tdw-session-bar.tdw-session-bar .tdw-mode-trigger {
+    width: 100%;
+    max-width: 240px;
+    padding-right: 8px;
+    font: inherit;
+    cursor: pointer;
+  }
+
+  :root .tdw-session-bar.tdw-session-bar.tdw-session-bar .tdw-mode-value {
+    overflow: hidden;
+    color: var(--td3-text);
+    font-size: var(--bar-value-size);
+    font-weight: 550;
+    line-height: 1.2;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  :root .tdw-session-bar.tdw-session-bar.tdw-session-bar .tdw-mode-trigger > svg {
+    flex: none;
+    color: var(--td3-muted);
+  }
+
+  /* A mode with no approvals keeps the same size: only its colour says so. */
+  :root .tdw-session-bar.tdw-session-bar.tdw-session-bar .tdw-mode-control.unrestricted .tdw-mode-trigger {
+    border-color: var(--td3-yellow, #e3b341);
+    background: var(--td3-yellow-soft);
+  }
+
+  :root .tdw-session-bar.tdw-session-bar.tdw-session-bar .tdw-mode-control.unrestricted .tdw-mode-value,
+  :root .tdw-session-bar.tdw-session-bar.tdw-session-bar .tdw-mode-control.unrestricted .tdw-mode-control-label,
+  :root .tdw-session-bar.tdw-session-bar.tdw-session-bar .tdw-mode-control.unrestricted .tdw-mode-trigger > svg {
+    color: var(--td3-yellow-text, #e3b341);
+  }
+
+  /* ---- Field icons: the harness logo, a spark for the model, a shield for the permission mode.
+     They stay when narrow windows drop the text labels, so each field still says what it is. */
+
+  :root .tdw-session-bar.tdw-session-bar.tdw-session-bar .tdw-bar-field-icon {
+    display: block;
+    flex: none;
+    width: 14px;
+    height: 14px;
+    margin-right: -2px;
+    color: var(--td3-muted);
+    object-fit: contain;
+  }
+
+  :root .tdw-session-bar.tdw-session-bar.tdw-session-bar .tdw-mode-control.unrestricted .tdw-bar-field-icon {
+    color: var(--td3-yellow-text, #e3b341);
+  }
+
+  /* ---- Session outcome toggle -------------------------------------------------------------- */
+
+  :root .tdw-session-bar.tdw-session-bar.tdw-session-bar .hr-native-outcome.compact {
+    flex: 0 1 auto;
+    min-width: 84px;
+    max-width: 220px;
+    padding: 0;
+    overflow: hidden;
+  }
+
+  :root .tdw-session-bar.tdw-session-bar.tdw-session-bar .hr-native-outcome.compact .hr-native-outcome-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    height: calc(var(--bar-field-height) - 2px);
+    padding: 0 10px;
+    border-radius: var(--bar-field-radius);
+    background: transparent;
+  }
+
+  :root .tdw-session-bar.tdw-session-bar.tdw-session-bar .hr-native-outcome.compact .hr-native-outcome-title strong {
+    color: var(--td3-muted);
+    font-size: var(--bar-label-size);
+    font-weight: 600;
+  }
+
+  :root .tdw-session-bar.tdw-session-bar.tdw-session-bar .hr-native-outcome.compact .hr-native-outcome-toggle {
+    width: 100%;
+    min-width: 0;
+  }
+
+  :root .tdw-session-bar.tdw-session-bar.tdw-session-bar .hr-native-outcome.compact .hr-native-outcome-summary {
+    min-width: 0;
+    overflow: hidden;
+    font-size: var(--bar-value-size);
+    font-weight: 550;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  /* ---- Live state ------------------------------------------------------------------------ */
+
+  /* The only element that is a status rather than a control: a pill, at the far end. */
+  :root .tdw-session-bar.tdw-session-bar.tdw-session-bar .tdw-conversation-state {
+    box-sizing: border-box;
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    height: var(--bar-field-height);
+    /* The fields matter more than a long status sentence: the pill gives way first (its full text
+       stays in its tooltip), but never below a short state such as "Ready". */
+    flex: 0 100000 auto;
+    min-width: 74px;
+    max-width: 320px;
+    margin-left: auto;
+    padding: 0 12px;
+    border-radius: 999px;
+    font-size: 12px;
+    font-weight: 600;
+    line-height: 1;
+  }
+
+  :root .tdw-session-bar.tdw-session-bar.tdw-session-bar .tdw-conversation-state > span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+}
+
+/* Narrower desktop windows: the text labels give their room to the values before anything wraps.
+   The icons stay, and each field keeps its full label in its tooltip. */
+@media (min-width: 781px) and (max-width: 1080px) {
+  :root .tdw-session-bar.tdw-session-bar.tdw-session-bar .tdw-agent-control > label > span,
+  :root .tdw-session-bar.tdw-session-bar.tdw-session-bar .tdw-mode-control-label,
+  :root .tdw-session-bar.tdw-session-bar.tdw-session-bar .tdw-model-control .tdw-model-trigger-copy small {
+    display: none;
+  }
+
+  :root .tdw-session-bar.tdw-session-bar.tdw-session-bar .tdw-conversation-state {
+    max-width: 220px;
+  }
+}
+
+/* Phones (compact skin): the toolbar is hidden and its job moves under the composer, where the live
+   state and the model/mode button sit side by side. They now share one height and one type size,
+   matching the 36px attach and send buttons (the existing phone rules use !important). */
+@media (max-width: 780px) {
+  :root[data-skin="compact"] .tdw-work-thread-conversation .tdw-composer-status .tdw-conversation-state {
+    box-sizing: border-box;
+    align-items: center;
+    gap: 7px;
+    height: 36px !important;
+    padding: 0 12px !important;
+    font-size: 13px !important;
+    font-weight: 600 !important;
+    line-height: 1 !important;
+  }
+
+  :root[data-skin="compact"] .tdw-work-thread-conversation .uw-composer-footer .uw-button.tdw-controls-trigger {
+    font-weight: 600 !important;
+  }
+}

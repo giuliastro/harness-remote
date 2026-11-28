@@ -166,6 +166,7 @@ export type TranslationKey =
   | 'card.locked'
   | 'card.title'
   | 'card.harness'
+  | 'card.model'
   | 'mode.label'
   | 'mode.title'
   | 'mode.unknown'
@@ -1002,6 +1003,7 @@ const translations: Record<LanguageCode, Partial<Record<TranslationKey, string>>
     'card.locked': '{agent} is working — model and effort can change when it finishes.',
     'card.title': 'Model and effort',
     'card.harness': 'Harness',
+    'card.model': 'Model',
     'mode.label': 'Mode',
     'mode.title': 'Permission mode',
     'mode.unknown': 'Choose mode',
@@ -1817,6 +1819,7 @@ const translations: Record<LanguageCode, Partial<Record<TranslationKey, string>>
     'card.locked': '{agent} sta lavorando — modello e impegno si possono cambiare quando finisce.',
     'card.title': 'Modello e impegno',
     'card.harness': 'Harness',
+    'card.model': 'Modello',
     'mode.label': 'Modalità',
     'mode.title': 'Modalità dei permessi',
     'mode.unknown': 'Scegli modalità',
@@ -2632,6 +2635,7 @@ const translations: Record<LanguageCode, Partial<Record<TranslationKey, string>>
     'card.locked': '{agent} 正在工作，完成後才能變更模型與推理強度。',
     'card.title': '模型與推理強度',
     'card.harness': 'Harness',
+    'card.model': '模型',
     'mode.label': '模式',
     'mode.title': '權限模式',
     'mode.unknown': '選擇模式',
@@ -3447,6 +3451,7 @@ const translations: Record<LanguageCode, Partial<Record<TranslationKey, string>>
     'card.locked': '{agent} 正在工作，完成后才能更改模型和推理强度。',
     'card.title': '模型与推理强度',
     'card.harness': 'Harness',
+    'card.model': '模型',
     'mode.label': '模式',
     'mode.title': '权限模式',
     'mode.unknown': '选择模式',
@@ -4262,6 +4267,7 @@ const translations: Record<LanguageCode, Partial<Record<TranslationKey, string>>
     'card.locked': '{agent} está trabalhando — modelo e esforço podem mudar quando terminar.',
     'card.title': 'Modelo e esforço',
     'card.harness': 'Harness',
+    'card.model': 'Modelo',
     'mode.label': 'Modo',
     'mode.title': 'Modo de permissões',
     'mode.unknown': 'Escolher modo',

@@ -56,6 +56,9 @@ import "./compact-final-touch.css"
 import "./mobile-composer.css"
 // Plugin catalogue, allowance cards and quick view. Self-contained `hr-plugin-*` classes.
 import "./plugin-center.css"
+// Session toolbar (Harness, Model, Mode, outcome, live state) as one strip of equal fields. Last on
+// purpose: it settles rules for these elements that are spread over the stylesheets above.
+import "./session-toolbar.css"
 
 installAppPreferences()
 installCompletionAudioGuard()

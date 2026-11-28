@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react"
 import { api } from "../api"
-import { ChevronDownIcon } from "../Icons"
+import { ChevronDownIcon, ShieldIcon } from "../Icons"
 import type { ServerConfig, SessionMode, SessionModeState } from "../types"
 import { useTranslator } from "../useTranslator"
 import "../session-mode-control.css"
@@ -171,7 +171,8 @@ export function SessionModeMenu({ modes, disabled = false }: { modes: SessionMod
 
   return (
     <div className={`tdw-mode-control${current?.unrestricted ? " unrestricted" : ""}`}>
-      <span className="tdw-mode-control-label">{t("mode.label")}</span>
+      {/* The label sits inside the button so the whole field is one target, the same size as the
+          Harness and Model fields beside it. */}
       <button
         type="button"
         className="tdw-mode-trigger"
@@ -185,7 +186,9 @@ export function SessionModeMenu({ modes, disabled = false }: { modes: SessionMod
           if (next) void modes.open()
         }}
       >
-        <span>{current?.name ?? t("mode.unknown")}</span>
+        <ShieldIcon size={13} className="tdw-bar-field-icon" />
+        <span className="tdw-mode-control-label">{t("mode.label")}</span>
+        <span className="tdw-mode-value">{current?.name ?? t("mode.unknown")}</span>
         <ChevronDownIcon size={12} />
       </button>
       {open ? (

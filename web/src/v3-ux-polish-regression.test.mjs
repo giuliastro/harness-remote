@@ -102,7 +102,7 @@ assert.match(conversationSurface, /if \(startedSend && nearBottomRef\.current &&
 assert.match(conversationSurface, /followFrameRef\.current = window\.requestAnimationFrame\(\(\) => \{[\s\S]*followTail\(\)/)
 
 // Native Session chat keeps the mature shared renderer without resurrecting the removed product UI.
-assert.match(chat, /routing \? "Harness" : "Continue with"/)
+assert.match(chat, /routing \? t\("card\.harness"\) : "Continue with"/)
 assert.doesNotMatch(chat, /<span>Machine<\/span>/)
 assert.match(nativeObserverCss, /\.hr-control-plane \.hr-native-session-observer \.tdw-conversation-state[\s\S]*display: inline-flex !important/)
 assert.match(chat, /buildConversationTimeline/)

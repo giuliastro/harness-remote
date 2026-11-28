@@ -1,6 +1,6 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react"
 import { api } from "../api"
-import { ChevronDownIcon, RefreshIcon } from "../Icons"
+import { ChevronDownIcon, RefreshIcon, ShieldIcon, SparkIcon } from "../Icons"
 import type { AttachmentPart } from "../attachments"
 import { createCoalescedTailRefresh, TAIL_REFRESH_STALL_MS } from "../coalesced-tail-refresh"
 import type { ConversationController } from "../conversation-controller"
@@ -286,7 +286,8 @@ export function ConversationStatePill({
     : working
       ? `${workingLabel}${elapsed >= 2 ? ` · ${elapsed}s` : ""}`
       : listening ? listeningLabel : outcome?.text || "Ready"
-  return <span className={`tdw-conversation-state ${state}`} title={outcome && detail ? detail : undefined}><i aria-hidden="true" /><span>{text}</span></span>
+  // The toolbar may shorten a long state with an ellipsis, so the tooltip always carries the full text.
+  return <span className={`tdw-conversation-state ${state}`} title={outcome && detail ? detail : text}><i aria-hidden="true" /><span>{text}</span></span>
 }
 
 const WorkThreadBubble = memo(function WorkThreadBubble({
@@ -1281,10 +1282,17 @@ ${current}` : text) : current)
 
   return (
     <div className="tdw-work-thread-conversation">
-      <div className="tdw-conversation-toolbar">
+      <div className="tdw-conversation-toolbar tdw-session-bar">
         <div className={`tdw-agent-control${routing ? " routed" : ""}`}>
-          <label>
-            <span>{routing ? "Harness" : "Continue with"}</span>
+          <label title={`${routing ? t("card.harness") : "Continue with"}: ${agentLabel(destinationAgents, targetAgentID)}`}>
+            {harnessIconUrl(destinationAgent?.backend)
+              ? <img className="tdw-bar-field-icon" src={harnessIconUrl(destinationAgent?.backend)} alt="" />
+              : null}
+            <span>{routing ? t("card.harness") : "Continue with"}</span>
+            {/* Desktop draws the chosen harness as text and lays the native select invisibly over
+                the whole field, so it measures like the other fields and opens from anywhere. */}
+            <b className="tdw-bar-value" aria-hidden="true">{agentLabel(destinationAgents, targetAgentID)}</b>
+            <i className="tdw-bar-chevron" aria-hidden="true"><ChevronDownIcon size={12} /></i>
             <select value={targetAgentID} disabled={!interactionEnabled || working || replyPending || sending || modelBootstrapBlocked || destinationAgents.length === 0} onChange={(event) => {
               modelGeneration.current += 1
               modelSelectionTouchedRef.current = false
@@ -1297,8 +1305,9 @@ ${current}` : text) : current)
               {destinationAgents.map((agent) => <option value={agent.id} key={agent.id}>{agent.label}</option>)}
             </select>
           </label>
-          <label className="tdw-model-control">
-            <span>Model</span>
+          <label className={`tdw-model-control${modelError ? " unavailable" : ""}`} title={modelError ? `Model catalog unavailable. Sending is paused until a model can be verified. ${modelError}` : undefined}>
+            <SparkIcon size={13} className="tdw-bar-field-icon" />
+            <span>{t("card.model")}</span>
             <ModelPicker compact models={models} value={targetModelKey} currentModel={currentModelForPicker} onChange={(value) => {
               modelSelectionTouchedRef.current = true
               setTargetModelKey(value)
@@ -1371,6 +1380,7 @@ ${current}` : text) : current)
                 if (next && modeTarget) void sessionModes.open()
               }}
             >
+              {modeTarget && sessionModes.current?.unrestricted ? <ShieldIcon size={13} className="tdw-controls-mode-icon" /> : null}
               <span>{effortOptions.length > 1 ? effortLabel : selectedModelName}</span>
               <ChevronDownIcon size={13} />
             </button>
