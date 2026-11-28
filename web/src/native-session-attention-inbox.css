@@ -11,12 +11,17 @@
   gap: 6px;
 }
 
+/* The inbox sits in the Session list column, about 300px wide on desktop. Two columns side by side
+   left the request text a 0px column while the identity column overflowed across it, so the request
+   and the Session it belongs to are stacked, each line truncating on its own. */
 .hr-native-attention-row {
   width: 100%;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(132px, auto);
-  gap: 12px;
-  align-items: center;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 6px;
+  align-items: stretch;
+  justify-content: stretch;
+  white-space: normal;
   padding: 9px 10px;
   border: 1px solid var(--tdw-border, rgba(148, 163, 184, 0.22));
   border-radius: 9px;
@@ -53,6 +58,9 @@
 }
 
 .hr-native-attention-copy strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   color: var(--tdw-text, #f5f6f8);
   font-size: 12px;
 }
@@ -82,12 +90,12 @@
 }
 
 .hr-native-attention-identity {
-  align-items: flex-end;
-  text-align: right;
+  padding-top: 6px;
+  border-top: 1px solid var(--tdw-border, rgba(148, 163, 184, 0.22));
 }
 
 .hr-native-attention-identity strong {
-  max-width: 240px;
+  max-width: 100%;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -96,7 +104,7 @@
 }
 
 .hr-native-attention-identity code {
-  max-width: 240px;
+  max-width: 100%;
   font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
 }
 
@@ -109,14 +117,5 @@
 @media (max-width: 720px) {
   .hr-native-attention-inbox {
     margin-inline: 8px;
-  }
-
-  .hr-native-attention-row {
-    grid-template-columns: 1fr;
-  }
-
-  .hr-native-attention-identity {
-    align-items: flex-start;
-    text-align: left;
   }
 }
