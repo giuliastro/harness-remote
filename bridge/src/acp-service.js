@@ -513,15 +513,38 @@ function mergeTodos(previous, replayed) {
  * Matched only when the chunk is *entirely* one or more such blocks, so a message where someone
  * quotes one while asking about it stays visible — which is exactly how this was reported.
  */
-const HARNESS_INJECTED_BLOCK = /^(?:\s*(?:Another Claude session sent a message:\s*)?<(task-notification|system-reminder|cross-session-message|agent-message)(?:\s[^>]*)?>[\s\S]*?<\/\1>\s*)+$/
+const HARNESS_INJECTED_BLOCK = /^(?:\s*<(task-notification|system-reminder)>[\s\S]*?<\/\1>\s*)+$/
+/**
+ * Claude Code delivers a subagent's report and a message from another session as a user-role entry:
+ * a fixed header, one `<agent-message>` or `<cross-session-message>` block, then its own paragraph
+ * telling the model the text carries no user authority (worded differently per kind, always ending
+ * "that's permission laundering."). Matched only in that exact shape, from the first character.
+ */
+const PEER_MESSAGE = /^\s*Another Claude session sent a message:\s*<(cross-session-message|agent-message)(?:\s[^>]*)?>[\s\S]*<\/\1>(?:\s*[^<]*\bpermission laundering\.)?\s*$/
 /**
  * Claude Code keeps the summary that replaces a compacted conversation as a user-role message too.
  * It is context for the model, written by the harness, so it is not a turn of the person either.
  */
 const COMPACTION_SUMMARY = /^\s*This session is being continued from a previous conversation that ran out of context\./
 
+/**
+ * Other text Claude Code journals as user-role meta entries, found by auditing real journals: the
+ * prompt it sends itself when a Session resumes, the note it adds after an attached image, and the
+ * body of a skill it loads. Each is matched in its exact generated shape only.
+ */
+const CLAUDE_META_TEXT = [
+  /^\s*Continue from where you left off\.\s*$/,
+  /^\s*\[Image: (?:source: [^\]\n]+|original \d+x\d+[^\]\n]*)\]\s*$/,
+  /^Base directory for this skill: [^\n]+\n/
+]
+
 export function isHarnessInjectedText(text) {
-  return typeof text === "string" && (HARNESS_INJECTED_BLOCK.test(text) || COMPACTION_SUMMARY.test(text))
+  return typeof text === "string" && (
+    HARNESS_INJECTED_BLOCK.test(text)
+    || PEER_MESSAGE.test(text)
+    || COMPACTION_SUMMARY.test(text)
+    || CLAUDE_META_TEXT.some((pattern) => pattern.test(text))
+  )
 }
 
 /**
