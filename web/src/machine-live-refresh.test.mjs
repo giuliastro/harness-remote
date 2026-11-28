@@ -2,11 +2,13 @@ import assert from "node:assert/strict"
 import test from "node:test"
 import {
   createBurstLimiter,
+  discoveryPassLands,
   isStreamReconnecting,
   machinePollIntervalMs,
   MACHINE_NORMAL_POLL_MS,
   MACHINE_RECONNECT_POLL_MS,
-  MACHINE_STREAM_POLL_MS
+  MACHINE_STREAM_POLL_MS,
+  recoveringStreamCount
 } from "./machine-live-refresh.ts"
 
 test("a flapping machine outranks any stream coverage", () => {
@@ -159,4 +161,47 @@ test("cancel drops a queued trailing refresh", () => {
   clock.advance()
   assert.equal(runs, 1)
   assert.equal(clock.pending(), 0, "no timer survives an unmounted subscription")
+})
+
+// Seen on the desktop app with one reachable machine and one saved machine that was offline: the
+// offline machine's stream kept "reconnecting", which kept the 1.5s cadence on for good.
+test("an offline machine's reconnecting stream does not keep the fast cadence on", () => {
+  const runtimes = [
+    { machine: { id: "local" }, state: "online", snapshot: {} },
+    { machine: { id: "zorin" }, state: "offline" }
+  ]
+  assert.equal(recoveringStreamCount(["local", "zorin"], { zorin: true }, runtimes), 0)
+  assert.equal(recoveringStreamCount(["local", "zorin"], { local: true, zorin: true }, runtimes), 1, "a reachable machine that is recovering still counts")
+  assert.equal(recoveringStreamCount(["local"], {}, runtimes), 0)
+})
+
+// Every refresh restarted the Session index read, and the old read was always dropped. With a read
+// that takes 8s and a refresh every 1.5s nothing ever landed, so the slower harnesses stayed on
+// "Starting…" for good.
+test("Session index reads restarted faster than they finish still land, in order", () => {
+  const identity = "local|zorin"
+  const simulate = (lands) => {
+    let lastApplied = 0
+    const applied = []
+    const readMs = 8_000, everyMs = 1_500
+    const passes = Array.from({ length: 20 }, (_, index) => ({ number: index + 1, start: index * everyMs, end: index * everyMs + readMs }))
+    for (const pass of [...passes].sort((left, right) => left.end - right.end)) {
+      const superseded = passes.some((other) => other.number > pass.number && other.start <= pass.end)
+      if (!lands({ number: pass.number, identity, superseded }, { lastApplied, currentIdentity: identity })) continue
+      lastApplied = pass.number
+      applied.push(pass.number)
+    }
+    return applied
+  }
+  const dropEverySuperseded = (pass) => !pass.superseded
+  assert.deepEqual(simulate(dropEverySuperseded), [20], "the old rule only ever lands the very last read, after the restarts stop")
+  const applied = simulate(discoveryPassLands)
+  assert.equal(applied.length, 20, "every read lands")
+  assert.deepEqual(applied, [...applied].sort((left, right) => left - right), "never an older read over a newer one")
+})
+
+test("a superseded Session index read is dropped when the machines changed, or a newer read landed", () => {
+  assert.equal(discoveryPassLands({ number: 3, identity: "a", superseded: true }, { lastApplied: 2, currentIdentity: "b" }), false)
+  assert.equal(discoveryPassLands({ number: 3, identity: "a", superseded: false }, { lastApplied: 4, currentIdentity: "a" }), false)
+  assert.equal(discoveryPassLands({ number: 3, identity: "a", superseded: true }, { lastApplied: 2, currentIdentity: "a" }), true)
 })
