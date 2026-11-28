@@ -1812,9 +1812,10 @@ export function NativeSessionHome({
                             {pendingAgents.map(({ label, load }) => (
                               <li key={`${label}:${load.state}`} className={load.state === "failed" ? "failed" : undefined}>
                                 <span>{label}</span>
-                                <small>{t(load.state === "failed"
-                                  ? "sf.harnessFailedState"
-                                  : load.state === "retrying" ? "sf.harnessRetryingState" : "sf.harnessLoadingState")}</small>
+                                {/* While Harness Remote is still trying to start a harness - first read or quick
+                                    retries - it reads "Starting…"; only a harness that could not be started
+                                    shows its error. "Retrying…" next to every cold harness read as a failure. */}
+                                <small>{t(load.state === "failed" ? "sf.harnessFailedState" : "sf.harnessLoadingState")}</small>
                                 {load.state === "failed" ? <code>{load.error}</code> : null}
                               </li>
                             ))}

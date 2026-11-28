@@ -344,6 +344,8 @@ assert.match(source, /result\.pages\.some\(\(entry\) => entry\.page === null && 
 assert.match(source, /launchFailure: nativeSessionLaunchFailure\(error\)/, "a harness read must keep the reason it failed")
 assert.match(source, /const error = launchFailure \?\? \(retriesSpent \? errorMessage : null\)[\s\S]*else if \(error\) next\[scope\] = \{ state: "failed", error \}/, "a harness the daemon cannot launch, or that keeps failing after the quick retries, must show its error instead of retrying for ever")
 assert.match(source, /else next\[scope\] = errorMessage \? AGENT_RETRYING : AGENT_LOADING/, "a harness that only missed the discovery budget is still starting and must not read as retrying")
+assert.match(source, /t\(load\.state === "failed" \? "sf\.harnessFailedState" : "sf\.harnessLoadingState"\)/, "while a harness is still being started, including quick retries, the connection box must read Starting")
+assert.doesNotMatch(source, /sf\.harnessRetryingState/, "Retrying must not be shown next to a harness that is still being started")
 assert.match(source, /sf\.harnessFailedState[\s\S]*<code>\{load\.error\}<\/code>/, "the harness connection box must show the launch error")
 assert.match(source, /machine\.config\.username,[\s\S]*machine\.config\.password/, "a corrected machine credential must invalidate the Session index")
 assert.match(source, /onRefreshCompleteRef\.current\?\.\(refreshToken\)/, "a requested Session refresh must settle only after its index read completes")
